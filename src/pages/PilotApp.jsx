@@ -532,14 +532,14 @@ export default function PilotApp({onSwitchMode}) {
     stepLabelRow:{display:'flex',justifyContent:'space-between',marginTop:4},
     stepLbl:{fontSize:9,color:'rgba(255,255,255,0.6)',flex:1,textAlign:'center'},
     stepLblActive:{fontSize:9,color:'#fff',flex:1,textAlign:'center',fontWeight:700},
-    body:{flex:1,overflowY:'auto',padding:'20px 18px 100px'},
+    body:{flex:1,overflowY:'auto',padding:'20px 18px 8px'},
     pageTitle:{fontSize:20,fontWeight:700,color:'#111a14',marginBottom:4,fontFamily:"'Syne',sans-serif"},
     pageSub:{fontSize:12,color:'#8aad94',marginBottom:20},
     fw:{marginBottom:14},
     fl:{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"},
     fi:{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"},
     fs:{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'},
-    btnBar:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,padding:'12px 18px',background:'#fff',borderTop:'1px solid #f0f0f0',boxSizing:'border-box'},
+    btnBar:{padding:'12px 18px 24px',background:'#fff',borderTop:'1px solid #f0f0f0',boxSizing:'border-box'},
     btnG:{width:'100%',background:'#1a7a4a',color:'#fff',border:'none',borderRadius:14,padding:'15px',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8},
     timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
     statusBadge:(st)=>({display:'inline-flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:600,background:st==='running'?'#e8f5ee':st==='paused'?'#fff3e0':'#f5f5f5',color:st==='running'?'#1a7a4a':st==='paused'?'#e8a020':'#888'}),
@@ -652,7 +652,7 @@ export default function PilotApp({onSwitchMode}) {
             {form.cliente==='Outros'&&<FI label="NOME DO CLIENTE" ph="Digite o nome..." val={form.clienteOutro} onChange={e=>setForm(f=>({...f,clienteOutro:e.target.value}))}/>}
             <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>setForm(f=>({...f,fazenda:e.target.value}))}/>
             <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>setForm(f=>({...f,area_ha:e.target.value}))} type="number"/>
-            <FI label="PILOTO" ph={profile?.nome||'Nome do piloto'} val={form.piloto_nome} onChange={e=>setForm(f=>({...f,piloto_nome:e.target.value}))}/>
+            <FI label="PILOTO" ph={profile?.nome||'Nome do piloto'} val={form.piloto_nome||profile?.nome||''} onChange={e=>setForm(f=>({...f,piloto_nome:e.target.value}))}/>
             <FS label="DRONE" val={form.drone} onChange={e=>setForm(f=>({...f,drone:e.target.value}))}>
               <option value="">Selecione o Drone...</option>
               {DRONES.map(d=><option key={d}>{d}</option>)}
@@ -1126,23 +1126,6 @@ export default function PilotApp({onSwitchMode}) {
       )}
 
       {toast&&<div style={s.toast}>{toast}</div>}
-
-      {/* BOTTOM NAV */}
-      <div style={s.bottomNav}>
-        {[
-          ['🏠','Início', ()=>{limpar();setView('form')}],
-          ['✦','Missão', ()=>setView('form')],
-          ['👤','Perfil', ()=>setView('flights')],
-        ].map(([icon,lbl,fn],i) => {
-          const active = i===1
-          return (
-            <button key={i} style={s.navItem} onClick={fn}>
-              <span style={active?s.navIconActive:s.navIcon}>{icon}</span>
-              <span style={active?s.navLabelActive:s.navLabel}>{lbl}</span>
-            </button>
-          )
-        })}
-      </div>
     </div>
   )
 }
