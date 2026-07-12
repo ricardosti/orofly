@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 
-const CLIENTES = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
+const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
@@ -112,14 +112,18 @@ export default function PilotApp({onSwitchMode}) {
   const [sosLoading, setSosLoading] = useState(false)
   const [dronesDB, setDronesDB] = useState([])
   const [produtosDB, setProdutosDB] = useState([])
+  const [clientesDB, setClientesDB] = useState([])
 
-  // Lista dinâmica: banco + "Outros" no final
+  // Listas dinâmicas: banco + "Outros" no final
   const DRONES = dronesDB.length > 0
     ? [...dronesDB.filter(d=>d.ativo).map(d=>d.nome), 'Outros']
     : DRONES_DEFAULT
   const PRODUTOS_LIST = produtosDB.length > 0
     ? [...produtosDB.filter(p=>p.ativo).map(p=>p.nome), 'Outros']
     : PRODUTOS_DEFAULT
+  const CLIENTES = clientesDB.length > 0
+    ? [...clientesDB.filter(c=>c.ativo).map(c=>c.nome), 'Outros']
+    : CLIENTES_DEFAULT
   const [sosConfirm,setSosConfirm] = useState(false)
   const [modalOpen,setModalOpen] = useState(false)
   const [exitConfirm,setExitConfirm] = useState(false)
@@ -152,12 +156,14 @@ export default function PilotApp({onSwitchMode}) {
     toastTimer.current=setTimeout(()=>setToast(''),2800)
   },[])
 
-  // Carrega drones e produtos do banco
+  // Carrega drones, produtos e clientes do banco
   useEffect(() => {
     supabase.from('drones').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setDronesDB(data) })
     supabase.from('produtos').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setProdutosDB(data) })
+    supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
+      .then(({data}) => { if(data?.length) setClientesDB(data) })
   }, [])
 
   // Carrega voos compartilhados abertos

@@ -50,12 +50,42 @@ export default function AdminPanel({ onSwitchMode }) {
   // Inventário
   const [invDrones, setInvDrones] = useState([])
   const [invProdutos, setInvProdutos] = useState([])
+  const [invClientes, setInvClientes] = useState([])
   const [invTab, setInvTab] = useState('drones')
-  const [droneModal, setDroneModal] = useState(null) // null | 'novo' | {objeto}
+  const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
+  const [clienteModal, setClienteModal] = useState(null)
   const [droneForm, setDroneForm] = useState({})
   const [produtoForm, setProdutoForm] = useState({})
+  const [clienteForm, setClienteForm] = useState({})
   const [invSaving, setInvSaving] = useState(false)
+
+  function initClienteForm(c={}) {
+    return { nome:c.nome||'', ativo:c.ativo!==false, obs:c.obs||'' }
+  }
+
+  async function salvarCliente() {
+    setInvSaving(true)
+    try {
+      if (clienteModal === 'novo') {
+        const { error } = await supabase.from('clientes').insert(clienteForm)
+        if (error) throw error
+        showToast('✅ Cliente cadastrado!')
+      } else {
+        const { error } = await supabase.from('clientes').update(clienteForm).eq('id', clienteModal.id)
+        if (error) throw error
+        showToast('✅ Cliente atualizado!')
+      }
+      setClienteModal(null); fetchInventario()
+    } catch(e) { showToast('Erro: '+e.message,'error') }
+    setInvSaving(false)
+  }
+
+  async function deletarCliente(id) {
+    if (!window.confirm('Deletar este cliente?')) return
+    await supabase.from('clientes').delete().eq('id', id)
+    showToast('🗑️ Cliente removido'); fetchInventario()
+  }
 
   function initDroneForm(d={}) {
     return { nome:d.nome||'', modelo:d.modelo||'', serial:d.serial||'', fabricante:d.fabricante||'DJI', ano_aquisicao:d.ano_aquisicao||'', horas_limite:d.horas_limite||100, ativo:d.ativo!==false, obs:d.obs||'' }
@@ -66,12 +96,14 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function fetchInventario() {
     try {
-      const [{ data: drones, error: e1 }, { data: produtos, error: e2 }] = await Promise.all([
+      const [{ data: drones, error: e1 }, { data: produtos, error: e2 }, { data: clientes, error: e3 }] = await Promise.all([
         supabase.from('drones').select('*').order('nome'),
         supabase.from('produtos').select('*').order('nome'),
+        supabase.from('clientes').select('*').order('nome'),
       ])
       if (!e1 && drones) setInvDrones(drones)
       if (!e2 && produtos) setInvProdutos(produtos)
+      if (!e3 && clientes) setInvClientes(clientes)
     } catch(e) {
       console.warn('Tabelas de inventário não encontradas. Execute o SQL no Supabase.')
     }
@@ -811,17 +843,21 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18,flexWrap:'wrap',gap:10}}>
                   <div>
                     <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#111a14'}}>📦 Inventário</div>
-                    <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos</div>
+                    <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos · {invClientes.length} clientes</div>
                   </div>
                   <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                    onClick={()=>{ if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')} else {setProdutoForm(initProdutoForm());setProdutoModal('novo')} }}>
-                    + {invTab==='drones'?'Novo Drone':'Novo Produto'}
+                    onClick={()=>{
+                      if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')}
+                      else if(invTab==='produtos'){setProdutoForm(initProdutoForm());setProdutoModal('novo')}
+                      else{setClienteForm(initClienteForm());setClienteModal('novo')}
+                    }}>
+                    + {invTab==='drones'?'Novo Drone':invTab==='produtos'?'Novo Produto':'Novo Cliente'}
                   </button>
                 </div>
 
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16}}>
-                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos']].map(([id,lbl])=>(
+                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['clientes','🏢 Clientes']].map(([id,lbl])=>(
                     <button key={id} style={{background:invTab===id?'#1a7a4a':'#f4f8f5',color:invTab===id?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
@@ -1021,6 +1057,69 @@ export default function AdminPanel({ onSwitchMode }) {
                           onClick={()=>setProdutoModal(null)}>Cancelar</button>
                         <button style={{flex:2,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
                           disabled={invSaving} onClick={salvarProduto}>{invSaving?'Salvando...':'💾 Salvar'}</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── CLIENTES ── */}
+                {invTab==='clientes' && (
+                  <div>
+                    {invClientes.length===0 ? (
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                        Nenhum cliente cadastrado ainda.<br/>Clique em "+ Novo Cliente" para começar.
+                      </div>
+                    ) : (
+                      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(260px,1fr))',gap:12}}>
+                        {invClientes.map(c=>(
+                          <div key={c.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,position:'relative'}}>
+                            {!c.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:'#c0392b',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#111a14',marginBottom:4}}>🏢 {c.nome}</div>
+                            {c.obs && <div style={{fontSize:11,color:'#6b8070',marginBottom:8,fontStyle:'italic'}}>{c.obs}</div>}
+                            <div style={{display:'flex',gap:6,marginTop:8}}>
+                              <button style={{flex:1,background:'#f4f8f5',color:'#1a7a4a',border:'none',borderRadius:8,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
+                                onClick={()=>{setClienteForm(initClienteForm(c));setClienteModal(c)}}>✏️ Editar</button>
+                              <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:8,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
+                                onClick={()=>deletarCliente(c.id)}>🗑️</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* MODAL CLIENTE */}
+                {clienteModal && (
+                  <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+                    <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:400,padding:24}} onClick={e=>e.stopPropagation()}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
+                        {clienteModal==='novo'?'🏢 Novo Cliente':'✏️ Editar Cliente'}
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>NOME DO CLIENTE</div>
+                          <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            placeholder="Ex: Raizen - Bonfim" value={clienteForm.nome||''}
+                            onChange={e=>setClienteForm(f=>({...f,nome:e.target.value}))} />
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                            value={clienteForm.obs||''} onChange={e=>setClienteForm(f=>({...f,obs:e.target.value}))} />
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
+                          <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#1a7a4a':'#d0e4d8',position:'relative',transition:'all .2s',flexShrink:0}}>
+                            <div style={{width:14,height:14,borderRadius:7,background:'#fff',position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>
+                          </div>
+                          <span style={{fontSize:13,color:'#111a14'}}>Cliente ativo</span>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:8,marginTop:20}}>
+                        <button style={{flex:1,background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:10,padding:12,fontSize:13,cursor:'pointer'}}
+                          onClick={()=>setClienteModal(null)}>Cancelar</button>
+                        <button style={{flex:2,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
+                          disabled={invSaving} onClick={salvarCliente}>{invSaving?'Salvando...':'💾 Salvar'}</button>
                       </div>
                     </div>
                   </div>
