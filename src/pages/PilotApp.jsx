@@ -508,43 +508,6 @@ export default function PilotApp({onSwitchMode}) {
   const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',finished:'🔴 Finalizado'}[opState]
 
   // VIEW VOOS ANTERIORES
-  if(view==='flights') return (
-    <div style={s.wrap}>
-      <div style={s.header}>
-        <div style={s.headerInner}>
-          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
-          <div style={{display:'flex',gap:6}}>
-            {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
-            <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
-          </div>
-        </div>
-        <div style={s.headerSub}>Meus Voos · {profile?.nome}</div>
-      </div>
-      <div style={s.statusBar}><span>📋 Histórico de voos</span></div>
-      <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:10}}>
-        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('form')}>← Novo voo</button>
-        {loadingFlights?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Carregando...</div>
-        :flights.length===0?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Nenhum voo registrado</div>
-        :flights.map(rel=>(
-          <div key={rel.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:'14px 16px',cursor:'pointer'}} onClick={()=>openFlight(rel)}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-              <div>
-                <div style={{fontWeight:600,fontSize:14,color:'#111a14',fontFamily:"'Syne',sans-serif"}}>{rel.cliente||'—'}</div>
-                <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{rel.fazenda}{rel.area_ha?` · ${rel.area_ha}ha`:''} · {rel.drone}</div>
-              </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontSize:12,fontWeight:600,color:{em_operacao:'#1a7a4a',pausado:'#e8a020',finalizado:'#185fa5',sos:'#c0392b'}[rel.status]||'#6b8070'}}>{STATUS_LABEL[rel.status]||rel.status}</div>
-                <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
-              </div>
-            </div>
-            <div style={{fontSize:12,color:'#aaa',marginTop:6}}>Toque para abrir ✏️</div>
-          </div>
-        ))}
-      </div>
-      {toast&&<div style={s.toast}>{toast}</div>}
-    </div>
-  )
-
   // Labels e ícones dos steps
   const STEPS = [
     {n:1, label:'Identificação'},
@@ -622,7 +585,44 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
-  return (
+
+  if(view==='flights') return (
+    <div style={s.wrap}>
+      <div style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+          <div style={{display:'flex',gap:6}}>
+            {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+            <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+          </div>
+        </div>
+        <div style={s.headerSub}>Meus Voos · {profile?.nome}</div>
+      </div>
+      <div style={s.statusBar}><span>📋 Histórico de voos</span></div>
+      <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:10}}>
+        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('form')}>← Novo voo</button>
+        {loadingFlights?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Carregando...</div>
+        :flights.length===0?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Nenhum voo registrado</div>
+        :flights.map(rel=>(
+          <div key={rel.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:'14px 16px',cursor:'pointer'}} onClick={()=>openFlight(rel)}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div>
+                <div style={{fontWeight:600,fontSize:14,color:'#111a14',fontFamily:"'Syne',sans-serif"}}>{rel.cliente||'—'}</div>
+                <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{rel.fazenda}{rel.area_ha?` · ${rel.area_ha}ha`:''} · {rel.drone}</div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:12,fontWeight:600,color:{em_operacao:'#1a7a4a',pausado:'#e8a020',finalizado:'#185fa5',sos:'#c0392b'}[rel.status]||'#6b8070'}}>{STATUS_LABEL[rel.status]||rel.status}</div>
+                <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
+              </div>
+            </div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:6}}>Toque para abrir ✏️</div>
+          </div>
+        ))}
+      </div>
+      {toast&&<div style={s.toast}>{toast}</div>}
+    </div>
+  )
+
   return (
     <div style={sw.wrap}>
       <WHeader/>
