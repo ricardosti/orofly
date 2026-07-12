@@ -545,7 +545,6 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
-  return (
   // Labels e ícones dos steps
   const STEPS = [
     {n:1, label:'Identificação'},
@@ -623,6 +622,7 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
+  return (
   return (
     <div style={sw.wrap}>
       <WHeader/>
