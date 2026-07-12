@@ -135,7 +135,8 @@ export default function PilotApp({onSwitchMode}) {
   const [storageFotoMapa,setStorageFotoMapa] = useState(null)
   const [storageObsFotos,setStorageObsFotos] = useState([null,null,null])
   const [fotoPickerOpen, setFotoPickerOpen] = useState(null)
-  const [wizardStep, setWizardStep] = useState(1) // 1=Identificação 2=Aplicação 3=Condições 4=Finalizar
+  const [wizardStep, setWizardStep] = useState(1)
+  const [timerSecs, setTimerSecs] = useState(0)
 
   // Timer em tempo real durante o voo
   useEffect(() => {
