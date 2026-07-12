@@ -135,7 +135,7 @@ export default function PilotApp({onSwitchMode}) {
   const [storageFotoMapa,setStorageFotoMapa] = useState(null)
   const [storageObsFotos,setStorageObsFotos] = useState([null,null,null])
   const [fotoPickerOpen, setFotoPickerOpen] = useState(null)
-  const [timerSecs, setTimerSecs] = useState(0)
+  const [wizardStep, setWizardStep] = useState(1) // 1=Identificação 2=Aplicação 3=Condições 4=Finalizar
 
   // Timer em tempo real durante o voo
   useEffect(() => {
@@ -546,326 +546,386 @@ export default function PilotApp({onSwitchMode}) {
   )
 
   return (
-    <div style={s.wrap}>
-      {/* HEADER VERDE */}
-      <div style={s.header}>
-        <div style={s.headerInner}>
-          <div style={s.logo}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-            <span style={s.logoTxt}>Orofly</span>
-          </div>
-          <div style={{display:'flex',gap:6}}>
-            {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
-            <button style={s.logoutBtn} onClick={()=>{loadFlights();setView('flights')}}>📋</button>
-            <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
-          </div>
+  // Labels e ícones dos steps
+  const STEPS = [
+    {n:1, label:'Identificação'},
+    {n:2, label:'Aplicação'},
+    {n:3, label:'Condições'},
+    {n:4, label:'Finalizar'},
+  ]
+
+  const sw = {
+    wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#fff',fontFamily:"'DM Sans',sans-serif"},
+    header:{background:'#1a7a4a',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 0'},
+    logoRow:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12},
+    logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#fff',display:'flex',alignItems:'center',gap:8},
+    stepsWrap:{padding:'0 18px 14px'},
+    stepsRow:{display:'flex',alignItems:'center'},
+    stepCirc:{width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,flexShrink:0},
+    stepDone:{background:'#fff',color:'#1a7a4a'},
+    stepActive:{background:'#fff',color:'#1a7a4a',boxShadow:'0 0 0 3px rgba(255,255,255,0.4)'},
+    stepNext:{background:'rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.65)'},
+    stepLine:{flex:1,height:2,background:'rgba(255,255,255,0.25)'},
+    stepLineDone:{flex:1,height:2,background:'#fff'},
+    stepLabelRow:{display:'flex',justifyContent:'space-between',marginTop:4},
+    stepLbl:{fontSize:9,color:'rgba(255,255,255,0.6)',flex:1,textAlign:'center'},
+    stepLblActive:{fontSize:9,color:'#fff',flex:1,textAlign:'center',fontWeight:700},
+    body:{flex:1,overflowY:'auto',padding:'20px 18px 100px'},
+    pageTitle:{fontSize:20,fontWeight:700,color:'#111a14',marginBottom:4,fontFamily:"'Syne',sans-serif"},
+    pageSub:{fontSize:12,color:'#8aad94',marginBottom:20},
+    fw:{marginBottom:14},
+    fl:{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"},
+    fi:{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"},
+    fs:{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'},
+    btnBar:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,padding:'12px 18px',background:'#fff',borderTop:'1px solid #f0f0f0',boxSizing:'border-box'},
+    btnG:{width:'100%',background:'#1a7a4a',color:'#fff',border:'none',borderRadius:14,padding:'15px',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8},
+    timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
+    statusBadge:(st)=>({display:'inline-flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:600,background:st==='running'?'#e8f5ee':st==='paused'?'#fff3e0':'#f5f5f5',color:st==='running'?'#1a7a4a':st==='paused'?'#e8a020':'#888'}),
+  }
+
+  const FI = ({label,ph,val,onChange,type='text'}) => (
+    <div style={sw.fw}><label style={sw.fl}>{label}</label><input type={type} style={sw.fi} placeholder={ph||''} value={val||''} onChange={onChange}/></div>
+  )
+  const FS = ({label,val,onChange,children}) => (
+    <div style={sw.fw}><label style={sw.fl}>{label}</label><div style={{position:'relative'}}><select style={sw.fs} value={val||''} onChange={onChange}>{children}</select><span style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span></div></div>
+  )
+
+  const WHeader = () => (
+    <div style={sw.header}>
+      <div style={sw.logoRow}>
+        <div style={sw.logoTxt}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          Orofly
         </div>
-        <div style={s.headerSub}>Olá, {profile?.nome}</div>
-      </div>
-
-      {/* STEPS BAR */}
-      {(() => {
-        const steps = ['Identificação','Condições','Voo','Finalizar']
-        const cur = opState==='finished' ? 3 : opState==='running'||opState==='paused' ? 2 : opState==='idle' ? 0 : 1
-        return (
-          <div style={s.stepsBar}>
-            <div style={s.stepsRow}>
-              {steps.map((lbl,i) => (
-                <React.Fragment key={i}>
-                  {i>0 && <div style={i<=cur ? s.stepLineDone : s.stepLine}/>}
-                  <div style={{...s.stepCircle, ...(i<cur?s.stepDone:i===cur?s.stepActive:s.stepNext)}}>
-                    {i<cur ? '✓' : i+1}
-                  </div>
-                </React.Fragment>
-              ))}
-            </div>
-            <div style={s.stepLabel}>{steps[Math.min(cur,3)]}</div>
-          </div>
-        )
-      })()}
-
-      {/* STATUS BAR */}
-      <div style={s.statusBar}>
-        <span><span style={s.statusDot}/>{opLabel}</span>
-        <span style={{fontSize:11}}>
-          {saveStatus==='saving'&&'💾 Salvando...'}
-          {saveStatus==='saved'&&'✅ Salvo'}
-          {saveStatus==='error'&&'⚠️ Salvo localmente'}
-        </span>
-      </div>
-
-      <div style={s.opBar}>
-        <button style={{...s.opBtn,background:'#1a7a4a',opacity:opState!=='idle'?.35:1}} disabled={opState!=='idle'||saving} onClick={()=>{
-          if(opState==='idle') {
-            setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
-            setChecklistOpen(true)
-          }
-        }}>▶ Iniciar</button>
-        <button style={{...s.opBtn,background:'#e8a020',opacity:(opState==='running'||opState==='paused')?1:.35}} disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>{opState==='paused'?'▶ Retomar':'⏸ Pausar'}</button>
-        <button style={{...s.opBtn,background:'#c0392b',opacity:(opState==='running'||opState==='paused')?1:.35}} disabled={opState!=='running'&&opState!=='paused'} onClick={opFinalizar}>■ Finalizar</button>
-      </div>
-
-      {/* TIMER CIRCULAR — aparece quando em voo */}
-      {(opState==='running'||opState==='paused') && (() => {
-        const h=Math.floor(timerSecs/3600), m=Math.floor((timerSecs%3600)/60), sec=timerSecs%60
-        const pad=n=>String(n).padStart(2,'0')
-        const circ=226, pct=(timerSecs%3600)/3600
-        const offset=circ-(circ*pct)
-        return (
-          <div style={{background:'#fff',borderBottom:'0.5px solid #e0ecea',padding:'12px 0 8px',display:'flex',flexDirection:'column',alignItems:'center'}}>
-            <svg width="100" height="100" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="36" fill="none" stroke="#e8f5ee" strokeWidth="6"/>
-              <circle cx="50" cy="50" r="36" fill="none" stroke={opState==='paused'?'#e8a020':'#1a7a4a'} strokeWidth="6"
-                strokeDasharray={circ} strokeDashoffset={offset}
-                strokeLinecap="round" transform="rotate(-90 50 50)"
-                style={{transition:'stroke-dashoffset 1s linear'}}/>
-              <text x="50" y="54" textAnchor="middle" fontSize="14" fontWeight="600" fill="#111a14" fontFamily="'DM Sans',sans-serif">
-                {pad(h)}:{pad(m)}:{pad(sec)}
-              </text>
-            </svg>
-            <div style={{fontSize:10,color:'#8aad94',marginTop:2,letterSpacing:0.5}}>
-              {opState==='paused'?'⏸ PAUSADO':'tempo de operação'}
-            </div>
-          </div>
-        )
-      })()}
-
-      {/* BOTÃO SOS — aparece quando voo está em andamento */}
-      {(opState==='running'||opState==='paused') && (
-        <button
-          style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',padding:'14px',fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,cursor:sosLoading?'default':'pointer',letterSpacing:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
-          onClick={()=>!sosLoading&&setSosConfirm(true)}
-          disabled={sosLoading}
-        >
-          🆘 {sosLoading?'ENVIANDO SOS...':'SOS — EMERGÊNCIA'}
-        </button>
-      )}
-
-      {opState!=='idle'&&relId&&(
-        <div style={{background:'#e8f5ee',padding:'8px 16px',fontSize:12,color:'#1a7a4a',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-          <span>Dados salvos automaticamente</span>
-          <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>saveToSupabase({status:opState==='running'?'em_operacao':'pausado'})}>
-            {saveStatus==='saving'?'...':'💾'}
-          </button>
+        <div style={{display:'flex',gap:6}}>
+          {onSwitchMode&&<button style={{background:'#f0c040',border:'none',color:'#111a14',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer',fontWeight:600}} onClick={onSwitchMode}>⚙️</button>}
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>{loadFlights();setView('flights')}}>📋</button>
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
         </div>
-      )}
-
-      <div style={s.body}>
-
-        {/* VOOS COMPARTILHADOS DISPONÍVEIS */}
-        {voosCompartilhados.length > 0 && opState === 'idle' && (
-          <div style={{background:'#fffbea',border:'2px solid #f0c040',borderRadius:14,padding:14,marginBottom:16}}>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>
-              🤝 Voos Compartilhados Disponíveis ({voosCompartilhados.length})
-            </div>
-            {voosCompartilhados.map(v=>(
-              <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
-                <div style={{fontWeight:700,fontSize:13,color:'#111a14'}}>{v.cliente} — {v.fazenda}</div>
-                <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>Piloto: {v.piloto_nome} · Drone: {v.drone}</div>
-                <button style={{marginTop:8,background:'#f0c040',color:'#3a2a00',border:'none',borderRadius:8,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',width:'100%'}}
-                  onClick={()=>{ setTrechoModal(v); setTrechoForm(initTrechoForm()) }}>
-                  ➕ Adicionar meu trecho
-                </button>
+      </div>
+      <div style={sw.stepsWrap}>
+        <div style={sw.stepsRow}>
+          {STEPS.map((st,i)=>(
+            <React.Fragment key={i}>
+              {i>0&&<div style={wizardStep>i?sw.stepLineDone:sw.stepLine}/>}
+              <div style={{...sw.stepCirc,...(wizardStep>st.n?sw.stepDone:wizardStep===st.n?sw.stepActive:sw.stepNext)}}>
+                {wizardStep>st.n?'✓':st.n}
               </div>
-            ))}
-          </div>
-        )}
+            </React.Fragment>
+          ))}
+        </div>
+        <div style={sw.stepLabelRow}>
+          {STEPS.map((st,i)=>(
+            <span key={i} style={wizardStep===st.n?sw.stepLblActive:sw.stepLbl}>{st.label}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 
-        <Sec title="Identificação" icon="👤">
-          {/* Toggle Voo Compartilhado */}
-          {opState === 'idle' && (
-            <div style={{margin:'0 0 12px',background:form.compartilhado?'#e8f5ee':'#f9fbfa',borderRadius:10,padding:'10px 12px',border:`1px solid ${form.compartilhado?'#1a7a4a':'#d0e4d8'}`,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}
+  return (
+    <div style={sw.wrap}>
+      <WHeader/>
+
+      {/* ══ STEP 1 — IDENTIFICAÇÃO ══ */}
+      {wizardStep===1&&(
+        <>
+          <div style={sw.body}>
+            <div style={sw.pageTitle}>Identificação da Operação</div>
+            <div style={sw.pageSub}>Passo 1 de 4: Dados do voo</div>
+
+            <div style={{marginBottom:14,background:form.compartilhado?'#e8f5ee':'#fafcfa',borderRadius:12,padding:'12px 14px',border:`1px solid ${form.compartilhado?'#1a7a4a':'#dde8e2'}`,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}
               onClick={()=>setForm(f=>({...f,compartilhado:!f.compartilhado}))}>
               <div>
-                <div style={{fontSize:13,fontWeight:700,color:form.compartilhado?'#1a7a4a':'#6b8070'}}>🤝 Voo Compartilhado</div>
-                <div style={{fontSize:11,color:'#6b8070',marginTop:1}}>{form.compartilhado?'Outros pilotos podem adicionar trechos':'Apenas você registra este voo'}</div>
+                <div style={{fontSize:13,fontWeight:600,color:form.compartilhado?'#1a7a4a':'#6b8070'}}>🤝 Voo Compartilhado</div>
+                <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{form.compartilhado?'Outros pilotos podem adicionar trechos':'Apenas você registra este voo'}</div>
               </div>
-              <div style={{width:44,height:24,borderRadius:12,background:form.compartilhado?'#1a7a4a':'#d0e4d8',position:'relative',transition:'all .2s',flexShrink:0}}>
-                <div style={{width:18,height:18,borderRadius:9,background:'#fff',position:'absolute',top:3,left:form.compartilhado?23:3,transition:'all .2s',boxShadow:'0 1px 3px rgba(0,0,0,.2)'}}/>
+              <div style={{width:42,height:24,borderRadius:12,background:form.compartilhado?'#1a7a4a':'#dde8e2',position:'relative',transition:'all .2s',flexShrink:0}}>
+                <div style={{width:18,height:18,borderRadius:9,background:'#fff',position:'absolute',top:3,left:form.compartilhado?21:3,transition:'all .2s'}}/>
               </div>
             </div>
-          )}
-          <div style={s.field}>
-            <div style={s.label}>CLIENTE</div>
-            <select style={s.select} value={form.cliente} onChange={e=>setForm(f=>({...f,cliente:e.target.value}))}>
-              <option value="">Selecione...</option>{CLIENTES.map(c=><option key={c}>{c}</option>)}
-            </select>
-            {form.cliente==='Outros'&&<input style={{...s.input,marginTop:8,background:'#f4f8f5',borderRadius:8,padding:'8px 10px',border:'1px solid #d0e4d8'}} placeholder="Nome do cliente..." value={form.clienteOutro} onChange={e=>setForm(f=>({...f,clienteOutro:e.target.value}))} />}
-          </div>
-          <div style={s.field}><div style={s.label}>FAZENDA</div><input style={s.input} placeholder="Ex: Fazenda São João..." value={form.fazenda} onChange={e=>setForm(f=>({...f,fazenda:e.target.value}))} /></div>
-          <div style={s.field}><div style={s.label}>ÁREA (HA)</div><input style={s.input} placeholder="Ex: 50.5" value={form.area_ha} onChange={e=>setForm(f=>({...f,area_ha:e.target.value}))} /></div>
-          <div style={s.field}><div style={s.label}>PILOTO</div><input style={s.input} placeholder={profile?.nome} value={form.piloto_nome} onChange={e=>setForm(f=>({...f,piloto_nome:e.target.value}))} /></div>
-          <div style={s.field}>
-            <div style={s.label}>DRONE</div>
-            <select style={s.select} value={form.drone} onChange={e=>setForm(f=>({...f,drone:e.target.value}))}>
-              <option value="">Selecione...</option>{DRONES.map(d=><option key={d}>{d}</option>)}
-            </select>
-            {form.drone==='Outros'&&<input style={{...s.input,marginTop:8,background:'#f4f8f5',borderRadius:8,padding:'8px 10px',border:'1px solid #d0e4d8'}} placeholder="Nome do drone..." value={form.droneOutro} onChange={e=>setForm(f=>({...f,droneOutro:e.target.value}))} />}
-          </div>
-          <div style={s.field}>
-            <div style={s.label}>PRODUTO / DOSAGEM</div>
+
+            <FS label="CLIENTE" val={form.cliente} onChange={e=>setForm(f=>({...f,cliente:e.target.value}))}>
+              <option value="">Selecione o Cliente...</option>
+              {CLIENTES.map(c=><option key={c}>{c}</option>)}
+            </FS>
+            {form.cliente==='Outros'&&<FI label="NOME DO CLIENTE" ph="Digite o nome..." val={form.clienteOutro} onChange={e=>setForm(f=>({...f,clienteOutro:e.target.value}))}/>}
+            <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>setForm(f=>({...f,fazenda:e.target.value}))}/>
+            <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>setForm(f=>({...f,area_ha:e.target.value}))} type="number"/>
+            <FI label="PILOTO" ph={profile?.nome||'Nome do piloto'} val={form.piloto_nome} onChange={e=>setForm(f=>({...f,piloto_nome:e.target.value}))}/>
+            <FS label="DRONE" val={form.drone} onChange={e=>setForm(f=>({...f,drone:e.target.value}))}>
+              <option value="">Selecione o Drone...</option>
+              {DRONES.map(d=><option key={d}>{d}</option>)}
+            </FS>
+            {form.drone==='Outros'&&<FI label="NOME DO DRONE" ph="..." val={form.droneOutro} onChange={e=>setForm(f=>({...f,droneOutro:e.target.value}))}/>}
+
             {form.produtos.map((p,i)=>{
               const parts=p?p.split(' - '):[''];const nome=parts[0]||'';const dosagem=parts.slice(1).join(' - ')||''
               const selectVal=PRODUTOS_LIST.includes(nome)?nome:(nome?'Outros':'')
               return (
-                <div key={i} style={{marginBottom:8}}>
-                  <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-                    <select style={{...s.select,background:'#f4f8f5',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',flex:'0 0 140px',fontSize:13}} value={selectVal}
-                      onChange={e=>{const arr=[...form.produtos];arr[i]=e.target.value==='Outros'?'':e.target.value+(dosagem?` - ${dosagem}`:'');setForm(f=>({...f,produtos:arr}))}}>
-                      <option value="">Selecione...</option>{PRODUTOS_LIST.map(pr=><option key={pr}>{pr}</option>)}
-                    </select>
-                    {(selectVal==='Outros'||(!PRODUTOS_LIST.includes(nome)&&nome))&&(
-                      <input style={{...s.prodInput,flex:'0 0 110px',fontSize:13}} placeholder="Nome" value={nome==='Outros'?'':nome}
-                        onChange={e=>{const arr=[...form.produtos];arr[i]=dosagem?`${e.target.value} - ${dosagem}`:e.target.value;setForm(f=>({...f,produtos:arr}))}} />
-                    )}
-                    <input style={{...s.prodInput,flex:1,minWidth:80,fontSize:13}} placeholder="Dosagem (ex: 0.9 L/ha)" value={dosagem}
-                      onChange={e=>{const arr=[...form.produtos];arr[i]=nome?`${nome} - ${e.target.value}`:e.target.value;setForm(f=>({...f,produtos:arr}))}} />
-                    {form.produtos.length>1&&<button style={s.remBtn} onClick={()=>setForm(f=>({...f,produtos:f.produtos.filter((_,j)=>j!==i)}))}>×</button>}
+                <div key={i} style={{marginBottom:14}}>
+                  <label style={sw.fl}>PRODUTO {form.produtos.length>1?i+1:''}</label>
+                  <div style={{display:'flex',gap:8}}>
+                    <div style={{flex:1,position:'relative'}}>
+                      <select style={{...sw.fs,paddingRight:32}} value={selectVal}
+                        onChange={e=>{const arr=[...form.produtos];arr[i]=e.target.value==='Outros'?'':e.target.value+(dosagem?` - ${dosagem}`:'');setForm(f=>({...f,produtos:arr}))}}>
+                        <option value="">Selecione...</option>
+                        {PRODUTOS_LIST.map(pr=><option key={pr}>{pr}</option>)}
+                      </select>
+                      <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
+                    </div>
+                    <input style={{...sw.fi,width:110,flexShrink:0}} placeholder="Dosagem" value={dosagem}
+                      onChange={e=>{const arr=[...form.produtos];arr[i]=nome?`${nome} - ${e.target.value}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
+                    {form.produtos.length>1&&<button style={{background:'none',border:'none',color:'#c0392b',fontSize:22,cursor:'pointer',padding:'0 4px'}} onClick={()=>setForm(f=>({...f,produtos:f.produtos.filter((_,j)=>j!==i)}))}>×</button>}
                   </div>
+                  {(selectVal==='Outros'||(!PRODUTOS_LIST.includes(nome)&&nome))&&(
+                    <input style={{...sw.fi,marginTop:8}} placeholder="Nome do produto..." value={nome==='Outros'?'':nome}
+                      onChange={e=>{const arr=[...form.produtos];arr[i]=dosagem?`${e.target.value} - ${dosagem}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
+                  )}
                 </div>
               )
             })}
-            <button style={s.addBtn} onClick={()=>setForm(f=>({...f,produtos:[...f.produtos,'']}))}>+ Adicionar produto</button>
-          </div>
-          <div style={s.field}><div style={s.label}>TAMANHO DA GOTA</div><input style={s.input} placeholder="Ex: Média, Grossa..." value={form.tamanho_gota} onChange={e=>setForm(f=>({...f,tamanho_gota:e.target.value}))} /></div>
-          <div style={s.field}><div style={s.label}>VELOCIDADE DO DRONE</div><input style={s.input} placeholder="Ex: 7 m/s" value={form.velocidade_drone} onChange={e=>setForm(f=>({...f,velocidade_drone:e.target.value}))} /></div>
-        </Sec>
-
-        <Sec title="Localização" icon="📍">
-          <div style={s.field}><div style={s.label}>LOCALIZAÇÃO</div><input style={s.input} placeholder="Talhão, gleba, referência..." value={form.localizacao} onChange={e=>setForm(f=>({...f,localizacao:e.target.value}))} /></div>
-          <div style={s.field}>
-            <div style={s.label}>GPS DO CELULAR</div>
-            <div style={s.gpsRow}>
-              <span style={{fontSize:13,color:'#1a7a4a',fontWeight:500,flex:1}}>{form.gps_lat?`${form.gps_lat}, ${form.gps_lng}`:'Não capturado'}</span>
-              <button style={s.gpsBtn} onClick={getGPS}>📍 Capturar</button>
+            <button style={{width:'100%',background:'#f4f8f5',border:'1px dashed #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'11px',fontSize:13,fontWeight:500,cursor:'pointer',marginBottom:14}} onClick={()=>setForm(f=>({...f,produtos:[...f.produtos,'']}))}>+ Adicionar produto</button>
+            <FI label="TAMANHO DA GOTA" ph="Ex: Média, Grossa..." val={form.tamanho_gota} onChange={e=>setForm(f=>({...f,tamanho_gota:e.target.value}))}/>
+            <FI label="VELOCIDADE DO DRONE" ph="Ex: 7 m/s" val={form.velocidade_drone} onChange={e=>setForm(f=>({...f,velocidade_drone:e.target.value}))}/>
+            <FI label="LOCALIZAÇÃO / TALHÃO" ph="Ex: Talhão 5, Zona 65..." val={form.localizacao} onChange={e=>setForm(f=>({...f,localizacao:e.target.value}))}/>
+            <div style={sw.fw}>
+              <label style={sw.fl}>GPS</label>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <span style={{flex:1,fontSize:13,color:form.gps_lat?'#1a7a4a':'#aaa'}}>{form.gps_lat?`${form.gps_lat}, ${form.gps_lng}`:'Não capturado'}</span>
+                <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:500,cursor:'pointer',flexShrink:0}} onClick={getGPS}>📍 Capturar</button>
+              </div>
+              {form.gps_lat&&<a style={{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'#1a7a4a',textDecoration:'none',marginTop:6}} href={`https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`} target="_blank" rel="noreferrer">🗺️ Ver no Maps</a>}
             </div>
-            {form.gps_lat&&<a style={s.mapsLink} href={`https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`} target="_blank" rel="noreferrer">🗺️ Ver no Google Maps</a>}
-          </div>
-        </Sec>
 
-        <Sec title="Condições de Aplicação" icon="🌤️">
-          <div style={s.tabs}>
-            <div style={{...s.tab,...(condTab==='inicio'?s.tabActive:{})}} onClick={()=>setCondTab('inicio')}>INÍCIO</div>
-            <div style={{...s.tab,...(condTab==='fim'?s.tabActive:{})}} onClick={()=>setCondTab('fim')}>FIM</div>
+            {voosCompartilhados.length>0&&(
+              <div style={{background:'#fffbea',border:'2px solid #f0c040',borderRadius:12,padding:14,marginTop:4}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Compartilhados ({voosCompartilhados.length})</div>
+                {voosCompartilhados.map(v=>(
+                  <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
+                    <div style={{fontWeight:700,fontSize:13,color:'#111a14'}}>{v.cliente} — {v.fazenda}</div>
+                    <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>Piloto: {v.piloto_nome}</div>
+                    <button style={{marginTop:8,background:'#f0c040',color:'#3a2a00',border:'none',borderRadius:8,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',width:'100%'}}
+                      onClick={()=>{ setTrechoModal(v); setTrechoForm(initTrechoForm()) }}>➕ Adicionar meu trecho</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          {COND_KEYS.map((k,i)=>(
-            <div key={k} style={s.field}>
-              <div style={s.label}>{COND_LABELS[i].toUpperCase()}</div>
-              <input style={s.input} placeholder={COND_PH[i]} value={form[k+'_'+(condTab==='inicio'?'i':'f')]} onChange={e=>setForm(f=>({...f,[k+'_'+(condTab==='inicio'?'i':'f')]:e.target.value}))} />
-            </div>
-          ))}
-        </Sec>
+          <div style={sw.btnBar}>
+            <button style={sw.btnG} onClick={()=>setWizardStep(2)}>Próximo →</button>
+          </div>
+        </>
+      )}
 
-        <Sec title="Horários" icon="🕐">
-          <DtRow prefix="dt_inicio" form={form} setForm={setForm} label="DATA / HORA INÍCIO" />
-          <DtRow prefix="dt_fim" form={form} setForm={setForm} label="DATA / HORA FIM" />
-          <div style={s.field}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-              <div style={s.label}>PAUSAS</div>
-              <button style={{...s.nowBtn,fontSize:11}} onClick={()=>setForm(f=>({...f,pausas:[...(f.pausas||[]),{inicio:new Date().toISOString(),fim:null,motivo:''}]}))}>+ Pausa</button>
+      {/* ══ STEP 2 — APLICAÇÃO ══ */}
+      {wizardStep===2&&(
+        <>
+          <div style={sw.body}>
+            <div style={sw.pageTitle}>Aplicação</div>
+            <div style={sw.pageSub}>Passo 2 de 4: Controle do voo</div>
+
+            <div style={{background:'#1a7a4a',borderRadius:14,padding:'14px 16px',color:'#fff',marginBottom:16}}>
+              <div style={{fontSize:12,opacity:.8,marginBottom:2}}>Cliente · Fazenda</div>
+              <div style={{fontSize:14,fontWeight:600}}>{clienteVal||'—'} · {form.fazenda||'—'}</div>
+              {form.area_ha&&<div style={{fontSize:12,opacity:.85,marginTop:4}}>Área: <strong>{form.area_ha} ha</strong></div>}
             </div>
-            {(!form.pausas||form.pausas.length===0)&&<div style={{fontSize:13,color:'#b5cabe'}}>Nenhuma pausa registrada</div>}
+
+            <div style={{display:'flex',justifyContent:'center',marginBottom:16}}>
+              <span style={sw.statusBadge(opState)}>
+                <span style={{width:7,height:7,borderRadius:'50%',background:opState==='running'?'#1a7a4a':opState==='paused'?'#e8a020':'#aaa',display:'inline-block'}}/>
+                {opLabel}
+              </span>
+            </div>
+
+            {(opState==='running'||opState==='paused')&&(()=>{
+              const h=Math.floor(timerSecs/3600),m=Math.floor((timerSecs%3600)/60),sec=timerSecs%60
+              const pad=n=>String(n).padStart(2,'0')
+              const circ=289, pct=(timerSecs%3600)/3600, offset=circ-(circ*pct)
+              return (
+                <div style={sw.timerWrap}>
+                  <svg width="130" height="130" viewBox="0 0 130 130">
+                    <circle cx="65" cy="65" r="46" fill="none" stroke="#e8f5ee" strokeWidth="7"/>
+                    <circle cx="65" cy="65" r="46" fill="none" stroke={opState==='paused'?'#e8a020':'#1a7a4a'} strokeWidth="7"
+                      strokeDasharray="289" strokeDashoffset={offset}
+                      strokeLinecap="round" transform="rotate(-90 65 65)"
+                      style={{transition:'stroke-dashoffset 1s linear'}}/>
+                    <text x="65" y="70" textAnchor="middle" fontSize="19" fontWeight="700" fill="#111a14" fontFamily="DM Sans,sans-serif">
+                      {pad(h)}:{pad(m)}:{pad(sec)}
+                    </text>
+                  </svg>
+                  <div style={{fontSize:11,color:'#8aad94',marginTop:4}}>{opState==='paused'?'⏸ PAUSADO':'tempo de operação'}</div>
+                </div>
+              )
+            })()}
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
+              <button style={{background:'#e8f5ee',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
+                disabled={opState!=='idle'||saving}
+                onClick={()=>{setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false});setChecklistOpen(true)}}>
+                <span style={{fontSize:22}}>▶️</span>
+                <span style={{fontSize:11,fontWeight:600,color:'#1a7a4a'}}>Iniciar</span>
+              </button>
+              <button style={{background:'#fff3e0',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
+                <span style={{fontSize:22}}>{opState==='paused'?'▶️':'⏸️'}</span>
+                <span style={{fontSize:11,fontWeight:600,color:'#e8a020'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
+              </button>
+              <button style={{background:'#fdeaea',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                disabled={opState!=='running'&&opState!=='paused'} onClick={()=>{opFinalizar();setWizardStep(4)}}>
+                <span style={{fontSize:22}}>⏹️</span>
+                <span style={{fontSize:11,fontWeight:600,color:'#c0392b'}}>Finalizar</span>
+              </button>
+            </div>
+
+            {(opState==='running'||opState==='paused')&&(
+              <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:12,padding:'14px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',letterSpacing:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:16}}
+                onClick={()=>!sosLoading&&setSosConfirm(true)} disabled={sosLoading}>
+                🆘 {sosLoading?'ENVIANDO SOS...':'SOS — EMERGÊNCIA'}
+              </button>
+            )}
+
+            {relId&&opState!=='idle'&&(
+              <div style={{background:'#e8f5ee',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#1a7a4a',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                <span>✅ Dados salvos automaticamente</span>
+                <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>saveToSupabase({status:opState==='running'?'em_operacao':'pausado'})}>{saveStatus==='saving'?'...':'💾'}</button>
+              </div>
+            )}
+
+            <div style={{fontSize:12,fontWeight:600,color:'#6b8070',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>HORÁRIOS</div>
+            <DtRow prefix="dt_inicio" form={form} setForm={setForm} label="INÍCIO" />
+            <DtRow prefix="dt_fim" form={form} setForm={setForm} label="FIM" />
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,marginTop:8}}>
+              <span style={{fontSize:11,fontWeight:600,color:'#8aad94'}}>PAUSAS</span>
+              <button style={{background:'#f4f8f5',border:'1px solid #d0e4d8',color:'#1a7a4a',borderRadius:8,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>setForm(f=>({...f,pausas:[...(f.pausas||[]),{inicio:new Date().toISOString(),fim:null,motivo:''}]}))}>+ Pausa</button>
+            </div>
             {(form.pausas||[]).map((pausa,i)=>(
-              <div key={i} style={{background:'#f4f8f5',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #d0e4d8'}}>
+              <div key={i} style={{background:'#f9fbfa',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #e8eee8'}}>
                 <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
                   <span style={{fontSize:12,fontWeight:600,color:'#6b8070'}}>Pausa {i+1}</span>
                   <button style={{background:'none',border:'none',color:'#c0392b',cursor:'pointer',fontSize:16}} onClick={()=>setForm(f=>({...f,pausas:f.pausas.filter((_,j)=>j!==i)}))}>×</button>
                 </div>
-                <input style={{...s.input,background:'#fff',border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',marginBottom:6,fontSize:13}} placeholder="Motivo..." value={pausa.motivo||''} onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value};setForm(f=>({...f,pausas:arr}))}} />
-                <div style={{fontSize:12,color:'#6b8070'}}>
-                  {new Date(pausa.inicio).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} → {pausa.fim?new Date(pausa.fim).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em andamento'}
-                </div>
+                <input style={{...sw.fi,marginBottom:4,fontSize:13}} placeholder="Motivo..." value={pausa.motivo||''} onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value};setForm(f=>({...f,pausas:arr}))}}/>
+                <div style={{fontSize:11,color:'#8aad94'}}>{new Date(pausa.inicio).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} → {pausa.fim?new Date(pausa.fim).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em andamento'}</div>
               </div>
             ))}
           </div>
-        </Sec>
-
-        <Sec title="Observações" icon="📝">
-          <div style={s.field}><div style={s.label}>OBS 1</div><textarea style={s.textarea} rows={2} value={form.obs1} onChange={e=>setForm(f=>({...f,obs1:e.target.value}))} /></div>
-          <div style={s.field}><div style={s.label}>OBS 2</div><textarea style={s.textarea} rows={2} value={form.obs2} onChange={e=>setForm(f=>({...f,obs2:e.target.value}))} /></div>
-          <div style={s.field}><div style={s.label}>FOTOS DE OBSERVAÇÃO</div></div>
-          <div style={s.obsFotos}>
-            {[0,1,2].map(i=>(
-              <div key={i} style={{flex:1,display:'flex',flexDirection:'column',gap:4}}>
-                <div style={{...s.fotoSlot,...((obsFotos[i]||storageObsFotos[i])?{border:'none',padding:0}:{cursor:'pointer'})}}
-                  onClick={()=>setFotoPickerOpen({tipo:'obs',idx:i})}>
-                  {obsFotos[i]
-                    ? <img src={obsFotos[i]} alt="" style={s.fotoSlotImg}/>
-                    : storageObsFotos[i]
-                      ? <StorageFotoSlot supabase={supabase} path={storageObsFotos[i]} />
-                      : <><div style={{fontSize:20}}>📷</div><div style={{fontSize:10,color:'#6b8070',marginTop:3}}>Foto {i+1}</div></>}
-                </div>
-                {(obsFotos[i]||storageObsFotos[i]) && (
-                  <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer',width:'100%'}}
-                    onClick={async e=>{
-                      e.stopPropagation()
-                      if(storageObsFotos[i] && !obsFotoFiles[i]) {
-                        await supabase.storage.from('relatorios').remove([storageObsFotos[i]])
-                        const arr=[...storageObsFotos];arr[i]=null;setStorageObsFotos(arr)
-                        if(relId) await supabase.from('relatorios').update({obs_fotos_urls:storageObsFotos.map((p,j)=>j===i?null:p)}).eq('id',relId)
-                      }
-                      const a=[...obsFotos];a[i]=null;setObsFotos(a)
-                      const b=[...obsFotoFiles];b[i]=null;setObsFotoFiles(b)
-                      showToast('🗑️ Foto removida')
-                    }}>🗑️</button>
-                )}
-                {/* inputs ocultos */}
-                <input id={`obs-galeria-${i}`} type="file" accept="image/*" style={{display:'none'}}
-                  onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a);showToast('✅ Foto '+(i+1)+' adicionada!')}} />
-                <input id={`obs-camera-${i}`} type="file" accept="image/*" capture="environment" style={{display:'none'}}
-                  onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a);showToast('✅ Foto '+(i+1)+' adicionada!')}} />
-              </div>
-            ))}
-          </div>
-        </Sec>
-
-        <Sec title="Mapa de Pós Aplicação" icon="🗺️">
-          <div style={{margin:'0 16px 16px'}}>
-            <div style={{...s.photoArea,...((fotoMapa||storageFotoMapa)?{padding:0,border:'none'}:{cursor:'pointer'})}}
-              onClick={()=>setFotoPickerOpen({tipo:'mapa',idx:0})}>
-              <input id="mapa-galeria" type="file" accept="image/*" style={{display:'none'}}
-                onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f);showToast('✅ Mapa adicionado!')}} />
-              <input id="mapa-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}}
-                onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f);showToast('✅ Mapa adicionado!')}} />
-              {fotoMapa
-                ? <img src={fotoMapa} alt="mapa" style={{width:'100%',borderRadius:8,maxHeight:180,objectFit:'cover'}}/>
-                : storageFotoMapa
-                  ? <StorageFotoSlot supabase={supabase} path={storageFotoMapa} height={180} />
-                  : <><div style={{fontSize:26}}>🗺️</div><div style={{fontSize:13,color:'#6b8070',marginTop:6}}>Toque para adicionar foto do mapa</div></>}
+          <div style={sw.btnBar}>
+            <div style={{display:'flex',gap:8}}>
+              <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(1)}>← Voltar</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>setWizardStep(3)}>Próximo →</button>
             </div>
-            {(fotoMapa||storageFotoMapa) && (
-              <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:8,padding:'6px 14px',fontSize:12,cursor:'pointer',marginTop:6,width:'100%'}}
-                onClick={async e=>{
-                  e.stopPropagation()
-                  if(storageFotoMapa && !fotoMapaFile) {
-                    await supabase.storage.from('relatorios').remove([storageFotoMapa])
-                    if(relId) await supabase.from('relatorios').update({foto_mapa_url:null}).eq('id',relId)
-                    setStorageFotoMapa(null)
-                  }
-                  setFotoMapa(null);setFotoMapaFile(null)
-                  showToast('🗑️ Foto do mapa removida')
-                }}>🗑️ Remover foto do mapa</button>
+          </div>
+        </>
+      )}
+
+      {/* ══ STEP 3 — CONDIÇÕES CLIMÁTICAS ══ */}
+      {wizardStep===3&&(
+        <>
+          <div style={sw.body}>
+            <div style={sw.pageTitle}>Condições Climáticas</div>
+            <div style={sw.pageSub}>Passo 3 de 4: Início e fim da aplicação</div>
+            <div style={{display:'flex',background:'#f4f8f5',borderRadius:10,padding:4,marginBottom:20}}>
+              {['inicio','fim'].map(t=>(
+                <button key={t} style={{flex:1,padding:'9px',border:'none',borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',background:condTab===t?'#fff':'transparent',color:condTab===t?'#1a7a4a':'#8aad94',boxShadow:condTab===t?'0 1px 3px rgba(0,0,0,.08)':'none'}}
+                  onClick={()=>setCondTab(t)}>{t==='inicio'?'INÍCIO':'FIM'}</button>
+              ))}
+            </div>
+            {COND_KEYS.map((k,i)=>(
+              <FI key={k} label={COND_LABELS[i].toUpperCase()} ph={COND_PH[i]}
+                val={form[k+'_'+(condTab==='inicio'?'i':'f')]}
+                onChange={e=>setForm(f=>({...f,[k+'_'+(condTab==='inicio'?'i':'f')]:e.target.value}))}/>
+            ))}
+          </div>
+          <div style={sw.btnBar}>
+            <div style={{display:'flex',gap:8}}>
+              <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>setWizardStep(4)}>Próximo →</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ══ STEP 4 — FINALIZAR ══ */}
+      {wizardStep===4&&(
+        <>
+          <div style={sw.body}>
+            <div style={sw.pageTitle}>Finalizar</div>
+            <div style={sw.pageSub}>Passo 4 de 4: Fotos, KML e observações</div>
+
+            <div style={{marginBottom:16}}>
+              <label style={sw.fl}>FOTOS DE OBSERVAÇÃO</label>
+              <div style={{display:'flex',gap:8}}>
+                {[0,1,2].map(i=>(
+                  <div key={i} style={{flex:1,display:'flex',flexDirection:'column',gap:4}}>
+                    <div style={{border:'1.5px dashed #dde8e2',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#fafcfa',...((obsFotos[i]||storageObsFotos[i])?{border:'none',padding:0}:{})}}
+                      onClick={()=>setFotoPickerOpen({tipo:'obs',idx:i})}>
+                      {obsFotos[i]?<img src={obsFotos[i]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:10}}/>
+                        :storageObsFotos[i]?<StorageFotoSlot supabase={supabase} path={storageObsFotos[i]}/>
+                        :<><div style={{fontSize:22}}>📷</div><div style={{fontSize:10,color:'#aaa',marginTop:2}}>Foto {i+1}</div></>}
+                    </div>
+                    {(obsFotos[i]||storageObsFotos[i])&&(
+                      <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer'}}
+                        onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[i]=null;setObsFotos(a);const b=[...obsFotoFiles];b[i]=null;setObsFotoFiles(b);showToast('🗑️ Foto removida')}}>🗑️</button>
+                    )}
+                    <input id={`obs-galeria-${i}`} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a)}}/>
+                    <input id={`obs-camera-${i}`} type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a)}}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={sw.fw}>
+              <label style={sw.fl}>MAPA DE PÓS APLICAÇÃO</label>
+              <div style={{border:'1.5px dashed #dde8e2',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',background:'#fafcfa',...((fotoMapa||storageFotoMapa)?{padding:0,border:'none'}:{})}}
+                onClick={()=>setFotoPickerOpen({tipo:'mapa',idx:0})}>
+                <input id="mapa-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f)}}/>
+                <input id="mapa-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f)}}/>
+                {fotoMapa?<img src={fotoMapa} alt="mapa" style={{width:'100%',borderRadius:12,maxHeight:180,objectFit:'cover'}}/>
+                  :storageFotoMapa?<StorageFotoSlot supabase={supabase} path={storageFotoMapa} height={180}/>
+                  :<><div style={{fontSize:28}}>🗺️</div><div style={{fontSize:13,color:'#aaa',marginTop:6}}>Toque para adicionar foto do mapa</div></>}
+              </div>
+            </div>
+
+            <div style={sw.fw}>
+              <label style={sw.fl}>ARQUIVOS KML</label>
+              {kmlFiles.map((f,i)=>(
+                <div key={i} style={{display:'flex',alignItems:'center',gap:8,background:'#f4f8f5',borderRadius:10,padding:'10px 12px',marginBottom:6,border:'1px solid #e8eee8'}}>
+                  <span>📄</span><span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
+                  <button style={{background:'none',border:'none',color:'#c0392b',fontSize:18,cursor:'pointer'}} onClick={()=>setKmlFiles(a=>a.filter((_,j)=>j!==i))}>×</button>
+                </div>
+              ))}
+              <label style={{display:'block',border:'1.5px dashed #dde8e2',borderRadius:10,padding:13,textAlign:'center',cursor:'pointer',background:'#fafcfa'}}>
+                <input type="file" accept=".kml,.kmz" multiple style={{display:'none'}} onChange={e=>setKmlFiles(a=>[...a,...Array.from(e.target.files)])}/>
+                <span style={{fontSize:13,color:'#8aad94'}}>📂 Adicionar KML / KMZ</span>
+              </label>
+            </div>
+
+            <div style={sw.fw}>
+              <label style={sw.fl}>OBS 1</label>
+              <textarea style={{...sw.fi,resize:'none',height:70}} value={form.obs1} onChange={e=>setForm(f=>({...f,obs1:e.target.value}))}/>
+            </div>
+            <div style={sw.fw}>
+              <label style={sw.fl}>OBS 2</label>
+              <textarea style={{...sw.fi,resize:'none',height:70}} value={form.obs2} onChange={e=>setForm(f=>({...f,obs2:e.target.value}))}/>
+            </div>
+
+            {opState==='finished'&&(
+              <button style={{...sw.btnG,background:'#e8f5ee',color:'#1a7a4a',border:'1.5px solid #1a7a4a',marginBottom:10}} onClick={limpar}>✈️ Iniciar Novo Voo</button>
             )}
           </div>
-        </Sec>
+          <div style={sw.btnBar}>
+            <div style={{display:'flex',gap:8}}>
+              <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(3)}>← Voltar</button>
+              <button style={{...sw.btnG,flex:1,opacity:opState==='finished'?1:.5,cursor:opState==='finished'?'pointer':'default'}} disabled={opState!=='finished'||saving} onClick={()=>setModalOpen(true)}>
+                {saving?'Aguarde...':'📄 Ver Relatório'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
-        <Sec title="Arquivos KML" icon="📂">
-          {kmlFiles.map((f,i)=>(
-            <div key={i} style={s.kmlItem}><span>📄</span><span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span><button style={s.remBtn} onClick={()=>setKmlFiles(a=>a.filter((_,j)=>j!==i))}>×</button></div>
-          ))}
-          <label style={s.kmlAdd}><input type="file" accept=".kml,.kmz" multiple style={{display:'none'}} onChange={e=>setKmlFiles(a=>[...a,...Array.from(e.target.files)])} /><span style={{fontSize:13,color:'#6b8070'}}>📂 Adicionar KML / KMZ</span></label>
-        </Sec>
-      </div>
 
-      <div style={s.footer}>
-        {opState==='finished'&&<button style={{...s.btnPrimary,background:'#1a7a4a'}} onClick={limpar}>✈️ Iniciar Novo Voo<div style={s.btnAccent}/></button>}
-        <button style={{...s.btnPrimary,opacity:opState==='finished'?1:.4,cursor:opState==='finished'?'pointer':'default'}} disabled={opState!=='finished'||saving} onClick={()=>setModalOpen(true)}>
-          {saving?'Aguarde...':'Ver Relatório'}<div style={s.btnAccent}/>
-        </button>
-        <button style={s.btnSecondary} onClick={limpar}>Limpar formulário</button>
-      </div>
-
-      {/* MODAL TRECHO VOO COMPARTILHADO */}
       {trechoModal && trechoForm && (
         <div style={s.modalOverlay}>
           <div style={{...s.modal,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
