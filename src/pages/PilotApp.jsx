@@ -10,7 +10,6 @@ const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essen
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
-const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', finalizado:'✅ Finalizado' }
 const LS_KEY = 'orofly_draft'
 
