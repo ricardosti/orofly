@@ -85,6 +85,27 @@ function DtRow({prefix,form,setForm,label}) {
   )
 }
 
+// Componentes de campo — fora do PilotApp para não perder foco a cada render
+function FI({label,ph,val,onChange,type='text',styles}) {
+  return (
+    <div style={{marginBottom:14}}>
+      <label style={{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
+      <input type={type} style={{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}} placeholder={ph||''} value={val||''} onChange={onChange}/>
+    </div>
+  )
+}
+function FS({label,val,onChange,children}) {
+  return (
+    <div style={{marginBottom:14}}>
+      <label style={{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
+      <div style={{position:'relative'}}>
+        <select style={{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'}} value={val||''} onChange={onChange}>{children}</select>
+        <span style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
+      </div>
+    </div>
+  )
+}
+
 export default function PilotApp({onSwitchMode}) {
   const {profile,signOut} = useAuth()
   const [view,setView] = useState('form')
@@ -141,12 +162,11 @@ export default function PilotApp({onSwitchMode}) {
   // Timer em tempo real durante o voo
   useEffect(() => {
     if (opState !== 'running') return
-    const ini = new Date(relatorios?.find?.(r=>r.id===relId)?.dt_inicio || Date.now())
-    const tick = () => setTimerSecs(Math.max(0, Math.round((Date.now() - ini)/1000)))
-    tick()
+    const ini = new Date(Date.now() - timerSecs * 1000)
+    const tick = () => setTimerSecs(s => s + 1)
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [opState, relId]) // eslint-disable-line
+  }, [opState]) // eslint-disable-line
 
   // Voos compartilhados
   const [voosCompartilhados, setVoosCompartilhados] = useState([])
@@ -545,13 +565,6 @@ export default function PilotApp({onSwitchMode}) {
     timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
     statusBadge:(st)=>({display:'inline-flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:600,background:st==='running'?'#e8f5ee':st==='paused'?'#fff3e0':'#f5f5f5',color:st==='running'?'#1a7a4a':st==='paused'?'#e8a020':'#888'}),
   }
-
-  const FI = ({label,ph,val,onChange,type='text'}) => (
-    <div style={sw.fw}><label style={sw.fl}>{label}</label><input type={type} style={sw.fi} placeholder={ph||''} value={val||''} onChange={onChange}/></div>
-  )
-  const FS = ({label,val,onChange,children}) => (
-    <div style={sw.fw}><label style={sw.fl}>{label}</label><div style={{position:'relative'}}><select style={sw.fs} value={val||''} onChange={onChange}>{children}</select><span style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span></div></div>
-  )
 
   const WHeader = () => (
     <div style={sw.header}>
