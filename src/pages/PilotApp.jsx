@@ -5,11 +5,12 @@ import { gerarPDFRelatorio } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 
 const CLIENTES = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
-const DRONES = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
+const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
+const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
-const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
+const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', finalizado:'✅ Finalizado' }
 const LS_KEY = 'orofly_draft'
 
@@ -110,6 +111,16 @@ export default function PilotApp({onSwitchMode}) {
     clima: false, equipamento: false, comunicacao: false,
   })
   const [sosLoading, setSosLoading] = useState(false)
+  const [dronesDB, setDronesDB] = useState([])
+  const [produtosDB, setProdutosDB] = useState([])
+
+  // Lista dinâmica: banco + "Outros" no final
+  const DRONES = dronesDB.length > 0
+    ? [...dronesDB.filter(d=>d.ativo).map(d=>d.nome), 'Outros']
+    : DRONES_DEFAULT
+  const PRODUTOS_LIST = produtosDB.length > 0
+    ? [...produtosDB.filter(p=>p.ativo).map(p=>p.nome), 'Outros']
+    : PRODUTOS_DEFAULT
   const [sosConfirm,setSosConfirm] = useState(false)
   const [modalOpen,setModalOpen] = useState(false)
   const [exitConfirm,setExitConfirm] = useState(false)
@@ -141,6 +152,14 @@ export default function PilotApp({onSwitchMode}) {
     if(toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current=setTimeout(()=>setToast(''),2800)
   },[])
+
+  // Carrega drones e produtos do banco
+  useEffect(() => {
+    supabase.from('drones').select('nome,ativo').eq('ativo',true).order('nome')
+      .then(({data}) => { if(data?.length) setDronesDB(data) })
+    supabase.from('produtos').select('nome,ativo').eq('ativo',true).order('nome')
+      .then(({data}) => { if(data?.length) setProdutosDB(data) })
+  }, [])
 
   // Carrega voos compartilhados abertos
   useEffect(() => {
