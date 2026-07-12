@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio } from '../lib/pdf'
@@ -135,6 +135,17 @@ export default function PilotApp({onSwitchMode}) {
   const [storageFotoMapa,setStorageFotoMapa] = useState(null)
   const [storageObsFotos,setStorageObsFotos] = useState([null,null,null])
   const [fotoPickerOpen, setFotoPickerOpen] = useState(null)
+  const [timerSecs, setTimerSecs] = useState(0)
+
+  // Timer em tempo real durante o voo
+  useEffect(() => {
+    if (opState !== 'running') return
+    const ini = new Date(relatorios?.find?.(r=>r.id===relId)?.dt_inicio || Date.now())
+    const tick = () => setTimerSecs(Math.max(0, Math.round((Date.now() - ini)/1000)))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [opState, relId]) // eslint-disable-line
 
   // Voos compartilhados
   const [voosCompartilhados, setVoosCompartilhados] = useState([])
@@ -536,9 +547,13 @@ export default function PilotApp({onSwitchMode}) {
 
   return (
     <div style={s.wrap}>
+      {/* HEADER VERDE */}
       <div style={s.header}>
         <div style={s.headerInner}>
-          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+          <div style={s.logo}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <span style={s.logoTxt}>Orofly</span>
+          </div>
           <div style={{display:'flex',gap:6}}>
             {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
             <button style={s.logoutBtn} onClick={()=>{loadFlights();setView('flights')}}>📋</button>
@@ -548,6 +563,28 @@ export default function PilotApp({onSwitchMode}) {
         <div style={s.headerSub}>Olá, {profile?.nome}</div>
       </div>
 
+      {/* STEPS BAR */}
+      {(() => {
+        const steps = ['Identificação','Condições','Voo','Finalizar']
+        const cur = opState==='finished' ? 3 : opState==='running'||opState==='paused' ? 2 : opState==='idle' ? 0 : 1
+        return (
+          <div style={s.stepsBar}>
+            <div style={s.stepsRow}>
+              {steps.map((lbl,i) => (
+                <React.Fragment key={i}>
+                  {i>0 && <div style={i<=cur ? s.stepLineDone : s.stepLine}/>}
+                  <div style={{...s.stepCircle, ...(i<cur?s.stepDone:i===cur?s.stepActive:s.stepNext)}}>
+                    {i<cur ? '✓' : i+1}
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+            <div style={s.stepLabel}>{steps[Math.min(cur,3)]}</div>
+          </div>
+        )
+      })()}
+
+      {/* STATUS BAR */}
       <div style={s.statusBar}>
         <span><span style={s.statusDot}/>{opLabel}</span>
         <span style={{fontSize:11}}>
@@ -567,6 +604,31 @@ export default function PilotApp({onSwitchMode}) {
         <button style={{...s.opBtn,background:'#e8a020',opacity:(opState==='running'||opState==='paused')?1:.35}} disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>{opState==='paused'?'▶ Retomar':'⏸ Pausar'}</button>
         <button style={{...s.opBtn,background:'#c0392b',opacity:(opState==='running'||opState==='paused')?1:.35}} disabled={opState!=='running'&&opState!=='paused'} onClick={opFinalizar}>■ Finalizar</button>
       </div>
+
+      {/* TIMER CIRCULAR — aparece quando em voo */}
+      {(opState==='running'||opState==='paused') && (() => {
+        const h=Math.floor(timerSecs/3600), m=Math.floor((timerSecs%3600)/60), sec=timerSecs%60
+        const pad=n=>String(n).padStart(2,'0')
+        const circ=226, pct=(timerSecs%3600)/3600
+        const offset=circ-(circ*pct)
+        return (
+          <div style={{background:'#fff',borderBottom:'0.5px solid #e0ecea',padding:'12px 0 8px',display:'flex',flexDirection:'column',alignItems:'center'}}>
+            <svg width="100" height="100" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="36" fill="none" stroke="#e8f5ee" strokeWidth="6"/>
+              <circle cx="50" cy="50" r="36" fill="none" stroke={opState==='paused'?'#e8a020':'#1a7a4a'} strokeWidth="6"
+                strokeDasharray={circ} strokeDashoffset={offset}
+                strokeLinecap="round" transform="rotate(-90 50 50)"
+                style={{transition:'stroke-dashoffset 1s linear'}}/>
+              <text x="50" y="54" textAnchor="middle" fontSize="14" fontWeight="600" fill="#111a14" fontFamily="'DM Sans',sans-serif">
+                {pad(h)}:{pad(m)}:{pad(sec)}
+              </text>
+            </svg>
+            <div style={{fontSize:10,color:'#8aad94',marginTop:2,letterSpacing:0.5}}>
+              {opState==='paused'?'⏸ PAUSADO':'tempo de operação'}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* BOTÃO SOS — aparece quando voo está em andamento */}
       {(opState==='running'||opState==='paused') && (
@@ -1004,6 +1066,23 @@ export default function PilotApp({onSwitchMode}) {
       )}
 
       {toast&&<div style={s.toast}>{toast}</div>}
+
+      {/* BOTTOM NAV */}
+      <div style={s.bottomNav}>
+        {[
+          ['🏠','Início', ()=>{limpar();setView('form')}],
+          ['✦','Missão', ()=>setView('form')],
+          ['👤','Perfil', ()=>setView('flights')],
+        ].map(([icon,lbl,fn],i) => {
+          const active = i===1
+          return (
+            <button key={i} style={s.navItem} onClick={fn}>
+              <span style={active?s.navIconActive:s.navIcon}>{icon}</span>
+              <span style={active?s.navLabelActive:s.navLabel}>{lbl}</span>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -1057,51 +1136,74 @@ function Sec({title,icon,children}){return <div style={s.section}><div style={s.
 
 const s={
   wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#f4f8f5',fontFamily:"'DM Sans',sans-serif"},
-  header:{background:'#111a14',padding:'calc(env(safe-area-inset-top,0px)+16px) 20px 14px'},
+  // ── Header verde novo design ──
+  header:{background:'#1a7a4a',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 12px'},
   headerInner:{display:'flex',alignItems:'center',justifyContent:'space-between'},
   logo:{display:'flex',alignItems:'center',gap:8},
-  logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:20,fontWeight:700,color:'#fff',letterSpacing:-0.5},
-  dot:{color:'#f0c040'},
-  headerSub:{fontSize:12,color:'#8aad94',marginTop:4},
-  logoutBtn:{background:'transparent',border:'1px solid #2d4a38',color:'#8aad94',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'},
+  logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#fff',letterSpacing:-0.5},
+  dot:{color:'rgba(255,255,255,0.6)'},
+  headerSub:{fontSize:11,color:'rgba(255,255,255,0.7)',marginTop:3},
+  logoutBtn:{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'},
   switchBtn:{background:'#f0c040',border:'none',color:'#111a14',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer',fontWeight:600},
-  statusBar:{background:'#1a7a4a',padding:'8px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:12,color:'#c8eed8'},
+  // ── Steps bar ──
+  stepsBar:{background:'#1a7a4a',padding:'6px 18px 14px',display:'flex',flexDirection:'column',alignItems:'center',gap:4},
+  stepsRow:{display:'flex',alignItems:'center',gap:0},
+  stepCircle:{width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700},
+  stepDone:{background:'#fff',color:'#1a7a4a'},
+  stepActive:{background:'#fff',color:'#1a7a4a',boxShadow:'0 0 0 3px rgba(255,255,255,0.35)'},
+  stepNext:{background:'rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.7)'},
+  stepLine:{width:30,height:2,background:'rgba(255,255,255,0.3)'},
+  stepLineDone:{width:30,height:2,background:'#fff'},
+  stepLabel:{fontSize:10,color:'rgba(255,255,255,0.8)',letterSpacing:0.3},
+  // ── Status / op bar ──
+  statusBar:{background:'#1a7a4a',padding:'6px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:12,color:'rgba(255,255,255,0.85)'},
   statusDot:{display:'inline-block',width:7,height:7,background:'#f0c040',borderRadius:'50%',marginRight:5},
-  opBar:{display:'flex',gap:8,padding:'10px 16px',background:'#fff',borderBottom:'1px solid #d0e4d8'},
+  opBar:{display:'flex',gap:8,padding:'10px 16px',background:'#fff',borderBottom:'1px solid #e8f0ec'},
   opBtn:{flex:1,padding:'10px 4px',border:'none',borderRadius:12,fontFamily:"'Syne',sans-serif",fontSize:12,fontWeight:600,cursor:'pointer',color:'#fff'},
-  body:{padding:16,flex:1,display:'flex',flexDirection:'column',gap:14},
-  section:{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',overflow:'hidden'},
-  sectionHeader:{background:'#e8f5ee',padding:'10px 16px',fontFamily:"'Syne',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'#1a7a4a',borderBottom:'1px solid #d0e4d8'},
-  field:{padding:'12px 16px',borderBottom:'1px solid #f0f4f1'},
-  label:{fontSize:11,fontWeight:600,color:'#6b8070',letterSpacing:.5,marginBottom:5,fontFamily:"'Syne',sans-serif"},
-  input:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:15,color:'#111a14',background:'transparent'},
-  textarea:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:15,color:'#111a14',background:'transparent',resize:'none'},
-  select:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:15,color:'#111a14',background:'transparent',appearance:'none',cursor:'pointer'},
+  // ── Body e cards ──
+  body:{padding:14,flex:1,display:'flex',flexDirection:'column',gap:10,paddingBottom:80},
+  section:{background:'#fff',borderRadius:14,border:'0.5px solid #e0ecea',overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.04)'},
+  sectionHeader:{background:'#f2f9f5',padding:'9px 14px',fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'#1a7a4a',borderBottom:'0.5px solid #e0ecea'},
+  field:{padding:'11px 14px',borderBottom:'0.5px solid #f0f5f2'},
+  label:{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:4,fontFamily:"'Syne',sans-serif",textTransform:'uppercase'},
+  input:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent'},
+  textarea:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent',resize:'none'},
+  select:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent',appearance:'none',cursor:'pointer'},
   dtRow:{display:'flex',alignItems:'center',gap:6},
   dateInput:{flex:1,border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent',appearance:'none'},
   timeSelects:{display:'flex',alignItems:'center',gap:2},
-  timeSelect:{background:'#e8f5ee',border:'1px solid #d0e4d8',borderRadius:7,color:'#111a14',fontSize:14,padding:'3px 4px',width:48,textAlign:'center',appearance:'none',cursor:'pointer',outline:'none'},
+  timeSelect:{background:'#f2f9f5',border:'1px solid #d0e4d8',borderRadius:7,color:'#111a14',fontSize:14,padding:'3px 4px',width:48,textAlign:'center',appearance:'none',cursor:'pointer',outline:'none'},
   timeSep:{fontSize:16,fontWeight:600,color:'#6b8070'},
-  nowBtn:{background:'#e8f5ee',border:'1px solid #d0e4d8',color:'#1a7a4a',borderRadius:8,padding:'4px 10px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
+  nowBtn:{background:'#f2f9f5',border:'1px solid #d0e4d8',color:'#1a7a4a',borderRadius:8,padding:'4px 10px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
   gpsRow:{display:'flex',alignItems:'center',gap:8},
   gpsBtn:{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
   mapsLink:{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'#1a7a4a',textDecoration:'none',marginTop:6},
-  tabs:{display:'flex',borderBottom:'1px solid #d0e4d8'},
-  tab:{flex:1,padding:9,fontSize:12,fontWeight:600,textAlign:'center',cursor:'pointer',color:'#6b8070',borderBottom:'2px solid transparent',fontFamily:"'Syne',sans-serif",letterSpacing:.5},
+  tabs:{display:'flex',borderBottom:'0.5px solid #e0ecea'},
+  tab:{flex:1,padding:9,fontSize:12,fontWeight:600,textAlign:'center',cursor:'pointer',color:'#8aad94',borderBottom:'2px solid transparent',fontFamily:"'Syne',sans-serif",letterSpacing:.5},
   tabActive:{color:'#1a7a4a',borderBottomColor:'#1a7a4a'},
-  prodInput:{background:'#f4f8f5',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:14,fontFamily:"'DM Sans',sans-serif",color:'#111a14',outline:'none'},
+  prodInput:{background:'#f4f8f5',border:'1px solid #e0ecea',borderRadius:10,padding:'8px 10px',fontSize:14,fontFamily:"'DM Sans',sans-serif",color:'#111a14',outline:'none'},
   remBtn:{background:'none',border:'none',color:'#c0392b',fontSize:20,cursor:'pointer',flexShrink:0},
-  addBtn:{background:'#e8f5ee',border:'1px solid #d0e4d8',color:'#1a7a4a',borderRadius:8,padding:'8px 12px',fontSize:13,fontWeight:500,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center'},
-  obsFotos:{display:'flex',gap:8,padding:'0 16px 14px'},
-  fotoSlot:{flex:1,border:'1.5px dashed #d0e4d8',borderRadius:10,padding:'12px 6px',textAlign:'center',cursor:'pointer',minHeight:70,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden'},
-  fotoSlotImg:{width:'100%',height:60,objectFit:'cover',borderRadius:6},
-  photoArea:{margin:'0 16px 16px',border:'1.5px dashed #d0e4d8',borderRadius:10,padding:20,textAlign:'center',cursor:'pointer',display:'block'},
-  kmlItem:{display:'flex',alignItems:'center',gap:8,background:'#f4f8f5',borderRadius:8,padding:'8px 16px',margin:'4px 16px 0',border:'1px solid #d0e4d8'},
-  kmlAdd:{margin:'8px 16px 14px',border:'1.5px dashed #d0e4d8',borderRadius:10,padding:14,textAlign:'center',cursor:'pointer',display:'block'},
-  footer:{padding:'0 16px 24px',display:'flex',flexDirection:'column',gap:10},
-  btnPrimary:{background:'#111a14',color:'#fff',border:'none',borderRadius:14,padding:16,fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,cursor:'pointer',position:'relative',overflow:'hidden'},
+  addBtn:{background:'#f2f9f5',border:'1px dashed #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:500,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center'},
+  obsFotos:{display:'flex',gap:8,padding:'0 14px 14px'},
+  fotoSlot:{flex:1,border:'1.5px dashed #d0e4d8',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#fafcfa'},
+  fotoSlotImg:{width:'100%',height:56,objectFit:'cover',borderRadius:8},
+  photoArea:{margin:'0 14px 14px',border:'1.5px dashed #d0e4d8',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',display:'block',background:'#fafcfa'},
+  kmlItem:{display:'flex',alignItems:'center',gap:8,background:'#f4f8f5',borderRadius:10,padding:'8px 14px',margin:'4px 14px 0',border:'0.5px solid #e0ecea'},
+  kmlAdd:{margin:'8px 14px 14px',border:'1.5px dashed #d0e4d8',borderRadius:12,padding:13,textAlign:'center',cursor:'pointer',display:'block'},
+  footer:{padding:'0 14px 16px',display:'flex',flexDirection:'column',gap:10},
+  btnPrimary:{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:14,padding:16,fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,cursor:'pointer',position:'relative',overflow:'hidden'},
   btnAccent:{position:'absolute',bottom:0,left:0,right:0,height:3,background:'#f0c040'},
   btnSecondary:{background:'transparent',color:'#1a7a4a',border:'1.5px solid #1a7a4a',borderRadius:14,padding:13,fontSize:14,fontWeight:500,cursor:'pointer'},
+  // ── Timer circular ──
+  timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
+  // ── Bottom nav ──
+  bottomNav:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:'#fff',borderTop:'0.5px solid #e0ecea',display:'flex',zIndex:50,paddingBottom:'env(safe-area-inset-bottom,0px)'},
+  navItem:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 4px 10px',gap:2,cursor:'pointer',border:'none',background:'none'},
+  navIcon:{fontSize:20,color:'#b0c4b8'},
+  navIconActive:{fontSize:20,color:'#1a7a4a'},
+  navLabel:{fontSize:9,color:'#b0c4b8',fontWeight:500,fontFamily:"'Syne',sans-serif"},
+  navLabelActive:{fontSize:9,color:'#1a7a4a',fontWeight:700,fontFamily:"'Syne',sans-serif"},
+  // ── Modals ──
   modalOverlay:{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:100,display:'flex',alignItems:'flex-end',justifyContent:'center'},
   modal:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:480,maxHeight:'85vh',overflowY:'auto'},
   modalTitle:{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:'#111a14',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'},
