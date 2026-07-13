@@ -444,6 +444,33 @@ export default function PilotApp({onSwitchMode}) {
     return erros
   }
 
+  async function fetchClima() {
+    if (!form.gps_lat || !form.gps_lng) {
+      showToast('⚠️ Capture o GPS primeiro no Step 2'); return
+    }
+    showToast('🌤️ Buscando condições climáticas...')
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${form.gps_lat}&longitude=${form.gps_lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&wind_speed_unit=kmh&timezone=auto`
+      const res = await fetch(url)
+      const data = await res.json()
+      const c = data.current
+      if (!c) throw new Error('Sem dados')
+      const temp = c.temperature_2m?.toFixed(1)
+      const umid = c.relative_humidity_2m?.toFixed(0)
+      const vento = c.wind_speed_10m?.toFixed(1)
+      // Delta T aproximado: Temp - (100 - Umidade) / 5
+      const deltaT = (parseFloat(temp) - (100 - parseFloat(umid)) / 5).toFixed(1)
+      setForm(f => ({
+        ...f,
+        temperatura_i: temp, umidade_i: umid,
+        vento_i: vento, delta_t_i: deltaT,
+      }))
+      showToast('✅ Clima carregado!')
+    } catch(e) {
+      showToast('Erro ao buscar clima: ' + e.message, 'error')
+    }
+  }
+
   async function opFinalizar() {
     const erros=validarFinalizar()
     if(erros.length>0){setFinalizeConfirm({erros});return}
@@ -766,15 +793,21 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageTitle}>Condições Climáticas</div>
             <div style={sw.pageSub}>Passo 3 de 5: Início e fim</div>
 
-            {/* Botão copiar início → fim */}
-            <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:18}}
-              onClick={()=>setForm(f=>({
-                ...f,
-                vento_f:f.vento_i, umidade_f:f.umidade_i,
-                temperatura_f:f.temperatura_i, delta_t_f:f.delta_t_i,
-              }))}>
-              📋 Copiar início → fim
-            </button>
+            {/* Botões de facilidade */}
+            <div style={{display:'flex',gap:8,marginBottom:18}}>
+              <button style={{flex:1,background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                onClick={fetchClima}>
+                🌤️ Buscar clima atual
+              </button>
+              <button style={{flex:1,background:'#f4f8f5',border:'1px solid #d0e4d8',color:'#6b8070',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>setForm(f=>({
+                  ...f,
+                  vento_f:f.vento_i, umidade_f:f.umidade_i,
+                  temperatura_f:f.temperatura_i, delta_t_f:f.delta_t_i,
+                }))}>
+                📋 Copiar início → fim
+              </button>
+            </div>
 
             {[['VENTO','vento','km/h'],['UMIDADE RELATIVA','umidade','%'],['TEMPERATURA','temperatura','°C'],['DELTA T','delta_t','°C']].map(([lbl,key,unit])=>(
               <div key={key} style={{marginBottom:16}}>
@@ -875,6 +908,7 @@ export default function PilotApp({onSwitchMode}) {
                   setForm(f=>({...f,dt_fim_data:d,dt_fim_hh:hh,dt_fim_mm:mm}))
                   opFinalizar()
                   setWizardStep(5)
+                  showToast('✅ Voo finalizado! Agora adicione fotos e gere o relatório.')
                 }}>
                 <span style={{fontSize:22}}>⏹️</span>
                 <span style={{fontSize:11,fontWeight:600,color:'#c0392b'}}>Finalizar</span>
