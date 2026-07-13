@@ -482,18 +482,30 @@ export default function PilotApp({onSwitchMode}) {
     const n=nowParts()
     setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
     setOpState('finished')
-    const rel=await saveToSupabase({status:'finalizado',dt_fim:n.iso})
-    if(rel){
+    // Só salva o voo — PDF gerado separadamente no Step 5
+    await saveToSupabase({status:'finalizado',dt_fim:n.iso})
+    try{localStorage.removeItem(LS_KEY)}catch{}
+    setSaving(false)
+    showToast('✅ Voo salvo! Adicione fotos e gere o relatório.')
+  }
+
+  async function gerarRelatorioFinal() {
+    setSaving(true)
+    showToast('⏳ Gerando relatório...')
+    try {
+      const {data:rel}=await supabase.from('relatorios').select('*').eq('id',relId).single()
+      if(!rel) throw new Error('Relatório não encontrado')
+      // Upload fotos
       const [obsUrls,mapaUrl]=await Promise.all([uploadFotos(rel.id),uploadFotoMapa(rel.id)])
       if(obsUrls.some(Boolean)||mapaUrl) await supabase.from('relatorios').update({obs_fotos_urls:obsUrls,foto_mapa_url:mapaUrl}).eq('id',rel.id)
-      try {
-        const doc=await gerarPDFRelatorio({...rel,dt_fim:n.iso},{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa})
-        await supabase.storage.from('pdfs').upload(`${profile.id}/${rel.id}/relatorio.pdf`,doc.output('blob'),{upsert:true})
-        doc.save(`relatorio-orofly-${clienteVal.replace(/\s+/g,'-').toLowerCase()}.pdf`)
-      } catch(e){console.error(e)}
+      // Abre modal de relatório
+      setSaving(false)
+      setModalOpen(true)
+    } catch(e) {
+      console.error(e)
+      setSaving(false)
+      showToast('Erro: ' + e.message, 'error')
     }
-    try{localStorage.removeItem(LS_KEY)}catch{}
-    setSaving(false);showToast('✅ Finalizado! PDF gerado.')
   }
 
   async function uploadFotos(rid) {
@@ -711,7 +723,7 @@ export default function PilotApp({onSwitchMode}) {
             )}
           </div>
           <div style={sw.btnBar}>
-            <button style={sw.btnG} onClick={()=>setWizardStep(2)}>Próximo →</button>
+            <button style={sw.btnG} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(2) }}>Próximo →</button>
           </div>
         </>
       )}
@@ -780,7 +792,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(1)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>setWizardStep(3)}>Próximo →</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(3) }}>Próximo →</button>
             </div>
           </div>
         </>
@@ -828,7 +840,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>setWizardStep(4)}>Próximo →</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(4) }}>Próximo →</button>
             </div>
           </div>
         </>
@@ -951,7 +963,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(3)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>setWizardStep(5)}>Próximo →</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:opState==='running'?'em_operacao':'rascunho'}); setWizardStep(5) }}>Próximo →</button>
             </div>
           </div>
         </>
@@ -1028,7 +1040,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(4)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1,opacity:opState==='finished'?1:.5,cursor:opState==='finished'?'pointer':'default'}} disabled={opState!=='finished'||saving} onClick={()=>setModalOpen(true)}>
+              <button style={{...sw.btnG,flex:1,opacity:opState==='finished'?1:.5,cursor:opState==='finished'?'pointer':'default'}} disabled={opState!=='finished'||saving} onClick={gerarRelatorioFinal}>
                 {saving?'Aguarde...':'📋 Gerar Relatório'}
               </button>
             </div>
