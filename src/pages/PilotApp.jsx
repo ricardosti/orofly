@@ -547,14 +547,15 @@ export default function PilotApp({onSwitchMode}) {
 
   function openFlight(rel){
     setForm(initForm(rel)); setRelId(rel.id)
-    setOpState(rel.status==='finalizado'?'finished':rel.status==='em_operacao'?'running':rel.status==='pausado'?'paused':'idle')
-    // Limpa fotos locais — vão carregar do Storage via signed URLs
+    const st = rel.status==='finalizado'?'finished':rel.status==='em_operacao'?'running':rel.status==='pausado'?'paused':rel.status==='pausado_dia'?'paused_day':'idle'
+    setOpState(st)
     setObsFotos([null,null,null]); setObsFotoFiles([null,null,null])
     setFotoMapa(null); setFotoMapaFile(null)
-    // Salva paths para exibir do Storage
     setStorageFotoMapa(rel.foto_mapa_url||null)
     setStorageObsFotos(rel.obs_fotos_urls||[null,null,null])
-    setView('form'); showToast('✏️ Voo carregado')
+    setView('form')
+    if(st==='paused_day') { setWizardStep(4); showToast('🌙 Voo retomado do dia anterior!') }
+    else showToast('✏️ Voo carregado')
   }
 
   function tentarSair(){
@@ -572,7 +573,7 @@ export default function PilotApp({onSwitchMode}) {
     showToast('🗑️ Formulário limpo')
   }
 
-  const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',finished:'🔴 Finalizado'}[opState]
+  const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',paused_day:'🌙 Pausado até amanhã',finished:'🔴 Finalizado'}[opState]
 
   // VIEW VOOS ANTERIORES
   // Labels e ícones dos steps
@@ -631,7 +632,9 @@ export default function PilotApp({onSwitchMode}) {
           {STEPS.map((st,i)=>(
             <React.Fragment key={i}>
               {i>0&&<div style={wizardStep>i?sw.stepLineDone:sw.stepLine}/>}
-              <div style={{...sw.stepCirc,...(wizardStep>st.n?sw.stepDone:wizardStep===st.n?sw.stepActive:sw.stepNext)}}>
+              <div
+                style={{...sw.stepCirc,...(wizardStep>st.n?sw.stepDone:wizardStep===st.n?sw.stepActive:sw.stepNext),cursor:'pointer'}}
+                onClick={()=>setWizardStep(st.n)}>
                 {wizardStep>st.n?'✓':st.n}
               </div>
             </React.Fragment>
@@ -639,7 +642,7 @@ export default function PilotApp({onSwitchMode}) {
         </div>
         <div style={sw.stepLabelRow}>
           {STEPS.map((st,i)=>(
-            <span key={i} style={wizardStep===st.n?sw.stepLblActive:sw.stepLbl}>{st.label}</span>
+            <span key={i} style={{...wizardStep===st.n?sw.stepLblActive:sw.stepLbl,cursor:'pointer'}} onClick={()=>setWizardStep(st.n)}>{st.label}</span>
           ))}
         </div>
       </div>
@@ -831,16 +834,7 @@ export default function PilotApp({onSwitchMode}) {
             {[['VENTO','vento','km/h'],['UMIDADE RELATIVA','umidade','%'],['TEMPERATURA','temperatura','°C'],['DELTA T','delta_t','°C']].map(([lbl,key,unit])=>(
               <div key={key} style={{marginBottom:16}}>
                 <div style={{fontSize:11,fontWeight:700,color:'#1a7a4a',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>{lbl} {unit&&<span style={{fontWeight:400,color:'#8aad94'}}>({unit})</span>}</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                  <div>
-                    <label style={{...sw.fl,marginBottom:4}}>INÍCIO</label>
-                    <input style={sw.fi} placeholder={`Ex: ${key==='vento'?'5':key==='umidade'?'65':key==='temperatura'?'28':'4'}`} value={form[key+'_i']||''} onChange={e=>setForm(f=>({...f,[key+'_i']:e.target.value}))}/>
-                  </div>
-                  <div>
-                    <label style={{...sw.fl,marginBottom:4}}>FIM</label>
-                    <input style={sw.fi} placeholder="—" value={form[key+'_f']||''} onChange={e=>setForm(f=>({...f,[key+'_f']:e.target.value}))}/>
-                  </div>
-                </div>
+                <FI label="INÍCIO" ph={`Ex: ${key==='vento'?'5':key==='umidade'?'65':key==='temperatura'?'28':'4'}`} val={form[key+'_i']||''} onChange={e=>setForm(f=>({...f,[key+'_i']:e.target.value}))}/>
               </div>
             ))}
           </div>
@@ -928,8 +922,31 @@ export default function PilotApp({onSwitchMode}) {
               </button>
             </div>
 
-            {/* SOS */}
+            {/* Botão pausar para o dia seguinte */}
             {(opState==='running'||opState==='paused')&&(
+              <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:12,padding:'12px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
+                onClick={async()=>{
+                  setOpState('paused_day')
+                  await saveToSupabase({status:'pausado_dia'})
+                  showToast('🌙 Voo pausado para o dia seguinte. Pode fechar o app!')
+                }}>
+                🌙 Pausar para o dia seguinte
+              </button>
+            )}
+
+            {/* Retomar de pausa dia seguinte */}
+            {opState==='paused_day'&&(
+              <div style={{background:'#1a1a2e',borderRadius:12,padding:'14px',marginBottom:16,color:'#fff',textAlign:'center'}}>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>🌙 Operação pausada para o dia seguinte</div>
+                <button style={{background:'#f0c040',color:'#111a14',border:'none',borderRadius:10,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
+                  onClick={async()=>{
+                    setOpState('running')
+                    setTimerSecs(0)
+                    await saveToSupabase({status:'em_operacao'})
+                    showToast('▶️ Operação retomada!')
+                  }}>▶️ Retomar operação</button>
+              </div>
+            )}
               <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:12,padding:'14px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',letterSpacing:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:16}}
                 onClick={()=>!sosLoading&&setSosConfirm(true)} disabled={sosLoading}>
                 🆘 {sosLoading?'ENVIANDO SOS...':'SOS — EMERGÊNCIA'}
@@ -975,7 +992,24 @@ export default function PilotApp({onSwitchMode}) {
         <>
           <div style={sw.body}>
             <div style={sw.pageTitle}>Finalizar</div>
-            <div style={sw.pageSub}>Passo 5 de 5: Fotos, KML e observações</div>
+            <div style={sw.pageSub}>Passo 5 de 5: Condições finais, fotos e relatório</div>
+
+            {/* Condições FIM */}
+            <div style={{background:'#f4f8f5',borderRadius:12,padding:'14px',marginBottom:16,border:'1px solid #d0e4d8'}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:12,fontFamily:"'Syne',sans-serif"}}>🌤️ CONDIÇÕES NO FIM DA OPERAÇÃO</div>
+              <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:8,padding:'8px',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:12}}
+                onClick={()=>setForm(f=>({...f,vento_f:f.vento_i,umidade_f:f.umidade_i,temperatura_f:f.temperatura_i,delta_t_f:f.delta_t_i}))}>
+                📋 Copiar início → fim
+              </button>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                {[['Vento (km/h)','vento'],['Umidade (%)','umidade'],['Temp (°C)','temperatura'],['Delta T (°C)','delta_t']].map(([lbl,key])=>(
+                  <div key={key}>
+                    <label style={{...sw.fl,marginBottom:4}}>{lbl}</label>
+                    <input style={sw.fi} placeholder="—" value={form[key+'_f']||''} onChange={e=>setForm(f=>({...f,[key+'_f']:e.target.value}))}/>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <div style={{marginBottom:16}}>
               <label style={sw.fl}>FOTOS DE OBSERVAÇÃO</label>
@@ -1290,13 +1324,30 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[]}) {
 }
 
 function buildTxt(form,clienteVal,droneVal){
-  const fmt=p=>{const d=form[p+'_data'],hh=form[p+'_hh'],mm=form[p+'_mm'];if(!d)return'—';return`${d.split('-').reverse().join('/')} ${hh||'00'}:${mm||'00'}`}
-  let t='🚁 RELATÓRIO OROFLY\n'+new Date().toLocaleString('pt-BR')+'\n\n'
+  const fmt=p=>{const d=form[p+'_data'],hh=form[p+'_hh'],mm=form[p+'_mm'];if(!d)return'—';return`${d.includes('-')?d.split('-').reverse().join('/'):d} ${hh||'00'}:${mm||'00'}`}
+  const units = {faixa:'m', vazao:'L/ha', vento:'km/h', umidade:'%', temperatura:'°C', delta_t:'°C'}
+  let t='🚁 *RELATÓRIO OROFLY*\n'+new Date().toLocaleString('pt-BR')+'\n\n'
+  t+=`📋 *Operação*\n`
   t+=`Cliente: ${clienteVal}\nFazenda: ${form.fazenda}\nPiloto: ${form.piloto_nome}\nDrone: ${droneVal}\n`
+  if(form.area_ha) t+=`Área: ${form.area_ha} ha\n`
   form.produtos.filter(Boolean).forEach((p,i)=>{t+=`Produto ${i+1}: ${p}\n`})
-  t+=`\nInício: ${fmt('dt_inicio')}\nFim: ${fmt('dt_fim')}\n`
-  t+='\nCondições Início:\n';COND_KEYS.forEach((k,i)=>{t+=`  ${COND_LABELS[i]}: ${form[k+'_i']||'—'}\n`})
-  t+='Condições Fim:\n';COND_KEYS.forEach((k,i)=>{t+=`  ${COND_LABELS[i]}: ${form[k+'_f']||'—'}\n`})
+  if(form.tamanho_gota) t+=`Gota: ${form.tamanho_gota}\n`
+  if(form.velocidade_drone) t+=`Velocidade: ${form.velocidade_drone} km/h\n`
+  if(form.faixa_i) t+=`Faixa: ${form.faixa_i} m\n`
+  if(form.vazao_i) t+=`Vazão: ${form.vazao_i} L/ha\n`
+  t+=`\n⏰ *Horários*\nInício: ${fmt('dt_inicio')}\nFim: ${fmt('dt_fim')}\n`
+  const conds = [['vento','Vento'],['umidade','Umidade'],['temperatura','Temperatura'],['delta_t','Delta T']]
+  const anyIni = conds.some(([k])=>form[k+'_i'])
+  if(anyIni){
+    t+='\n🌤️ *Condições*\n'
+    conds.forEach(([k,lbl])=>{
+      const u=units[k]||''
+      const vi=form[k+'_i']?form[k+'_i']+' '+u:'—'
+      const vf=form[k+'_f']?form[k+'_f']+' '+u:'—'
+      t+=`${lbl}: Início ${vi} | Fim ${vf}\n`
+    })
+  }
+  if(form.obs1) t+=`\n📝 Obs: ${form.obs1}\n`
   return t
 }
 
