@@ -57,9 +57,16 @@ function nowParts() {
 }
 
 function fmtDt(form,prefix) {
-  const d=form[prefix+'_data'],hh=form[prefix+'_hh'],mm=form[prefix+'_mm']
+  let d=form[prefix+'_data'],hh=form[prefix+'_hh'],mm=form[prefix+'_mm']
   if(!d) return null
-  return new Date(`${d}T${hh||'00'}:${mm||'00'}:00`).toISOString()
+  // Converte DD/MM/YYYY → YYYY-MM-DD se necessário
+  if(d.includes('/')) {
+    const parts=d.split('/')
+    if(parts.length===3) d=`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+  }
+  const iso = new Date(`${d}T${hh||'00'}:${mm||'00'}:00`)
+  if(isNaN(iso.getTime())) return null
+  return iso.toISOString()
 }
 
 function DtRow({prefix,form,setForm,label}) {
@@ -894,11 +901,8 @@ export default function PilotApp({onSwitchMode}) {
               <button style={{background:'#e8f5ee',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
                 disabled={opState!=='idle'||saving}
                 onClick={()=>{
-                  // Hora de início = agora
-                  const now = new Date()
-                  const d=String(now.getDate()).padStart(2,'0')+'/'+String(now.getMonth()+1).padStart(2,'0')+'/'+now.getFullYear()
-                  const hh=String(now.getHours()).padStart(2,'0'), mm=String(now.getMinutes()).padStart(2,'0')
-                  setForm(f=>({...f,dt_inicio_data:d,dt_inicio_hh:hh,dt_inicio_mm:mm}))
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
                   setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
                   setChecklistOpen(true)
                 }}>
@@ -913,11 +917,8 @@ export default function PilotApp({onSwitchMode}) {
               <button style={{background:'#fdeaea',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
                 disabled={opState!=='running'&&opState!=='paused'}
                 onClick={()=>{
-                  // Hora de fim = agora
-                  const now = new Date()
-                  const d=String(now.getDate()).padStart(2,'0')+'/'+String(now.getMonth()+1).padStart(2,'0')+'/'+now.getFullYear()
-                  const hh=String(now.getHours()).padStart(2,'0'), mm=String(now.getMinutes()).padStart(2,'0')
-                  setForm(f=>({...f,dt_fim_data:d,dt_fim_hh:hh,dt_fim_mm:mm}))
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
                   opFinalizar()
                   setWizardStep(5)
                   showToast('✅ Voo finalizado! Agora adicione fotos e gere o relatório.')
