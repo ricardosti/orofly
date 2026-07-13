@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente } from '../lib/pdf'
@@ -45,6 +46,14 @@ export default function AdminPanel({ onSwitchMode }) {
   const [droneHorasLimite, setDroneHorasLimite] = useState(() => {
     try { return JSON.parse(localStorage.getItem('orofly_drone_horas')||'{}') } catch { return {} }
   })
+  // Dashboard filters
+  const [dashPeriodo, setDashPeriodo] = useState('mes') // hoje/semana/mes/trimestre/ano/custom
+  const [dashDataIni, setDashDataIni] = useState('')
+  const [dashDataFim, setDashDataFim] = useState('')
+  const [dashClientes, setDashClientes] = useState([])
+  const [dashPilotos, setDashPilotos] = useState([])
+  const [dashDrones, setDashDrones] = useState([])
+  const [precoHa, setPrecoHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_preco_ha')||'0') } catch { return 0 } })
   const [pushAtivo, setPushAtivo] = useState(false)
 
   // Inventário
@@ -584,187 +593,401 @@ export default function AdminPanel({ onSwitchMode }) {
 
           {/* ===== DASHBOARD ===== */}
           {tab === 'dashboard' && (() => {
-            // Calcular dados
-            const finalizados = relatorios.filter(r => r.status === 'finalizado' && r.dt_inicio && r.dt_fim)
-
-            // Área por cliente/mês
-            const areaClienteMes = {}
-            finalizados.forEach(r => {
-              const mes = new Date(r.dt_inicio).toLocaleDateString('pt-BR',{month:'short',year:'2-digit'})
-              const key = `${r.cliente||'Sem cliente'}|${mes}`
-              areaClienteMes[key] = (areaClienteMes[key]||0) + parseFloat(r.area_ha||0)
-            })
-
-            // Últimos 6 meses
-            const meses = []
-            for (let i=5; i>=0; i--) {
-              const d = new Date(); d.setMonth(d.getMonth()-i)
-              meses.push(d.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}))
+            // ── Filtro de período ──
+            const hoje = new Date()
+            const periodoRange = () => {
+              const ini = new Date()
+              if(dashPeriodo==='hoje') { ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
+              if(dashPeriodo==='semana') { ini.setDate(ini.getDate()-7); return {ini, fim:new Date()} }
+              if(dashPeriodo==='mes') { ini.setDate(1); ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
+              if(dashPeriodo==='trimestre') { ini.setMonth(ini.getMonth()-3); return {ini, fim:new Date()} }
+              if(dashPeriodo==='ano') { ini.setMonth(0,1); ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
+              if(dashPeriodo==='custom' && dashDataIni && dashDataFim) return {ini:new Date(dashDataIni), fim:new Date(dashDataFim+'T23:59:59')}
+              ini.setDate(1); ini.setHours(0,0,0,0); return {ini, fim:new Date()}
             }
+            const {ini:pIni, fim:pFim} = periodoRange()
 
-            // Top clientes por área
-            const areaCliente = {}
-            finalizados.forEach(r => {
-              const c = r.cliente||'Sem cliente'
-              areaCliente[c] = (areaCliente[c]||0) + parseFloat(r.area_ha||0)
+            // ── Filtra relatórios ──
+            const rel = relatorios.filter(r => {
+              if(r.status !== 'finalizado') return false
+              if(r.dt_inicio) { const d=new Date(r.dt_inicio); if(d<pIni||d>pFim) return false }
+              if(dashClientes.length && !dashClientes.includes(r.cliente)) return false
+              if(dashPilotos.length && !dashPilotos.includes(r.piloto_nome)) return false
+              if(dashDrones.length && !dashDrones.includes(r.drone)) return false
+              return true
             })
-            const topClientes = Object.entries(areaCliente).sort((a,b)=>b[1]-a[1]).slice(0,6)
-            const maxArea = topClientes[0]?.[1] || 1
+            const relTodos = relatorios.filter(r => r.status==='finalizado')
 
-            // Ranking pilotos
+            // ── Cálculos base ──
+            const totalArea = rel.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+            const totalVoos = rel.length
+            const totalMins = rel.reduce((a,r)=>{
+              if(!r.dt_inicio||!r.dt_fim) return a
+              return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
+            },0)
+            const eficiencia = totalMins>0 ? ((totalArea/(totalMins/60))||0).toFixed(1) : 0
+            const receita = precoHa>0 ? (totalArea*precoHa).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : null
+            const fmtH = m => { const h=Math.floor(m/60),mn=m%60; return `${h}h${String(mn).padStart(2,'0')}m` }
+
+            // ── Área por dia (últimos 30 dias) ──
+            const areaPorDia = {}
+            rel.forEach(r => {
+              if(!r.dt_inicio) return
+              const d = new Date(r.dt_inicio).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})
+              areaPorDia[d] = (areaPorDia[d]||0) + parseFloat(r.area_ha||0)
+            })
+            const areaTimeline = Object.entries(areaPorDia).slice(-30).map(([d,a])=>({dia:d,area:parseFloat(a.toFixed(1))}))
+
+            // ── Área por cliente ──
+            const areaCliente = {}
+            rel.forEach(r => { const c=r.cliente||'—'; areaCliente[c]=(areaCliente[c]||0)+parseFloat(r.area_ha||0) })
+            const topClientes = Object.entries(areaCliente).sort((a,b)=>b[1]-a[1]).slice(0,6)
+              .map(([name,value])=>({name:name.replace('Raizen - ','R. '),value:parseFloat(value.toFixed(1))}))
+
+            // ── Stats pilotos ──
             const pilotoStats = {}
-            finalizados.forEach(r => {
-              const n = r.piloto_nome||'—'
-              if (!pilotoStats[n]) pilotoStats[n] = { voos:0, area:0, minutos:0 }
+            rel.forEach(r => {
+              const n=r.piloto_nome||'—'
+              if(!pilotoStats[n]) pilotoStats[n]={voos:0,area:0,minutos:0}
               pilotoStats[n].voos++
-              pilotoStats[n].area += parseFloat(r.area_ha||0)
-              const mins = Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)
-              pilotoStats[n].minutos += Math.max(0,mins)
+              pilotoStats[n].area+=parseFloat(r.area_ha||0)
+              if(r.dt_inicio&&r.dt_fim) pilotoStats[n].minutos+=Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
             })
             const rankingPilotos = Object.entries(pilotoStats).sort((a,b)=>b[1].area-a[1].area).slice(0,8)
+            const pilotosChart = rankingPilotos.slice(0,6).map(([name,s])=>({name:name.split(' ')[0],area:parseFloat(s.area.toFixed(1)),voos:s.voos,horas:parseFloat((s.minutos/60).toFixed(1))}))
 
-            // Horas por drone
+            // ── Heatmap dias da semana ──
+            const diasSemana = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+            const heatDia = [0,0,0,0,0,0,0]
+            rel.forEach(r => { if(r.dt_inicio) heatDia[new Date(r.dt_inicio).getDay()]++ })
+            const heatData = diasSemana.map((d,i)=>({dia:d,voos:heatDia[i]}))
+
+            // ── Produtos mais usados ──
+            const prodUso = {}
+            rel.forEach(r => {
+              (r.produtos||[]).filter(Boolean).forEach(p => {
+                const nome = p.split(' - ')[0]
+                prodUso[nome] = (prodUso[nome]||0) + parseFloat(r.area_ha||0)
+              })
+            })
+            const topProdutos = Object.entries(prodUso).sort((a,b)=>b[1]-a[1]).slice(0,6)
+              .map(([name,value])=>({name,value:parseFloat(value.toFixed(1))}))
+
+            // ── Horas por drone ──
             const droneStats = {}
-            finalizados.forEach(r => {
-              const d = r.drone||'—'
-              if (!droneStats[d]) droneStats[d] = { voos:0, minutos:0 }
+            relTodos.forEach(r => {
+              const d=r.drone||'—'
+              if(!droneStats[d]) droneStats[d]={voos:0,minutos:0}
               droneStats[d].voos++
-              const mins = Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)
-              droneStats[d].minutos += Math.max(0,mins)
+              if(r.dt_inicio&&r.dt_fim) droneStats[d].minutos+=Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
             })
 
-            const fmtH = m => { const h=Math.floor(m/60),min=m%60; return h>0?`${h}h${String(min).padStart(2,'0')}m`:`${min}m` }
+            // ── Projeções ──
+            const diasDecorridos = Math.max(1,Math.round((new Date()-pIni)/86400000))
+            const diasNoMes = new Date(hoje.getFullYear(),hoje.getMonth()+1,0).getDate()
+            const ritmoHa = totalArea/diasDecorridos
+            const projecaoMes = (ritmoHa*diasNoMes).toFixed(0)
+            const diasRestantes = diasNoMes - hoje.getDate()
+            const projecaoRestante = (ritmoHa*diasRestantes).toFixed(0)
+
+            // ── Estoque preditivo ──
+            const consumoPorHa = {}
+            rel.forEach(r => {
+              (r.produtos||[]).filter(Boolean).forEach(p => {
+                const nome = p.split(' - ')[0]
+                const dose = parseFloat(p.split(' - ')[1]||0)
+                if(dose>0) consumoPorHa[nome] = ((consumoPorHa[nome]||0) + dose*parseFloat(r.area_ha||0))
+              })
+            })
+
+            const COLORS = ['#1a7a4a','#2da05e','#f0c040','#185fa5','#8e44ad','#e8a020','#c0392b','#6b8070']
+
+            const Card = ({title,value,sub,color='#1a7a4a',icon}) => (
+              <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
+                    <div style={{fontSize:isMobile?22:28,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1}}>{value}</div>
+                    {sub&&<div style={{fontSize:11,color:'#8aad94',marginTop:4}}>{sub}</div>}
+                  </div>
+                  {icon&&<div style={{fontSize:28,opacity:.7}}>{icon}</div>}
+                </div>
+              </div>
+            )
+
+            const SecTitle = ({children,action}) => (
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#111a14'}}>{children}</div>
+                {action}
+              </div>
+            )
 
             return (
               <div>
-                <div style={{marginBottom:18}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#111a14'}}>📊 Dashboard</div>
-                  <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{finalizados.length} operações finalizadas</div>
-                </div>
-
-                {/* CARDS RESUMO */}
-                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:24}}>
-                  {[
-                    ['Total de Voos', relatorios.length, '🚁', '#1a7a4a'],
-                    ['Área Total (ha)', finalizados.reduce((a,r)=>a+parseFloat(r.area_ha||0),0).toFixed(1), '📐', '#185fa5'],
-                    ['Pilotos Ativos', Object.keys(pilotoStats).length, '👤', '#e8a020'],
-                    ['Drones em Uso', Object.keys(droneStats).length, '✈️', '#8e44ad'],
-                  ].map(([lbl,val,icon,cor])=>(
-                    <div key={lbl} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:'16px',textAlign:'center'}}>
-                      <div style={{fontSize:24,marginBottom:4}}>{icon}</div>
-                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?20:26,fontWeight:700,color:cor}}>{val}</div>
-                      <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>{lbl}</div>
+                {/* ── FILTROS ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'16px',marginBottom:16}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,marginBottom:12,color:'#111a14'}}>🔍 Filtros</div>
+                  {/* Período */}
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+                    {[['hoje','Hoje'],['semana','7 dias'],['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano'],['custom','Personalizado']].map(([v,l])=>(
+                      <button key={v} style={{background:dashPeriodo===v?'#1a7a4a':'#f4f8f5',color:dashPeriodo===v?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                        onClick={()=>setDashPeriodo(v)}>{l}</button>
+                    ))}
+                  </div>
+                  {dashPeriodo==='custom'&&(
+                    <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+                      <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataIni} onChange={e=>setDashDataIni(e.target.value)}/>
+                      <span style={{alignSelf:'center',color:'#8aad94'}}>até</span>
+                      <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataFim} onChange={e=>setDashDataFim(e.target.value)}/>
                     </div>
-                  ))}
-                </div>
-
-                {/* ÁREA POR CLIENTE */}
-                <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:'20px',marginBottom:16}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:16}}>📐 Área Aplicada por Cliente (ha)</div>
-                  {topClientes.length === 0 ? <div style={{color:'#6b8070',fontSize:13}}>Nenhum dado ainda</div> : (
-                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                      {topClientes.map(([cliente,area])=>(
-                        <div key={cliente}>
-                          <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}>
-                            <span style={{fontWeight:500,color:'#111a14'}}>{cliente}</span>
-                            <span style={{fontWeight:700,color:'#1a7a4a'}}>{area.toFixed(1)} ha</span>
-                          </div>
-                          <div style={{background:'#f4f8f5',borderRadius:20,height:10,overflow:'hidden'}}>
-                            <div style={{background:'linear-gradient(90deg,#1a7a4a,#2da05e)',height:'100%',borderRadius:20,width:`${(area/maxArea)*100}%`,transition:'width .5s'}}/>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  )}
+                  {/* Multi-select filters */}
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr 1fr',gap:8}}>
+                    {[
+                      ['Clientes',dashClientes,setDashClientes,[...new Set(relatorios.map(r=>r.cliente).filter(Boolean))]],
+                      ['Pilotos',dashPilotos,setDashPilotos,[...new Set(relatorios.map(r=>r.piloto_nome).filter(Boolean))]],
+                      ['Drones',dashDrones,setDashDrones,[...new Set(relatorios.map(r=>r.drone).filter(Boolean))]],
+                    ].map(([lbl,sel,setSel,opts])=>(
+                      <select key={lbl} multiple style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px',fontSize:12,outline:'none',height:72,color:'#111a14'}}
+                        value={sel} onChange={e=>setSel(Array.from(e.target.selectedOptions,o=>o.value))}>
+                        {opts.map(o=><option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ))}
+                  </div>
+                  {(dashClientes.length||dashPilotos.length||dashDrones.length)>0&&(
+                    <button style={{marginTop:8,background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:8,padding:'4px 12px',fontSize:12,cursor:'pointer'}}
+                      onClick={()=>{setDashClientes([]);setDashPilotos([]);setDashDrones([])}}>✕ Limpar filtros</button>
                   )}
                 </div>
 
-                {/* RANKING PILOTOS */}
-                <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:'20px',marginBottom:16}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:16}}>🏆 Ranking de Pilotos</div>
-                  {rankingPilotos.length === 0 ? <div style={{color:'#6b8070',fontSize:13}}>Nenhum dado ainda</div> : (
+                {/* ── KPIs ── */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
+                  <Card title="ÁREA APLICADA" value={totalArea.toFixed(1)+' ha'} sub={`${totalVoos} voos`} icon="📐"/>
+                  <Card title="HORAS VOADAS" value={fmtH(totalMins)} sub={`${eficiencia} ha/h eficiência`} color="#185fa5" icon="⏱️"/>
+                  <Card title="PILOTOS ATIVOS" value={Object.keys(pilotoStats).length} sub="no período" color="#8e44ad" icon="👨‍✈️"/>
+                  {receita
+                    ? <Card title="RECEITA ESTIMADA" value={receita} sub={`R$ ${precoHa}/ha`} color="#e8a020" icon="💰"/>
+                    : <div style={{background:'#fff',borderRadius:14,border:'1px dashed #d0e4d8',padding:'16px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}}>
+                        <div style={{fontSize:11,color:'#8aad94',fontWeight:600}}>RECEITA (R$/ha)</div>
+                        <input type="number" placeholder="Ex: 35" style={{width:'80px',border:'1px solid #d0e4d8',borderRadius:8,padding:'6px',fontSize:14,textAlign:'center',outline:'none'}}
+                          onChange={e=>{setPrecoHa(parseFloat(e.target.value)||0);localStorage.setItem('orofly_preco_ha',e.target.value)}}/>
+                        <div style={{fontSize:10,color:'#8aad94'}}>configure o preço</div>
+                      </div>
+                  }
+                </div>
+
+                {/* ── KPIs SECUNDÁRIOS ── */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
+                  <Card title="PROJEÇÃO MÊS" value={projecaoMes+' ha'} sub={`+${projecaoRestante} ha previstos`} color="#2da05e" icon="📈"/>
+                  <Card title="MÉDIA DIÁRIA" value={ritmoHa.toFixed(1)+' ha/dia'} sub="no período" color="#185fa5" icon="📅"/>
+                  <Card title="MÉDIA POR VOO" value={totalVoos>0?(totalArea/totalVoos).toFixed(1)+' ha':'—'} sub="eficiência/voo" color="#e8a020" icon="✈️"/>
+                  <Card title="DRONES EM USO" value={Object.keys(droneStats).length} sub={`${relatorios.filter(r=>r.status==='em_operacao').length} voando agora`} color="#c0392b" icon="🚁"/>
+                </div>
+
+                {/* ── GRÁFICO TIMELINE ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                  <SecTitle>📈 Área Aplicada ao Longo do Tempo (ha)</SecTitle>
+                  {areaTimeline.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={areaTimeline} margin={{top:5,right:10,left:-20,bottom:5}}>
+                        <defs>
+                          <linearGradient id="gradArea" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#1a7a4a" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#1a7a4a" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
+                        <XAxis dataKey="dia" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false}/>
+                        <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
+                        <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                        <Area type="monotone" dataKey="area" stroke="#1a7a4a" strokeWidth={2} fill="url(#gradArea)"/>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                {/* ── GRÁFICOS CLIENTES + PRODUTOS ── */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16,marginBottom:16}}>
+                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px'}}>
+                    <SecTitle>🏢 Área por Cliente (ha)</SecTitle>
+                    {topClientes.length===0 ? <div style={{color:'#8aad94',fontSize:13}}>Sem dados</div> : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={topClientes} layout="vertical" margin={{top:0,right:10,left:10,bottom:0}}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1" horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
+                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#6b8070'}} tickLine={false} width={70}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <Bar dataKey="value" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px'}}>
+                    <SecTitle>🧪 Produtos Mais Aplicados (ha)</SecTitle>
+                    {topProdutos.length===0 ? <div style={{color:'#8aad94',fontSize:13}}>Sem dados</div> : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <PieChart>
+                          <Pie data={topProdutos} cx="50%" cy="50%" outerRadius={75} dataKey="value" nameKey="name" label={({name,percent})=>`${name} ${(percent*100).toFixed(0)}%`} labelLine={false} fontSize={9}>
+                            {topProdutos.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                          </Pie>
+                          <Tooltip formatter={(v)=>[v+' ha','Área']}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── RANKING PILOTOS ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                  <SecTitle>🏆 Performance de Pilotos</SecTitle>
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>ÁREA VOADA (ha)</div>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={pilotosChart} margin={{top:0,right:0,left:-30,bottom:0}}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
+                          <XAxis dataKey="name" tick={{fontSize:10,fill:'#6b8070'}} tickLine={false}/>
+                          <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <Bar dataKey="area" radius={[6,6,0,0]}>
+                            {pilotosChart.map((_,i)=><Cell key={i} fill={i===0?'#f0c040':i===1?'#aaa':i===2?'#cd7f32':COLORS[0]}/>)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                     <div style={{overflowX:'auto'}}>
-                      <table style={{width:'100%',borderCollapse:'collapse',minWidth:isMobile?0:400}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                         <thead>
                           <tr style={{background:'#f4f8f5'}}>
-                            {['#','Piloto','Voos','Área (ha)','Horas'].map(h=>(
-                              <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:'#6b8070',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                            {['#','Piloto','Voos','ha','ha/h'].map(h=>(
+                              <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {rankingPilotos.map(([nome,stats],i)=>(
+                          {rankingPilotos.map(([nome,st],i)=>(
                             <tr key={nome} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
-                              <td style={{padding:'9px 12px',fontSize:13}}>
-                                <span style={{fontWeight:700,color:i===0?'#f0c040':i===1?'#aaa':i===2?'#cd7f32':'#6b8070'}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}</span>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#f0c040':i===1?'#aaa':i===2?'#cd7f32':'#8aad94'}}>
+                                {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}
                               </td>
-                              <td style={{padding:'9px 12px',fontSize:13,fontWeight:500}}>{nome}</td>
-                              <td style={{padding:'9px 12px',fontSize:13}}>{stats.voos}</td>
-                              <td style={{padding:'9px 12px',fontSize:13,fontWeight:600,color:'#1a7a4a'}}>{stats.area.toFixed(1)}</td>
-                              <td style={{padding:'9px 12px',fontSize:13}}>{fmtH(stats.minutos)}</td>
+                              <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
+                              <td style={{padding:'8px 10px',color:'#6b8070'}}>{st.voos}</td>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:'#1a7a4a'}}>{st.area.toFixed(1)}</td>
+                              <td style={{padding:'8px 10px',color:'#6b8070'}}>{st.minutos>0?(st.area/(st.minutos/60)).toFixed(1):'—'}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                {/* DRONES + MANUTENÇÃO */}
-                <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:'20px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:8}}>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700}}>✈️ Controle de Horas por Drone</div>
-                    <div style={{fontSize:11,color:'#6b8070'}}>Clique nas horas para definir limite de manutenção</div>
-                  </div>
-                  {Object.keys(droneStats).length === 0 ? <div style={{color:'#6b8070',fontSize:13}}>Nenhum dado ainda</div> : (
-                    <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                      {Object.entries(droneStats).sort((a,b)=>b[1].minutos-a[1].minutos).map(([drone,stats])=>{
-                        const horas = stats.minutos/60
-                        const limite = droneHorasLimite[drone] || 100
-                        const pct = Math.min(100,(horas/limite)*100)
-                        const alerta = pct >= 90
-                        const aviso = pct >= 70 && pct < 90
-                        const cor = alerta?'#c0392b':aviso?'#e8a020':'#1a7a4a'
-                        return (
-                          <div key={drone} style={{background:alerta?'#fdeaea':aviso?'#fdf3e0':'#f9fbfa',borderRadius:10,padding:'12px 14px',border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#d0e4d8'}`}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
-                              <div>
-                                <span style={{fontWeight:600,fontSize:14,color:'#111a14'}}>{drone}</span>
-                                {alerta && <span style={{marginLeft:8,background:'#c0392b',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
-                                {aviso && <span style={{marginLeft:8,background:'#e8a020',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
-                              </div>
-                              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                                <span style={{fontSize:13,fontWeight:700,color:cor}}>{fmtH(stats.minutos)}</span>
-                                <span style={{fontSize:11,color:'#6b8070'}}>/ </span>
-                                <input
-                                  type="number"
-                                  value={limite}
-                                  min={1}
-                                  style={{width:60,border:'1px solid #d0e4d8',borderRadius:6,padding:'3px 6px',fontSize:12,textAlign:'center',outline:'none'}}
-                                  onChange={e=>{
-                                    const novo = {...droneHorasLimite,[drone]:parseInt(e.target.value)||100}
-                                    setDroneHorasLimite(novo)
-                                    localStorage.setItem('orofly_drone_horas',JSON.stringify(novo))
-                                  }}
-                                />
-                                <span style={{fontSize:11,color:'#6b8070'}}>h limite</span>
-                              </div>
+                {/* ── HEATMAP DIAS DA SEMANA ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                  <SecTitle>📅 Produtividade por Dia da Semana</SecTitle>
+                  <ResponsiveContainer width="100%" height={120}>
+                    <BarChart data={heatData} margin={{top:5,right:10,left:-30,bottom:5}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
+                      <XAxis dataKey="dia" tick={{fontSize:11,fill:'#6b8070'}} tickLine={false}/>
+                      <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
+                      <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v,'Voos']}/>
+                      <Bar dataKey="voos" radius={[6,6,0,0]}>
+                        {heatData.map((entry,i)=><Cell key={i} fill={entry.voos===Math.max(...heatData.map(d=>d.voos))?'#f0c040':'#1a7a4a'}/>)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div style={{fontSize:11,color:'#8aad94',textAlign:'center',marginTop:4}}>⭐ Dia mais produtivo: {heatData.reduce((a,b)=>a.voos>b.voos?a:b,{voos:0,dia:'—'}).dia}</div>
+                </div>
+
+                {/* ── DRONES + MANUTENÇÃO ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                  <SecTitle>🚁 Controle de Horas por Drone</SecTitle>
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {Object.entries(droneStats).sort((a,b)=>b[1].minutos-a[1].minutos).map(([drone,st])=>{
+                      const horas=st.minutos/60
+                      const limite=droneHorasLimite[drone]||100
+                      const pct=Math.min(100,(horas/limite)*100)
+                      const alerta=pct>=90, aviso=pct>=70&&pct<90
+                      const cor=alerta?'#c0392b':aviso?'#e8a020':'#1a7a4a'
+                      // Previsão de quando vai bater o limite
+                      const horasPorVoo = st.voos>0 ? horas/st.voos : 0
+                      const voosRestantes = horasPorVoo>0 ? Math.floor((limite-horas)/horasPorVoo) : null
+                      return (
+                        <div key={drone} style={{background:alerta?'#fdeaea':aviso?'#fdf3e0':'#f9fbfa',borderRadius:10,padding:'12px 14px',border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#e0ecea'}`}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
+                            <div>
+                              <span style={{fontWeight:600,fontSize:14}}>{drone}</span>
+                              {alerta&&<span style={{marginLeft:8,background:'#c0392b',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
+                              {aviso&&!alerta&&<span style={{marginLeft:8,background:'#e8a020',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
+                              {voosRestantes!==null&&!alerta&&<span style={{marginLeft:8,fontSize:11,color:'#8aad94'}}>~{voosRestantes} voos para manutenção</span>}
                             </div>
-                            <div style={{background:'#e0e0e0',borderRadius:20,height:8,overflow:'hidden'}}>
-                              <div style={{background:`linear-gradient(90deg,${cor},${cor}cc)`,height:'100%',borderRadius:20,width:`${pct}%`,transition:'width .5s'}}/>
-                            </div>
-                            <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#6b8070',marginTop:4}}>
-                              <span>{stats.voos} voos registrados</span>
-                              <span>{pct.toFixed(0)}% do limite</span>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{fontWeight:700,color:cor}}>{fmtH(st.minutos)}</span>
+                              <span style={{color:'#8aad94',fontSize:12}}>/</span>
+                              <input type="number" value={limite} min={1} style={{width:60,border:'1px solid #d0e4d8',borderRadius:6,padding:'3px 6px',fontSize:12,textAlign:'center',outline:'none'}}
+                                onChange={e=>{const n={...droneHorasLimite,[drone]:parseInt(e.target.value)||100};setDroneHorasLimite(n);localStorage.setItem('orofly_drone_horas',JSON.stringify(n))}}/>
+                              <span style={{fontSize:11,color:'#8aad94'}}>h</span>
                             </div>
                           </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                          <div style={{background:'#e0e0e0',borderRadius:20,height:8,overflow:'hidden'}}>
+                            <div style={{background:`linear-gradient(90deg,${cor},${cor}bb)`,height:'100%',borderRadius:20,width:`${pct}%`,transition:'width .5s'}}/>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#8aad94',marginTop:4}}>
+                            <span>{st.voos} voos registrados</span>
+                            <span>{pct.toFixed(0)}% do limite</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {Object.keys(droneStats).length===0&&<div style={{color:'#8aad94',fontSize:13}}>Nenhum dado de drone ainda</div>}
+                  </div>
                 </div>
+
+                {/* ── ANÁLISE PREDITIVA ── */}
+                <div style={{background:'linear-gradient(135deg,#111a14,#1a7a4a)',borderRadius:14,padding:'20px',marginBottom:16,color:'#fff'}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,marginBottom:14}}>🔮 Análise Preditiva</div>
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12}}>
+                    <div style={{background:'rgba(255,255,255,.08)',borderRadius:10,padding:14}}>
+                      <div style={{fontSize:11,opacity:.7,marginBottom:4}}>PROJEÇÃO DO MÊS ATUAL</div>
+                      <div style={{fontSize:24,fontWeight:700,color:'#f0c040'}}>{projecaoMes} ha</div>
+                      <div style={{fontSize:11,opacity:.7,marginTop:4}}>Faltam {diasRestantes} dias • +{projecaoRestante} ha previstos</div>
+                    </div>
+                    <div style={{background:'rgba(255,255,255,.08)',borderRadius:10,padding:14}}>
+                      <div style={{fontSize:11,opacity:.7,marginBottom:4}}>RITMO ATUAL</div>
+                      <div style={{fontSize:24,fontWeight:700,color:'#f0c040'}}>{ritmoHa.toFixed(1)} ha/dia</div>
+                      <div style={{fontSize:11,opacity:.7,marginTop:4}}>Média dos últimos {diasDecorridos} dias</div>
+                    </div>
+                    {/* Alertas preditivos */}
+                    {Object.entries(droneStats).map(([drone,st])=>{
+                      const horas=st.minutos/60
+                      const limite=droneHorasLimite[drone]||100
+                      const horasPorVoo=st.voos>0?horas/st.voos:0
+                      const voosRestantes=horasPorVoo>0?Math.floor((limite-horas)/horasPorVoo):null
+                      if(voosRestantes!==null&&voosRestantes<=5&&voosRestantes>=0) return (
+                        <div key={drone} style={{background:'rgba(192,57,43,.3)',borderRadius:10,padding:14,border:'1px solid rgba(192,57,43,.5)'}}>
+                          <div style={{fontSize:11,opacity:.8,marginBottom:4}}>⚠️ MANUTENÇÃO PRÓXIMA</div>
+                          <div style={{fontSize:16,fontWeight:700}}>{drone}</div>
+                          <div style={{fontSize:12,opacity:.8,marginTop:4}}>{voosRestantes===0?'Limite atingido!':voosRestantes<=2?`Apenas ${voosRestantes} voo(s) restantes!`:`~${voosRestantes} voos até manutenção`}</div>
+                        </div>
+                      )
+                      return null
+                    }).filter(Boolean)}
+                    {/* Estoque crítico */}
+                    {invProdutos.filter(p=>p.estoque_minimo>0&&p.estoque_atual<=p.estoque_minimo).map(p=>(
+                      <div key={p.id} style={{background:'rgba(240,192,64,.2)',borderRadius:10,padding:14,border:'1px solid rgba(240,192,64,.4)'}}>
+                        <div style={{fontSize:11,opacity:.8,marginBottom:4}}>📦 ESTOQUE CRÍTICO</div>
+                        <div style={{fontSize:16,fontWeight:700}}>{p.nome}</div>
+                        <div style={{fontSize:12,opacity:.8,marginTop:4}}>{p.estoque_atual} {p.unidade} restantes (mín: {p.estoque_minimo})</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
               </div>
             )
           })()}
+
+
 
           {/* ===== MAPA ===== */}
           {tab === 'mapa' && (
