@@ -7,6 +7,7 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
+const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
@@ -25,7 +26,8 @@ function initForm(data) {
     }
     const ini=parseDt(data.dt_inicio), fim=parseDt(data.dt_fim)
     return {
-      cliente:data.cliente||'',clienteOutro:'',fazenda:data.fazenda||'',area_ha:data.area_ha||'',
+      cultura:data.cultura||'',cliente:data.cliente||'',clienteOutro:'',
+      fazenda:data.fazenda||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
       produtos:data.produtos?.length?data.produtos:[''],
       tamanho_gota:data.tamanho_gota||'',velocidade_drone:data.velocidade_drone||'',
@@ -37,12 +39,13 @@ function initForm(data) {
     }
   }
   return {
-    cliente:'',clienteOutro:'',fazenda:'',area_ha:'',piloto_nome:'',drone:'',droneOutro:'',
+    cultura:'',cliente:'',clienteOutro:'',fazenda:'',area_ha:'',talhao:'',
+    piloto_nome:'',drone:'',droneOutro:'',
     produtos:[''],tamanho_gota:'',velocidade_drone:'',
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
-    pausas:[],obs1:'',obs2:'',compartilhado:false,
+    pausas:[],obs1:'',obs2:'',
   }
 }
 
@@ -302,16 +305,15 @@ export default function PilotApp({onSwitchMode}) {
   async function saveToSupabase(extraData={},retry=true) {
     const payload={
       piloto_id:profile.id,
+      cultura:form.cultura||null,
       cliente:clienteVal,fazenda:form.fazenda,area_ha:form.area_ha,
-      piloto_nome:form.piloto_nome||profile.nome,
+      piloto_nome:profile.nome||profile.email,
       drone:droneVal,produtos:form.produtos.filter(Boolean),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
-      localizacao:form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
+      localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
       obs1:form.obs1,obs2:form.obs2,pausas:form.pausas,
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
-      compartilhado:form.compartilhado||false,
-      compartilhado_status:form.compartilhado?'aberto':'fechado',
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
       ...extraData
     }
@@ -451,6 +453,18 @@ export default function PilotApp({onSwitchMode}) {
     return erros
   }
 
+  // GPS automático — captura silenciosamente ao preencher qualquer campo
+  const gpsCapturado = useRef(false)
+  function autoGPS() {
+    if (gpsCapturado.current || form.gps_lat) return
+    if (!navigator.geolocation) return
+    gpsCapturado.current = true
+    navigator.geolocation.getCurrentPosition(
+      pos => setForm(f=>({...f,gps_lat:pos.coords.latitude.toFixed(6),gps_lng:pos.coords.longitude.toFixed(6)})),
+      () => { gpsCapturado.current = false }
+    )
+  }
+
   async function fetchClima() {
     if (!form.gps_lat || !form.gps_lng) {
       showToast('⚠️ Capture o GPS primeiro no Step 2'); return
@@ -573,7 +587,7 @@ export default function PilotApp({onSwitchMode}) {
     showToast('🗑️ Formulário limpo')
   }
 
-  const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',paused_day:'🌙 Pausado até amanhã',finished:'🔴 Finalizado'}[opState]
+  const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',paused_day:'🌙 Finalizado Parcial',finished:'🔴 Finalizado'}[opState]
 
   // VIEW VOOS ANTERIORES
   // Labels e ícones dos steps
@@ -692,7 +706,6 @@ export default function PilotApp({onSwitchMode}) {
       <WHeader/>
 
       {/* ══ STEP 1 — IDENTIFICAÇÃO ══ */}
-      {/* ══ STEP 1 — IDENTIFICAÇÃO ══ */}
       {wizardStep===1&&(
         <>
           <div style={sw.body}>
@@ -705,22 +718,39 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{fontSize:14,fontWeight:600,color:'#1a7a4a'}}>{profile?.nome}</div>
             </div>
 
-            <FS label="CLIENTE" val={form.cliente} onChange={e=>setForm(f=>({...f,cliente:e.target.value}))}>
+            <FS label="CULTURA" val={form.cultura} onChange={e=>{setForm(f=>({...f,cultura:e.target.value}));autoGPS()}}>
+              <option value="">Selecione a Cultura...</option>
+              {CULTURAS.map(c=><option key={c}>{c}</option>)}
+            </FS>
+
+            <FS label="CLIENTE" val={form.cliente} onChange={e=>{setForm(f=>({...f,cliente:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Cliente...</option>
               {CLIENTES.map(c=><option key={c}>{c}</option>)}
             </FS>
             {form.cliente==='Outros'&&<FI label="NOME DO CLIENTE" ph="Digite o nome..." val={form.clienteOutro} onChange={e=>setForm(f=>({...f,clienteOutro:e.target.value}))}/>}
-            <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>setForm(f=>({...f,fazenda:e.target.value}))}/>
-            <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>setForm(f=>({...f,area_ha:e.target.value}))} type="number"/>
-            <FS label="DRONE" val={form.drone} onChange={e=>setForm(f=>({...f,drone:e.target.value}))}>
+
+            <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
+            <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>{setForm(f=>({...f,area_ha:e.target.value}));autoGPS()}} type="number"/>
+            <FI label="TALHÃO" ph="Ex: Talhão 5, Zona 65..." val={form.talhao} onChange={e=>{setForm(f=>({...f,talhao:e.target.value,localizacao:e.target.value}));autoGPS()}}/>
+
+            <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Drone...</option>
               {DRONES.map(d=><option key={d}>{d}</option>)}
             </FS>
             {form.drone==='Outros'&&<FI label="NOME DO DRONE" ph="..." val={form.droneOutro} onChange={e=>setForm(f=>({...f,droneOutro:e.target.value}))}/>}
 
+            {/* GPS — exibe silenciosamente */}
+            {form.gps_lat&&(
+              <div style={{...sw.fw,background:'#e8f5ee',borderRadius:10,padding:'8px 14px',display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontSize:14}}>📍</span>
+                <span style={{fontSize:12,color:'#1a7a4a',fontWeight:500}}>{form.gps_lat}, {form.gps_lng}</span>
+                <a href={`https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`} target="_blank" rel="noreferrer" style={{marginLeft:'auto',fontSize:11,color:'#1a7a4a',textDecoration:'none'}}>🗺️ Maps</a>
+              </div>
+            )}
+
             {voosCompartilhados.length>0&&(
               <div style={{background:'#fffbea',border:'2px solid #f0c040',borderRadius:12,padding:14,marginTop:4}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Compartilhados ({voosCompartilhados.length})</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
                 {voosCompartilhados.map(v=>(
                   <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
                     <div style={{fontWeight:700,fontSize:13,color:'#111a14'}}>{v.cliente} — {v.fazenda}</div>
@@ -774,30 +804,18 @@ export default function PilotApp({onSwitchMode}) {
             })}
             <button style={{width:'100%',background:'#f4f8f5',border:'1px dashed #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'11px',fontSize:13,fontWeight:500,cursor:'pointer',marginBottom:14}} onClick={()=>setForm(f=>({...f,produtos:[...f.produtos,'']}))}>+ Adicionar produto</button>
 
-            <FI label="TAMANHO DA GOTA" ph="Ex: Média, Grossa..." val={form.tamanho_gota} onChange={e=>setForm(f=>({...f,tamanho_gota:e.target.value}))}/>
-            <FI label="VELOCIDADE DO DRONE (km/h)" ph="Ex: 25 km/h" val={form.velocidade_drone} onChange={e=>setForm(f=>({...f,velocidade_drone:e.target.value}))}/>
-            <FI label="LOCALIZAÇÃO / TALHÃO" ph="Ex: Talhão 5, Zona 65..." val={form.localizacao} onChange={e=>setForm(f=>({...f,localizacao:e.target.value}))}/>
+            {/* Tamanho da gota — número + µm */}
             <div style={sw.fw}>
-              <label style={sw.fl}>GPS</label>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                <span style={{flex:1,fontSize:13,color:form.gps_lat?'#1a7a4a':'#aaa'}}>{form.gps_lat?`${form.gps_lat}, ${form.gps_lng}`:'Não capturado'}</span>
-                <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 14px',fontSize:12,fontWeight:500,cursor:'pointer',flexShrink:0}} onClick={getGPS}>📍 Capturar</button>
-              </div>
-              {form.gps_lat&&<a style={{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'#1a7a4a',textDecoration:'none',marginTop:6}} href={`https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`} target="_blank" rel="noreferrer">🗺️ Ver no Maps</a>}
-            </div>
-            <FI label="FAIXA DE APLICAÇÃO" ph="Ex: 5 m" val={form.faixa_i} onChange={e=>setForm(f=>({...f,faixa_i:e.target.value,faixa_f:e.target.value}))}/>
-            <FI label="VAZÃO" ph="Ex: 2 L/ha" val={form.vazao_i} onChange={e=>setForm(f=>({...f,vazao_i:e.target.value,vazao_f:e.target.value}))}/>
-            {/* Compartilhado toggle */}
-            <div style={{marginBottom:14,background:form.compartilhado?'#e8f5ee':'#fafcfa',borderRadius:12,padding:'12px 14px',border:`1px solid ${form.compartilhado?'#1a7a4a':'#dde8e2'}`,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}
-              onClick={()=>setForm(f=>({...f,compartilhado:!f.compartilhado}))}>
-              <div>
-                <div style={{fontSize:13,fontWeight:600,color:form.compartilhado?'#1a7a4a':'#6b8070'}}>🤝 Voo Compartilhado</div>
-                <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{form.compartilhado?'Outros pilotos podem adicionar trechos':'Apenas você registra este voo'}</div>
-              </div>
-              <div style={{width:42,height:24,borderRadius:12,background:form.compartilhado?'#1a7a4a':'#dde8e2',position:'relative',transition:'all .2s',flexShrink:0}}>
-                <div style={{width:18,height:18,borderRadius:9,background:'#fff',position:'absolute',top:3,left:form.compartilhado?21:3,transition:'all .2s'}}/>
+              <label style={sw.fl}>TAMANHO DA GOTA</label>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <input type="number" style={{...sw.fi,flex:1}} placeholder="Ex: 200" value={form.tamanho_gota} onChange={e=>setForm(f=>({...f,tamanho_gota:e.target.value}))}/>
+                <span style={{fontSize:15,fontWeight:600,color:'#6b8070',flexShrink:0}}>µm</span>
               </div>
             </div>
+
+            <FI label="VELOCIDADE DO DRONE (km/h)" ph="Ex: 25" val={form.velocidade_drone} onChange={e=>setForm(f=>({...f,velocidade_drone:e.target.value}))}/>
+            <FI label="FAIXA DE APLICAÇÃO (m)" ph="Ex: 5" val={form.faixa_i} onChange={e=>setForm(f=>({...f,faixa_i:e.target.value,faixa_f:e.target.value}))}/>
+            <FI label="VAZÃO (L/ha)" ph="Ex: 2" val={form.vazao_i} onChange={e=>setForm(f=>({...f,vazao_i:e.target.value,vazao_f:e.target.value}))}/>
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
@@ -813,28 +831,17 @@ export default function PilotApp({onSwitchMode}) {
         <>
           <div style={sw.body}>
             <div style={sw.pageTitle}>Condições Climáticas</div>
-            <div style={sw.pageSub}>Passo 3 de 5: Início e fim</div>
+            <div style={sw.pageSub}>Passo 3 de 5: Início da aplicação</div>
 
-            {/* Botões de facilidade */}
-            <div style={{display:'flex',gap:8,marginBottom:18}}>
-              <button style={{flex:1,background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                onClick={fetchClima}>
-                🌤️ Buscar clima atual
-              </button>
-              <button style={{flex:1,background:'#f4f8f5',border:'1px solid #d0e4d8',color:'#6b8070',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                onClick={()=>setForm(f=>({
-                  ...f,
-                  vento_f:f.vento_i, umidade_f:f.umidade_i,
-                  temperatura_f:f.temperatura_i, delta_t_f:f.delta_t_i,
-                }))}>
-                📋 Copiar início → fim
-              </button>
-            </div>
+            <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:18,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
+              onClick={fetchClima}>
+              🌤️ Buscar clima atual (GPS)
+            </button>
 
             {[['VENTO','vento','km/h'],['UMIDADE RELATIVA','umidade','%'],['TEMPERATURA','temperatura','°C'],['DELTA T','delta_t','°C']].map(([lbl,key,unit])=>(
-              <div key={key} style={{marginBottom:16}}>
-                <div style={{fontSize:11,fontWeight:700,color:'#1a7a4a',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>{lbl} {unit&&<span style={{fontWeight:400,color:'#8aad94'}}>({unit})</span>}</div>
-                <FI label="INÍCIO" ph={`Ex: ${key==='vento'?'5':key==='umidade'?'65':key==='temperatura'?'28':'4'}`} val={form[key+'_i']||''} onChange={e=>setForm(f=>({...f,[key+'_i']:e.target.value}))}/>
+              <div key={key} style={sw.fw}>
+                <label style={sw.fl}>{lbl} <span style={{fontWeight:400,color:'#aaa'}}>({unit})</span></label>
+                <input style={sw.fi} placeholder={`Ex: ${key==='vento'?'5':key==='umidade'?'65':key==='temperatura'?'28':'4'}`} value={form[key+'_i']||''} onChange={e=>setForm(f=>({...f,[key+'_i']:e.target.value}))}/>
               </div>
             ))}
           </div>
@@ -856,8 +863,8 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* Resumo */}
             <div style={{background:'#1a7a4a',borderRadius:14,padding:'12px 16px',color:'#fff',marginBottom:16}}>
-              <div style={{fontSize:12,opacity:.8,marginBottom:2}}>{clienteVal} · {form.fazenda}</div>
-              {form.area_ha&&<div style={{fontSize:13,fontWeight:600}}>Área: {form.area_ha} ha · Drone: {form.drone}</div>}
+              <div style={{fontSize:12,opacity:.8,marginBottom:2}}>{form.cultura&&`${form.cultura} · `}{clienteVal} · {form.fazenda}</div>
+              <div style={{fontSize:13,fontWeight:600}}>{form.talhao&&`Talhão: ${form.talhao} · `}{form.area_ha&&`${form.area_ha} ha`}</div>
             </div>
 
             {/* Status */}
@@ -890,9 +897,9 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
 
-            {/* Botões ação */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10,marginBottom:16}}>
-              <button style={{background:'#e8f5ee',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
+            {/* Botões — só Iniciar e Pausar/Retomar */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+              <button style={{background:'#e8f5ee',border:'none',borderRadius:12,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
                 disabled={opState!=='idle'||saving}
                 onClick={()=>{
                   const n=nowParts()
@@ -900,54 +907,44 @@ export default function PilotApp({onSwitchMode}) {
                   setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
                   setChecklistOpen(true)
                 }}>
-                <span style={{fontSize:22}}>▶️</span>
-                <span style={{fontSize:11,fontWeight:600,color:'#1a7a4a'}}>Iniciar</span>
+                <span style={{fontSize:26}}>▶️</span>
+                <span style={{fontSize:12,fontWeight:700,color:'#1a7a4a'}}>Iniciar</span>
               </button>
-              <button style={{background:'#fff3e0',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+              <button style={{background:'#fff3e0',border:'none',borderRadius:12,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
                 disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
-                <span style={{fontSize:22}}>{opState==='paused'?'▶️':'⏸️'}</span>
-                <span style={{fontSize:11,fontWeight:600,color:'#e8a020'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
-              </button>
-              <button style={{background:'#fdeaea',border:'none',borderRadius:12,padding:'14px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                disabled={opState!=='running'&&opState!=='paused'}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                  opFinalizar()
-                  setWizardStep(5)
-                  showToast('✅ Voo finalizado! Agora adicione fotos e gere o relatório.')
-                }}>
-                <span style={{fontSize:22}}>⏹️</span>
-                <span style={{fontSize:11,fontWeight:600,color:'#c0392b'}}>Finalizar</span>
+                <span style={{fontSize:26}}>{opState==='paused'?'▶️':'⏸️'}</span>
+                <span style={{fontSize:12,fontWeight:700,color:'#e8a020'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
               </button>
             </div>
 
-            {/* Botão pausar para o dia seguinte */}
+            {/* Finalizado Parcial */}
             {(opState==='running'||opState==='paused')&&(
               <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:12,padding:'12px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
                 onClick={async()=>{
                   setOpState('paused_day')
                   await saveToSupabase({status:'pausado_dia'})
-                  showToast('🌙 Voo pausado para o dia seguinte. Pode fechar o app!')
+                  showToast('🌙 Finalizado Parcial. Pode fechar o app!')
                 }}>
-                🌙 Pausar para o dia seguinte
+                🌙 Finalizado Parcial (continua amanhã)
               </button>
             )}
 
-            {/* Retomar de pausa dia seguinte */}
+            {/* Retomar de finalizado parcial */}
             {opState==='paused_day'&&(
-              <div style={{background:'#1a1a2e',borderRadius:12,padding:'14px',marginBottom:16,color:'#fff',textAlign:'center'}}>
-                <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>🌙 Operação pausada para o dia seguinte</div>
+              <div style={{background:'#1a1a2e',borderRadius:12,padding:'14px',marginBottom:12,color:'#fff',textAlign:'center'}}>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>🌙 Finalizado Parcial</div>
                 <button style={{background:'#f0c040',color:'#111a14',border:'none',borderRadius:10,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
                   onClick={async()=>{
-                    setOpState('running')
-                    setTimerSecs(0)
+                    setOpState('running');setTimerSecs(0)
                     await saveToSupabase({status:'em_operacao'})
                     showToast('▶️ Operação retomada!')
                   }}>▶️ Retomar operação</button>
               </div>
             )}
-              <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:12,padding:'14px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',letterSpacing:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:16}}
+
+            {/* SOS */}
+            {(opState==='running'||opState==='paused')&&(
+              <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:12,padding:'13px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
                 onClick={()=>!sosLoading&&setSosConfirm(true)} disabled={sosLoading}>
                 🆘 {sosLoading?'ENVIANDO SOS...':'SOS — EMERGÊNCIA'}
               </button>
@@ -955,7 +952,7 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* Salvo */}
             {relId&&opState!=='idle'&&(
-              <div style={{background:'#e8f5ee',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#1a7a4a',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <div style={{background:'#e8f5ee',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#1a7a4a',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
                 <span>✅ Dados salvos automaticamente</span>
                 <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>saveToSupabase({status:opState==='running'?'em_operacao':'pausado'})}>{saveStatus==='saving'?'...':'💾'}</button>
               </div>
@@ -981,7 +978,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(3)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:opState==='running'?'em_operacao':'rascunho'}); setWizardStep(5) }}>Próximo →</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:opState==='running'?'em_operacao':opState==='paused'?'pausado':'rascunho'}); setWizardStep(5) }}>Próximo →</button>
             </div>
           </div>
         </>
@@ -994,23 +991,33 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageTitle}>Finalizar</div>
             <div style={sw.pageSub}>Passo 5 de 5: Condições finais, fotos e relatório</div>
 
+            {/* Botão Finalizar — aqui no step 5 */}
+            {(opState==='running'||opState==='paused')&&(
+              <button style={{...sw.btnG,background:'#c0392b',marginBottom:16,width:'100%'}}
+                onClick={()=>{
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                  opFinalizar()
+                  showToast('✅ Voo finalizado!')
+                }}>
+                ⏹️ Finalizar Operação
+              </button>
+            )}
+
             {/* Condições FIM */}
             <div style={{background:'#f4f8f5',borderRadius:12,padding:'14px',marginBottom:16,border:'1px solid #d0e4d8'}}>
               <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:12,fontFamily:"'Syne',sans-serif"}}>🌤️ CONDIÇÕES NO FIM DA OPERAÇÃO</div>
-              <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:8,padding:'8px',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:12}}
-                onClick={()=>setForm(f=>({...f,vento_f:f.vento_i,umidade_f:f.umidade_i,temperatura_f:f.temperatura_i,delta_t_f:f.delta_t_i}))}>
-                📋 Copiar início → fim
-              </button>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                 {[['Vento (km/h)','vento'],['Umidade (%)','umidade'],['Temp (°C)','temperatura'],['Delta T (°C)','delta_t']].map(([lbl,key])=>(
                   <div key={key}>
                     <label style={{...sw.fl,marginBottom:4}}>{lbl}</label>
-                    <input style={sw.fi} placeholder="—" value={form[key+'_f']||''} onChange={e=>setForm(f=>({...f,[key+'_f']:e.target.value}))}/>
+                    <input style={sw.fi} placeholder={form[key+'_i']||'—'} value={form[key+'_f']||''} onChange={e=>setForm(f=>({...f,[key+'_f']:e.target.value}))}/>
                   </div>
                 ))}
               </div>
             </div>
 
+            {/* Fotos */}
             <div style={{marginBottom:16}}>
               <label style={sw.fl}>FOTOS DE OBSERVAÇÃO</label>
               <div style={{display:'flex',gap:8}}>
@@ -1024,7 +1031,7 @@ export default function PilotApp({onSwitchMode}) {
                     </div>
                     {(obsFotos[i]||storageObsFotos[i])&&(
                       <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer'}}
-                        onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[i]=null;setObsFotos(a);const b=[...obsFotoFiles];b[i]=null;setObsFotoFiles(b);showToast('🗑️ Foto removida')}}>🗑️</button>
+                        onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[i]=null;setObsFotos(a);const b=[...obsFotoFiles];b[i]=null;setObsFotoFiles(b)}}>🗑️</button>
                     )}
                     <input id={`obs-galeria-${i}`} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a)}}/>
                     <input id={`obs-camera-${i}`} type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a)}}/>
@@ -1033,6 +1040,7 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
 
+            {/* Foto mapa */}
             <div style={sw.fw}>
               <label style={sw.fl}>MAPA DE PÓS APLICAÇÃO</label>
               <div style={{border:'1.5px dashed #dde8e2',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',background:'#fafcfa',...((fotoMapa||storageFotoMapa)?{padding:0,border:'none'}:{})}}
@@ -1045,6 +1053,7 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
 
+            {/* KML */}
             <div style={sw.fw}>
               <label style={sw.fl}>ARQUIVOS KML</label>
               {kmlFiles.map((f,i)=>(
@@ -1059,6 +1068,7 @@ export default function PilotApp({onSwitchMode}) {
               </label>
             </div>
 
+            {/* Obs */}
             <div style={sw.fw}>
               <label style={sw.fl}>OBS 1</label>
               <textarea style={{...sw.fi,resize:'none',height:70}} value={form.obs1} onChange={e=>setForm(f=>({...f,obs1:e.target.value}))}/>
@@ -1068,8 +1078,31 @@ export default function PilotApp({onSwitchMode}) {
               <textarea style={{...sw.fi,resize:'none',height:70}} value={form.obs2} onChange={e=>setForm(f=>({...f,obs2:e.target.value}))}/>
             </div>
 
+            {/* Botão Iniciar Novo Voo — sempre visível */}
+            <button style={{...sw.btnG,background:'#f4f8f5',color:'#1a7a4a',border:'1.5px solid #1a7a4a',marginBottom:10,width:'100%'}} onClick={()=>{
+              if(window.confirm('Iniciar novo voo? O voo atual será encerrado.')) limpar()
+            }}>✈️ Iniciar Novo Voo</button>
+
+            {/* E-mail sugerido */}
             {opState==='finished'&&(
-              <button style={{...sw.btnG,background:'#e8f5ee',color:'#1a7a4a',border:'1.5px solid #1a7a4a',marginBottom:10,width:'100%'}} onClick={limpar}>✈️ Iniciar Novo Voo</button>
+              <div style={{background:'#f4f8f5',borderRadius:12,padding:14,marginBottom:10,border:'1px solid #d0e4d8'}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#6b8070',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>📧 ENVIAR POR E-MAIL</div>
+                <div style={{fontSize:12,color:'#6b8070',marginBottom:10,lineHeight:1.5,background:'#fff',borderRadius:8,padding:10,border:'1px solid #e0ecea'}}>
+                  <strong>De:</strong> datafly@orofly.com.br<br/>
+                  <strong>Assunto:</strong> Relatório de Aplicação — {form.cultura||'Cultura'} · {clienteVal} · {form.fazenda}<br/><br/>
+                  Boa tarde,<br/><br/>
+                  Segue em anexo o relatório de aplicação aérea realizada na <strong>{form.fazenda}</strong>{form.talhao?`, Talhão ${form.talhao}`:''}.<br/><br/>
+                  <strong>Cultura:</strong> {form.cultura||'—'}<br/>
+                  <strong>Área aplicada:</strong> {form.area_ha||'—'} ha<br/>
+                  <strong>Produto(s):</strong> {(form.produtos||[]).filter(Boolean).join(', ')||'—'}<br/>
+                  <strong>Piloto:</strong> {form.piloto_nome||profile?.nome}<br/>
+                  <strong>Drone:</strong> {form.drone||'—'}<br/><br/>
+                  Qualquer dúvida estamos à disposição.<br/><br/>
+                  Atenciosamente,<br/>
+                  <strong>Equipe Orofly</strong> | datafly@orofly.com.br
+                </div>
+                <div style={{fontSize:11,color:'#8aad94',textAlign:'center'}}>📌 Integração de e-mail disponível em breve via orofly.com.br</div>
+              </div>
             )}
           </div>
           <div style={sw.btnBar}>
@@ -1081,81 +1114,6 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           </div>
         </>
-      )}
-
-
-
-      {trechoModal && trechoForm && (
-        <div style={s.modalOverlay}>
-          <div style={{...s.modal,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
-            <div style={{...s.modalTitle,marginBottom:4}}>
-              🤝 Adicionar Trecho
-              <button style={s.modalClose} onClick={()=>{setTrechoModal(null);setTrechoForm(null);setTrechoFotoMapa(null);setTrechoFotoMapaFile(null)}}>✕</button>
-            </div>
-            <div style={{fontSize:11,color:'#6b8070',marginBottom:14}}>
-              {trechoModal.cliente} — {trechoModal.fazenda} · Piloto principal: {trechoModal.piloto_nome}
-            </div>
-
-            {/* Talhão */}
-            <div style={s.field}>
-              <div style={s.label}>TALHÃO / LOCALIZAÇÃO</div>
-              <input style={s.input} placeholder="Ex: Talhão 5, Zona 65..." value={trechoForm.talhao}
-                onChange={e=>setTrechoForm(f=>({...f,talhao:e.target.value}))} />
-            </div>
-
-            {/* Horários */}
-            <DtRow prefix="dt_inicio" form={trechoForm} setForm={setTrechoForm} label="INÍCIO" />
-            <DtRow prefix="dt_fim" form={trechoForm} setForm={setTrechoForm} label="FIM" />
-
-            {/* Condições */}
-            <div style={{...s.secCard,marginTop:8}}>
-              <div style={s.secTitle}>🌡️ CONDIÇÕES CLIMÁTICAS</div>
-              {COND_KEYS.map(k=>(
-                <div key={k} style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-                  <div>
-                    <div style={s.label}>{k.toUpperCase()} INÍCIO</div>
-                    <input style={s.input} value={trechoForm[k+'_i']} onChange={e=>setTrechoForm(f=>({...f,[k+'_i']:e.target.value}))} />
-                  </div>
-                  <div>
-                    <div style={s.label}>{k.toUpperCase()} FIM</div>
-                    <input style={s.input} value={trechoForm[k+'_f']} onChange={e=>setTrechoForm(f=>({...f,[k+'_f']:e.target.value}))} />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Foto mapa */}
-            <div style={{marginTop:8}}>
-              <div style={s.label}>FOTO DO MAPA (SEU TALHÃO)</div>
-              <div style={{...s.photoArea,...(trechoFotoMapa?{padding:0,border:'none'}:{cursor:'pointer'})}}
-                onClick={()=>document.getElementById('trecho-foto-input')?.click()}>
-                <input id="trecho-foto-input" type="file" accept="image/*" style={{display:'none'}}
-                  onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setTrechoFotoMapa(ev.target.result);r.readAsDataURL(f);setTrechoFotoMapaFile(f)}} />
-                {trechoFotoMapa
-                  ? <img src={trechoFotoMapa} alt="mapa" style={{width:'100%',borderRadius:8,maxHeight:140,objectFit:'cover'}}/>
-                  : <><div style={{fontSize:22}}>🗺️</div><div style={{fontSize:12,color:'#6b8070',marginTop:4}}>Toque para adicionar foto do mapa</div></>}
-              </div>
-            </div>
-
-            {/* Obs */}
-            <div style={{...s.field,marginTop:8}}>
-              <div style={s.label}>OBSERVAÇÕES</div>
-              <textarea style={{...s.input,height:60,resize:'none'}} value={trechoForm.obs}
-                onChange={e=>setTrechoForm(f=>({...f,obs:e.target.value}))} />
-            </div>
-
-            <div style={{display:'flex',gap:10,marginTop:16}}>
-              <button style={{...s.shareBtn,background:'#f4f8f5',color:'#6b8070',flex:1}}
-                onClick={()=>{setTrechoModal(null);setTrechoForm(null);setTrechoFotoMapa(null);setTrechoFotoMapaFile(null)}}>
-                Cancelar
-              </button>
-              <button style={{...s.shareBtn,flex:2,opacity:trechoSaving?.6:1}} disabled={trechoSaving}
-                onClick={salvarTrecho}>
-                {trechoSaving?'Salvando...':'✅ Salvar Trecho'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* CHECKLIST PRÉ-VOO */}

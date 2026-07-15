@@ -5,7 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 
-const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'🌙 Pausado (dia seguinte)', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
+const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
 const STATUS_COLOR = { rascunho:'#6b8070', em_operacao:'#1a7a4a', pausado:'#e8a020', pausado_dia:'#1a1a2e', finalizado:'#185fa5', sos:'#c0392b', sos_resolvido:'#6b8070' }
 const STATUS_BG    = { rascunho:'#f4f8f5', em_operacao:'#e8f5ee', pausado:'#fdf3e0', pausado_dia:'#e8e8f5', finalizado:'#e6f1fb', sos:'#fdeaea', sos_resolvido:'#f4f8f5' }
 const COND_KEYS    = ['faixa','vazao','vento','umidade','temperatura','delta_t']
