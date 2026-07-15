@@ -116,6 +116,59 @@ function FS({label,val,onChange,children}) {
   )
 }
 
+// Calcula Delta T real: diferença entre temperatura seca e ponto de orvalho
+function calcDeltaT(tempC, umidadePercent) {
+  const t = parseFloat(tempC)
+  const rh = parseFloat(umidadePercent)
+  if (isNaN(t) || isNaN(rh) || rh <= 0) return null
+  // Ponto de orvalho por Magnus: Td = (243.04 * (ln(rh/100) + 17.625*t/(243.04+t))) / (17.625 - (ln(rh/100) + 17.625*t/(243.04+t)))
+  const lnRh = Math.log(rh / 100)
+  const num = 17.625 * t / (243.04 + t)
+  const Td = 243.04 * (lnRh + num) / (17.625 - lnRh - num)
+  return Math.max(0, t - Td)
+}
+
+// Classifica cada parâmetro climático
+function classificarClimaParam(key, valor) {
+  const v = parseFloat(valor)
+  if (isNaN(v)) return null
+  if (key === 'vento') {
+    if (v < 3) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Calmaria: risco de inversão térmica' }
+    if (v <= 15) return { status: 'apta', label: 'Apta', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Condição ideal para aplicação' }
+    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Vento forte: deriva severa' }
+  }
+  if (key === 'umidade') {
+    if (v < 50) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Ar muito seco: evaporação severa' }
+    if (v <= 90) return { status: 'apta', label: 'Apta', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Faixa segura para aplicação' }
+    return { status: 'alerta', label: 'Atenção', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Saturação: risco de lavagem' }
+  }
+  if (key === 'temperatura') {
+    if (v < 10) return { status: 'alerta', label: 'Atenção', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Frio: absorção reduzida pelas plantas' }
+    if (v <= 30) return { status: 'apta', label: 'Apta', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Temperatura ideal para aplicação' }
+    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Estresse térmico: fechamento estomático' }
+  }
+  if (key === 'delta_t') {
+    if (v < 2) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Alta umidade: inversão térmica. Não aplique.' }
+    if (v <= 8) return { status: 'apta', label: 'Ideal', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Condição perfeita para aplicação' }
+    if (v <= 10) return { status: 'alerta', label: 'Marginal', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Risco de evaporação: use gotas grossas' }
+    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Ar seco: gotas evaporam antes de atingir o alvo' }
+  }
+  return null
+}
+
+function classificarCondicaoGeral(form, sufixo) {
+  const params = ['vento','umidade','temperatura','delta_t']
+  const resultados = params.map(k => classificarClimaParam(k, form[k+sufixo])).filter(Boolean)
+  if (resultados.length === 0) return null
+  if (resultados.some(r => r.status === 'nao_conforme')) return { status: 'nao_conforme', label: 'NÃO RECOMENDADO', cor: '#c0392b' }
+  if (resultados.some(r => r.status === 'alerta')) return { status: 'alerta', label: 'ATENÇÃO', cor: '#e8a020' }
+  return { status: 'apta', label: 'CONDIÇÕES APTAS PARA VOO', cor: '#1a7a4a' }
+}
+
+const PARAM_ICONS = { vento: '💨', umidade: '💧', temperatura: '🌡️', delta_t: '⚖️' }
+const PARAM_LABELS = { vento: 'VENTO', umidade: 'UMIDADE', temperatura: 'TEMPERATURA', delta_t: 'DELTA T' }
+const PARAM_UNITS = { vento: 'km/h', umidade: '%', temperatura: '°C', delta_t: '°C' }
+
 export default function PilotApp({onSwitchMode}) {
   const {profile,signOut} = useAuth()
   const [view,setView] = useState('form')
@@ -448,8 +501,7 @@ export default function PilotApp({onSwitchMode}) {
     if(!clienteVal) erros.push('Cliente')
     if(!droneVal) erros.push('Drone')
     if(!form.dt_inicio_data) erros.push('Hora de início')
-    const condFimVazias=COND_KEYS.filter(k=>!form[k+'_f'])
-    if(condFimVazias.length>0) erros.push('Condições FIM')
+    // Condições FIM são opcionais — Delta T calculado automaticamente
     return erros
   }
 
@@ -827,34 +879,96 @@ export default function PilotApp({onSwitchMode}) {
       )}
 
       {/* ══ STEP 3 — CONDIÇÕES ══ */}
-      {wizardStep===3&&(
-        <>
-          <div style={sw.body}>
-            <div style={sw.pageTitle}>Condições Climáticas</div>
-            <div style={sw.pageSub}>Passo 3 de 5: Início da aplicação</div>
+      {wizardStep===3&&(()=>{
+        // Delta T automático ao mudar vento/umidade/temp
+        const autoCalcDeltaT = (f) => {
+          const dt = calcDeltaT(f.temperatura_i, f.umidade_i)
+          return dt !== null ? {...f, delta_t_i: dt.toFixed(1)} : f
+        }
+        const setCondForm = (updater) => setForm(f => {
+          const next = typeof updater === 'function' ? updater(f) : updater
+          return autoCalcDeltaT(next)
+        })
+        const geral = classificarCondicaoGeral(form, '_i')
+        return (
+          <>
+            <div style={sw.body}>
+              <div style={sw.pageTitle}>Condições Climáticas</div>
+              <div style={sw.pageSub}>Passo 3 de 5: Início da aplicação</div>
 
-            <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:18,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
-              onClick={fetchClima}>
-              🌤️ Buscar clima atual (GPS)
-            </button>
+              {/* Banner geral */}
+              {geral && (
+                <div style={{background:geral.cor,borderRadius:12,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
+                  <span style={{fontSize:24}}>{geral.status==='apta'?'✅':geral.status==='alerta'?'⚡':'🚫'}</span>
+                  <span style={{fontSize:15,fontWeight:700,color:'#fff',fontFamily:"'Syne',sans-serif"}}>{geral.label}</span>
+                </div>
+              )}
 
-            {[['VENTO','vento','km/h'],['UMIDADE RELATIVA','umidade','%'],['TEMPERATURA','temperatura','°C'],['DELTA T','delta_t','°C']].map(([lbl,key,unit])=>(
-              <div key={key} style={sw.fw}>
-                <label style={sw.fl}>{lbl} <span style={{fontWeight:400,color:'#aaa'}}>({unit})</span></label>
-                <input style={sw.fi} placeholder={`Ex: ${key==='vento'?'5':key==='umidade'?'65':key==='temperatura'?'28':'4'}`} value={form[key+'_i']||''} onChange={e=>setForm(f=>({...f,[key+'_i']:e.target.value}))}/>
+              {/* Botão clima */}
+              <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
+                onClick={async()=>{
+                  await fetchClima()
+                  // Recalcula delta T após buscar clima
+                  setForm(f=>autoCalcDeltaT(f))
+                }}>
+                🌤️ Buscar clima atual (GPS)
+              </button>
+
+              {/* Cards de condição */}
+              {['vento','umidade','temperatura','delta_t'].map(key=>{
+                const val = form[key+'_i']
+                const classif = val ? classificarClimaParam(key, val) : null
+                const isDeltaT = key === 'delta_t'
+                return (
+                  <div key={key} style={{background:classif?classif.bg:'#f9fbfa',borderRadius:14,padding:'14px 16px',marginBottom:10,border:`1.5px solid ${classif?classif.cor+'44':'#e0ecea'}`}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:isDeltaT?4:10}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10}}>
+                        <span style={{fontSize:24}}>{PARAM_ICONS[key]}</span>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:'#8aad94',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]}</div>
+                          <div style={{fontSize:22,fontWeight:700,color:classif?classif.cor:'#111a14',lineHeight:1.1}}>
+                            {val||'—'} <span style={{fontSize:13,fontWeight:400,color:'#8aad94'}}>{val?PARAM_UNITS[key]:''}</span>
+                          </div>
+                        </div>
+                      </div>
+                      {classif && (
+                        <div style={{textAlign:'center'}}>
+                          <div style={{fontSize:20}}>{classif.icon}</div>
+                          <div style={{fontSize:10,fontWeight:700,color:classif.cor,marginTop:2}}>{classif.label}</div>
+                        </div>
+                      )}
+                    </div>
+                    {classif && <div style={{fontSize:11,color:classif.cor,fontWeight:500,marginBottom:8}}>{classif.diag}</div>}
+                    {isDeltaT ? (
+                      <div style={{fontSize:11,color:'#8aad94',fontStyle:'italic'}}>
+                        Calculado automaticamente via Temp. e Umidade
+                        {val && <> · <strong style={{color:classif?.cor}}>ΔT = {val}°C</strong></>}
+                      </div>
+                    ) : (
+                      <input
+                        style={{...sw.fi,background:'rgba(255,255,255,0.8)'}}
+                        type="number" placeholder={`Ex: ${key==='vento'?'8':key==='umidade'?'65':'28'}`}
+                        value={form[key+'_i']||''}
+                        onChange={e=>setCondForm(f=>({...f,[key+'_i']:e.target.value}))}/>
+                    )}
+                  </div>
+                )
+              })}
+
+              <div style={{fontSize:11,color:'#8aad94',textAlign:'center',marginTop:4}}>
+                📍 Delta T calculado automaticamente pela fórmula de Magnus (Temp. seca − Ponto de orvalho)
               </div>
-            ))}
-          </div>
-          <div style={sw.btnBar}>
-            <div style={{display:'flex',gap:8}}>
-              <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(4) }}>Próximo →</button>
             </div>
-          </div>
-        </>
-      )}
+            <div style={sw.btnBar}>
+              <div style={{display:'flex',gap:8}}>
+                <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
+                <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(4) }}>Próximo →</button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
 
-      {/* ══ STEP 4 — AÇÃO ══ */}
       {wizardStep===4&&(
         <>
           <div style={sw.body}>
@@ -1004,17 +1118,55 @@ export default function PilotApp({onSwitchMode}) {
               </button>
             )}
 
-            {/* Condições FIM */}
-            <div style={{background:'#f4f8f5',borderRadius:12,padding:'14px',marginBottom:16,border:'1px solid #d0e4d8'}}>
-              <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:12,fontFamily:"'Syne',sans-serif"}}>🌤️ CONDIÇÕES NO FIM DA OPERAÇÃO</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                {[['Vento (km/h)','vento'],['Umidade (%)','umidade'],['Temp (°C)','temperatura'],['Delta T (°C)','delta_t']].map(([lbl,key])=>(
-                  <div key={key}>
-                    <label style={{...sw.fl,marginBottom:4}}>{lbl}</label>
-                    <input style={sw.fi} placeholder={form[key+'_i']||'—'} value={form[key+'_f']||''} onChange={e=>setForm(f=>({...f,[key+'_f']:e.target.value}))}/>
-                  </div>
-                ))}
-              </div>
+            {/* Condições FIM — com classificação visual e Delta T automático */}
+            <div style={{background:'#f4f8f5',borderRadius:14,padding:'14px',marginBottom:16,border:'1px solid #d0e4d8'}}>
+              <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:4,fontFamily:"'Syne',sans-serif"}}>🌤️ CONDIÇÕES NO FIM DA OPERAÇÃO</div>
+              {(() => {
+                const geralFim = classificarCondicaoGeral(form, '_f')
+                const autoCalcFim = (f) => {
+                  const dt = calcDeltaT(f.temperatura_f, f.umidade_f)
+                  return dt !== null ? {...f, delta_t_f: dt.toFixed(1)} : f
+                }
+                return (
+                  <>
+                    {geralFim && (
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,background:geralFim.cor,borderRadius:8,padding:'6px 12px'}}>
+                        <span style={{fontSize:16}}>{geralFim.status==='apta'?'✅':geralFim.status==='alerta'?'⚡':'🚫'}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:'#fff'}}>{geralFim.label}</span>
+                      </div>
+                    )}
+                    {['vento','umidade','temperatura','delta_t'].map(key=>{
+                      const val = form[key+'_f']
+                      const classif = val ? classificarClimaParam(key, val) : null
+                      const isDeltaT = key === 'delta_t'
+                      return (
+                        <div key={key} style={{background:classif?classif.bg:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:`1px solid ${classif?classif.cor+'44':'#e0ecea'}`}}>
+                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{fontSize:18}}>{PARAM_ICONS[key]}</span>
+                              <div>
+                                <div style={{fontSize:9,fontWeight:700,color:'#8aad94',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]}</div>
+                                <div style={{fontSize:17,fontWeight:700,color:classif?classif.cor:'#111a14',lineHeight:1.1}}>
+                                  {val||'—'} <span style={{fontSize:11,fontWeight:400,color:'#8aad94'}}>{val?PARAM_UNITS[key]:''}</span>
+                                </div>
+                              </div>
+                            </div>
+                            {classif && <div style={{textAlign:'center'}}><div style={{fontSize:16}}>{classif.icon}</div><div style={{fontSize:9,fontWeight:700,color:classif.cor}}>{classif.label}</div></div>}
+                          </div>
+                          {isDeltaT ? (
+                            <div style={{fontSize:10,color:'#8aad94',fontStyle:'italic'}}>Calculado automaticamente</div>
+                          ) : (
+                            <input style={{...sw.fi,background:'rgba(255,255,255,0.8)',padding:'8px 10px',fontSize:13}}
+                              type="number" placeholder={form[key+'_i']||`${PARAM_LABELS[key].toLowerCase()}...`}
+                              value={form[key+'_f']||''}
+                              onChange={e=>setForm(f=>autoCalcFim({...f,[key+'_f']:e.target.value}))}/>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </>
+                )
+              })()}
             </div>
 
             {/* Fotos */}
