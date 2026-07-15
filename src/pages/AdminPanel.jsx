@@ -796,15 +796,26 @@ export default function AdminPanel({ onSwitchMode }) {
                   <Card title="ÁREA APLICADA" value={totalArea.toFixed(1)+' ha'} sub={`${totalVoos} voos`} icon="📐"/>
                   <Card title="HORAS VOADAS" value={fmtH(totalMins)} sub={`${eficiencia} ha/h eficiência`} color="#185fa5" icon="⏱️"/>
                   <Card title="PILOTOS ATIVOS" value={Object.keys(pilotoStats).length} sub="no período" color="#8e44ad" icon="👨‍✈️"/>
-                  {receita
-                    ? <Card title="RECEITA ESTIMADA" value={receita} sub={`R$ ${precoHa}/ha`} color="#e8a020" icon="💰"/>
-                    : <div style={{background:'#fff',borderRadius:14,border:'1px dashed #d0e4d8',padding:'16px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}}>
-                        <div style={{fontSize:11,color:'#8aad94',fontWeight:600}}>RECEITA (R$/ha)</div>
-                        <input type="number" placeholder="Ex: 35" style={{width:'80px',border:'1px solid #d0e4d8',borderRadius:8,padding:'6px',fontSize:14,textAlign:'center',outline:'none'}}
-                          onChange={e=>{setPrecoHa(parseFloat(e.target.value)||0);localStorage.setItem('orofly_preco_ha',e.target.value)}}/>
-                        <div style={{fontSize:10,color:'#8aad94'}}>configure o preço</div>
-                      </div>
-                  }
+                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+                    <div style={{fontSize:11,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>💰 PREÇO / HA</div>
+                    <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+                      <span style={{fontSize:13,color:'#6b8070',fontWeight:600}}>R$</span>
+                      <input
+                        type="number"
+                        value={precoHa||''}
+                        placeholder="0,00"
+                        style={{flex:1,border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:18,fontWeight:700,color:'#e8a020',outline:'none',textAlign:'right',width:'100%'}}
+                        onChange={e=>{
+                          const v=parseFloat(e.target.value)||0
+                          setPrecoHa(v)
+                          localStorage.setItem('orofly_preco_ha',v)
+                        }}/>
+                    </div>
+                    {precoHa>0
+                      ? <div style={{fontSize:11,color:'#1a7a4a',fontWeight:600}}>= {(totalArea*precoHa).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+                      : <div style={{fontSize:10,color:'#8aad94'}}>Digite o valor por hectare</div>
+                    }
+                  </div>
                 </div>
 
                 {/* ── KPIs SECUNDÁRIOS ── */}
