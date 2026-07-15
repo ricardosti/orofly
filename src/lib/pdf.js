@@ -168,6 +168,89 @@ export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFot
   return doc
 }
 
+// ── KML Parser: extrai coordenadas do KML ──
+function parseKMLCoords(kmlText) {
+  try {
+    const coordMatches = kmlText.match(/<coordinates>([\s\S]*?)<\/coordinates>/gi) || []
+    const allPoints = []
+    coordMatches.forEach(block => {
+      const inner = block.replace(/<\/?coordinates>/gi,'').trim()
+      inner.split(/\s+/).forEach(pt => {
+        const parts = pt.split(',')
+        if (parts.length >= 2) {
+          const lng = parseFloat(parts[0]), lat = parseFloat(parts[1])
+          if (!isNaN(lat) && !isNaN(lng)) allPoints.push({lat, lng})
+        }
+      })
+    })
+    return allPoints
+  } catch(e) { return [] }
+}
+
+// ── Gera imagem de mapa estático com trajeto KML usando Geoapify ──
+async function gerarMapaKML(supabase, rel) {
+  // Busca KML do Storage
+  const kmlPaths = rel.kml_paths || []
+  if (!kmlPaths.length) return null
+
+  try {
+    // Pega o primeiro KML
+    const { data: signedUrl } = await supabase.storage.from('relatorios').createSignedUrl(kmlPaths[0], 300)
+    if (!signedUrl?.signedUrl) return null
+
+    const kmlRes = await fetch(signedUrl.signedUrl)
+    const kmlText = await kmlRes.text()
+    const points = parseKMLCoords(kmlText)
+    if (points.length < 2) return null
+
+    // Calcula bounding box
+    const lats = points.map(p => p.lat), lngs = points.map(p => p.lng)
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
+    const centerLat = (minLat + maxLat) / 2
+    const centerLng = (minLng + maxLng) / 2
+
+    // Calcula zoom baseado na extensão
+    const latDiff = maxLat - minLat, lngDiff = maxLng - minLng
+    const maxDiff = Math.max(latDiff, lngDiff)
+    const zoom = maxDiff > 0.05 ? 13 : maxDiff > 0.01 ? 15 : maxDiff > 0.005 ? 16 : 17
+
+    // Monta polyline para Geoapify (gratuito, sem chave necessária para OSM tiles)
+    // Usa OpenStreetMap Static Map via overpass + leaflet-image-server alternativo
+    // Alternativa: OSM tile + canvas drawing via URL
+    const polylineCoords = points.map(p => `${p.lng},${p.lat}`).join(';')
+
+    // Geoapify Static Maps API (gratuito até 3000/dia)
+    // Cria polyline GeoJSON
+    const geojson = {
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: points.map(p => [p.lng, p.lat])
+      }
+    }
+    const geojsonStr = encodeURIComponent(JSON.stringify(geojson))
+
+    // URL da API Geoapify Static Maps
+    const apiKey = 'a30b45f023014b63bc0db4a88e6a15fd' // Free tier key pública
+    const width = 600, height = 400
+    const url = `https://maps.geoapify.com/v1/staticmap?style=osm-bright&width=${width}&height=${height}&center=lonlat:${centerLng},${centerLat}&zoom=${zoom}&geometry=polyline:${geojsonStr};linecolor:%23e74c3c;linewidth:3;lineopacity:0.9&apiKey=${apiKey}`
+
+    const imgRes = await fetch(url)
+    if (!imgRes.ok) return null
+    const blob = await imgRes.blob()
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch(e) {
+    console.warn('Erro ao gerar mapa KML:', e)
+    return null
+  }
+}
+
 // ============================================================
 // PDF CLIENTE v7 — layout fiel icones corrigidos
 // ============================================================
@@ -382,6 +465,8 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 
   let mapaImg=localFotoMapa||null
   if(!mapaImg&&supabase&&rel.foto_mapa_url) mapaImg=await fetchImageBase64(supabase,'relatorios',rel.foto_mapa_url)
+  // Se não tem foto do mapa mas tem KML, gera imagem do trajeto
+  if(!mapaImg&&supabase&&rel.kml_paths?.length) mapaImg=await gerarMapaKML(supabase,rel)
   if(mapaImg){
     try{
       const p=doc.getImageProperties(mapaImg)

@@ -54,6 +54,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [dashPilotos, setDashPilotos] = useState([])
   const [dashDrones, setDashDrones] = useState([])
   const [precoHa, setPrecoHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_preco_ha')||'0') } catch { return 0 } })
+  const [workingDaysAnual, setWorkingDaysAnual] = useState(() => { try { return parseInt(localStorage.getItem('orofly_working_days')||'144') } catch { return 144 } })
+  const [metaMensalHa, setMetaMensalHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_meta_mensal')||'0') } catch { return 0 } })
   const [pushAtivo, setPushAtivo] = useState(false)
 
   // Inventário
@@ -690,6 +692,35 @@ export default function AdminPanel({ onSwitchMode }) {
             const diasRestantes = diasNoMes - hoje.getDate()
             const projecaoRestante = (ritmoHa*diasRestantes).toFixed(0)
 
+            // ── Working Days ──
+            const workingDaysMes = Math.round(workingDaysAnual / 12)
+            const diaUtil = d => { const dia=new Date(d).getDay(); return dia!==0&&dia!==6 } // exclui fim de semana
+            const workingDaysDecorridos = Array.from({length:hoje.getDate()},(_,i)=>{
+              const d=new Date(hoje.getFullYear(),hoje.getMonth(),i+1); return diaUtil(d)?1:0
+            }).reduce((a,b)=>a+b,0)
+            const workingDaysRestantes = Array.from({length:diasNoMes-hoje.getDate()},(_,i)=>{
+              const d=new Date(hoje.getFullYear(),hoje.getMonth(),hoje.getDate()+i+1); return diaUtil(d)?1:0
+            }).reduce((a,b)=>a+b,0)
+            const haPerWorkingDay = workingDaysDecorridos>0 ? totalArea/workingDaysDecorridos : 0
+            const projecaoWorkingDay = (haPerWorkingDay*(workingDaysDecorridos+workingDaysRestantes)).toFixed(0)
+            const taxaAtingimentoMeta = metaMensalHa>0 ? ((parseFloat(projecaoWorkingDay)/metaMensalHa)*100).toFixed(0) : null
+
+            // ── Forecast Semanal ──
+            const semanas = [1,2,3,4].map(s => {
+              const iniSem = new Date(hoje.getFullYear(), hoje.getMonth(), 1 + (s-1)*7)
+              const fimSem = new Date(hoje.getFullYear(), hoje.getMonth(), Math.min(s*7, diasNoMes))
+              const realizado = relTodos.filter(r => {
+                if(r.status!=='finalizado'||!r.dt_inicio) return false
+                const d=new Date(r.dt_inicio)
+                return d>=iniSem && d<=fimSem
+              }).reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+              const diasSem = Math.min(s*7,diasNoMes) - (1+(s-1)*7) + 1
+              const planejado = metaMensalHa>0 ? (metaMensalHa/4) : (ritmoHa*diasSem)
+              const isCurrent = hoje.getDate() >= (1+(s-1)*7) && hoje.getDate() <= Math.min(s*7,diasNoMes)
+              const isPast = hoje.getDate() > Math.min(s*7,diasNoMes)
+              return { s, label:`Sem ${s}`, iniSem, fimSem, realizado: parseFloat(realizado.toFixed(1)), planejado: parseFloat(planejado.toFixed(1)), isCurrent, isPast }
+            })
+
             // ── Estoque preditivo ──
             const consumoPorHa = {}
             rel.forEach(r => {
@@ -940,6 +971,94 @@ export default function AdminPanel({ onSwitchMode }) {
                       )
                     })}
                     {Object.keys(droneStats).length===0&&<div style={{color:'#8aad94',fontSize:13}}>Nenhum dado de drone ainda</div>}
+                  </div>
+                </div>
+
+                {/* ── WORKING DAYS + FORECAST SEMANAL ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                  <SecTitle>📅 Working Days &amp; Forecast Mensal</SecTitle>
+
+                  {/* Config */}
+                  <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16,padding:'12px',background:'#f4f8f5',borderRadius:10}}>
+                    <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                      <label style={{fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>DIAS ÚTEIS/ANO</label>
+                      <input type="number" value={workingDaysAnual} style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,width:80,outline:'none',textAlign:'center'}}
+                        onChange={e=>{const v=parseInt(e.target.value)||144;setWorkingDaysAnual(v);localStorage.setItem('orofly_working_days',v)}}/>
+                      <span style={{fontSize:10,color:'#8aad94'}}>≈ {workingDaysMes} dias/mês</span>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                      <label style={{fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>META MENSAL (ha)</label>
+                      <input type="number" value={metaMensalHa||''} placeholder="Ex: 5000" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,width:100,outline:'none',textAlign:'center'}}
+                        onChange={e=>{const v=parseFloat(e.target.value)||0;setMetaMensalHa(v);localStorage.setItem('orofly_meta_mensal',v)}}/>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:4,justifyContent:'flex-end'}}>
+                      <div style={{fontSize:12,color:'#6b8070'}}>Working days decorridos: <strong style={{color:'#1a7a4a'}}>{workingDaysDecorridos}</strong></div>
+                      <div style={{fontSize:12,color:'#6b8070'}}>Working days restantes: <strong style={{color:'#185fa5'}}>{workingDaysRestantes}</strong></div>
+                      <div style={{fontSize:12,color:'#6b8070'}}>ha/dia útil: <strong style={{color:'#1a7a4a'}}>{haPerWorkingDay.toFixed(1)}</strong></div>
+                    </div>
+                    {taxaAtingimentoMeta && (
+                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,marginLeft:'auto'}}>
+                        <div style={{fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>PREVISÃO META</div>
+                        <div style={{fontSize:28,fontWeight:700,color:parseInt(taxaAtingimentoMeta)>=100?'#1a7a4a':parseInt(taxaAtingimentoMeta)>=70?'#e8a020':'#c0392b',fontFamily:"'Syne',sans-serif"}}>{taxaAtingimentoMeta}%</div>
+                        <div style={{fontSize:10,color:'#8aad94'}}>{projecaoWorkingDay} / {metaMensalHa} ha</div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tabela semanal */}
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',minWidth:400}}>
+                      <thead>
+                        <tr style={{background:'#f4f8f5'}}>
+                          {['Semana','Período','Realizado (ha)','Planejado (ha)','% Meta','Status'].map(h=>(
+                            <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {semanas.map(({s,label,iniSem,fimSem,realizado,planejado,isCurrent,isPast})=>{
+                          const pct = planejado>0 ? ((realizado/planejado)*100).toFixed(0) : '—'
+                          const pctNum = parseInt(pct)
+                          const corPct = pctNum>=100?'#1a7a4a':pctNum>=70?'#e8a020':'#c0392b'
+                          const fmtSemData = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`
+                          return (
+                            <tr key={s} style={{background:isCurrent?'#e8f5ee':s%2===0?'#f9fbfa':'#fff',fontWeight:isCurrent?600:400}}>
+                              <td style={{padding:'9px 10px',fontSize:13}}>
+                                <span style={{background:isCurrent?'#1a7a4a':isPast?'#d0e4d8':'#f4f8f5',color:isCurrent?'#fff':isPast?'#6b8070':'#8aad94',padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:700}}>{label}</span>
+                                {isCurrent&&<span style={{marginLeft:6,fontSize:10,color:'#1a7a4a'}}>← atual</span>}
+                              </td>
+                              <td style={{padding:'9px 10px',fontSize:12,color:'#6b8070'}}>{fmtSemData(iniSem)} – {fmtSemData(fimSem)}</td>
+                              <td style={{padding:'9px 10px',fontSize:14,fontWeight:700,color:isPast||isCurrent?'#111a14':'#aaa'}}>
+                                {isPast||isCurrent ? realizado : <span style={{color:'#ccc'}}>—</span>}
+                              </td>
+                              <td style={{padding:'9px 10px',fontSize:13,color:'#6b8070'}}>{planejado}</td>
+                              <td style={{padding:'9px 10px'}}>
+                                {(isPast||isCurrent)&&pct!=='—'&&(
+                                  <div>
+                                    <div style={{fontSize:13,fontWeight:700,color:corPct}}>{pct}%</div>
+                                    <div style={{background:'#f0f0f0',borderRadius:20,height:5,marginTop:3,overflow:'hidden',width:60}}>
+                                      <div style={{background:corPct,height:'100%',borderRadius:20,width:`${Math.min(100,parseInt(pct)||0)}%`}}/>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{padding:'9px 10px',fontSize:12}}>
+                                {isCurrent ? '🟢 Em andamento' : isPast ? (pctNum>=100?'✅ Meta atingida':'⚠️ Abaixo da meta') : '⏳ Aguardando'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                        {/* Total */}
+                        <tr style={{background:'#f4f8f5',fontWeight:700,borderTop:'2px solid #d0e4d8'}}>
+                          <td colSpan={2} style={{padding:'10px',fontSize:12,fontFamily:"'Syne',sans-serif",color:'#111a14'}}>TOTAL DO MÊS</td>
+                          <td style={{padding:'10px',fontSize:14,color:'#1a7a4a'}}>{totalArea.toFixed(1)}</td>
+                          <td style={{padding:'10px',fontSize:13,color:'#6b8070'}}>{metaMensalHa||projecaoMes}</td>
+                          <td colSpan={2} style={{padding:'10px',fontSize:13,color:taxaAtingimentoMeta&&parseInt(taxaAtingimentoMeta)>=100?'#1a7a4a':'#e8a020'}}>
+                            {taxaAtingimentoMeta ? `Previsão: ${taxaAtingimentoMeta}% da meta` : `Projeção: ${projecaoMes} ha`}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
 
