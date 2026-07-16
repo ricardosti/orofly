@@ -319,9 +319,9 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   doc.text(fmtD(rel.dt_inicio),C1+122,y+15,{align:'center'})
   doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
   doc.text(fmtH(rel.dt_inicio),C1+122,y+21,{align:'center'})
-  y+=32
+  y+=29
 
-  doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C1,y,C1+CW,y);y+=3
+  doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C1,y,C1+CW,y);y+=2
 
   // Cliente/Fazenda/Piloto
   doc.setFillColor(245,251,247);doc.roundedRect(C1,y,CW,12,1.5,1.5,'F')
@@ -333,14 +333,14 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
     doc.text(truncFit(doc,val,tw3-5),x,y+10)
   })
-  y+=15
+  y+=14
 
   function sec(num,title){
     doc.setFillColor(240,248,243);doc.roundedRect(C1,y,CW,7,1.5,1.5,'F')
     doc.setFillColor(...G);doc.circle(C1+4.5,y+3.5,3.5,'F')
     doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W);doc.text(String(num),C1+4.5,y+4.8,{align:'center'})
     doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text(title,C1+11,y+5.5)
-    y+=9
+    y+=8.5
   }
 
   // 1 RESUMO
@@ -358,7 +358,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.text(String(val),rx+rW/2,y+19,{align:'center'})
     if(unit){doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text(unit,rx+rW/2,y+24,{align:'center'})}
   })
-  y+=29
+  y+=28
 
   // 2 HORÁRIO
   sec(2,'HORÁRIO DA OPERAÇÃO')
@@ -373,7 +373,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
     doc.text(v,C1+(i+0.5)*CW/3,y+5.5,{align:'center'})
   })
-  y+=11
+  y+=10
 
   // 3+4
   const hW=(CW-3)/2, yBase=y
@@ -386,12 +386,19 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
   doc.text('PRODUTO',C1+3,y+4.5);doc.text('DOSE',C1+hW-3,y+4.5,{align:'right'})
   y+=7
-  ;(rel.produtos||[]).filter(Boolean).forEach((p,i)=>{
+  const prods=(rel.produtos||[]).filter(Boolean)
+  if(prods.length===0){
+    doc.setFillColor(255,255,255);doc.rect(C1,y,hW,7,'F')
+    doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
+    doc.text('Nenhum produto registrado',C1+3,y+5)
+    y+=7
+  }
+  prods.forEach((p,i)=>{
     doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C1,y,hW,7,'F')
     const pts=p.split(' - ');const nome=pts[0]||p;const dose=pts.slice(1).join('-')||''
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,nome,hW/2-5),C1+3,y+5)
-    doc.text(truncFit(doc,dose,hW/2-3),C1+hW-3,y+5,{align:'right'})
+    doc.text(truncFit(doc,nome,hW/2-2),C1+3,y+5)
+    doc.text(truncFit(doc,dose,hW/2-6),C1+hW-3,y+5,{align:'right'})
     y+=7
   })
   const yP=y
@@ -404,36 +411,44 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   yc+=9
   doc.setFillColor(240,248,243);doc.rect(cx,yc,hW,6,'F')
   doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
-  doc.text('PARÂMETRO',cx+3,yc+4.5);doc.text('INÍCIO',cx+hW*0.57,yc+4.5);doc.text('FINAL',cx+hW*0.81,yc+4.5)
+  doc.text('PARÂMETRO',cx+3,yc+4.5);doc.text('INÍCIO',cx+hW*0.55,yc+4.5);doc.text('FINAL',cx+hW*0.80,yc+4.5)
   yc+=7
-  ;[['Temperatura','temperatura','°C'],['Umidade Relativa','umidade','%'],['Vento','vento','km/h'],['Delta T','delta_t','°C']].forEach(([lbl,key,unit],i)=>{
+  ;[['Temperatura','temperatura','°C'],['Umid. Relativa','umidade','%'],['Vento','vento','km/h'],['Delta T','delta_t','°C']].forEach(([lbl,key,unit],i)=>{
     doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(cx,yc,hW,7,'F')
-    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(lbl,cx+3,yc+5)
-    doc.text(rel[key+'_i']?rel[key+'_i']+' '+unit:'—',cx+hW*0.57,yc+5)
-    doc.text(rel[key+'_f']?rel[key+'_f']+' '+unit:'—',cx+hW*0.81,yc+5)
+    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
+    doc.text(truncFit(doc,lbl,hW*0.5-4),cx+3,yc+5)
+    doc.text(truncFit(doc,rel[key+'_i']?rel[key+'_i']+' '+unit:'—',hW*0.24),cx+hW*0.55,yc+5)
+    doc.text(truncFit(doc,rel[key+'_f']?rel[key+'_f']+' '+unit:'—',hW*0.20),cx+hW*0.80,yc+5)
     yc+=7
   })
-  y=Math.max(yP,yc)+4
+  y=Math.max(yP,yc)+3
 
-  // 5 DRONE — ícone em cima, label, valor. Cada campo na sua "casinha"
+  // 5 DRONE — ícone em cima, label, valor. Garante que não invade o rodapé.
+  const footerY = PH-M-8
+  const alturaSec5 = 8.5+18 // header + box
+  if (y + alturaSec5 > footerY - 2) y = footerY - alturaSec5 - 2
   sec(5,'CONFIGURAÇÃO DO DRONE')
   const dW=CW/4
-  doc.setFillColor(250,253,250);doc.roundedRect(C1,y,CW,17,1.5,1.5,'F')
-  doc.setDrawColor(200,235,215);doc.roundedRect(C1,y,CW,17,1.5,1.5,'S')
-  ;[[rel.drone||'—','DRONE',IC_DRONE],[rel.faixa_i?rel.faixa_i+' m':'—','FAIXA DE APLICAÇÃO',IC_FAIXA],[rel.tamanho_gota||'—','TAMANHO DA GOTA',IC_GOTA],[rel.velocidade_drone||'—','VELOCIDADE',IC_VELOC]].forEach(([val,lbl,ic],i)=>{
+  doc.setFillColor(250,253,250);doc.roundedRect(C1,y,CW,18,1.5,1.5,'F')
+  doc.setDrawColor(200,235,215);doc.roundedRect(C1,y,CW,18,1.5,1.5,'S')
+  ;[
+    [rel.drone||'—','DRONE',IC_DRONE],
+    [rel.faixa_i?rel.faixa_i+' m':'—','FAIXA APLIC.',IC_FAIXA],
+    [rel.tamanho_gota?rel.tamanho_gota+' µm':'—','TAM. GOTA',IC_GOTA],
+    [rel.velocidade_drone?rel.velocidade_drone+' km/h':'—','VELOCIDADE',IC_VELOC]
+  ].forEach(([val,lbl,ic],i)=>{
     const dx=C1+i*dW
-    if(i>0){doc.setDrawColor(200,235,215);doc.setLineWidth(0.3);doc.line(dx,y+2,dx,y+15)}
+    if(i>0){doc.setDrawColor(200,235,215);doc.setLineWidth(0.3);doc.line(dx,y+2,dx,y+16)}
     // Ícone centrado no topo
     try{doc.addImage(ic,'PNG',dx+(dW-6)/2,y+1.5,6,6)}catch(e){}
     // Label pequeno
     doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR)
-    doc.text(lbl,dx+dW/2,y+9.5,{align:'center'})
-    // Valor — trunca se não couber
-    doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,val,dW-3),dx+dW/2,y+14.5,{align:'center'})
+    doc.text(lbl,dx+dW/2,y+10,{align:'center'})
+    // Valor — trunca dentro da casinha
+    doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+    doc.text(truncFit(doc,val,dW-4),dx+dW/2,y+15.5,{align:'center'})
   })
-  y+=20
+  y+=21
 
   // Rodapé col1
   doc.setFillColor(...G);doc.rect(C1,PH-M-8,CW,9,'F')
