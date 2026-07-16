@@ -148,10 +148,11 @@ function classificarClimaParam(key, valor) {
     return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Estresse térmico: fechamento estomático' }
   }
   if (key === 'delta_t') {
-    if (v < 2) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Alta umidade: inversão térmica. Não aplique.' }
-    if (v <= 8) return { status: 'apta', label: 'Ideal', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Condição perfeita para aplicação' }
-    if (v <= 10) return { status: 'alerta', label: 'Marginal', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Risco de evaporação: use gotas grossas' }
-    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Ar seco: gotas evaporam antes de atingir o alvo' }
+    if (v < 2) return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Cerração/neblina: escorrimento e inversão térmica. Não aplicar.' }
+    if (v <= 8) return { status: 'apta', label: 'Ideal', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
+    if (v <= 10) return { status: 'alerta', label: 'Marginal', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
+    if (v <= 12) return { status: 'nao_conforme', label: 'Inadequado', cor: '#d35400', bg: '#fdeee0', icon: '⚠️', diag: 'Evaporação acelerada: só extrema necessidade, gotas muito grossas.' }
+    return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Calda seca antes do alvo. Interromper imediatamente.' }
   }
   return null
 }
@@ -648,7 +649,7 @@ export default function PilotApp({onSwitchMode}) {
     {n:2, label:'Aplicação'},
     {n:3, label:'Condições'},
     {n:4, label:'Ação'},
-    {n:5, label:'Finalizar'},
+    {n:5, label:'Relatório'},
   ]
 
   const sw = {
@@ -815,7 +816,12 @@ export default function PilotApp({onSwitchMode}) {
             )}
           </div>
           <div style={sw.btnBar}>
-            <button style={sw.btnG} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(2) }}>Próximo →</button>
+            <div style={{display:'flex',gap:8}}>
+              <button style={{...sw.btnG,background:'#fdeaea',color:'#c0392b',flex:'0 0 90px'}} onClick={()=>{
+                if(window.confirm('Limpar TODO o formulário? Isso apaga todos os dados preenchidos.')) limpar()
+              }}>🗑️ Limpar</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(2) }}>Próximo →</button>
+            </div>
           </div>
         </>
       )}
@@ -878,25 +884,16 @@ export default function PilotApp({onSwitchMode}) {
         </>
       )}
 
-      {/* ══ STEP 3 — CONDIÇÕES ══ */}
+      {/* ══ STEP 3 — CONDIÇÕES (início e fim lado a lado) ══ */}
       {wizardStep===3&&(()=>{
-        // Delta T automático ao mudar vento/umidade/temp
-        const autoCalcDeltaT = (f) => {
-          const dt = calcDeltaT(f.temperatura_i, f.umidade_i)
-          return dt !== null ? {...f, delta_t_i: dt.toFixed(1)} : f
-        }
-        const setCondForm = (updater) => setForm(f => {
-          const next = typeof updater === 'function' ? updater(f) : updater
-          return autoCalcDeltaT(next)
-        })
         const geral = classificarCondicaoGeral(form, '_i')
         return (
           <>
             <div style={sw.body}>
               <div style={sw.pageTitle}>Condições Climáticas</div>
-              <div style={sw.pageSub}>Passo 3 de 5: Início da aplicação</div>
+              <div style={sw.pageSub}>Passo 3 de 5: Início e fim da aplicação</div>
 
-              {/* Banner geral */}
+              {/* Banner geral (baseado no início) */}
               {geral && (
                 <div style={{background:geral.cor,borderRadius:12,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
                   <span style={{fontSize:24}}>{geral.status==='apta'?'✅':geral.status==='alerta'?'⚡':'🚫'}</span>
@@ -906,57 +903,53 @@ export default function PilotApp({onSwitchMode}) {
 
               {/* Botão clima */}
               <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
-                onClick={async()=>{
-                  await fetchClima()
-                  // Recalcula delta T após buscar clima
-                  setForm(f=>autoCalcDeltaT(f))
-                }}>
+                onClick={fetchClima}>
                 🌤️ Buscar clima atual (GPS)
               </button>
 
-              {/* Cards de condição */}
+              {/* Cards com início e fim lado a lado */}
               {['vento','umidade','temperatura','delta_t'].map(key=>{
-                const val = form[key+'_i']
-                const classif = val ? classificarClimaParam(key, val) : null
-                const isDeltaT = key === 'delta_t'
+                const valI = form[key+'_i'], valF = form[key+'_f']
+                const classifI = valI ? classificarClimaParam(key, valI) : null
+                const classifF = valF ? classificarClimaParam(key, valF) : null
+                const classifPrincipal = classifI || classifF
                 return (
-                  <div key={key} style={{background:classif?classif.bg:'#f9fbfa',borderRadius:14,padding:'14px 16px',marginBottom:10,border:`1.5px solid ${classif?classif.cor+'44':'#e0ecea'}`}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:isDeltaT?4:10}}>
+                  <div key={key} style={{background:classifPrincipal?classifPrincipal.bg:'#f9fbfa',borderRadius:14,padding:'14px 16px',marginBottom:10,border:`1.5px solid ${classifPrincipal?classifPrincipal.cor+'44':'#e0ecea'}`}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
-                        <span style={{fontSize:24}}>{PARAM_ICONS[key]}</span>
-                        <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#8aad94',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]}</div>
-                          <div style={{fontSize:22,fontWeight:700,color:classif?classif.cor:'#111a14',lineHeight:1.1}}>
-                            {val||'—'} <span style={{fontSize:13,fontWeight:400,color:'#8aad94'}}>{val?PARAM_UNITS[key]:''}</span>
-                          </div>
-                        </div>
+                        <span style={{fontSize:22}}>{PARAM_ICONS[key]}</span>
+                        <div style={{fontSize:11,fontWeight:700,color:'#6b8070',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]} <span style={{fontWeight:400,color:'#8aad94'}}>({PARAM_UNITS[key]})</span></div>
                       </div>
-                      {classif && (
-                        <div style={{textAlign:'center'}}>
-                          <div style={{fontSize:20}}>{classif.icon}</div>
-                          <div style={{fontSize:10,fontWeight:700,color:classif.cor,marginTop:2}}>{classif.label}</div>
+                      {classifPrincipal && (
+                        <div style={{display:'flex',alignItems:'center',gap:5}}>
+                          <span style={{fontSize:15}}>{classifPrincipal.icon}</span>
+                          <span style={{fontSize:11,fontWeight:700,color:classifPrincipal.cor}}>{classifPrincipal.label}</span>
                         </div>
                       )}
                     </div>
-                    {classif && <div style={{fontSize:11,color:classif.cor,fontWeight:500,marginBottom:8}}>{classif.diag}</div>}
-                    {isDeltaT ? (
-                      <div style={{fontSize:11,color:'#8aad94',fontStyle:'italic'}}>
-                        Calculado automaticamente via Temp. e Umidade
-                        {val && <> · <strong style={{color:classif?.cor}}>ΔT = {val}°C</strong></>}
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                      <div>
+                        <label style={{...sw.fl,marginBottom:4}}>INÍCIO</label>
+                        <input style={{...sw.fi,background:'rgba(255,255,255,0.85)'}} type="number"
+                          placeholder={`Ex: ${key==='vento'?'8':key==='umidade'?'65':key==='temperatura'?'28':'4'}`}
+                          value={form[key+'_i']||''} onChange={e=>setForm(f=>({...f,[key+'_i']:e.target.value}))}/>
+                        {classifI&&<div style={{fontSize:10,color:classifI.cor,fontWeight:600,marginTop:3}}>{classifI.icon} {classifI.label}</div>}
                       </div>
-                    ) : (
-                      <input
-                        style={{...sw.fi,background:'rgba(255,255,255,0.8)'}}
-                        type="number" placeholder={`Ex: ${key==='vento'?'8':key==='umidade'?'65':'28'}`}
-                        value={form[key+'_i']||''}
-                        onChange={e=>setCondForm(f=>({...f,[key+'_i']:e.target.value}))}/>
-                    )}
+                      <div>
+                        <label style={{...sw.fl,marginBottom:4}}>FIM</label>
+                        <input style={{...sw.fi,background:'rgba(255,255,255,0.85)'}} type="number"
+                          placeholder={form[key+'_i']||'—'}
+                          value={form[key+'_f']||''} onChange={e=>setForm(f=>({...f,[key+'_f']:e.target.value}))}/>
+                        {classifF&&<div style={{fontSize:10,color:classifF.cor,fontWeight:600,marginTop:3}}>{classifF.icon} {classifF.label}</div>}
+                      </div>
+                    </div>
+                    {classifPrincipal && <div style={{fontSize:11,color:classifPrincipal.cor,fontWeight:500,marginTop:8}}>{classifPrincipal.diag}</div>}
                   </div>
                 )
               })}
 
               <div style={{fontSize:11,color:'#8aad94',textAlign:'center',marginTop:4}}>
-                📍 Delta T calculado automaticamente pela fórmula de Magnus (Temp. seca − Ponto de orvalho)
+                📊 Classificação conforme matriz técnica de pulverização (Delta T, vento, umidade e temperatura)
               </div>
             </div>
             <div style={sw.btnBar}>
@@ -968,6 +961,7 @@ export default function PilotApp({onSwitchMode}) {
           </>
         )
       })()}
+
 
       {wizardStep===4&&(
         <>
@@ -1011,8 +1005,8 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
 
-            {/* Botões — só Iniciar e Pausar/Retomar */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            {/* Botões — Iniciar, Pausar, Finalizar */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
               <button style={{background:'#e8f5ee',border:'none',borderRadius:12,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
                 disabled={opState!=='idle'||saving}
                 onClick={()=>{
@@ -1029,6 +1023,24 @@ export default function PilotApp({onSwitchMode}) {
                 <span style={{fontSize:26}}>{opState==='paused'?'▶️':'⏸️'}</span>
                 <span style={{fontSize:12,fontWeight:700,color:'#e8a020'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
               </button>
+              <button style={{background:'#fdeaea',border:'none',borderRadius:12,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                disabled={opState!=='running'&&opState!=='paused'}
+                onClick={()=>{
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                  opFinalizar()
+                  setWizardStep(5)
+                }}>
+                <span style={{fontSize:26}}>⏹️</span>
+                <span style={{fontSize:12,fontWeight:700,color:'#c0392b'}}>Finalizar</span>
+              </button>
+            </div>
+
+            {/* Horários editáveis — preenchidos pelo sistema, ajustáveis */}
+            <div style={{background:'#f9fbfa',borderRadius:12,padding:'12px 14px',marginBottom:12,border:'1px solid #e8eee8'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#6b8070',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>🕐 HORÁRIOS <span style={{fontWeight:400,color:'#8aad94'}}>(sistema preenche, você pode editar)</span></div>
+              <DtRow prefix="dt_inicio" form={form} setForm={setForm} label="INÍCIO" />
+              <DtRow prefix="dt_fim" form={form} setForm={setForm} label="FIM" />
             </div>
 
             {/* Finalizado Parcial */}
@@ -1098,76 +1110,13 @@ export default function PilotApp({onSwitchMode}) {
         </>
       )}
 
-      {/* ══ STEP 5 — FINALIZAR ══ */}
+      {/* ══ STEP 5 — RELATÓRIO ══ */}
       {wizardStep===5&&(
         <>
           <div style={sw.body}>
-            <div style={sw.pageTitle}>Finalizar</div>
-            <div style={sw.pageSub}>Passo 5 de 5: Condições finais, fotos e relatório</div>
+            <div style={sw.pageTitle}>Relatório</div>
+            <div style={sw.pageSub}>Passo 5 de 5: Fotos, KML e geração do relatório</div>
 
-            {/* Botão Finalizar — aqui no step 5 */}
-            {(opState==='running'||opState==='paused')&&(
-              <button style={{...sw.btnG,background:'#c0392b',marginBottom:16,width:'100%'}}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                  opFinalizar()
-                  showToast('✅ Voo finalizado!')
-                }}>
-                ⏹️ Finalizar Operação
-              </button>
-            )}
-
-            {/* Condições FIM — com classificação visual e Delta T automático */}
-            <div style={{background:'#f4f8f5',borderRadius:14,padding:'14px',marginBottom:16,border:'1px solid #d0e4d8'}}>
-              <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:4,fontFamily:"'Syne',sans-serif"}}>🌤️ CONDIÇÕES NO FIM DA OPERAÇÃO</div>
-              {(() => {
-                const geralFim = classificarCondicaoGeral(form, '_f')
-                const autoCalcFim = (f) => {
-                  const dt = calcDeltaT(f.temperatura_f, f.umidade_f)
-                  return dt !== null ? {...f, delta_t_f: dt.toFixed(1)} : f
-                }
-                return (
-                  <>
-                    {geralFim && (
-                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,background:geralFim.cor,borderRadius:8,padding:'6px 12px'}}>
-                        <span style={{fontSize:16}}>{geralFim.status==='apta'?'✅':geralFim.status==='alerta'?'⚡':'🚫'}</span>
-                        <span style={{fontSize:12,fontWeight:700,color:'#fff'}}>{geralFim.label}</span>
-                      </div>
-                    )}
-                    {['vento','umidade','temperatura','delta_t'].map(key=>{
-                      const val = form[key+'_f']
-                      const classif = val ? classificarClimaParam(key, val) : null
-                      const isDeltaT = key === 'delta_t'
-                      return (
-                        <div key={key} style={{background:classif?classif.bg:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:`1px solid ${classif?classif.cor+'44':'#e0ecea'}`}}>
-                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
-                            <div style={{display:'flex',alignItems:'center',gap:8}}>
-                              <span style={{fontSize:18}}>{PARAM_ICONS[key]}</span>
-                              <div>
-                                <div style={{fontSize:9,fontWeight:700,color:'#8aad94',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]}</div>
-                                <div style={{fontSize:17,fontWeight:700,color:classif?classif.cor:'#111a14',lineHeight:1.1}}>
-                                  {val||'—'} <span style={{fontSize:11,fontWeight:400,color:'#8aad94'}}>{val?PARAM_UNITS[key]:''}</span>
-                                </div>
-                              </div>
-                            </div>
-                            {classif && <div style={{textAlign:'center'}}><div style={{fontSize:16}}>{classif.icon}</div><div style={{fontSize:9,fontWeight:700,color:classif.cor}}>{classif.label}</div></div>}
-                          </div>
-                          {isDeltaT ? (
-                            <div style={{fontSize:10,color:'#8aad94',fontStyle:'italic'}}>Calculado automaticamente</div>
-                          ) : (
-                            <input style={{...sw.fi,background:'rgba(255,255,255,0.8)',padding:'8px 10px',fontSize:13}}
-                              type="number" placeholder={form[key+'_i']||`${PARAM_LABELS[key].toLowerCase()}...`}
-                              value={form[key+'_f']||''}
-                              onChange={e=>setForm(f=>autoCalcFim({...f,[key+'_f']:e.target.value}))}/>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </>
-                )
-              })()}
-            </div>
 
             {/* Fotos */}
             <div style={{marginBottom:16}}>
