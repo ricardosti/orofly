@@ -62,6 +62,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invDrones, setInvDrones] = useState([])
   const [invProdutos, setInvProdutos] = useState([])
   const [invClientes, setInvClientes] = useState([])
+  const [invFazendas, setInvFazendas] = useState([])
+  const [invTalhoes, setInvTalhoes] = useState([])
+  const [fzForm, setFzForm] = useState({cliente:'',nome:''})
+  const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
   const [invTab, setInvTab] = useState('drones')
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
@@ -102,7 +106,7 @@ export default function AdminPanel({ onSwitchMode }) {
     return { nome:d.nome||'', modelo:d.modelo||'', serial:d.serial||'', fabricante:d.fabricante||'DJI', ano_aquisicao:d.ano_aquisicao||'', horas_limite:d.horas_limite||100, ativo:d.ativo!==false, obs:d.obs||'' }
   }
   function initProdutoForm(p={}) {
-    return { nome:p.nome||'', fabricante:p.fabricante||'', unidade:p.unidade||'L', estoque_atual:p.estoque_atual||0, estoque_minimo:p.estoque_minimo||0, validade:p.validade||'', registro_mapa:p.registro_mapa||'', ativo:p.ativo!==false, obs:p.obs||'' }
+    return { nome:p.nome||'', fabricante:p.fabricante||'', unidade:p.unidade||'L', estoque_atual:p.estoque_atual||0, estoque_minimo:p.estoque_minimo||0, validade:p.validade||'', registro_mapa:p.registro_mapa||'', ativo:p.ativo!==false, obs:p.obs||'', dose_padrao:p.dose_padrao??'', dose_auto:p.dose_auto!==false }
   }
 
   async function fetchInventario() {
@@ -115,6 +119,11 @@ export default function AdminPanel({ onSwitchMode }) {
       if (!e1 && drones) setInvDrones(drones)
       if (!e2 && produtos) setInvProdutos(produtos)
       if (!e3 && clientes) setInvClientes(clientes)
+      // Fazendas e talhões (podem não existir ainda)
+      const { data: fz } = await supabase.from('fazendas').select('*').order('nome')
+      if (fz) setInvFazendas(fz)
+      const { data: tl } = await supabase.from('talhoes').select('*').order('nome')
+      if (tl) setInvTalhoes(tl)
     } catch(e) {
       console.warn('Tabelas de inventário não encontradas. Execute o SQL no Supabase.')
     }
@@ -147,7 +156,7 @@ export default function AdminPanel({ onSwitchMode }) {
   async function salvarProduto() {
     setInvSaving(true)
     try {
-      const payload = { ...produtoForm, estoque_atual: parseFloat(produtoForm.estoque_atual)||0, estoque_minimo: parseFloat(produtoForm.estoque_minimo)||0, validade: produtoForm.validade||null }
+      const payload = { ...produtoForm, estoque_atual: parseFloat(produtoForm.estoque_atual)||0, estoque_minimo: parseFloat(produtoForm.estoque_minimo)||0, validade: produtoForm.validade||null, dose_padrao: produtoForm.dose_padrao!==''&&produtoForm.dose_padrao!=null?parseFloat(produtoForm.dose_padrao):null }
       if (produtoModal === 'novo') {
         const { error } = await supabase.from('produtos').insert(payload)
         if (error) throw error
@@ -1209,12 +1218,89 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* Sub-tabs */}
-                <div style={{display:'flex',gap:8,marginBottom:16}}>
-                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['clientes','🏢 Clientes']].map(([id,lbl])=>(
+                <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['clientes','🏢 Clientes'],['fazendas','🌾 Fazendas']].map(([id,lbl])=>(
                     <button key={id} style={{background:invTab===id?'#1a7a4a':'#f4f8f5',color:invTab===id?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
                 </div>
+
+                {/* ── FAZENDAS & TALHÕES ── */}
+                {invTab==='fazendas' && (
+                  <div>
+                    {/* Form nova fazenda */}
+                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,marginBottom:16}}>
+                      <div style={{fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Nova Fazenda</div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                          value={fzForm.cliente} onChange={e=>setFzForm(f=>({...f,cliente:e.target.value}))}>
+                          <option value="">Cliente...</option>
+                          {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
+                        </select>
+                        <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                          placeholder="Nome da fazenda" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
+                        <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                          onClick={async()=>{
+                            if(!fzForm.cliente||!fzForm.nome){alert('Preencha cliente e nome');return}
+                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:fzForm.nome,ativo:true})
+                            if(error){alert('Erro: '+error.message);return}
+                            setFzForm({cliente:'',nome:''});fetchInventario()
+                          }}>Salvar</button>
+                      </div>
+                    </div>
+
+                    {/* Lista por cliente */}
+                    {invFazendas.length===0 ? (
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                        Nenhuma fazenda cadastrada.<br/>Cadastre acima ou rode o SQL das tabelas fazendas/talhoes.
+                      </div>
+                    ) : (
+                      [...new Set(invFazendas.map(f=>f.cliente))].map(cli=>(
+                        <div key={cli} style={{marginBottom:16}}>
+                          <div style={{fontSize:13,fontWeight:700,color:'#1a7a4a',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
+                          {invFazendas.filter(f=>f.cliente===cli).map(fz=>{
+                            const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
+                            const tf = tlForm[fz.id]||{nome:'',area_ha:''}
+                            return (
+                              <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14,marginBottom:10}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                                  <span style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</span>
+                                  <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                    onClick={async()=>{
+                                      if(!window.confirm(`Excluir fazenda ${fz.nome} e todos os talhões?`))return
+                                      await supabase.from('fazendas').delete().eq('id',fz.id);fetchInventario()
+                                    }}>🗑️</button>
+                                </div>
+                                {talhoesFz.map(t=>(
+                                  <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f9fbfa',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
+                                    <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#1a7a4a'}}>· {t.area_ha} ha</strong>:''}</span>
+                                    <button style={{background:'none',border:'none',color:'#c0392b',cursor:'pointer',fontSize:14}}
+                                      onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
+                                  </div>
+                                ))}
+                                <div style={{display:'flex',gap:6,marginTop:8}}>
+                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
+                                    placeholder="Novo talhão..." value={tf.nome}
+                                    onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,nome:e.target.value}}))}/>
+                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
+                                    placeholder="Área (ha)" type="number" value={tf.area_ha}
+                                    onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,area_ha:e.target.value}}))}/>
+                                  <button style={{background:'#e8f5ee',color:'#1a7a4a',border:'none',borderRadius:7,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                                    onClick={async()=>{
+                                      if(!tf.nome){alert('Nome do talhão');return}
+                                      const {error}=await supabase.from('talhoes').insert({fazenda_id:fz.id,nome:tf.nome,area_ha:tf.area_ha?parseFloat(tf.area_ha):null,ativo:true})
+                                      if(error){alert('Erro: '+error.message);return}
+                                      setTlForm(s=>({...s,[fz.id]:{nome:'',area_ha:''}}));fetchInventario()
+                                    }}>+ Add</button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
 
                 {/* ── DRONES ── */}
                 {invTab==='drones' && (
@@ -1386,6 +1472,19 @@ export default function AdminPanel({ onSwitchMode }) {
                           <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="number" step="0.1" value={produtoForm.estoque_minimo||0}
                             onChange={e=>setProdutoForm(f=>({...f,estoque_minimo:e.target.value}))} />
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>DOSE PADRÃO ({produtoForm.unidade||'L'}/ha)</div>
+                          <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            type="number" step="0.001" placeholder="Ex: 0.6" value={produtoForm.dose_padrao??''}
+                            onChange={e=>setProdutoForm(f=>({...f,dose_padrao:e.target.value}))} />
+                        </div>
+                        <div style={{display:'flex',alignItems:'flex-end',paddingBottom:6}}>
+                          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#6b8070',cursor:'pointer'}}>
+                            <input type="checkbox" checked={produtoForm.dose_auto!==false}
+                              onChange={e=>setProdutoForm(f=>({...f,dose_auto:e.target.checked}))}/>
+                            Pré-preencher no app
+                          </label>
                         </div>
                         <div style={{gridColumn:'1/-1'}}>
                           <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>VALIDADE</div>

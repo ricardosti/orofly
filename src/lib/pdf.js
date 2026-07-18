@@ -496,6 +496,16 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     y2+=63
   }
 
+  // Bordadura — logo após o mapa, só se preenchida
+  if(rel.bordadura){
+    doc.setFillColor(240,248,243);doc.roundedRect(C2,y2,CW,8,1.5,1.5,'F')
+    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
+    doc.text('BORDADURA:',C2+3,y2+5.5)
+    doc.setFont('helvetica','normal');doc.setTextColor(...DK)
+    doc.text(String(rel.bordadura)+' m',C2+28,y2+5.5)
+    y2+=10
+  }
+
   // Grid talhão
   ;[['TALHÃO',rel.localizacao||rel.fazenda||'—'],['INÍCIO DA OPERAÇÃO',fmt(rel.dt_inicio)],['ÁREA APLICADA',area?area.toFixed(2)+' ha':'—'],['TÉRMINO DA OPERAÇÃO',fmt(rel.dt_fim)]].forEach(([lbl,val],i)=>{
     const gx=C2+(i%2===0?0:(CW-4)/2+4)

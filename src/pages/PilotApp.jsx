@@ -43,7 +43,7 @@ function initForm(data) {
       ...cond,
       dt_inicio_data:ini.data,dt_inicio_hh:ini.hh,dt_inicio_mm:ini.mm,
       dt_fim_data:fim.data,dt_fim_hh:fim.hh,dt_fim_mm:fim.mm,
-      pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',
+      pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',bordadura:data.bordadura||'',
     }
   }
   return {
@@ -53,7 +53,7 @@ function initForm(data) {
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
-    pausas:[],obs1:'',obs2:'',
+    pausas:[],obs1:'',obs2:'',bordadura:'',
   }
 }
 
@@ -157,10 +157,9 @@ function classificarClimaParam(key, valor) {
   }
   if (key === 'delta_t') {
     if (v < 2) return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Cerração/neblina: escorrimento e inversão térmica. Não aplicar.' }
-    if (v <= 8) return { status: 'apta', label: 'Ideal', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
-    if (v <= 10) return { status: 'alerta', label: 'Marginal', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
-    if (v <= 12) return { status: 'nao_conforme', label: 'Inadequado', cor: '#d35400', bg: '#fdeee0', icon: '⚠️', diag: 'Evaporação acelerada: só extrema necessidade, gotas muito grossas.' }
-    return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Calda seca antes do alvo. Interromper imediatamente.' }
+    if (v <= 7) return { status: 'apta', label: 'Ideal', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
+    if (v < 8) return { status: 'alerta', label: 'Atenção', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
+    return { status: 'nao_conforme', label: 'Não Pode Voar', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Delta T ≥ 8: evaporação excessiva. Interromper a aplicação.' }
   }
   return null
 }
@@ -206,6 +205,8 @@ export default function PilotApp({onSwitchMode}) {
   const [dronesDB, setDronesDB] = useState([])
   const [produtosDB, setProdutosDB] = useState([])
   const [clientesDB, setClientesDB] = useState([])
+  const [fazendasDB, setFazendasDB] = useState([])
+  const [talhoesDB, setTalhoesDB] = useState([])
 
   // Listas dinâmicas: banco + "Outros" no final
   const DRONES = dronesDB.length > 0
@@ -262,14 +263,18 @@ export default function PilotApp({onSwitchMode}) {
     toastTimer.current=setTimeout(()=>setToast(''),2800)
   },[])
 
-  // Carrega drones, produtos e clientes do banco
+  // Carrega drones, produtos, clientes, fazendas e talhões do banco
   useEffect(() => {
     supabase.from('drones').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setDronesDB(data) })
-    supabase.from('produtos').select('nome,unidade,ativo').eq('ativo',true).order('nome')
+    supabase.from('produtos').select('nome,unidade,dose_padrao,dose_auto,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setProdutosDB(data) })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setClientesDB(data) })
+    supabase.from('fazendas').select('id,cliente,nome,ativo').eq('ativo',true).order('nome')
+      .then(({data}) => { if(data) setFazendasDB(data) })
+    supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
+      .then(({data}) => { if(data) setTalhoesDB(data) })
   }, [])
 
   // Carrega voos compartilhados abertos
@@ -385,7 +390,7 @@ export default function PilotApp({onSwitchMode}) {
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
-      obs1:form.obs1,obs2:form.obs2,pausas:form.pausas,
+      obs1:form.obs1,obs2:form.obs2,bordadura:form.bordadura||null,pausas:form.pausas,
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
@@ -804,9 +809,56 @@ export default function PilotApp({onSwitchMode}) {
             </FS>
             {form.cliente==='Outros'&&<FI label="NOME DO CLIENTE" ph="Digite o nome..." val={form.clienteOutro} onChange={e=>setForm(f=>({...f,clienteOutro:e.target.value}))}/>}
 
-            <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
+            {/* FAZENDA — dropdown filtrado pelo cliente, com Outros */}
+            {(()=>{
+              const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente)
+              const temCadastro = fazendasCliente.length>0
+              const fazendaSel = fazendasCliente.find(fz=>fz.nome===form.fazenda)
+              const selectVal = fazendaSel ? form.fazenda : (form.fazenda ? 'Outros' : '')
+              return (
+                <>
+                  {temCadastro ? (
+                    <>
+                      <FS label="FAZENDA" val={selectVal} onChange={e=>{
+                        const v=e.target.value==='Outros'?'':e.target.value
+                        setForm(f=>({...f,fazenda:v,talhao:'',localizacao:'',area_ha:''}));autoGPS()
+                      }}>
+                        <option value="">Selecione a Fazenda...</option>
+                        {fazendasCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
+                        <option>Outros</option>
+                      </FS>
+                      {(selectVal==='Outros')&&<FI label="NOME DA FAZENDA" ph="Digite o nome..." val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>}
+                    </>
+                  ) : (
+                    <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
+                  )}
+
+                  {/* TALHÃO — dropdown filtrado pela fazenda, com Outros; auto-preenche área */}
+                  {(()=>{
+                    const talhoesFaz = fazendaSel ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel.id) : []
+                    const temTalhoes = talhoesFaz.length>0
+                    const talhaoSel = talhoesFaz.find(t=>t.nome===form.talhao)
+                    const tVal = talhaoSel ? form.talhao : (form.talhao ? 'Outros' : '')
+                    if (temTalhoes) return (
+                      <>
+                        <FS label="TALHÃO" val={tVal} onChange={e=>{
+                          const v=e.target.value==='Outros'?'':e.target.value
+                          const t=talhoesFaz.find(x=>x.nome===v)
+                          setForm(f=>({...f,talhao:v,localizacao:v,area_ha:t?.area_ha?String(t.area_ha):f.area_ha}));autoGPS()
+                        }}>
+                          <option value="">Selecione o Talhão...</option>
+                          {talhoesFaz.map(t=><option key={t.id} value={t.nome}>{t.nome}{t.area_ha?` (${t.area_ha} ha)`:''}</option>)}
+                          <option>Outros</option>
+                        </FS>
+                        {tVal==='Outros'&&<FI label="NOME DO TALHÃO" ph="Ex: Talhão 5..." val={form.talhao} onChange={e=>{setForm(f=>({...f,talhao:e.target.value,localizacao:e.target.value}));autoGPS()}}/>}
+                      </>
+                    )
+                    return <FI label="TALHÃO" ph="Ex: Talhão 5, Zona 65..." val={form.talhao} onChange={e=>{setForm(f=>({...f,talhao:e.target.value,localizacao:e.target.value}));autoGPS()}}/>
+                  })()}
+                </>
+              )
+            })()}
             <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>{setForm(f=>({...f,area_ha:e.target.value}));autoGPS()}} type="number"/>
-            <FI label="TALHÃO" ph="Ex: Talhão 5, Zona 65..." val={form.talhao} onChange={e=>{setForm(f=>({...f,talhao:e.target.value,localizacao:e.target.value}));autoGPS()}}/>
 
             <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Drone...</option>
@@ -866,7 +918,17 @@ export default function PilotApp({onSwitchMode}) {
                       <label style={sw.fl}>PRODUTO {form.produtos.length>1?i+1:''}</label>
                       <div style={{position:'relative'}}>
                         <select style={{...sw.fs,paddingRight:32}} value={selectVal}
-                          onChange={e=>{const arr=[...form.produtos];arr[i]=e.target.value==='Outros'?'':e.target.value+(dosagem?` - ${dosagem}`:'');setForm(f=>({...f,produtos:arr}))}}>
+                          onChange={e=>{
+                            const arr=[...form.produtos]
+                            const nomeSel=e.target.value
+                            if(nomeSel==='Outros'){arr[i]=''}
+                            else{
+                              const pd=produtosDB.find(x=>x.nome===nomeSel)
+                              const doseAuto=(pd?.dose_auto!==false&&pd?.dose_padrao!=null)?String(pd.dose_padrao):dosagem
+                              arr[i]=nomeSel+(doseAuto?` - ${doseAuto}`:'')
+                            }
+                            setForm(f=>({...f,produtos:arr}))
+                          }}>
                           <option value="">Selecione...</option>
                           {PRODUTOS_LIST.map(pr=><option key={pr}>{pr}</option>)}
                         </select>
@@ -964,14 +1026,30 @@ export default function PilotApp({onSwitchMode}) {
                         <label style={{...sw.fl,marginBottom:4}}>INÍCIO</label>
                         <input style={{...sw.fi,background:'rgba(255,255,255,0.85)'}} type="number"
                           placeholder={`Ex: ${key==='vento'?'8':key==='umidade'?'65':key==='temperatura'?'28':'4'}`}
-                          value={form[key+'_i']||''} onChange={e=>setForm(f=>({...f,[key+'_i']:e.target.value}))}/>
+                          value={form[key+'_i']||''} onChange={e=>setForm(f=>{
+                            const next={...f,[key+'_i']:e.target.value}
+                            // Delta T automático (editável): recalcula ao mudar temp/umidade
+                            if(key==='temperatura'||key==='umidade'){
+                              const dt=calcDeltaT(next.temperatura_i,next.umidade_i)
+                              if(dt!==null) next.delta_t_i=dt.toFixed(1)
+                            }
+                            return next
+                          })}/>
                         {classifI&&<div style={{fontSize:10,color:classifI.cor,fontWeight:600,marginTop:3}}>{classifI.icon} {classifI.label}</div>}
+                        {key==='delta_t'&&<div style={{fontSize:9,color:'#8aad94',marginTop:2}}>calculado automático · editável</div>}
                       </div>
                       <div>
                         <label style={{...sw.fl,marginBottom:4}}>FIM</label>
                         <input style={{...sw.fi,background:'rgba(255,255,255,0.85)'}} type="number"
                           placeholder={form[key+'_i']||'—'}
-                          value={form[key+'_f']||''} onChange={e=>setForm(f=>({...f,[key+'_f']:e.target.value}))}/>
+                          value={form[key+'_f']||''} onChange={e=>setForm(f=>{
+                            const next={...f,[key+'_f']:e.target.value}
+                            if(key==='temperatura'||key==='umidade'){
+                              const dt=calcDeltaT(next.temperatura_f,next.umidade_f)
+                              if(dt!==null) next.delta_t_f=dt.toFixed(1)
+                            }
+                            return next
+                          })}/>
                         {classifF&&<div style={{fontSize:10,color:classifF.cor,fontWeight:600,marginTop:3}}>{classifF.icon} {classifF.label}</div>}
                       </div>
                     </div>
@@ -982,6 +1060,43 @@ export default function PilotApp({onSwitchMode}) {
 
               <div style={{fontSize:11,color:'#8aad94',textAlign:'center',marginTop:4}}>
                 📊 Classificação conforme matriz técnica de pulverização (Delta T, vento, umidade e temperatura)
+              </div>
+
+              {/* Evidências climáticas (foto ou PDF de ferramenta agro) */}
+              <div style={{marginTop:16,background:'#f4f8f5',borderRadius:12,padding:14,border:'1px solid #d0e4d8'}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>📎 EVIDÊNCIA CLIMÁTICA <span style={{fontWeight:400,color:'#8aad94'}}>(foto ou PDF)</span></div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  {[[1,'INÍCIO'],[2,'FIM']].map(([slot,lbl])=>(
+                    <div key={slot}>
+                      <label style={{...sw.fl,marginBottom:4}}>{lbl}</label>
+                      <label style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'1.5px dashed #c3e0d0',borderRadius:10,padding:'12px 6px',cursor:'pointer',background:'#fff',minHeight:70,overflow:'hidden'}}>
+                        <input type="file" accept="image/*,.pdf" style={{display:'none'}}
+                          onChange={e=>{
+                            const f=e.target.files[0];if(!f)return
+                            const isPdf=f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')
+                            if(isPdf){
+                              const a=[...obsFotos];a[slot]='pdf:'+f.name;setObsFotos(a)
+                            }else{
+                              const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[slot]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f)
+                            }
+                            const b=[...obsFotoFiles];b[slot]=f;setObsFotoFiles(b)
+                            showToast('✅ Evidência '+lbl.toLowerCase()+' anexada!')
+                          }}/>
+                        {obsFotos[slot]?.startsWith?.('pdf:')
+                          ? <><span style={{fontSize:22}}>📄</span><span style={{fontSize:9,color:'#6b8070',marginTop:2,textAlign:'center',wordBreak:'break-all'}}>{obsFotos[slot].slice(4)}</span></>
+                          : obsFotos[slot]
+                            ? <img src={obsFotos[slot]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:8}}/>
+                            : storageObsFotos[slot]
+                              ? <StorageFotoSlot supabase={supabase} path={storageObsFotos[slot]}/>
+                              : <><span style={{fontSize:20}}>📷</span><span style={{fontSize:9,color:'#aaa',marginTop:2}}>Anexar</span></>}
+                      </label>
+                      {(obsFotos[slot]||storageObsFotos[slot])&&(
+                        <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer',width:'100%',marginTop:4}}
+                          onClick={()=>{const a=[...obsFotos];a[slot]=null;setObsFotos(a);const b=[...obsFotoFiles];b[slot]=null;setObsFotoFiles(b)}}>🗑️ Remover</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <div style={sw.btnBar}>
@@ -1133,21 +1248,27 @@ export default function PilotApp({onSwitchMode}) {
                 </div>
                 {(()=>{
                   const MOTIVOS_PAUSA = ['Vento fora dos padrões','Delta T fora dos padrões','Manutenção','Alimentação','Abastecimento','Troca de bateria']
-                  const motivoSel = MOTIVOS_PAUSA.includes(pausa.motivo) ? pausa.motivo : (pausa.motivo ? 'Outro' : '')
+                  const isOutro = pausa.outro || (pausa.motivo && !MOTIVOS_PAUSA.includes(pausa.motivo))
+                  const motivoSel = isOutro ? 'Outro' : (pausa.motivo || '')
                   return (
                     <>
                       <div style={{position:'relative',marginBottom:4}}>
                         <select style={{...sw.fs,fontSize:13,padding:'10px 12px'}} value={motivoSel}
-                          onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value==='Outro'?'':e.target.value};setForm(f=>({...f,pausas:arr}))}}>
+                          onChange={e=>{
+                            const arr=[...form.pausas]
+                            if(e.target.value==='Outro') arr[i]={...arr[i],motivo:'',outro:true}
+                            else arr[i]={...arr[i],motivo:e.target.value,outro:false}
+                            setForm(f=>({...f,pausas:arr}))
+                          }}>
                           <option value="">Selecione o motivo...</option>
                           {MOTIVOS_PAUSA.map(m=><option key={m}>{m}</option>)}
                           <option>Outro</option>
                         </select>
                         <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
                       </div>
-                      {(motivoSel==='Outro'||( pausa.motivo&&!MOTIVOS_PAUSA.includes(pausa.motivo)))&&(
-                        <input style={{...sw.fi,marginBottom:4,fontSize:13}} placeholder="Descreva o motivo..." value={MOTIVOS_PAUSA.includes(pausa.motivo)?'':pausa.motivo||''}
-                          onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value};setForm(f=>({...f,pausas:arr}))}}/>
+                      {isOutro&&(
+                        <input style={{...sw.fi,marginBottom:4,fontSize:13}} placeholder="Descreva o motivo..." value={pausa.motivo||''}
+                          onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value,outro:true};setForm(f=>({...f,pausas:arr}))}}/>
                       )}
                     </>
                   )
@@ -1173,26 +1294,22 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageSub}>Passo 5 de 5: Fotos, KML e geração do relatório</div>
 
 
-            {/* Fotos */}
+            {/* Foto de observação — apenas uma */}
             <div style={{marginBottom:16}}>
-              <label style={sw.fl}>FOTOS DE OBSERVAÇÃO</label>
-              <div style={{display:'flex',gap:8}}>
-                {[0,1,2].map(i=>(
-                  <div key={i} style={{flex:1,display:'flex',flexDirection:'column',gap:4}}>
-                    <div style={{border:'1.5px dashed #dde8e2',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#fafcfa',...((obsFotos[i]||storageObsFotos[i])?{border:'none',padding:0}:{})}}
-                      onClick={()=>setFotoPickerOpen({tipo:'obs',idx:i})}>
-                      {obsFotos[i]?<img src={obsFotos[i]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:10}}/>
-                        :storageObsFotos[i]?<StorageFotoSlot supabase={supabase} path={storageObsFotos[i]}/>
-                        :<><div style={{fontSize:22}}>📷</div><div style={{fontSize:10,color:'#aaa',marginTop:2}}>Foto {i+1}</div></>}
-                    </div>
-                    {(obsFotos[i]||storageObsFotos[i])&&(
-                      <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer'}}
-                        onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[i]=null;setObsFotos(a);const b=[...obsFotoFiles];b[i]=null;setObsFotoFiles(b)}}>🗑️</button>
-                    )}
-                    <input id={`obs-galeria-${i}`} type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a)}}/>
-                    <input id={`obs-camera-${i}`} type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[i]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[i]=f;setObsFotoFiles(a)}}/>
-                  </div>
-                ))}
+              <label style={sw.fl}>FOTO DE OBSERVAÇÃO</label>
+              <div style={{display:'flex',flexDirection:'column',gap:4,maxWidth:160}}>
+                <div style={{border:'1.5px dashed #dde8e2',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#fafcfa',...((obsFotos[0]||storageObsFotos[0])?{border:'none',padding:0}:{})}}
+                  onClick={()=>setFotoPickerOpen({tipo:'obs',idx:0})}>
+                  {obsFotos[0]?<img src={obsFotos[0]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:10}}/>
+                    :storageObsFotos[0]?<StorageFotoSlot supabase={supabase} path={storageObsFotos[0]}/>
+                    :<><div style={{fontSize:22}}>📷</div><div style={{fontSize:10,color:'#aaa',marginTop:2}}>Adicionar foto</div></>}
+                </div>
+                {(obsFotos[0]||storageObsFotos[0])&&(
+                  <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer'}}
+                    onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[0]=null;setObsFotos(a);const b=[...obsFotoFiles];b[0]=null;setObsFotoFiles(b)}}>🗑️</button>
+                )}
+                <input id="obs-galeria-0" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
+                <input id="obs-camera-0" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
               </div>
             </div>
 
@@ -1209,6 +1326,8 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
 
+            {/* Bordadura — aparece no PDF cliente após o mapa, se preenchida */}
+            <FI label="BORDADURA (m)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
             {/* KML */}
             <div style={sw.fw}>
               <label style={sw.fl}>ARQUIVOS KML</label>
