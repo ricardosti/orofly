@@ -641,6 +641,8 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',paused_day:'🌙 Finalizado Parcial',finished:'🔴 Finalizado'}[opState]
+  // Status correto para salvar sem rebaixar voo finalizado para rascunho
+  const statusAtual = () => opState==='finished'?'finalizado':opState==='running'?'em_operacao':opState==='paused'?'pausado':opState==='paused_day'?'pausado_dia':'rascunho'
 
   // VIEW VOOS ANTERIORES
   // Labels e ícones dos steps
@@ -820,7 +822,7 @@ export default function PilotApp({onSwitchMode}) {
               <button style={{...sw.btnG,background:'#fdeaea',color:'#c0392b',flex:'0 0 90px'}} onClick={()=>{
                 if(window.confirm('Limpar TODO o formulário? Isso apaga todos os dados preenchidos.')) limpar()
               }}>🗑️ Limpar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(2) }}>Próximo →</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(2) }}>Próximo →</button>
             </div>
           </div>
         </>
@@ -839,23 +841,33 @@ export default function PilotApp({onSwitchMode}) {
               const selectVal=PRODUTOS_LIST.includes(nome)?nome:(nome?'Outros':'')
               return (
                 <div key={i} style={{marginBottom:14}}>
-                  <label style={sw.fl}>PRODUTO {form.produtos.length>1?i+1:''}</label>
-                  <div style={{display:'flex',gap:8}}>
-                    <div style={{flex:1,position:'relative'}}>
-                      <select style={{...sw.fs,paddingRight:32}} value={selectVal}
-                        onChange={e=>{const arr=[...form.produtos];arr[i]=e.target.value==='Outros'?'':e.target.value+(dosagem?` - ${dosagem}`:'');setForm(f=>({...f,produtos:arr}))}}>
-                        <option value="">Selecione...</option>
-                        {PRODUTOS_LIST.map(pr=><option key={pr}>{pr}</option>)}
-                      </select>
-                      <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 120px auto',gap:8,alignItems:'end'}}>
+                    <div>
+                      <label style={sw.fl}>PRODUTO {form.produtos.length>1?i+1:''}</label>
+                      <div style={{position:'relative'}}>
+                        <select style={{...sw.fs,paddingRight:32}} value={selectVal}
+                          onChange={e=>{const arr=[...form.produtos];arr[i]=e.target.value==='Outros'?'':e.target.value+(dosagem?` - ${dosagem}`:'');setForm(f=>({...f,produtos:arr}))}}>
+                          <option value="">Selecione...</option>
+                          {PRODUTOS_LIST.map(pr=><option key={pr}>{pr}</option>)}
+                        </select>
+                        <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
+                      </div>
                     </div>
-                    <input style={{...sw.fi,width:110,flexShrink:0}} placeholder="Dosagem" value={dosagem}
-                      onChange={e=>{const arr=[...form.produtos];arr[i]=nome?`${nome} - ${e.target.value}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
-                    {form.produtos.length>1&&<button style={{background:'none',border:'none',color:'#c0392b',fontSize:22,cursor:'pointer',padding:'0 4px'}} onClick={()=>setForm(f=>({...f,produtos:f.produtos.filter((_,j)=>j!==i)}))}>×</button>}
+                    <div>
+                      <label style={sw.fl}>DOSAGEM (L/ha)</label>
+                      <input style={{...sw.fi}} placeholder="Ex: 1.1" value={dosagem}
+                        onChange={e=>{const arr=[...form.produtos];arr[i]=nome?`${nome} - ${e.target.value}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
+                    </div>
+                    {form.produtos.length>1&&<button style={{background:'none',border:'none',color:'#c0392b',fontSize:22,cursor:'pointer',padding:'8px 4px'}} onClick={()=>setForm(f=>({...f,produtos:f.produtos.filter((_,j)=>j!==i)}))}>×</button>}
                   </div>
                   {(selectVal==='Outros'||(!PRODUTOS_LIST.includes(nome)&&nome))&&(
                     <input style={{...sw.fi,marginTop:8}} placeholder="Nome do produto..." value={nome==='Outros'?'':nome}
                       onChange={e=>{const arr=[...form.produtos];arr[i]=dosagem?`${e.target.value} - ${dosagem}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
+                  )}
+                  {nome&&dosagem&&(
+                    <div style={{marginTop:6,fontSize:12,color:'#1a7a4a',fontWeight:600,background:'#e8f5ee',borderRadius:8,padding:'6px 10px',display:'inline-block'}}>
+                      🧪 {nome} — Dosagem: {dosagem} L/ha
+                    </div>
                   )}
                 </div>
               )
@@ -878,7 +890,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(1)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(3) }}>Próximo →</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(3) }}>Próximo →</button>
             </div>
           </div>
         </>
@@ -955,7 +967,9 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.btnBar}>
               <div style={{display:'flex',gap:8}}>
                 <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
-                <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:'rascunho'}); setWizardStep(4) }}>Próximo →</button>
+                <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(opState==='finished'?5:4) }}>
+                  {opState==='finished'?'Ir para Relatório →':'Próximo →'}
+                </button>
               </div>
             </div>
           </>
@@ -1029,7 +1043,8 @@ export default function PilotApp({onSwitchMode}) {
                   const n=nowParts()
                   setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
                   opFinalizar()
-                  setWizardStep(5)
+                  setWizardStep(3)
+                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
                 }}>
                 <span style={{fontSize:26}}>⏹️</span>
                 <span style={{fontSize:12,fontWeight:700,color:'#c0392b'}}>Finalizar</span>
@@ -1096,7 +1111,27 @@ export default function PilotApp({onSwitchMode}) {
                   <span style={{fontSize:12,fontWeight:600,color:'#6b8070'}}>Pausa {i+1}</span>
                   <button style={{background:'none',border:'none',color:'#c0392b',cursor:'pointer',fontSize:16}} onClick={()=>setForm(f=>({...f,pausas:f.pausas.filter((_,j)=>j!==i)}))}>×</button>
                 </div>
-                <input style={{...sw.fi,marginBottom:4,fontSize:13}} placeholder="Motivo..." value={pausa.motivo||''} onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value};setForm(f=>({...f,pausas:arr}))}}/>
+                {(()=>{
+                  const MOTIVOS_PAUSA = ['Vento fora dos padrões','Delta T fora dos padrões','Manutenção','Alimentação','Abastecimento','Troca de bateria']
+                  const motivoSel = MOTIVOS_PAUSA.includes(pausa.motivo) ? pausa.motivo : (pausa.motivo ? 'Outro' : '')
+                  return (
+                    <>
+                      <div style={{position:'relative',marginBottom:4}}>
+                        <select style={{...sw.fs,fontSize:13,padding:'10px 12px'}} value={motivoSel}
+                          onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value==='Outro'?'':e.target.value};setForm(f=>({...f,pausas:arr}))}}>
+                          <option value="">Selecione o motivo...</option>
+                          {MOTIVOS_PAUSA.map(m=><option key={m}>{m}</option>)}
+                          <option>Outro</option>
+                        </select>
+                        <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
+                      </div>
+                      {(motivoSel==='Outro'||( pausa.motivo&&!MOTIVOS_PAUSA.includes(pausa.motivo)))&&(
+                        <input style={{...sw.fi,marginBottom:4,fontSize:13}} placeholder="Descreva o motivo..." value={MOTIVOS_PAUSA.includes(pausa.motivo)?'':pausa.motivo||''}
+                          onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value};setForm(f=>({...f,pausas:arr}))}}/>
+                      )}
+                    </>
+                  )
+                })()}
                 <div style={{fontSize:11,color:'#8aad94'}}>{new Date(pausa.inicio).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} → {pausa.fim?new Date(pausa.fim).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em andamento'}</div>
               </div>
             ))}
@@ -1104,7 +1139,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(3)}>← Voltar</button>
-              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:opState==='running'?'em_operacao':opState==='paused'?'pausado':'rascunho'}); setWizardStep(5) }}>Próximo →</button>
+              <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(5) }}>Próximo →</button>
             </div>
           </div>
         </>
@@ -1169,14 +1204,10 @@ export default function PilotApp({onSwitchMode}) {
               </label>
             </div>
 
-            {/* Obs */}
+            {/* Obs — apenas uma */}
             <div style={sw.fw}>
-              <label style={sw.fl}>OBS 1</label>
-              <textarea style={{...sw.fi,resize:'none',height:70}} value={form.obs1} onChange={e=>setForm(f=>({...f,obs1:e.target.value}))}/>
-            </div>
-            <div style={sw.fw}>
-              <label style={sw.fl}>OBS 2</label>
-              <textarea style={{...sw.fi,resize:'none',height:70}} value={form.obs2} onChange={e=>setForm(f=>({...f,obs2:e.target.value}))}/>
+              <label style={sw.fl}>OBSERVAÇÃO</label>
+              <textarea style={{...sw.fi,resize:'none',height:80}} value={form.obs1} onChange={e=>setForm(f=>({...f,obs1:e.target.value}))}/>
             </div>
 
             {/* Botão Iniciar Novo Voo — sempre visível */}
