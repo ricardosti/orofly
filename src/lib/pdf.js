@@ -115,8 +115,7 @@ export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFot
   y+=4
 
   pdfSec('Observações')
-  pdfRow('Obs 1', rel.obs1, true)
-  pdfRow('Obs 2', rel.obs2, false)
+  pdfRow('Observação', rel.obs1 || (rel.obs2 ? rel.obs2 : null), true)
   y+=4
 
   if (rel.kml_arquivos?.length) {
@@ -303,13 +302,13 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   try{doc.addImage(LOGO_B64,'PNG',C1+1,y+1,48,27)}catch(e){
     doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C1+4,y+18)
   }
-  doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-  doc.text('RELATÓRIO DE',C1+80,y+10,{align:'center'})
-  doc.text('OPERAÇÃO DE DRONE',C1+80,y+17,{align:'center'})
+  doc.setFontSize(12);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+  doc.text('RELATÓRIO DE',C1+77,y+10,{align:'center'})
+  doc.text('OPERAÇÃO DE DRONE',C1+77,y+16.5,{align:'center'})
   doc.setDrawColor(...G);doc.setLineWidth(0.3)
-  doc.line(C1+54,y+19,C1+106,y+19)
+  doc.line(C1+54,y+18.5,C1+100,y+18.5)
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
-  doc.text('PULVERIZAÇÃO AGRÍCOLA',C1+80,y+24,{align:'center'})
+  doc.text('PULVERIZAÇÃO AGRÍCOLA',C1+77,y+23.5,{align:'center'})
   doc.setDrawColor(...G);doc.setLineWidth(0.5)
   doc.roundedRect(C1+108,y+2,28,24,2,2,'S')
   doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
@@ -513,12 +512,14 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W);doc.text('2',C2+4.5,y2+4.8,{align:'center'})
   doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OBSERVAÇÕES',C2+11,y2+5.5)
   y2+=9
-  ;[['Obs 1:',rel.obs1||'—'],['Obs 2:',rel.obs2||'—']].forEach(([lbl,val])=>{
-    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR);doc.text(lbl,C2+2,y2+4)
+  {
+    const obsVal = rel.obs1 || rel.obs2 || '—'
+    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR);doc.text('Obs:',C2+2,y2+4)
     doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(doc.splitTextToSize(val,CW-16)[0],C2+14,y2+4)
-    y2+=7
-  })
+    const obsLines = doc.splitTextToSize(obsVal,CW-16).slice(0,2)
+    obsLines.forEach((ln,i)=>doc.text(ln,C2+14,y2+4+i*4.5))
+    y2+=7+(obsLines.length-1)*4.5
+  }
   y2+=3
 
   // Assinatura

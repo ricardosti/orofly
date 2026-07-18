@@ -1403,7 +1403,7 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[]}) {
     ...(form.pausas||[]).map((p,i)=>['Pausa '+(i+1),p.motivo||'—']),
     ...COND_KEYS.map((k,i)=>[COND_LABELS[i]+' ini',form[k+'_i']]),
     ...COND_KEYS.map((k,i)=>[COND_LABELS[i]+' fim',form[k+'_f']]),
-    ['Obs 1',form.obs1],['Obs 2',form.obs2],
+    ['Observação',form.obs1||form.obs2],
   ].filter(([,v])=>v)
   return <div>{rows.map(([l,v])=>(
     <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid #f0f4f1',fontSize:13}}>
