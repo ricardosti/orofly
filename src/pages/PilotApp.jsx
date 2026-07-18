@@ -29,7 +29,15 @@ function initForm(data) {
       cultura:data.cultura||'',cliente:data.cliente||'',clienteOutro:'',
       fazenda:data.fazenda||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
-      produtos:data.produtos?.length?data.produtos:[''],
+      produtos:data.produtos?.length
+        ? data.produtos.map(p=>{
+            // Remove unidade da dosagem para edição: "Moddus - 1.1 Kg/ha" → "Moddus - 1.1"
+            const parts=p.split(' - ')
+            if(parts.length<2) return p
+            const dose=parts.slice(1).join(' - ').replace(/\s*[a-zA-Zµ]+\/ha\s*$/,'').trim()
+            return `${parts[0]} - ${dose}`
+          })
+        : [''],
       tamanho_gota:data.tamanho_gota||'',velocidade_drone:data.velocidade_drone||'',
       localizacao:data.localizacao||'',gps_lat:data.gps_lat,gps_lng:data.gps_lng,
       ...cond,
@@ -206,6 +214,8 @@ export default function PilotApp({onSwitchMode}) {
   const PRODUTOS_LIST = produtosDB.length > 0
     ? [...produtosDB.filter(p=>p.ativo).map(p=>p.nome), 'Outros']
     : PRODUTOS_DEFAULT
+  // Unidade do produto (do inventário): Moddus=Kg, Agile=L, etc. Padrão L
+  const unidadeDoProduto = (nome) => produtosDB.find(p=>p.nome===nome)?.unidade || 'L'
   const CLIENTES = clientesDB.length > 0
     ? [...clientesDB.filter(c=>c.ativo).map(c=>c.nome), 'Outros']
     : CLIENTES_DEFAULT
@@ -256,7 +266,7 @@ export default function PilotApp({onSwitchMode}) {
   useEffect(() => {
     supabase.from('drones').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setDronesDB(data) })
-    supabase.from('produtos').select('nome,ativo').eq('ativo',true).order('nome')
+    supabase.from('produtos').select('nome,unidade,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setProdutosDB(data) })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length) setClientesDB(data) })
@@ -356,13 +366,23 @@ export default function PilotApp({onSwitchMode}) {
   const clienteVal=form.cliente==='Outros'?form.clienteOutro:form.cliente
   const droneVal=form.drone==='Outros'?form.droneOutro:form.drone
 
+  // Adiciona unidade à dosagem ao salvar: "Moddus - 1.1" → "Moddus - 1.1 Kg/ha"
+  const produtoComUnidade = (p) => {
+    const parts = p.split(' - ')
+    const nome = parts[0]||'', dose = parts.slice(1).join(' - ')||''
+    if (!dose) return p
+    // Se a dose já tem letras (unidade), mantém como está
+    if (/[a-zA-Zµ]/.test(dose)) return p
+    return `${nome} - ${dose} ${unidadeDoProduto(nome)}/ha`
+  }
+
   async function saveToSupabase(extraData={},retry=true) {
     const payload={
       piloto_id:profile.id,
       cultura:form.cultura||null,
       cliente:clienteVal,fazenda:form.fazenda,area_ha:form.area_ha,
       piloto_nome:profile.nome||profile.email,
-      drone:droneVal,produtos:form.produtos.filter(Boolean),
+      drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
       obs1:form.obs1,obs2:form.obs2,pausas:form.pausas,
@@ -854,7 +874,7 @@ export default function PilotApp({onSwitchMode}) {
                       </div>
                     </div>
                     <div>
-                      <label style={sw.fl}>DOSAGEM (L/ha)</label>
+                      <label style={sw.fl}>DOSAGEM ({unidadeDoProduto(nome)}/ha)</label>
                       <input style={{...sw.fi}} placeholder="Ex: 1.1" value={dosagem}
                         onChange={e=>{const arr=[...form.produtos];arr[i]=nome?`${nome} - ${e.target.value}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
                     </div>
@@ -866,7 +886,7 @@ export default function PilotApp({onSwitchMode}) {
                   )}
                   {nome&&dosagem&&(
                     <div style={{marginTop:6,fontSize:12,color:'#1a7a4a',fontWeight:600,background:'#e8f5ee',borderRadius:8,padding:'6px 10px',display:'inline-block'}}>
-                      🧪 {nome} — Dosagem: {dosagem} L/ha
+                      🧪 {nome} — Dosagem: {dosagem} {unidadeDoProduto(nome)}/ha
                     </div>
                   )}
                 </div>
@@ -1295,12 +1315,12 @@ export default function PilotApp({onSwitchMode}) {
         <div style={s.modalOverlay} onClick={()=>setModalOpen(false)}>
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>Relatório <button style={s.modalClose} onClick={()=>setModalOpen(false)}>✕</button></div>
-            <ReportView form={form} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles}/>
+            <ReportView form={form} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles} prodFmt={produtoComUnidade}/>
             <button style={{...s.shareBtn,background:'#111a14',marginTop:12}} onClick={async()=>{
               const rel=await saveToSupabase({status:'finalizado'})
               if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});doc.save('relatorio-orofly.pdf');showToast('✅ PDF salvo!')}
             }}>📄 Baixar PDF</button>
-            <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={()=>window.open('https://wa.me/?text='+encodeURIComponent(buildTxt(form,clienteVal,droneVal)),'_blank')}>💬 WhatsApp</button>
+            <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={()=>window.open('https://wa.me/?text='+encodeURIComponent(buildTxt(form,clienteVal,droneVal,produtoComUnidade)),'_blank')}>💬 WhatsApp</button>
           </div>
         </div>
       )}
@@ -1392,12 +1412,12 @@ function StorageFotoSlot({ supabase, path, height=60 }) {
   return <img src={url} alt="foto" style={{width:'100%',height,objectFit:'cover',borderRadius:8,display:'block'}} />
 }
 
-function ReportView({form,clienteVal,droneVal,kmlFiles=[]}) {
+function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
   const fmt=p=>{const d=form[p+'_data'],hh=form[p+'_hh'],mm=form[p+'_mm'];if(!d)return'—';return`${d.split('-').reverse().join('/')} ${hh||'00'}:${mm||'00'}`}
   const rows=[
     ['Cliente',clienteVal],['Fazenda',form.fazenda],['Área',form.area_ha?form.area_ha+' ha':null],
     ['Piloto',form.piloto_nome],['Drone',droneVal],
-    ...form.produtos.filter(Boolean).map((p,i)=>['Produto '+(i+1),p]),
+    ...form.produtos.filter(Boolean).map((p,i)=>['Produto '+(i+1),prodFmt?prodFmt(p):p]),
     ['Gota',form.tamanho_gota],['Velocidade',form.velocidade_drone],
     ['Início',fmt('dt_inicio')],['Fim',fmt('dt_fim')],
     ...(form.pausas||[]).map((p,i)=>['Pausa '+(i+1),p.motivo||'—']),
@@ -1413,14 +1433,14 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[]}) {
   ))}</div>
 }
 
-function buildTxt(form,clienteVal,droneVal){
+function buildTxt(form,clienteVal,droneVal,prodFmt){
   const fmt=p=>{const d=form[p+'_data'],hh=form[p+'_hh'],mm=form[p+'_mm'];if(!d)return'—';return`${d.includes('-')?d.split('-').reverse().join('/'):d} ${hh||'00'}:${mm||'00'}`}
   const units = {faixa:'m', vazao:'L/ha', vento:'km/h', umidade:'%', temperatura:'°C', delta_t:'°C'}
   let t='🚁 *RELATÓRIO OROFLY*\n'+new Date().toLocaleString('pt-BR')+'\n\n'
   t+=`📋 *Operação*\n`
   t+=`Cliente: ${clienteVal}\nFazenda: ${form.fazenda}\nPiloto: ${form.piloto_nome}\nDrone: ${droneVal}\n`
   if(form.area_ha) t+=`Área: ${form.area_ha} ha\n`
-  form.produtos.filter(Boolean).forEach((p,i)=>{t+=`Produto ${i+1}: ${p}\n`})
+  form.produtos.filter(Boolean).forEach((p,i)=>{t+=`Produto ${i+1}: ${prodFmt?prodFmt(p):p}\n`})
   if(form.tamanho_gota) t+=`Gota: ${form.tamanho_gota}\n`
   if(form.velocidade_drone) t+=`Velocidade: ${form.velocidade_drone} km/h\n`
   if(form.faixa_i) t+=`Faixa: ${form.faixa_i} m\n`
