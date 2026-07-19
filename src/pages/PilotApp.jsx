@@ -177,14 +177,14 @@ const PARAM_ICONS = { vento: '💨', umidade: '💧', temperatura: '🌡️', de
 const PARAM_LABELS = { vento: 'VENTO', umidade: 'UMIDADE', temperatura: 'TEMPERATURA', delta_t: 'DELTA T' }
 const PARAM_UNITS = { vento: 'km/h', umidade: '%', temperatura: '°C', delta_t: '°C' }
 
-// Extrai a data original da foto (EXIF DateTimeOriginal) com fallback para data do arquivo
-async function extrairDataFoto(file) {
-  const fallback = () => new Date(file.lastModified).toLocaleString('pt-BR')
+// Extrai data original (EXIF DateTimeOriginal, fallback data do arquivo) e GPS (se houver) da foto
+async function extrairMetadadosFoto(file) {
+  const fallback = { data: new Date(file.lastModified).toLocaleString('pt-BR'), lat: null, lng: null }
   try {
-    if (!file.type.startsWith('image/jpe')) return fallback()
-    const buf = await file.slice(0, 128*1024).arrayBuffer()
+    if (!file.type.startsWith('image/jpe')) return fallback
+    const buf = await file.slice(0, 256*1024).arrayBuffer()
     const view = new DataView(buf)
-    if (view.getUint16(0) !== 0xFFD8) return fallback() // não é JPEG
+    if (view.getUint16(0) !== 0xFFD8) return fallback // não é JPEG
     let offset = 2
     while (offset < view.byteLength - 4) {
       const marker = view.getUint16(offset)
@@ -195,11 +195,15 @@ async function extrairDataFoto(file) {
         const get32 = o => view.getUint32(o, little)
         const ifd0 = exifStart + get32(exifStart + 4)
         const nIfd0 = get16(ifd0)
-        let exifIfdPtr = null
+        let exifIfdPtr = null, gpsIfdPtr = null
         for (let i = 0; i < nIfd0; i++) {
           const e = ifd0 + 2 + i*12
-          if (get16(e) === 0x8769) exifIfdPtr = exifStart + get32(e + 8)
+          const tag = get16(e)
+          if (tag === 0x8769) exifIfdPtr = exifStart + get32(e + 8)
+          if (tag === 0x8825) gpsIfdPtr = exifStart + get32(e + 8)
         }
+
+        let data = fallback.data
         if (exifIfdPtr) {
           const nExif = get16(exifIfdPtr)
           for (let i = 0; i < nExif; i++) {
@@ -210,16 +214,37 @@ async function extrairDataFoto(file) {
               for (let j = 0; j < 19; j++) s += String.fromCharCode(view.getUint8(strOff + j))
               // "2026:07:16 14:32:05" → "16/07/2026 14:32"
               const m = s.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/)
-              if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`
+              if (m) data = `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`
             }
           }
         }
-        return fallback()
+
+        let lat = null, lng = null
+        if (gpsIfdPtr) {
+          const nGps = get16(gpsIfdPtr)
+          let latRef = null, lngRef = null, latDms = null, lngDms = null
+          const readDms = (valOff) => [0,1,2].map(k => get32(valOff + k*8) / get32(valOff + k*8 + 4))
+          for (let i = 0; i < nGps; i++) {
+            const e = gpsIfdPtr + 2 + i*12
+            const tag = get16(e)
+            if (tag === 0x0001) latRef = String.fromCharCode(view.getUint8(e + 8)) // N/S
+            else if (tag === 0x0003) lngRef = String.fromCharCode(view.getUint8(e + 8)) // E/W
+            else if (tag === 0x0002) latDms = readDms(exifStart + get32(e + 8)) // GPSLatitude
+            else if (tag === 0x0004) lngDms = readDms(exifStart + get32(e + 8)) // GPSLongitude
+          }
+          if (latDms && lngDms) {
+            const toDecimal = ([d,m,s], ref) => { const v = d + m/60 + s/3600; return (ref === 'S' || ref === 'W') ? -v : v }
+            lat = +toDecimal(latDms, latRef).toFixed(6)
+            lng = +toDecimal(lngDms, lngRef).toFixed(6)
+          }
+        }
+
+        return { data, lat, lng }
       }
       offset += 2 + view.getUint16(offset + 2)
     }
-    return fallback()
-  } catch { return fallback() }
+    return fallback
+  } catch { return fallback }
 }
 
 export default function PilotApp({onSwitchMode}) {
@@ -1162,12 +1187,14 @@ export default function PilotApp({onSwitchMode}) {
                               const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[slot]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f)
                             }
                             const b=[...obsFotoFiles];b[slot]=f;setObsFotoFiles(b)
-                            // Metadata: data original da foto (EXIF) ou do arquivo + tamanho/tipo
-                            const dtFoto = await extrairDataFoto(f)
+                            // Metadata: data original da foto (EXIF) ou do arquivo + tamanho/tipo/GPS
+                            const metaFoto = isPdf ? {data:new Date(f.lastModified).toLocaleString('pt-BR'),lat:null,lng:null} : await extrairMetadadosFoto(f)
                             const chave = slot===1?'inicio':'fim'
                             setForm(fm=>({...fm,evid_meta:{...(fm.evid_meta||{}),[chave]:{
                               arquivo:f.name,
-                              data_foto:dtFoto,
+                              data_foto:metaFoto.data,
+                              gps_lat:metaFoto.lat,
+                              gps_lng:metaFoto.lng,
                               tamanho:(f.size/1024).toFixed(0)+' KB',
                               tipo:isPdf?'PDF':(f.type.split('/')[1]||'imagem').toUpperCase(),
                               incluir:true
@@ -1193,6 +1220,9 @@ export default function PilotApp({onSwitchMode}) {
                               <div style={{fontWeight:700,color:'#111a14',wordBreak:'break-all'}}>📄 {meta.arquivo}</div>
                               <div>📅 {meta.data_foto}</div>
                               <div>{meta.tipo} · {meta.tamanho}</div>
+                              {meta.gps_lat && meta.gps_lng && (
+                                <div>📍 <a href={`https://maps.google.com/?q=${meta.gps_lat},${meta.gps_lng}`} target="_blank" rel="noreferrer" style={{color:'#1a7a4a',fontWeight:600}}>{meta.gps_lat}, {meta.gps_lng}</a></div>
+                              )}
                             </div>
                             <label style={{display:'flex',alignItems:'center',gap:5,marginTop:5,cursor:'pointer',fontSize:10,fontWeight:600,color:meta.incluir!==false?'#1a7a4a':'#8aad94'}}>
                               <input type="checkbox" checked={meta.incluir!==false}
