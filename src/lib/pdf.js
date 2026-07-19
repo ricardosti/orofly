@@ -532,16 +532,20 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   }
   y2+=3
 
-  // Metadata das evidências climáticas — no final, se existir
-  if(rel.evidencia_meta&&(rel.evidencia_meta.inicio||rel.evidencia_meta.fim)){
-    doc.setFontSize(6.5);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
-    const em = rel.evidencia_meta
-    let evTxt = 'Evidência climática: '
-    if(em.inicio) evTxt += `Início — ${em.inicio.arquivo||''} (${em.inicio.data_foto||''})`
-    if(em.inicio&&em.fim) evTxt += ' · '
-    if(em.fim) evTxt += `Fim — ${em.fim.arquivo||''} (${em.fim.data_foto||''})`
-    doc.splitTextToSize(evTxt,CW-4).slice(0,2).forEach((ln,i)=>doc.text(ln,C2+2,y2+3+i*3.5))
-    y2+=8
+  // Metadata das evidências climáticas — no final, apenas as marcadas "incluir no relatório"
+  {
+    const em = rel.evidencia_meta||{}
+    const evIni = em.inicio&&em.inicio.incluir!==false ? em.inicio : null
+    const evFim = em.fim&&em.fim.incluir!==false ? em.fim : null
+    if(evIni||evFim){
+      doc.setFontSize(6.5);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
+      let evTxt = 'Evidência climática: '
+      if(evIni) evTxt += `Início — ${evIni.arquivo||''} (${evIni.data_foto||''})`
+      if(evIni&&evFim) evTxt += ' · '
+      if(evFim) evTxt += `Fim — ${evFim.arquivo||''} (${evFim.data_foto||''})`
+      doc.splitTextToSize(evTxt,CW-4).slice(0,2).forEach((ln,i)=>doc.text(ln,C2+2,y2+3+i*3.5))
+      y2+=8
+    }
   }
 
   // Assinatura

@@ -1162,10 +1162,16 @@ export default function PilotApp({onSwitchMode}) {
                               const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[slot]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f)
                             }
                             const b=[...obsFotoFiles];b[slot]=f;setObsFotoFiles(b)
-                            // Metadata: data original da foto (EXIF) ou do arquivo
+                            // Metadata: data original da foto (EXIF) ou do arquivo + tamanho/tipo
                             const dtFoto = await extrairDataFoto(f)
                             const chave = slot===1?'inicio':'fim'
-                            setForm(fm=>({...fm,evid_meta:{...(fm.evid_meta||{}),[chave]:{arquivo:f.name,data_foto:dtFoto}}}))
+                            setForm(fm=>({...fm,evid_meta:{...(fm.evid_meta||{}),[chave]:{
+                              arquivo:f.name,
+                              data_foto:dtFoto,
+                              tamanho:(f.size/1024).toFixed(0)+' KB',
+                              tipo:isPdf?'PDF':(f.type.split('/')[1]||'imagem').toUpperCase(),
+                              incluir:true
+                            }}}))
                             showToast('✅ Evidência '+lbl.toLowerCase()+' anexada!')
                           }}/>
                         {obsFotos[slot]?.startsWith?.('pdf:')
@@ -1176,10 +1182,27 @@ export default function PilotApp({onSwitchMode}) {
                               ? <StorageFotoSlot supabase={supabase} path={storageObsFotos[slot]}/>
                               : <><span style={{fontSize:20}}>📷</span><span style={{fontSize:9,color:'#aaa',marginTop:2}}>Anexar</span></>}
                       </label>
-                      {/* Metadata da foto */}
-                      {form.evid_meta?.[slot===1?'inicio':'fim']?.data_foto&&(
-                        <div style={{fontSize:9,color:'#1a7a4a',marginTop:3,textAlign:'center'}}>📅 {form.evid_meta[slot===1?'inicio':'fim'].data_foto}</div>
-                      )}
+                      {/* Card de metadata + flag incluir no relatório */}
+                      {(()=>{
+                        const chave = slot===1?'inicio':'fim'
+                        const meta = form.evid_meta?.[chave]
+                        if(!meta) return null
+                        return (
+                          <div style={{marginTop:5,background:'#fff',border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 9px'}}>
+                            <div style={{fontSize:9,color:'#6b8070',lineHeight:1.6}}>
+                              <div style={{fontWeight:700,color:'#111a14',wordBreak:'break-all'}}>📄 {meta.arquivo}</div>
+                              <div>📅 {meta.data_foto}</div>
+                              <div>{meta.tipo} · {meta.tamanho}</div>
+                            </div>
+                            <label style={{display:'flex',alignItems:'center',gap:5,marginTop:5,cursor:'pointer',fontSize:10,fontWeight:600,color:meta.incluir!==false?'#1a7a4a':'#8aad94'}}>
+                              <input type="checkbox" checked={meta.incluir!==false}
+                                onChange={e=>setForm(fm=>({...fm,evid_meta:{...fm.evid_meta,[chave]:{...meta,incluir:e.target.checked}}}))}
+                                style={{accentColor:'#1a7a4a'}}/>
+                              Incluir no relatório
+                            </label>
+                          </div>
+                        )
+                      })()}
                       {(obsFotos[slot]||storageObsFotos[slot])&&(
                         <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer',width:'100%',marginTop:4}}
                           onClick={()=>{const a=[...obsFotos];a[slot]=null;setObsFotos(a);const b=[...obsFotoFiles];b[slot]=null;setObsFotoFiles(b);const chave=slot===1?'inicio':'fim';setForm(fm=>{const em={...(fm.evid_meta||{})};delete em[chave];return {...fm,evid_meta:em}})}}>🗑️ Remover</button>
