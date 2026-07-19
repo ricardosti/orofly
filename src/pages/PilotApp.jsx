@@ -43,7 +43,7 @@ function initForm(data) {
       ...cond,
       dt_inicio_data:ini.data,dt_inicio_hh:ini.hh,dt_inicio_mm:ini.mm,
       dt_fim_data:fim.data,dt_fim_hh:fim.hh,dt_fim_mm:fim.mm,
-      pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',bordadura:data.bordadura||'',
+      pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',bordadura:data.bordadura||'',evid_meta:data.evidencia_meta||{},
     }
   }
   return {
@@ -53,7 +53,7 @@ function initForm(data) {
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
-    pausas:[],obs1:'',obs2:'',bordadura:'',
+    pausas:[],obs1:'',obs2:'',bordadura:'',evid_meta:{},
   }
 }
 
@@ -176,6 +176,51 @@ function classificarCondicaoGeral(form, sufixo) {
 const PARAM_ICONS = { vento: '💨', umidade: '💧', temperatura: '🌡️', delta_t: '⚖️' }
 const PARAM_LABELS = { vento: 'VENTO', umidade: 'UMIDADE', temperatura: 'TEMPERATURA', delta_t: 'DELTA T' }
 const PARAM_UNITS = { vento: 'km/h', umidade: '%', temperatura: '°C', delta_t: '°C' }
+
+// Extrai a data original da foto (EXIF DateTimeOriginal) com fallback para data do arquivo
+async function extrairDataFoto(file) {
+  const fallback = () => new Date(file.lastModified).toLocaleString('pt-BR')
+  try {
+    if (!file.type.startsWith('image/jpe')) return fallback()
+    const buf = await file.slice(0, 128*1024).arrayBuffer()
+    const view = new DataView(buf)
+    if (view.getUint16(0) !== 0xFFD8) return fallback() // não é JPEG
+    let offset = 2
+    while (offset < view.byteLength - 4) {
+      const marker = view.getUint16(offset)
+      if (marker === 0xFFE1) { // APP1 (EXIF)
+        const exifStart = offset + 10 // pula APP1 header + "Exif\0\0"
+        const little = view.getUint16(exifStart) === 0x4949
+        const get16 = o => view.getUint16(o, little)
+        const get32 = o => view.getUint32(o, little)
+        const ifd0 = exifStart + get32(exifStart + 4)
+        const nIfd0 = get16(ifd0)
+        let exifIfdPtr = null
+        for (let i = 0; i < nIfd0; i++) {
+          const e = ifd0 + 2 + i*12
+          if (get16(e) === 0x8769) exifIfdPtr = exifStart + get32(e + 8)
+        }
+        if (exifIfdPtr) {
+          const nExif = get16(exifIfdPtr)
+          for (let i = 0; i < nExif; i++) {
+            const e = exifIfdPtr + 2 + i*12
+            if (get16(e) === 0x9003) { // DateTimeOriginal
+              const strOff = exifStart + get32(e + 8)
+              let s = ''
+              for (let j = 0; j < 19; j++) s += String.fromCharCode(view.getUint8(strOff + j))
+              // "2026:07:16 14:32:05" → "16/07/2026 14:32"
+              const m = s.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2})/)
+              if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`
+            }
+          }
+        }
+        return fallback()
+      }
+      offset += 2 + view.getUint16(offset + 2)
+    }
+    return fallback()
+  } catch { return fallback() }
+}
 
 export default function PilotApp({onSwitchMode}) {
   const {profile,signOut} = useAuth()
@@ -390,7 +435,7 @@ export default function PilotApp({onSwitchMode}) {
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
-      obs1:form.obs1,obs2:form.obs2,bordadura:form.bordadura||null,pausas:form.pausas,
+      obs1:form.obs1,obs2:form.obs2,bordadura:form.bordadura||null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
@@ -531,17 +576,26 @@ export default function PilotApp({onSwitchMode}) {
     return erros
   }
 
-  // GPS automático — captura silenciosamente ao preencher qualquer campo
+  // GPS automático — captura em QUALQUER interação no app (primeiro toque/clique)
   const gpsCapturado = useRef(false)
+  const gpsLatRef = useRef(null)
+  useEffect(()=>{ gpsLatRef.current = form.gps_lat },[form.gps_lat])
   function autoGPS() {
-    if (gpsCapturado.current || form.gps_lat) return
+    if (gpsCapturado.current || gpsLatRef.current) return
     if (!navigator.geolocation) return
     gpsCapturado.current = true
     navigator.geolocation.getCurrentPosition(
       pos => setForm(f=>({...f,gps_lat:pos.coords.latitude.toFixed(6),gps_lng:pos.coords.longitude.toFixed(6)})),
-      () => { gpsCapturado.current = false }
+      () => { gpsCapturado.current = false }, // falhou: permite tentar de novo na próxima interação
+      { enableHighAccuracy: true, timeout: 10000 }
     )
   }
+  useEffect(()=>{
+    autoGPS() // tenta já ao abrir o app
+    const handler = () => autoGPS()
+    document.addEventListener('pointerdown', handler)
+    return () => document.removeEventListener('pointerdown', handler)
+  },[]) // eslint-disable-line
 
   async function fetchClima() {
     if (!form.gps_lat || !form.gps_lng) {
@@ -833,25 +887,53 @@ export default function PilotApp({onSwitchMode}) {
                     <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
                   )}
 
-                  {/* TALHÃO — dropdown filtrado pela fazenda, com Outros; auto-preenche área */}
+                  {/* TALHÕES — lista multi-seleção; soma as áreas dos selecionados */}
                   {(()=>{
                     const talhoesFaz = fazendaSel ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel.id) : []
                     const temTalhoes = talhoesFaz.length>0
-                    const talhaoSel = talhoesFaz.find(t=>t.nome===form.talhao)
-                    const tVal = talhaoSel ? form.talhao : (form.talhao ? 'Outros' : '')
+                    const selecionados = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+                    const toggleTalhao = (t) => {
+                      const isSel = selecionados.includes(t.nome)
+                      const novos = isSel ? selecionados.filter(n=>n!==t.nome) : [...selecionados, t.nome]
+                      const soma = talhoesFaz.filter(x=>novos.includes(x.nome)).reduce((a,x)=>a+parseFloat(x.area_ha||0),0)
+                      const joined = novos.join(', ')
+                      setForm(f=>({...f,talhao:joined,localizacao:joined,area_ha:soma>0?String(parseFloat(soma.toFixed(2))):f.area_ha}))
+                      autoGPS()
+                    }
                     if (temTalhoes) return (
-                      <>
-                        <FS label="TALHÃO" val={tVal} onChange={e=>{
-                          const v=e.target.value==='Outros'?'':e.target.value
-                          const t=talhoesFaz.find(x=>x.nome===v)
-                          setForm(f=>({...f,talhao:v,localizacao:v,area_ha:t?.area_ha?String(t.area_ha):f.area_ha}));autoGPS()
-                        }}>
-                          <option value="">Selecione o Talhão...</option>
-                          {talhoesFaz.map(t=><option key={t.id} value={t.nome}>{t.nome}{t.area_ha?` (${t.area_ha} ha)`:''}</option>)}
-                          <option>Outros</option>
-                        </FS>
-                        {tVal==='Outros'&&<FI label="NOME DO TALHÃO" ph="Ex: Talhão 5..." val={form.talhao} onChange={e=>{setForm(f=>({...f,talhao:e.target.value,localizacao:e.target.value}));autoGPS()}}/>}
-                      </>
+                      <div style={sw.fw}>
+                        <label style={sw.fl}>TALHÕES <span style={{fontWeight:400,color:'#aaa'}}>(selecione um ou mais)</span></label>
+                        <div style={{border:'1px solid #dde8e2',borderRadius:10,overflow:'hidden'}}>
+                          {talhoesFaz.map(t=>{
+                            const sel = selecionados.includes(t.nome)
+                            return (
+                              <div key={t.id} onClick={()=>toggleTalhao(t)}
+                                style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',background:sel?'#e8f5ee':'#fff',borderBottom:'1px solid #f0f5f2'}}>
+                                <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${sel?'#1a7a4a':'#c3d4c9'}`,background:sel?'#1a7a4a':'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                  {sel&&<span style={{color:'#fff',fontSize:11,fontWeight:700}}>✓</span>}
+                                </div>
+                                <span style={{fontSize:14,color:'#111a14',flex:1}}>{t.nome}</span>
+                                {t.area_ha&&<span style={{fontSize:12,color:'#1a7a4a',fontWeight:600}}>{t.area_ha} ha</span>}
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {selecionados.length>0&&(
+                          <div style={{marginTop:6,fontSize:12,color:'#1a7a4a',fontWeight:600}}>
+                            ✅ {selecionados.length} talhão(ões) · Área total: {form.area_ha||'—'} ha
+                          </div>
+                        )}
+                        <input style={{...sw.fi,marginTop:8}} placeholder="Outro talhão? Digite aqui (separado por vírgula)..." value=""
+                          onKeyDown={e=>{
+                            if(e.key==='Enter'&&e.target.value.trim()){
+                              const novos=[...selecionados,e.target.value.trim()]
+                              const joined=novos.join(', ')
+                              setForm(f=>({...f,talhao:joined,localizacao:joined}))
+                              e.target.value=''
+                            }
+                          }}
+                          onChange={()=>{}}/>
+                      </div>
                     )
                     return <FI label="TALHÃO" ph="Ex: Talhão 5, Zona 65..." val={form.talhao} onChange={e=>{setForm(f=>({...f,talhao:e.target.value,localizacao:e.target.value}));autoGPS()}}/>
                   })()}
@@ -1071,7 +1153,7 @@ export default function PilotApp({onSwitchMode}) {
                       <label style={{...sw.fl,marginBottom:4}}>{lbl}</label>
                       <label style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'1.5px dashed #c3e0d0',borderRadius:10,padding:'12px 6px',cursor:'pointer',background:'#fff',minHeight:70,overflow:'hidden'}}>
                         <input type="file" accept="image/*,.pdf" style={{display:'none'}}
-                          onChange={e=>{
+                          onChange={async e=>{
                             const f=e.target.files[0];if(!f)return
                             const isPdf=f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')
                             if(isPdf){
@@ -1080,6 +1162,10 @@ export default function PilotApp({onSwitchMode}) {
                               const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[slot]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f)
                             }
                             const b=[...obsFotoFiles];b[slot]=f;setObsFotoFiles(b)
+                            // Metadata: data original da foto (EXIF) ou do arquivo
+                            const dtFoto = await extrairDataFoto(f)
+                            const chave = slot===1?'inicio':'fim'
+                            setForm(fm=>({...fm,evid_meta:{...(fm.evid_meta||{}),[chave]:{arquivo:f.name,data_foto:dtFoto}}}))
                             showToast('✅ Evidência '+lbl.toLowerCase()+' anexada!')
                           }}/>
                         {obsFotos[slot]?.startsWith?.('pdf:')
@@ -1090,9 +1176,13 @@ export default function PilotApp({onSwitchMode}) {
                               ? <StorageFotoSlot supabase={supabase} path={storageObsFotos[slot]}/>
                               : <><span style={{fontSize:20}}>📷</span><span style={{fontSize:9,color:'#aaa',marginTop:2}}>Anexar</span></>}
                       </label>
+                      {/* Metadata da foto */}
+                      {form.evid_meta?.[slot===1?'inicio':'fim']?.data_foto&&(
+                        <div style={{fontSize:9,color:'#1a7a4a',marginTop:3,textAlign:'center'}}>📅 {form.evid_meta[slot===1?'inicio':'fim'].data_foto}</div>
+                      )}
                       {(obsFotos[slot]||storageObsFotos[slot])&&(
                         <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer',width:'100%',marginTop:4}}
-                          onClick={()=>{const a=[...obsFotos];a[slot]=null;setObsFotos(a);const b=[...obsFotoFiles];b[slot]=null;setObsFotoFiles(b)}}>🗑️ Remover</button>
+                          onClick={()=>{const a=[...obsFotos];a[slot]=null;setObsFotos(a);const b=[...obsFotoFiles];b[slot]=null;setObsFotoFiles(b);const chave=slot===1?'inicio':'fim';setForm(fm=>{const em={...(fm.evid_meta||{})};delete em[chave];return {...fm,evid_meta:em}})}}>🗑️ Remover</button>
                       )}
                     </div>
                   ))}

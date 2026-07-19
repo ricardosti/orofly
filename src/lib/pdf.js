@@ -532,6 +532,18 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   }
   y2+=3
 
+  // Metadata das evidências climáticas — no final, se existir
+  if(rel.evidencia_meta&&(rel.evidencia_meta.inicio||rel.evidencia_meta.fim)){
+    doc.setFontSize(6.5);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
+    const em = rel.evidencia_meta
+    let evTxt = 'Evidência climática: '
+    if(em.inicio) evTxt += `Início — ${em.inicio.arquivo||''} (${em.inicio.data_foto||''})`
+    if(em.inicio&&em.fim) evTxt += ' · '
+    if(em.fim) evTxt += `Fim — ${em.fim.arquivo||''} (${em.fim.data_foto||''})`
+    doc.splitTextToSize(evTxt,CW-4).slice(0,2).forEach((ln,i)=>doc.text(ln,C2+2,y2+3+i*3.5))
+    y2+=8
+  }
+
   // Assinatura
   const sigX=C2+CW-55
   doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',sigX,y2+4)
