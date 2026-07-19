@@ -41,6 +41,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
   const [filters, setFilters] = useState({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })
+  const [selectedKmlIds, setSelectedKmlIds] = useState([])
   const [newUser, setNewUser] = useState({ nome:'', email:'', senha:'', role:'piloto' })
   const [criandoUser, setCriandoUser] = useState(false)
   const [droneHorasLimite, setDroneHorasLimite] = useState(() => {
@@ -182,6 +183,19 @@ export default function AdminPanel({ onSwitchMode }) {
   }, [])
 
   useEffect(() => { fetchAll(); fetchInventario(); ativarPush() }, [])
+
+  // Auto-atualiza os relatórios a cada 30s enquanto o Mapa de Voos estiver aberto
+  useEffect(() => {
+    if (tab !== 'mapa') return
+    refetchRelatorios()
+    const id = setInterval(refetchRelatorios, 30000)
+    return () => clearInterval(id)
+  }, [tab])
+
+  async function refetchRelatorios() {
+    const { data } = await supabase.from('relatorios').select('*').order('created_at', { ascending: false })
+    if (data) setRelatorios(data)
+  }
 
   // Registra push notification do admin automaticamente
   async function ativarPush() {
@@ -365,6 +379,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['relatorios', '📋', 'Relatórios', filtered.length],
           ['dashboard', '📊', 'Dashboard', ''],
           ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
+          ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
           ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
           ['pilotos', '👥', 'Usuários', pilotos.length]
         ].map(([id, icon, lbl, cnt]) => (
@@ -1131,9 +1146,11 @@ export default function AdminPanel({ onSwitchMode }) {
           {/* ===== MAPA ===== */}
           {tab === 'mapa' && (
             <div>
-              <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#111a14' }}>🗺️ Mapa de Voos</div>
-                <div style={{ fontSize:12, color:'#6b8070', marginTop:2 }}>{relatorios.filter(r=>r.gps_lat).length} voos com GPS</div>
+              <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+                <div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#111a14' }}>🗺️ Mapa de Voos</div>
+                  <div style={{ fontSize:12, color:'#6b8070', marginTop:2 }}>{filtered.filter(r=>r.gps_lat).length} voos com GPS · atualiza a cada 30s</div>
+                </div>
               </div>
 
               {sosAtivos.length > 0 && (
@@ -1151,14 +1168,40 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
 
-              {relatorios.filter(r=>r.gps_lat).length > 0 ? (
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d0e4d8', alignItems:'center' }}>
+                {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
+                  <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
+                ))}
+                <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
+                  <option value="">Todos status</option>
+                  <option value="em_operacao">🟢 Em operação</option>
+                  <option value="pausado">🟡 Pausado</option>
+                  <option value="finalizado">✅ Finalizado</option>
+                  <option value="sos">🆘 SOS Ativo</option>
+                  <option value="sos_resolvido">✅ SOS Resolvido</option>
+                  <option value="rascunho">Rascunho</option>
+                </select>
+                <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>De:</span>
+                  <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>Até:</span>
+                  <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
+                </div>
+                {Object.values(filters).some(Boolean) && (
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#c0392b', borderRadius:8, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                )}
+              </div>
+
+              {filtered.filter(r=>r.gps_lat).length > 0 ? (
                 <>
-                  {/* MAPA LEAFLET com todos os pontos */}
-                  <MapaLeaflet relatorios={relatorios} height={isMobile?300:500} />
+                  {/* MAPA LEAFLET com todos os pontos (respeita os filtros acima) */}
+                  <MapaLeaflet relatorios={filtered} height={isMobile?300:500} />
 
                   {/* Lista de voos com GPS */}
                   <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:16 }}>
-                    {relatorios.filter(r => r.gps_lat).map(rel => (
+                    {filtered.filter(r => r.gps_lat).map(rel => (
                       <div key={rel.id} style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#c0392b':'#d0e4d8'}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                         <div>
                           <div style={{ fontWeight:600, fontSize:13, color:'#111a14' }}>{rel.cliente||'—'} — {rel.piloto_nome}</div>
@@ -1181,6 +1224,69 @@ export default function AdminPanel({ onSwitchMode }) {
               )}
             </div>
           )}
+
+          {/* ===== TRAJETOS KML ===== */}
+          {tab === 'kml' && (() => {
+            const comKml = filtered.filter(r => (r.kml_paths||[]).length > 0)
+            const selecionados = comKml.filter(r => selectedKmlIds.includes(r.id))
+            const toggleKml = (id) => setSelectedKmlIds(ids => ids.includes(id) ? ids.filter(x=>x!==id) : [...ids, id])
+            return (
+              <div>
+                <div style={{ marginBottom:18 }}>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#111a14' }}>🛰️ Trajetos KML</div>
+                  <div style={{ fontSize:12, color:'#6b8070', marginTop:2 }}>{comKml.length} voos com trajeto KML enviado · selecione quais sobrepor no mapa</div>
+                </div>
+
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d0e4d8', alignItems:'center' }}>
+                  {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
+                    <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
+                  ))}
+                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                    <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>De:</span>
+                    <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                    <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>Até:</span>
+                    <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
+                  </div>
+                  {Object.values(filters).some(Boolean) && (
+                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#c0392b', borderRadius:8, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  )}
+                </div>
+
+                {comKml.length === 0 ? (
+                  <div style={{ textAlign:'center', color:'#6b8070', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d0e4d8' }}>
+                    <div style={{ fontSize:40, marginBottom:12 }}>🛰️</div>
+                    <div style={{ fontSize:15, fontWeight:600, marginBottom:8 }}>Nenhum voo com KML</div>
+                    <div style={{ fontSize:13 }}>Os trajetos aparecem aqui quando o piloto envia o arquivo KML/KMZ da aeronave no relatório.</div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:14 }}>
+                      {comKml.map(rel => (
+                        <label key={rel.id} style={{ display:'flex', alignItems:'center', gap:10, background:'#fff', borderRadius:10, border:'1px solid #d0e4d8', padding:'9px 14px', cursor:'pointer', fontSize:13 }}>
+                          <input type="checkbox" checked={selectedKmlIds.includes(rel.id)} onChange={() => toggleKml(rel.id)} />
+                          <span style={{ fontWeight:600, color:'#111a14' }}>{rel.cliente||'—'} — {rel.piloto_nome}</span>
+                          <span style={{ color:'#6b8070', fontSize:11 }}>{rel.drone} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</span>
+                          <span style={{ marginLeft:'auto', background: STATUS_BG[rel.status]||'#f4f8f5', color: STATUS_COLOR[rel.status]||'#6b8070', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                        </label>
+                      ))}
+                    </div>
+
+                    {selectedKmlIds.length > 0 && (
+                      <div style={{ display:'flex', gap:8, marginBottom:14 }}>
+                        <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#c0392b', borderRadius:10, padding:'9px 14px', fontSize:13, cursor:'pointer' }} onClick={() => setSelectedKmlIds([])}>✕ Limpar seleção</button>
+                      </div>
+                    )}
+
+                    {selecionados.length > 0 && (
+                      <MapaTrajetosKml voos={selecionados} supabase={supabase} height={isMobile?300:500} />
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })()}
 
           {/* ===== USUÁRIOS ===== */}
           {/* ===== INVENTÁRIO ===== */}
@@ -1971,6 +2077,117 @@ function MapaLeaflet({ relatorios, height = 400 }) {
   )
 }
 
+function parseKmlCoords(text) {
+  const match = text.match(/<coordinates>([\s\S]*?)<\/coordinates>/)
+  if (!match) return []
+  return match[1].trim().split(/\s+/).map(c => {
+    const [lng, lat] = c.split(',').map(Number)
+    return { lat, lng }
+  }).filter(c => !isNaN(c.lat) && !isNaN(c.lng))
+}
+
+function parseKmlMeta(text) {
+  const get = (name) => {
+    const r = new RegExp(`<Data name="${name}">\\s*<value>([^<]*)<\\/value>`)
+    const m = text.match(r); return m ? m[1].trim() : null
+  }
+  return {
+    piloto: get('Pilot Name'), aeronave: get('Aircraft Name'),
+    area: get('Task Area'), velocidade: get('Task Flight Speed'),
+    altura: get('Height'), espacamento: get('Route Spacing'),
+  }
+}
+
+function MapaTrajetosKml({ voos, supabase, height = 500 }) {
+  const [mapUrl, setMapUrl] = useState(null)
+  const [carregando, setCarregando] = useState(true)
+  const urlRef = useRef(null)
+  const CORES = ['#e74c3c','#1a7a4a','#185fa5','#e8a020','#8e44ad','#16a085','#d35400','#2c3e50','#c0392b','#27ae60']
+
+  useEffect(() => {
+    let cancelado = false
+    async function montar() {
+      setCarregando(true)
+      const trajetos = []
+      for (const rel of voos) {
+        const path = (rel.kml_paths || [])[0]
+        if (!path) continue
+        try {
+          const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(path, 3600)
+          if (!signed?.signedUrl) continue
+          const res = await fetch(signed.signedUrl)
+          const text = await res.text()
+          const coords = parseKmlCoords(text)
+          if (coords.length > 1) trajetos.push({ rel, coords })
+        } catch (e) { console.error(e) }
+      }
+      if (cancelado) return
+      if (trajetos.length === 0) { setMapUrl(null); setCarregando(false); return }
+
+      const allCoords = trajetos.flatMap(t => t.coords.map(c => [c.lat, c.lng]))
+      const center = allCoords[Math.floor(allCoords.length / 2)]
+      const linesJs = trajetos.map((t, i) => {
+        const cor = CORES[i % CORES.length]
+        const label = `${(t.rel.cliente||'—').replace(/'/g,"\\'")} — ${(t.rel.piloto_nome||'').replace(/'/g,"\\'")} — ${new Date(t.rel.created_at).toLocaleDateString('pt-BR')}`
+        const latlngs = JSON.stringify(t.coords.map(c => [c.lat, c.lng]))
+        return `L.polyline(${latlngs},{color:'${cor}',weight:3,opacity:0.85}).bindPopup('${label}').addTo(map);`
+      }).join('\n')
+
+      const html = `<!DOCTYPE html><html><head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width,initial-scale=1"/>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+        <style>*{margin:0;padding:0;box-sizing:border-box}html,body,#map{width:100%;height:100%}</style>
+      </head><body>
+        <div id="map"></div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script>
+          var map = L.map('map',{zoomControl:true}).setView([${center[0]},${center[1]}],12);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+          ${linesJs}
+          var coords = ${JSON.stringify(allCoords)};
+          if(coords.length>1){map.fitBounds(L.latLngBounds(coords),{padding:[30,30]});}
+        </script>
+      </body></html>`
+
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+      const blob = new Blob([html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+      urlRef.current = url
+      setMapUrl(url)
+      setCarregando(false)
+    }
+    montar()
+    return () => { cancelado = true }
+  }, [voos, supabase])
+
+  useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }, [])
+
+  if (carregando) return (
+    <div style={{ height, background:'#f4f8f5', borderRadius:12, border:'1px solid #d0e4d8', display:'flex', alignItems:'center', justifyContent:'center', color:'#6b8070', flexDirection:'column', gap:8 }}>
+      <div style={{ fontSize:24 }}>🛰️</div>
+      <div style={{ fontSize:13 }}>Carregando trajetos KML...</div>
+    </div>
+  )
+
+  if (!mapUrl) return (
+    <div style={{ textAlign:'center', color:'#6b8070', padding:40, background:'#fff', borderRadius:12, border:'1px solid #d0e4d8' }}>
+      Nenhum trajeto válido nos KMLs selecionados.
+    </div>
+  )
+
+  return (
+    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d0e4d8', overflow:'hidden', marginBottom:16 }}>
+      <iframe src={mapUrl} style={{ width:'100%', height, border:'none', display:'block' }} title="Trajetos KML Orofly" sandbox="allow-scripts" />
+      <div style={{ padding:'10px 14px', background:'#f4f8f5', fontSize:11, color:'#6b8070', display:'flex', gap:12, flexWrap:'wrap' }}>
+        {voos.map((v, i) => (
+          <span key={v.id}><span style={{ color: CORES[i % CORES.length] }}>●</span> {v.cliente||'—'} — {v.piloto_nome} ({new Date(v.created_at).toLocaleDateString('pt-BR')})</span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function KmlViewer({ rel, supabase }) {
   const [kmlData, setKmlData] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -2000,27 +2217,6 @@ function KmlViewer({ rel, supabase }) {
       }
     } catch(e) { console.error(e) }
     setLoading(false)
-  }
-
-  function parseKmlCoords(text) {
-    const match = text.match(/<coordinates>([\s\S]*?)<\/coordinates>/)
-    if (!match) return []
-    return match[1].trim().split(/\s+/).map(c => {
-      const [lng, lat] = c.split(',').map(Number)
-      return { lat, lng }
-    }).filter(c => !isNaN(c.lat) && !isNaN(c.lng))
-  }
-
-  function parseKmlMeta(text) {
-    const get = (name) => {
-      const r = new RegExp(`<Data name="${name}">\\s*<value>([^<]*)<\\/value>`)
-      const m = text.match(r); return m ? m[1].trim() : null
-    }
-    return {
-      piloto: get('Pilot Name'), aeronave: get('Aircraft Name'),
-      area: get('Task Area'), velocidade: get('Task Flight Speed'),
-      altura: get('Height'), espacamento: get('Route Spacing'),
-    }
   }
 
   // Mapa com Leaflet (OpenStreetMap) renderizado como HTML inline
