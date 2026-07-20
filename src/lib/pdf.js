@@ -29,6 +29,34 @@ function addUnit(key, val) {
   return val + ' ' + unit
 }
 
+// Extrai nome/dose/unidade de uma string "Nome - 0.6 L/ha"
+export function parseDoseProduto(str) {
+  if (!str) return { nome:'', dose:null, unidade:'' }
+  const idx = str.indexOf(' - ')
+  const nome = idx>=0 ? str.slice(0,idx).trim() : str.trim()
+  const resto = idx>=0 ? str.slice(idx+3) : ''
+  const m = resto.match(/([\d.,]+)\s*([a-zA-Zµ%]*)/)
+  const dose = m ? parseFloat(m[1].replace(',','.')) : null
+  const unidade = (m?.[2]||'').replace(/\/ha$/i,'')
+  return { nome, dose, unidade }
+}
+
+// Área líquida aplicada = soma dos talhões (area_ha) − bordadura (ha)
+export function areaLiquida(rel) {
+  const bruta = parseFloat(rel.area_ha)||0
+  const bord = parseFloat(rel.bordadura)||0
+  return Math.max(0, +(bruta-bord).toFixed(2))
+}
+
+// Total esperado de cada produto = dose (por ha) x área líquida aplicada
+export function calcularGastoProdutos(produtos, areaHa) {
+  return (produtos||[]).filter(Boolean).map(p => {
+    const { nome, dose, unidade } = parseDoseProduto(p)
+    const total = (dose!=null && areaHa>0) ? +(dose*areaHa).toFixed(2) : null
+    return { produto:p, nome, dose, unidade: unidade||'L', total }
+  })
+}
+
 export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFotoMapa } = {}) {
   const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
   const pw = 210, margin = 14
@@ -61,16 +89,44 @@ export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFot
     y += lines.length>1 ? lines.length*5+2 : 8
   }
 
+  const areaBruta = parseFloat(rel.area_ha)||0
+  const bordaduraHa = parseFloat(rel.bordadura)||0
+  const areaNeta = areaLiquida(rel)
+  const gastos = calcularGastoProdutos(rel.produtos, areaNeta)
+
   pdfSec('Identificação')
   pdfRow('Cliente', rel.cliente, true)
   pdfRow('Fazenda', rel.fazenda, false)
-  if (rel.area_ha) pdfRow('Área', rel.area_ha+' ha', true)
+  if (areaBruta) pdfRow('Área Total (talhões)', areaBruta+' ha', true)
+  if (bordaduraHa) pdfRow('Bordadura', bordaduraHa+' ha', false)
+  if (areaBruta) pdfRow('Área Aplicada', areaNeta+' ha', true)
   pdfRow('Piloto', rel.piloto_nome, false)
   pdfRow('Drone', rel.drone, true)
-  ;(rel.produtos||[]).forEach((p,i) => pdfRow('Produto '+(i+1), p, i%2===0))
+  gastos.forEach((g,i) => {
+    const doseTxt = g.dose!=null ? `${g.nome} — ${g.dose} ${g.unidade}/ha` : g.produto
+    const totalTxt = g.total!=null ? ` → total ${g.total} ${g.unidade}` : ''
+    pdfRow('Produto '+(i+1), doseTxt+totalTxt, i%2===0)
+  })
   if (rel.tamanho_gota) pdfRow('Tamanho Gota', rel.tamanho_gota, false)
   if (rel.velocidade_drone) pdfRow('Vel. Drone', rel.velocidade_drone, true)
   y+=4
+
+  // Descrição dos produtos (fabricante / registro MAPA / observação do inventário)
+  if (supabase && gastos.length) {
+    try {
+      const nomes = [...new Set(gastos.map(g=>g.nome).filter(Boolean))]
+      const { data: produtosInfo } = await supabase.from('produtos').select('nome,fabricante,registro_mapa,obs').in('nome', nomes)
+      const descricoes = (produtosInfo||[]).filter(p => p.fabricante||p.registro_mapa||p.obs)
+      if (descricoes.length) {
+        pdfSec('Descrição dos Produtos')
+        descricoes.forEach((p,i) => {
+          const partes = [p.fabricante&&`Fabricante: ${p.fabricante}`, p.registro_mapa&&`Registro MAPA: ${p.registro_mapa}`, p.obs].filter(Boolean)
+          pdfRow(p.nome, partes.join(' · '), i%2===0)
+        })
+        y+=4
+      }
+    } catch(e) { /* descrição é informativa; segue sem ela se a consulta falhar */ }
+  }
 
   pdfSec('Localização')
   pdfRow('Localização', rel.localizacao, true)
@@ -289,9 +345,10 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     return {total:f(t), efetivo:f(t-p)}
   }
   const tempo = calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)
-  const area  = parseFloat(rel.area_ha)||0
+  const area  = areaLiquida(rel) // já desconta a bordadura
   const vazao = parseFloat(rel.vazao_i||rel.vazao_f)||0
   const volTotal = vazao&&area ? (vazao*area).toFixed(0) : null
+  const gastosProdutos = calcularGastoProdutos(rel.produtos, area)
 
   doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F')
 
@@ -383,21 +440,22 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   y+=9
   doc.setFillColor(240,248,243);doc.rect(C1,y,hW,6,'F')
   doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
-  doc.text('PRODUTO',C1+3,y+4.5);doc.text('DOSE',C1+hW-3,y+4.5,{align:'right'})
+  doc.text('PRODUTO',C1+3,y+4.5);doc.text('DOSE',C1+hW*0.66,y+4.5,{align:'right'});doc.text('TOTAL',C1+hW-3,y+4.5,{align:'right'})
   y+=7
-  const prods=(rel.produtos||[]).filter(Boolean)
-  if(prods.length===0){
+  if(gastosProdutos.length===0){
     doc.setFillColor(255,255,255);doc.rect(C1,y,hW,7,'F')
     doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
     doc.text('Nenhum produto registrado',C1+3,y+5)
     y+=7
   }
-  prods.forEach((p,i)=>{
+  gastosProdutos.forEach((g,i)=>{
     doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C1,y,hW,7,'F')
-    const pts=p.split(' - ');const nome=pts[0]||p;const dose=pts.slice(1).join('-')||''
+    const doseTxt = g.dose!=null ? `${g.dose} ${g.unidade}/ha` : '—'
+    const totalTxt = g.total!=null ? `${g.total} ${g.unidade}` : '—'
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,nome,hW/2-2),C1+3,y+5)
-    doc.text(truncFit(doc,dose,hW/2-6),C1+hW-3,y+5,{align:'right'})
+    doc.text(truncFit(doc,g.nome||g.produto,hW*0.38-2),C1+3,y+5)
+    doc.text(truncFit(doc,doseTxt,hW*0.26-4),C1+hW*0.66,y+5,{align:'right'})
+    doc.text(truncFit(doc,totalTxt,hW*0.3-4),C1+hW-3,y+5,{align:'right'})
     y+=7
   })
   const yP=y
@@ -502,7 +560,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
     doc.text('BORDADURA:',C2+3,y2+5.5)
     doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(String(rel.bordadura)+' m',C2+28,y2+5.5)
+    doc.text(String(rel.bordadura)+' ha',C2+28,y2+5.5)
     y2+=10
   }
 
@@ -709,6 +767,9 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
     return {total:fmtM(total),efetivo:fmtM(total-p),temPausa:p>0}
   }
   const tempo = calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)
+  const areaBrutaW = parseFloat(rel.area_ha)||0
+  const areaNetaW = areaLiquida(rel)
+  const gastosProdutosW = calcularGastoProdutos(rel.produtos, areaNetaW)
 
   const condKeys = [['Faixa','faixa'],['Vazão','vazao'],['Vento','vento'],['Umidade','umidade'],['Temperatura','temperatura'],['Delta T','delta_t']]
 
@@ -780,15 +841,17 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
 <table>
   <tr><td>Cliente</td><td>${rel.cliente||'—'}</td></tr>
   <tr><td>Fazenda</td><td>${rel.fazenda||'—'}</td></tr>
-  ${rel.area_ha?`<tr><td>Área Total</td><td>${rel.area_ha} ha</td></tr>`:''}
+  ${areaBrutaW?`<tr><td>Área Total (talhões)</td><td>${areaBrutaW} ha</td></tr>`:''}
+  ${rel.bordadura?`<tr><td>Bordadura</td><td>${rel.bordadura} ha</td></tr>`:''}
+  ${areaBrutaW?`<tr><td>Área Aplicada</td><td>${areaNetaW} ha</td></tr>`:''}
   <tr><td>Localização</td><td>${rel.localizacao||'—'}</td></tr>
   ${rel.gps_lat?`<tr><td>Coordenadas GPS</td><td>${rel.gps_lat}, ${rel.gps_lng}</td></tr>`:''}
 </table>
 
-${(rel.produtos||[]).filter(Boolean).length > 0 ? `
+${gastosProdutosW.length > 0 ? `
 <h2>Produto(s) Aplicado(s)</h2>
 <table>
-  ${(rel.produtos||[]).filter(Boolean).map((p,i)=>`<tr><td>Produto ${i+1}</td><td>${p}</td></tr>`).join('')}
+  ${gastosProdutosW.map((g,i)=>`<tr><td>Produto ${i+1}</td><td>${g.nome||g.produto}${g.dose!=null?` — ${g.dose} ${g.unidade}/ha`:''}${g.total!=null?` → total ${g.total} ${g.unidade}`:''}</td></tr>`).join('')}
   ${rel.tamanho_gota?`<tr><td>Tamanho da Gota</td><td>${rel.tamanho_gota}</td></tr>`:''}
   ${rel.velocidade_drone?`<tr><td>Velocidade do Drone</td><td>${rel.velocidade_drone}</td></tr>`:''}
 </table>`:''}

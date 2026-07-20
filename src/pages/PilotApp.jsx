@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFRelatorio } from '../lib/pdf'
+import { gerarPDFRelatorio, calcularGastoProdutos, areaLiquida } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
@@ -917,17 +917,26 @@ export default function PilotApp({onSwitchMode}) {
                     const talhoesFaz = fazendaSel ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel.id) : []
                     const temTalhoes = talhoesFaz.length>0
                     const selecionados = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
-                    const toggleTalhao = (t) => {
-                      const isSel = selecionados.includes(t.nome)
-                      const novos = isSel ? selecionados.filter(n=>n!==t.nome) : [...selecionados, t.nome]
+                    const aplicarSelecao = (novos) => {
                       const soma = talhoesFaz.filter(x=>novos.includes(x.nome)).reduce((a,x)=>a+parseFloat(x.area_ha||0),0)
                       const joined = novos.join(', ')
                       setForm(f=>({...f,talhao:joined,localizacao:joined,area_ha:soma>0?String(parseFloat(soma.toFixed(2))):f.area_ha}))
                       autoGPS()
                     }
+                    const toggleTalhao = (t) => {
+                      const isSel = selecionados.includes(t.nome)
+                      aplicarSelecao(isSel ? selecionados.filter(n=>n!==t.nome) : [...selecionados, t.nome])
+                    }
+                    const todosSelecionados = temTalhoes && talhoesFaz.every(t=>selecionados.includes(t.nome))
+                    const toggleTodos = () => aplicarSelecao(todosSelecionados ? [] : talhoesFaz.map(t=>t.nome))
                     if (temTalhoes) return (
                       <div style={sw.fw}>
-                        <label style={sw.fl}>TALHÕES <span style={{fontWeight:400,color:'#aaa'}}>(selecione um ou mais)</span></label>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                          <label style={sw.fl}>TALHÕES <span style={{fontWeight:400,color:'#aaa'}}>(selecione um ou mais)</span></label>
+                          <button type="button" onClick={toggleTodos} style={{background:'none',border:'none',color:'#1a7a4a',fontSize:12,fontWeight:600,cursor:'pointer',padding:'2px 0'}}>
+                            {todosSelecionados?'Limpar seleção':'Selecionar todos'}
+                          </button>
+                        </div>
                         <div style={{border:'1px solid #dde8e2',borderRadius:10,overflow:'hidden'}}>
                           {talhoesFaz.map(t=>{
                             const sel = selecionados.includes(t.nome)
@@ -1469,8 +1478,13 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
 
-            {/* Bordadura — aparece no PDF cliente após o mapa, se preenchida */}
-            <FI label="BORDADURA (m)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
+            {/* Bordadura (Ha) — descontada da área dos talhões para chegar na área efetivamente aplicada */}
+            <FI label="BORDADURA (Ha)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
+            {form.bordadura&&form.area_ha&&(
+              <div style={{fontSize:12,color:'#1a7a4a',fontWeight:600,marginTop:-8,marginBottom:14}}>
+                Área aplicada (descontando bordadura): {areaLiquida(form)} ha
+              </div>
+            )}
             {/* KML */}
             <div style={sw.fw}>
               <label style={sw.fl}>ARQUIVOS KML</label>
@@ -1492,6 +1506,24 @@ export default function PilotApp({onSwitchMode}) {
               <textarea style={{...sw.fi,resize:'none',height:80}} value={form.obs1} onChange={e=>setForm(f=>({...f,obs1:e.target.value}))}/>
             </div>
 
+            {/* Expectativa de gasto por produto — dose x área aplicada (já descontando bordadura) */}
+            {form.area_ha&&(()=>{
+              const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(produtoComUnidade), areaLiquida(form))
+              const comDose = gastos.filter(g=>g.dose!=null)
+              if(!comDose.length) return null
+              return (
+                <div style={{background:'#f4f8f5',borderRadius:12,padding:14,marginBottom:16,border:'1px solid #d0e4d8'}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>⚗️ EXPECTATIVA DE GASTO POR PRODUTO</div>
+                  {comDose.map((g,i)=>(
+                    <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'4px 0',borderBottom:i<comDose.length-1?'1px solid #e8eee8':'none'}}>
+                      <span style={{color:'#111a14'}}>{g.nome}</span>
+                      <span style={{fontWeight:600,color:'#1a7a4a'}}>{g.total} {g.unidade}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
             {/* Botão Iniciar Novo Voo — sempre visível */}
             <button style={{...sw.btnG,background:'#f4f8f5',color:'#1a7a4a',border:'1.5px solid #1a7a4a',marginBottom:10,width:'100%'}} onClick={()=>{
               if(window.confirm('Iniciar novo voo? O voo atual será encerrado.')) limpar()
@@ -1507,7 +1539,7 @@ export default function PilotApp({onSwitchMode}) {
                   Boa tarde,<br/><br/>
                   Segue em anexo o relatório de aplicação aérea realizada na <strong>{form.fazenda}</strong>{form.talhao?`, Talhão ${form.talhao}`:''}.<br/><br/>
                   <strong>Cultura:</strong> {form.cultura||'—'}<br/>
-                  <strong>Área aplicada:</strong> {form.area_ha||'—'} ha<br/>
+                  <strong>Área aplicada:</strong> {form.area_ha?`${areaLiquida(form)} ha`:'—'}<br/>
                   <strong>Produto(s):</strong> {(form.produtos||[]).filter(Boolean).join(', ')||'—'}<br/>
                   <strong>Piloto:</strong> {form.piloto_nome||profile?.nome}<br/>
                   <strong>Drone:</strong> {form.drone||'—'}<br/><br/>
@@ -1522,6 +1554,9 @@ export default function PilotApp({onSwitchMode}) {
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
               <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(4)}>← Voltar</button>
+              <button style={{...sw.btnG,background:'#fff',color:'#1a7a4a',border:'1.5px solid #1a7a4a',flex:'0 0 110px'}} disabled={saveStatus==='saving'} onClick={async()=>{await saveToSupabase();showToast('💾 Progresso salvo!')}}>
+                {saveStatus==='saving'?'...':'💾 Salvar'}
+              </button>
               <button style={{...sw.btnG,flex:1,opacity:opState==='finished'?1:.5,cursor:opState==='finished'?'pointer':'default'}} disabled={opState!=='finished'||saving} onClick={gerarRelatorioFinal}>
                 {saving?'Aguarde...':'📋 Gerar Relatório'}
               </button>
