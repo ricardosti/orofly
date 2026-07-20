@@ -67,6 +67,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invTalhoes, setInvTalhoes] = useState([])
   const [fzForm, setFzForm] = useState({cliente:'',nome:''})
   const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
+  const [fzSearch, setFzSearch] = useState('')
+  const [invMovimentos, setInvMovimentos] = useState([])
+  const [movForm, setMovForm] = useState({produto:'',tipo:'entrada',quantidade:'',obs:''})
+  const [movSaving, setMovSaving] = useState(false)
   const [invTab, setInvTab] = useState('drones')
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
@@ -125,9 +129,32 @@ export default function AdminPanel({ onSwitchMode }) {
       if (fz) setInvFazendas(fz)
       const { data: tl } = await supabase.from('talhoes').select('*').order('nome')
       if (tl) setInvTalhoes(tl)
+      // Movimentos de estoque (pode não existir ainda — ver SQL de setup)
+      const { data: mov } = await supabase.from('movimentos_estoque').select('*').order('created_at',{ascending:false}).limit(500)
+      if (mov) setInvMovimentos(mov)
     } catch(e) {
       console.warn('Tabelas de inventário não encontradas. Execute o SQL no Supabase.')
     }
+  }
+
+  async function salvarMovimento() {
+    if (!movForm.produto || !movForm.quantidade) { showToast('Preencha produto e quantidade', 'error'); return }
+    setMovSaving(true)
+    try {
+      const qtdAbs = Math.abs(parseFloat(movForm.quantidade)) || 0
+      const sinalQtd = movForm.tipo === 'entrada' ? qtdAbs : -qtdAbs
+      const produtoInfo = invProdutos.find(p => p.nome === movForm.produto)
+      const { error } = await supabase.rpc('registrar_movimento_estoque', {
+        p_produto_nome: movForm.produto, p_quantidade: sinalQtd, p_tipo: movForm.tipo,
+        p_unidade: produtoInfo?.unidade || null, p_relatorio_id: null,
+        p_obs: movForm.obs || null, p_criado_por: profile?.nome || profile?.email || null
+      })
+      if (error) throw error
+      showToast('✅ Movimento registrado!')
+      setMovForm({produto:'',tipo:'entrada',quantidade:'',obs:''})
+      fetchInventario()
+    } catch(e) { showToast('Erro: '+e.message, 'error') }
+    setMovSaving(false)
   }
 
   async function salvarDrone() {
@@ -850,6 +877,28 @@ export default function AdminPanel({ onSwitchMode }) {
                   <Card title="DRONES EM USO" value={Object.keys(droneStats).length} sub={`${relatorios.filter(r=>r.status==='em_operacao').length} voando agora`} color="#c0392b" icon="🚁"/>
                 </div>
 
+                {/* ── ÚLTIMOS VOOS — clique abre o relatório na aba Relatórios ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                  <SecTitle>🗂️ Últimos Voos</SecTitle>
+                  {rel.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem voos no período</div> : (
+                    <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                      {[...rel].sort((a,b)=>new Date(b.dt_inicio||b.created_at)-new Date(a.dt_inicio||a.created_at)).slice(0,8).map(r=>(
+                        <div key={r.id} onClick={()=>{setSelected(r);setTab('relatorios')}}
+                          style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',borderRadius:10,background:'#f9fbfa',border:'1px solid #f0f4f1',cursor:'pointer'}}>
+                          <div>
+                            <div style={{fontSize:13,fontWeight:600,color:'#111a14'}}>{r.cliente||'—'} — {r.fazenda||'—'}</div>
+                            <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{r.piloto_nome} · {r.dt_inicio?new Date(r.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div>
+                          </div>
+                          <div style={{display:'flex',alignItems:'center',gap:10}}>
+                            <span style={{fontSize:12,fontWeight:600,color:'#1a7a4a'}}>{r.area_ha?`${r.area_ha} ha`:'—'}</span>
+                            <span style={{color:'#8aad94'}}>›</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* ── GRÁFICO TIMELINE ── */}
                 <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
                   <SecTitle>📈 Área Aplicada ao Longo do Tempo (ha)</SecTitle>
@@ -1313,19 +1362,21 @@ export default function AdminPanel({ onSwitchMode }) {
                     <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#111a14'}}>📦 Inventário</div>
                     <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos · {invClientes.length} clientes</div>
                   </div>
-                  <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                    onClick={()=>{
-                      if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')}
-                      else if(invTab==='produtos'){setProdutoForm(initProdutoForm());setProdutoModal('novo')}
-                      else{setClienteForm(initClienteForm());setClienteModal('novo')}
-                    }}>
-                    + {invTab==='drones'?'Novo Drone':invTab==='produtos'?'Novo Produto':'Novo Cliente'}
-                  </button>
+                  {['drones','produtos','clientes'].includes(invTab) && (
+                    <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                      onClick={()=>{
+                        if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')}
+                        else if(invTab==='produtos'){setProdutoForm(initProdutoForm());setProdutoModal('novo')}
+                        else{setClienteForm(initClienteForm());setClienteModal('novo')}
+                      }}>
+                      + {invTab==='drones'?'Novo Drone':invTab==='produtos'?'Novo Produto':'Novo Cliente'}
+                    </button>
+                  )}
                 </div>
 
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['clientes','🏢 Clientes'],['fazendas','🌾 Fazendas']].map(([id,lbl])=>(
+                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['clientes','🏢 Clientes'],['fazendas','🌾 Fazendas'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
                     <button key={id} style={{background:invTab===id?'#1a7a4a':'#f4f8f5',color:invTab===id?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
@@ -1355,16 +1406,29 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     </div>
 
+                    {/* Busca — filtra por cliente ou nome da fazenda */}
+                    {invFazendas.length>0 && (
+                      <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
+                        placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                    )}
+
                     {/* Lista por cliente */}
                     {invFazendas.length===0 ? (
                       <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
                         Nenhuma fazenda cadastrada.<br/>Cadastre acima ou rode o SQL das tabelas fazendas/talhoes.
                       </div>
-                    ) : (
-                      [...new Set(invFazendas.map(f=>f.cliente))].map(cli=>(
+                    ) : (()=>{
+                      const q = fzSearch.trim().toLowerCase()
+                      const fazendasFiltradas = q ? invFazendas.filter(f=>f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q)) : invFazendas
+                      if (q && fazendasFiltradas.length===0) return (
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:30,textAlign:'center',color:'#6b8070',fontSize:13}}>
+                          Nenhuma fazenda encontrada para "{fzSearch}".
+                        </div>
+                      )
+                      return [...new Set(fazendasFiltradas.map(f=>f.cliente))].map(cli=>(
                         <div key={cli} style={{marginBottom:16}}>
                           <div style={{fontSize:13,fontWeight:700,color:'#1a7a4a',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
-                          {invFazendas.filter(f=>f.cliente===cli).map(fz=>{
+                          {fazendasFiltradas.filter(f=>f.cliente===cli).map(fz=>{
                             const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
                             const tf = tlForm[fz.id]||{nome:'',area_ha:''}
                             return (
@@ -1404,9 +1468,92 @@ export default function AdminPanel({ onSwitchMode }) {
                           })}
                         </div>
                       ))
-                    )}
+                    })()}
                   </div>
                 )}
+
+                {/* ── MOVIMENTOS DE ESTOQUE ── */}
+                {invTab==='movimentos' && (()=>{
+                  const TIPO_LABEL = {baixa_relatorio:'📋 Baixa (relatório)',entrada:'📦 Entrada',perda:'⚠️ Perda',ajuste:'🔧 Ajuste'}
+                  const totalEntradas = invMovimentos.filter(m=>m.quantidade>0).reduce((a,m)=>a+m.quantidade,0)
+                  const totalSaidas = invMovimentos.filter(m=>m.quantidade<0).reduce((a,m)=>a+Math.abs(m.quantidade),0)
+                  const porProduto = {}
+                  invMovimentos.filter(m=>m.quantidade<0).forEach(m=>{porProduto[m.produto_nome]=(porProduto[m.produto_nome]||0)+Math.abs(m.quantidade)})
+                  const maisConsumido = Object.entries(porProduto).sort((a,b)=>b[1]-a[1])[0]
+                  return (
+                    <div>
+                      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(3,1fr)',gap:12,marginBottom:16}}>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ENTRADAS (TOTAL)</div>
+                          <div style={{fontSize:20,fontWeight:700,color:'#1a7a4a'}}>+{totalEntradas.toFixed(1)}</div>
+                        </div>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>SAÍDAS (TOTAL)</div>
+                          <div style={{fontSize:20,fontWeight:700,color:'#c0392b'}}>-{totalSaidas.toFixed(1)}</div>
+                        </div>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>PRODUTO MAIS CONSUMIDO</div>
+                          <div style={{fontSize:15,fontWeight:700,color:'#111a14'}}>{maisConsumido?`${maisConsumido[0]} (${maisConsumido[1].toFixed(1)})`:'—'}</div>
+                        </div>
+                      </div>
+
+                      {/* Novo movimento manual */}
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,marginBottom:16}}>
+                        <div style={{fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Novo Movimento</div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                          <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                            value={movForm.produto} onChange={e=>setMovForm(f=>({...f,produto:e.target.value}))}>
+                            <option value="">Produto...</option>
+                            {invProdutos.filter(p=>p.ativo).map(p=><option key={p.id}>{p.nome}</option>)}
+                          </select>
+                          <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 160px'}}
+                            value={movForm.tipo} onChange={e=>setMovForm(f=>({...f,tipo:e.target.value}))}>
+                            <option value="entrada">📦 Entrada (compra)</option>
+                            <option value="perda">⚠️ Perda</option>
+                            <option value="ajuste">🔧 Ajuste</option>
+                          </select>
+                          <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 120px'}}
+                            type="number" placeholder="Quantidade" value={movForm.quantidade} onChange={e=>setMovForm(f=>({...f,quantidade:e.target.value}))}/>
+                          <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 200px'}}
+                            placeholder="Observação (opcional)" value={movForm.obs} onChange={e=>setMovForm(f=>({...f,obs:e.target.value}))}/>
+                          <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:movSaving?'default':'pointer',opacity:movSaving?.6:1}}
+                            disabled={movSaving} onClick={salvarMovimento}>{movSaving?'Salvando...':'Salvar'}</button>
+                        </div>
+                        <div style={{fontSize:11,color:'#8aad94',marginTop:8}}>Entrada soma ao estoque · Perda e Ajuste você digita a quantidade a remover (ou negativa, para ajuste que soma).</div>
+                      </div>
+
+                      {/* Histórico */}
+                      {invMovimentos.length===0 ? (
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                          Nenhum movimento ainda.<br/>As baixas aparecem aqui automaticamente quando um relatório é finalizado, ou rode o SQL de setup se a tabela ainda não existir.
+                        </div>
+                      ) : (
+                        <div style={{overflowX:'auto'}}>
+                          <table style={{width:'100%',borderCollapse:'collapse',minWidth:520}}>
+                            <thead>
+                              <tr style={{background:'#f4f8f5'}}>
+                                {['Data','Produto','Tipo','Quantidade','Obs'].map(h=>(
+                                  <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {invMovimentos.slice(0,200).map((m,i)=>(
+                                <tr key={m.id} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070',whiteSpace:'nowrap'}}>{new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:600,color:'#111a14'}}>{m.produto_nome}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{TIPO_LABEL[m.tipo]||m.tipo}</td>
+                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:700,color:m.quantidade<0?'#c0392b':'#1a7a4a'}}>{m.quantidade>0?'+':''}{m.quantidade} {m.unidade||''}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{m.obs||'—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* ── DRONES ── */}
                 {invTab==='drones' && (
@@ -2032,7 +2179,7 @@ function MapaLeaflet({ relatorios, height = 400 }) {
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <script>
         var map = L.map('map',{zoomControl:true}).setView([${center.gps_lat},${center.gps_lng}],11);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}).addTo(map);
         ${markers};
         var coords = ${allCoords};
         if(coords.length>1){map.fitBounds(L.latLngBounds(coords),{padding:[30,30]});}
@@ -2143,7 +2290,7 @@ function MapaTrajetosKml({ voos, supabase, height = 500 }) {
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script>
           var map = L.map('map',{zoomControl:true}).setView([${center[0]},${center[1]}],12);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);
+          L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}).addTo(map);
           ${linesJs}
           var coords = ${JSON.stringify(allCoords)};
           if(coords.length>1){map.fitBounds(L.latLngBounds(coords),{padding:[30,30]});}
@@ -2236,7 +2383,7 @@ function KmlViewer({ rel, supabase }) {
       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
       <script>
         var map = L.map('map').setView([${center.lat}, ${center.lng}], 16);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}).addTo(map);
         var coords = ${latlngs};
         var line = L.polyline(coords, {color:'#e74c3c', weight:3, opacity:0.9}).addTo(map);
         L.marker(coords[0]).bindPopup('Início').addTo(map);

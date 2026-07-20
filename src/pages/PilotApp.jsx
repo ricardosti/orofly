@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFRelatorio, calcularGastoProdutos, areaLiquida } from '../lib/pdf'
+import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
@@ -43,7 +43,9 @@ function initForm(data) {
       ...cond,
       dt_inicio_data:ini.data,dt_inicio_hh:ini.hh,dt_inicio_mm:ini.mm,
       dt_fim_data:fim.data,dt_fim_hh:fim.hh,dt_fim_mm:fim.mm,
-      pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',bordadura:data.bordadura||'',evid_meta:data.evidencia_meta||{},
+      pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',bordadura:data.bordadura||'',
+      bordaduraPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
+      evid_meta:data.evidencia_meta||{},
     }
   }
   return {
@@ -53,8 +55,18 @@ function initForm(data) {
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
-    pausas:[],obs1:'',obs2:'',bordadura:'',evid_meta:{},
+    pausas:[],obs1:'',obs2:'',bordadura:'',bordaduraPorTalhao:{},evid_meta:{},
   }
+}
+
+// Bordadura total do form em edição: soma por talhão (multi-seleção) ou valor único
+function bordaduraAtual(form) {
+  const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+  if (talhoesSel.length > 1) return talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
+  return parseFloat(form.bordadura)||0
+}
+function areaLiquidaAtual(form) {
+  return Math.max(0, +(((parseFloat(form.area_ha)||0)-bordaduraAtual(form))).toFixed(2))
 }
 
 function nowParts() {
@@ -302,6 +314,7 @@ export default function PilotApp({onSwitchMode}) {
   const [storageObsFotos,setStorageObsFotos] = useState([null,null,null])
   const [fotoPickerOpen, setFotoPickerOpen] = useState(null)
   const [wizardStep, setWizardStep] = useState(1)
+  const [talhaoSearch, setTalhaoSearch] = useState('')
   const [timerSecs, setTimerSecs] = useState(0)
 
   // Timer em tempo real durante o voo
@@ -452,6 +465,11 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   async function saveToSupabase(extraData={},retry=true) {
+    const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+    const bordaduraDetalhe = talhoesSel.length>1
+      ? talhoesSel.map(nome=>({talhao:nome,bordadura:parseFloat(form.bordaduraPorTalhao?.[nome])||0})).filter(d=>d.bordadura>0)
+      : null
+    const bordaduraTotal = bordaduraAtual(form)
     const payload={
       piloto_id:profile.id,
       cultura:form.cultura||null,
@@ -460,7 +478,7 @@ export default function PilotApp({onSwitchMode}) {
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
-      obs1:form.obs1,obs2:form.obs2,bordadura:form.bordadura||null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
+      obs1:form.obs1,obs2:form.obs2,bordadura:bordaduraTotal||null,bordadura_detalhe:bordaduraDetalhe&&bordaduraDetalhe.length?bordaduraDetalhe:null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
@@ -655,13 +673,36 @@ export default function PilotApp({onSwitchMode}) {
     await executarFinalizacao()
   }
 
+  // Dá baixa no estoque dos produtos usados (área líquida x dose). Best-effort: não bloqueia a finalização se falhar
+  // (ex: função registrar_movimento_estoque ainda não criada no banco, ou produto não cadastrado no inventário).
+  async function darBaixaEstoque(relIdAlvo) {
+    try {
+      const areaLiq = areaLiquidaAtual(form)
+      if (!relIdAlvo || areaLiq<=0) return
+      const produtosFinal = form.produtos.filter(Boolean).map(produtoComUnidade)
+      for (const p of produtosFinal) {
+        const { nome, dose, unidade } = parseDoseProduto(p)
+        if (dose==null || !nome) continue
+        const existe = produtosDB.find(pd=>pd.nome===nome)
+        if (!existe) continue // produto "Outros" digitado à mão não está no inventário — nada a baixar
+        const consumo = +(dose*areaLiq).toFixed(2)
+        if (consumo<=0) continue
+        await supabase.rpc('registrar_movimento_estoque', {
+          p_produto_nome: nome, p_quantidade: -consumo, p_tipo: 'baixa_relatorio',
+          p_unidade: unidade||existe.unidade||null, p_relatorio_id: relIdAlvo, p_criado_por: profile.nome||profile.email
+        })
+      }
+    } catch(e) { console.warn('Baixa de estoque não aplicada:', e) }
+  }
+
   async function executarFinalizacao() {
     setFinalizeConfirm(null);setSaving(true)
     const n=nowParts()
     setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
     setOpState('finished')
     // Só salva o voo — PDF gerado separadamente no Step 5
-    await saveToSupabase({status:'finalizado',dt_fim:n.iso})
+    const relSalvo = await saveToSupabase({status:'finalizado',dt_fim:n.iso})
+    if (relSalvo) await darBaixaEstoque(relSalvo.id)
     try{localStorage.removeItem(LS_KEY)}catch{}
     setSaving(false)
     showToast('✅ Voo salvo! Adicione fotos e gere o relatório.')
@@ -929,6 +970,9 @@ export default function PilotApp({onSwitchMode}) {
                     }
                     const todosSelecionados = temTalhoes && talhoesFaz.every(t=>selecionados.includes(t.nome))
                     const toggleTodos = () => aplicarSelecao(todosSelecionados ? [] : talhoesFaz.map(t=>t.nome))
+                    const talhoesVisiveis = talhaoSearch.trim()
+                      ? talhoesFaz.filter(t=>t.nome.toLowerCase().includes(talhaoSearch.trim().toLowerCase()))
+                      : talhoesFaz
                     if (temTalhoes) return (
                       <div style={sw.fw}>
                         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -937,8 +981,14 @@ export default function PilotApp({onSwitchMode}) {
                             {todosSelecionados?'Limpar seleção':'Selecionar todos'}
                           </button>
                         </div>
-                        <div style={{border:'1px solid #dde8e2',borderRadius:10,overflow:'hidden'}}>
-                          {talhoesFaz.map(t=>{
+                        {talhoesFaz.length>6&&(
+                          <input style={{...sw.fi,marginBottom:8}} placeholder={`🔍 Buscar entre ${talhoesFaz.length} talhões...`}
+                            value={talhaoSearch} onChange={e=>setTalhaoSearch(e.target.value)}/>
+                        )}
+                        <div style={{border:'1px solid #dde8e2',borderRadius:10,overflow:'hidden',maxHeight:280,overflowY:'auto'}}>
+                          {talhoesVisiveis.length===0 ? (
+                            <div style={{padding:'14px',fontSize:13,color:'#aaa',textAlign:'center'}}>Nenhum talhão encontrado</div>
+                          ) : talhoesVisiveis.map(t=>{
                             const sel = selecionados.includes(t.nome)
                             return (
                               <div key={t.id} onClick={()=>toggleTalhao(t)}
@@ -1478,13 +1528,41 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
 
-            {/* Bordadura (Ha) — descontada da área dos talhões para chegar na área efetivamente aplicada */}
-            <FI label="BORDADURA (Ha)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
-            {form.bordadura&&form.area_ha&&(
-              <div style={{fontSize:12,color:'#1a7a4a',fontWeight:600,marginTop:-8,marginBottom:14}}>
-                Área aplicada (descontando bordadura): {areaLiquida(form)} ha
-              </div>
-            )}
+            {/* Bordadura (Ha) — descontada da área dos talhões para chegar na área efetivamente aplicada.
+                Com mais de um talhão selecionado, permite uma bordadura por talhão. */}
+            {(()=>{
+              const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+              if (talhoesSel.length > 1) {
+                const total = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
+                return (
+                  <div style={sw.fw}>
+                    <label style={sw.fl}>BORDADURA POR TALHÃO (Ha)</label>
+                    {talhoesSel.map(nome=>(
+                      <div key={nome} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                        <span style={{fontSize:13,color:'#111a14',flex:1}}>{nome}</span>
+                        <input type="number" style={{...sw.fi,width:90}} placeholder="0" value={form.bordaduraPorTalhao?.[nome]||''}
+                          onChange={e=>setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:e.target.value}}))}/>
+                      </div>
+                    ))}
+                    {total>0&&form.area_ha&&(
+                      <div style={{fontSize:12,color:'#1a7a4a',fontWeight:600,marginTop:4,marginBottom:14}}>
+                        Bordadura total: {total} ha · Área aplicada: {Math.max(0,parseFloat(form.area_ha)-total).toFixed(2)} ha
+                      </div>
+                    )}
+                  </div>
+                )
+              }
+              return (
+                <>
+                  <FI label="BORDADURA (Ha)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
+                  {form.bordadura&&form.area_ha&&(
+                    <div style={{fontSize:12,color:'#1a7a4a',fontWeight:600,marginTop:-8,marginBottom:14}}>
+                      Área aplicada (descontando bordadura): {areaLiquidaAtual(form)} ha
+                    </div>
+                  )}
+                </>
+              )
+            })()}
             {/* KML */}
             <div style={sw.fw}>
               <label style={sw.fl}>ARQUIVOS KML</label>
@@ -1508,7 +1586,7 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* Expectativa de gasto por produto — dose x área aplicada (já descontando bordadura) */}
             {form.area_ha&&(()=>{
-              const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(produtoComUnidade), areaLiquida(form))
+              const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(produtoComUnidade), areaLiquidaAtual(form))
               const comDose = gastos.filter(g=>g.dose!=null)
               if(!comDose.length) return null
               return (
@@ -1539,7 +1617,7 @@ export default function PilotApp({onSwitchMode}) {
                   Boa tarde,<br/><br/>
                   Segue em anexo o relatório de aplicação aérea realizada na <strong>{form.fazenda}</strong>{form.talhao?`, Talhão ${form.talhao}`:''}.<br/><br/>
                   <strong>Cultura:</strong> {form.cultura||'—'}<br/>
-                  <strong>Área aplicada:</strong> {form.area_ha?`${areaLiquida(form)} ha`:'—'}<br/>
+                  <strong>Área aplicada:</strong> {form.area_ha?`${areaLiquidaAtual(form)} ha`:'—'}<br/>
                   <strong>Produto(s):</strong> {(form.produtos||[]).filter(Boolean).join(', ')||'—'}<br/>
                   <strong>Piloto:</strong> {form.piloto_nome||profile?.nome}<br/>
                   <strong>Drone:</strong> {form.drone||'—'}<br/><br/>

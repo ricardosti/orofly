@@ -98,7 +98,10 @@ export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFot
   pdfRow('Cliente', rel.cliente, true)
   pdfRow('Fazenda', rel.fazenda, false)
   if (areaBruta) pdfRow('Área Total (talhões)', areaBruta+' ha', true)
-  if (bordaduraHa) pdfRow('Bordadura', bordaduraHa+' ha', false)
+  if (bordaduraHa) {
+    const detalheTxt = rel.bordadura_detalhe?.length ? ' ('+rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(', ')+')' : ''
+    pdfRow('Bordadura', bordaduraHa+' ha'+detalheTxt, false)
+  }
   if (areaBruta) pdfRow('Área Aplicada', areaNeta+' ha', true)
   pdfRow('Piloto', rel.piloto_nome, false)
   pdfRow('Drone', rel.drone, true)
@@ -345,6 +348,8 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     return {total:f(t), efetivo:f(t-p)}
   }
   const tempo = calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)
+  const areaBrutaC = parseFloat(rel.area_ha)||0
+  const bordaduraHaC = parseFloat(rel.bordadura)||0
   const area  = areaLiquida(rel) // já desconta a bordadura
   const vazao = parseFloat(rel.vazao_i||rel.vazao_f)||0
   const volTotal = vazao&&area ? (vazao*area).toFixed(0) : null
@@ -512,7 +517,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
   doc.text('www.orofly.com.br',C1+4,PH-M-3)
   doc.text('contato@orofly.com.br',C1+46,PH-M-3)
-  doc.text('(16) 99237-6418',C1+96,PH-M-3)
+  doc.text('(16) 98262-3711',C1+96,PH-M-3)
 
   // Separador
   doc.setDrawColor(200,230,215);doc.setLineWidth(0.5);doc.line(C2-2,M,C2-2,PH-M)
@@ -554,14 +559,23 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     y2+=63
   }
 
-  // Bordadura — logo após o mapa, só se preenchida
-  if(rel.bordadura){
+  // Bordadura — logo após o mapa, só se preenchida: mostra total, bordadura e líquido
+  if(bordaduraHaC){
     doc.setFillColor(240,248,243);doc.roundedRect(C2,y2,CW,8,1.5,1.5,'F')
-    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
-    doc.text('BORDADURA:',C2+3,y2+5.5)
-    doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(String(rel.bordadura)+' ha',C2+28,y2+5.5)
+    const trio = [['TOTAL:',areaBrutaC+' ha'],['BORDADURA:',bordaduraHaC+' ha'],['LÍQUIDA:',area+' ha']]
+    const trioW = CW/3
+    trio.forEach(([lbl,val],i)=>{
+      const tx = C2+3+i*trioW
+      doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text(lbl,tx,y2+5.5)
+      doc.setFont('helvetica','normal');doc.setTextColor(...DK);doc.text(val,tx+18,y2+5.5)
+    })
     y2+=10
+    if(rel.bordadura_detalhe?.length){
+      const detTxt = rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(' · ')
+      doc.setFontSize(6.5);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
+      doc.text(truncFit(doc,detTxt,CW),C2+3,y2+3)
+      y2+=6
+    }
   }
 
   // Grid talhão
@@ -842,7 +856,7 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
   <tr><td>Cliente</td><td>${rel.cliente||'—'}</td></tr>
   <tr><td>Fazenda</td><td>${rel.fazenda||'—'}</td></tr>
   ${areaBrutaW?`<tr><td>Área Total (talhões)</td><td>${areaBrutaW} ha</td></tr>`:''}
-  ${rel.bordadura?`<tr><td>Bordadura</td><td>${rel.bordadura} ha</td></tr>`:''}
+  ${rel.bordadura?`<tr><td>Bordadura</td><td>${rel.bordadura} ha${rel.bordadura_detalhe?.length?' ('+rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(', ')+')':''}</td></tr>`:''}
   ${areaBrutaW?`<tr><td>Área Aplicada</td><td>${areaNetaW} ha</td></tr>`:''}
   <tr><td>Localização</td><td>${rel.localizacao||'—'}</td></tr>
   ${rel.gps_lat?`<tr><td>Coordenadas GPS</td><td>${rel.gps_lat}, ${rel.gps_lng}</td></tr>`:''}
