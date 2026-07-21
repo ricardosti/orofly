@@ -23,9 +23,20 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function fetchProfile(userId) {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
-    setProfile(data)
-    setLoading(false)
+    try {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
+      if (error) throw error
+      setProfile(data)
+      try { localStorage.setItem('orofly_profile_cache', JSON.stringify(data)) } catch {}
+    } catch (e) {
+      // Sem conexão: usa o último perfil salvo em cache pra não travar o app carregando pra sempre
+      try {
+        const cached = JSON.parse(localStorage.getItem('orofly_profile_cache') || 'null')
+        if (cached?.id === userId) setProfile(cached)
+      } catch {}
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

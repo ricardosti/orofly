@@ -1,6 +1,9 @@
 // Helpers para Web Push notifications
 
 const VAPID_PUBLIC_KEY = process.env.REACT_APP_VAPID_PUBLIC_KEY
+// URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
+// que não tem as funções serverless — sempre chama o site publicado de verdade.
+const API_BASE = 'https://orofly.vercel.app'
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4)
@@ -60,7 +63,7 @@ export async function salvarSubscription(supabase, userId, subscription) {
 // Envia notificação via API
 export async function enviarNotificacao({ titulo, corpo, url, tag, requireInteraction }) {
   try {
-    await fetch('/api/send-notification', {
+    await fetch(`${API_BASE}/api/send-notification`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ titulo, corpo, url, tag, requireInteraction })

@@ -5,6 +5,9 @@ import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 
+// URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
+// que não tem as funções serverless — sempre chama o site publicado de verdade.
+const API_BASE = 'https://orofly.vercel.app'
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
 const STATUS_COLOR = { rascunho:'#6b8070', em_operacao:'#1a7a4a', pausado:'#e8a020', pausado_dia:'#1a1a2e', finalizado:'#185fa5', sos:'#c0392b', sos_resolvido:'#6b8070' }
 const STATUS_BG    = { rascunho:'#f4f8f5', em_operacao:'#e8f5ee', pausado:'#fdf3e0', pausado_dia:'#e8e8f5', finalizado:'#e6f1fb', sos:'#fdeaea', sos_resolvido:'#f4f8f5' }
@@ -240,7 +243,7 @@ export default function AdminPanel({ onSwitchMode }) {
     setLoading(true)
     const [{ data: rels }, usersRes] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
-      fetch('/api/list-users')
+      fetch(`${API_BASE}/api/list-users`)
     ])
     const rs = rels || []
     setRelatorios(rs)
@@ -318,7 +321,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function toggleAtivo(piloto) {
     try {
-      const res = await fetch('/api/toggle-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: piloto.id, ativo: !piloto.ativo }) })
+      const res = await fetch(`${API_BASE}/api/toggle-user`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: piloto.id, ativo: !piloto.ativo }) })
       const d = await res.json(); if (d.error) throw new Error(d.error)
       showToast(piloto.ativo ? '⛔ Desativado' : '✅ Ativado'); fetchAll()
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
@@ -327,7 +330,7 @@ export default function AdminPanel({ onSwitchMode }) {
   async function toggleRole(piloto) {
     const novoRole = piloto.role === 'admin' ? 'piloto' : 'admin'
     try {
-      const res = await fetch('/api/toggle-role', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, role: novoRole }) })
+      const res = await fetch(`${API_BASE}/api/toggle-role`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, role: novoRole }) })
       const d = await res.json(); if (d.error) throw new Error(d.error)
       showToast(novoRole === 'admin' ? '⚙️ Virou Admin' : '🚁 Virou Piloto')
       fetchAll()
@@ -370,7 +373,7 @@ export default function AdminPanel({ onSwitchMode }) {
     if (!newUser.nome || !newUser.email || !newUser.senha) { showToast('⚠️ Preencha tudo', 'error'); return }
     setCriandoUser(true)
     try {
-      const res = await fetch('/api/create-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) })
+      const res = await fetch(`${API_BASE}/api/create-user`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) })
       const text = await res.text(); let data
       try { data = JSON.parse(text) } catch { throw new Error('Função não encontrada.') }
       if (data.error) throw new Error(data.error)

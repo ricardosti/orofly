@@ -59,6 +59,15 @@ function initForm(data) {
   }
 }
 
+// Cache local de listas de referência (drones/produtos/clientes/fazendas/talhões),
+// pra funcionar offline com o último cadastro conhecido em vez de ficar vazio
+function loadCache(key) {
+  try { const c = localStorage.getItem(key); return c ? JSON.parse(c) : [] } catch { return [] }
+}
+function saveCache(key, data) {
+  try { localStorage.setItem(key, JSON.stringify(data)) } catch {}
+}
+
 // Bordadura total do form em edição: soma por talhão (multi-seleção) ou valor único
 function bordaduraAtual(form) {
   const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
@@ -277,6 +286,12 @@ export default function PilotApp({onSwitchMode}) {
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).relId||null } catch{}
     return null
   })
+  // true quando o último salvamento falhou (provavelmente sem sinal) e ainda não foi sincronizado
+  const [pendingSync,setPendingSync] = useState(()=>{
+    try { const d=localStorage.getItem(LS_KEY); if(d) return !!JSON.parse(d).pendingSync } catch{}
+    return false
+  })
+  const lastExtraData = useRef({})
   const [saving,setSaving] = useState(false)
   const [saveStatus,setSaveStatus] = useState(null)
   const [toast,setToast] = useState('')
@@ -349,18 +364,26 @@ export default function PilotApp({onSwitchMode}) {
     toastTimer.current=setTimeout(()=>setToast(''),2800)
   },[])
 
-  // Carrega drones, produtos, clientes, fazendas e talhões do banco
+  // Carrega drones, produtos, clientes, fazendas e talhões do banco.
+  // Usa cache local (localStorage) como estado inicial e fallback offline: se a busca
+  // ao vivo falhar (sem sinal), continua com o último cadastro conhecido em vez de ficar vazio.
   useEffect(() => {
+    setDronesDB(loadCache('orofly_cache_drones'))
+    setProdutosDB(loadCache('orofly_cache_produtos'))
+    setClientesDB(loadCache('orofly_cache_clientes'))
+    setFazendasDB(loadCache('orofly_cache_fazendas'))
+    setTalhoesDB(loadCache('orofly_cache_talhoes'))
+
     supabase.from('drones').select('nome,ativo').eq('ativo',true).order('nome')
-      .then(({data}) => { if(data?.length) setDronesDB(data) })
+      .then(({data}) => { if(data?.length){ setDronesDB(data); saveCache('orofly_cache_drones',data) } })
     supabase.from('produtos').select('nome,unidade,dose_padrao,dose_auto,ativo').eq('ativo',true).order('nome')
-      .then(({data}) => { if(data?.length) setProdutosDB(data) })
+      .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
-      .then(({data}) => { if(data?.length) setClientesDB(data) })
+      .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
     supabase.from('fazendas').select('id,cliente,nome,ativo').eq('ativo',true).order('nome')
-      .then(({data}) => { if(data) setFazendasDB(data) })
+      .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
-      .then(({data}) => { if(data) setTalhoesDB(data) })
+      .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
   }, [])
 
   // Carrega voos compartilhados abertos
@@ -439,8 +462,21 @@ export default function PilotApp({onSwitchMode}) {
   }, [relId]) // eslint-disable-line
   useEffect(()=>{
     if(opState==='idle') return
-    try { localStorage.setItem(LS_KEY,JSON.stringify({form,opState,relId})) } catch{}
-  },[form,opState,relId])
+    try { localStorage.setItem(LS_KEY,JSON.stringify({form,opState,relId,pendingSync,lastExtraData:lastExtraData.current})) } catch{}
+  },[form,opState,relId,pendingSync])
+
+  // Sincronização automática: assim que o app fica online (ou ao reabrir com pendência),
+  // reenvia o último salvamento que tinha falhado. Nada de dados perdidos por falta de sinal.
+  useEffect(()=>{
+    function tentarSincronizar(){
+      if(!pendingSync || !navigator.onLine) return
+      saveToSupabase(lastExtraData.current||{},false)
+    }
+    tentarSincronizar()
+    window.addEventListener('online',tentarSincronizar)
+    const id=setInterval(tentarSincronizar,30000)
+    return ()=>{ window.removeEventListener('online',tentarSincronizar); clearInterval(id) }
+  },[pendingSync]) // eslint-disable-line
 
   // Avisa ao fechar com operação em andamento
   useEffect(()=>{
@@ -468,6 +504,7 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   async function saveToSupabase(extraData={},retry=true) {
+    lastExtraData.current = extraData
     const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
     const bordaduraDetalhe = talhoesSel.length>1
       ? talhoesSel.map(nome=>({talhao:nome,bordadura:parseFloat(form.bordaduraPorTalhao?.[nome])||0})).filter(d=>d.bordadura>0)
@@ -494,11 +531,12 @@ export default function PilotApp({onSwitchMode}) {
       else{result=await supabase.from('relatorios').insert(payload).select().single();if(result.data)setRelId(result.data.id)}
       if(result.error) throw result.error
       setSaveStatus('saved');pendingPayload.current=null
+      if(pendingSync){setPendingSync(false);showToast('✅ Sincronizado com sucesso!')}
       if(retryTimer.current) clearTimeout(retryTimer.current)
       return result.data
     } catch(err){
-      setSaveStatus('error');pendingPayload.current={extraData}
-      if(retry){if(retryTimer.current)clearTimeout(retryTimer.current);retryTimer.current=setTimeout(()=>{if(pendingPayload.current){showToast('🔄 Tentando salvar...');saveToSupabase(pendingPayload.current.extraData,false)}},10000)}
+      setSaveStatus('error');pendingPayload.current={extraData};setPendingSync(true)
+      if(retry){if(retryTimer.current)clearTimeout(retryTimer.current);retryTimer.current=setTimeout(()=>{if(pendingPayload.current){saveToSupabase(pendingPayload.current.extraData,false)}},10000)}
       return null
     }
   }
@@ -705,10 +743,17 @@ export default function PilotApp({onSwitchMode}) {
     setOpState('finished')
     // Só salva o voo — PDF gerado separadamente no Step 5
     const relSalvo = await saveToSupabase({status:'finalizado',dt_fim:n.iso})
-    if (relSalvo) await darBaixaEstoque(relSalvo.id)
-    try{localStorage.removeItem(LS_KEY)}catch{}
-    setSaving(false)
-    showToast('✅ Voo salvo! Adicione fotos e gere o relatório.')
+    if (relSalvo) {
+      await darBaixaEstoque(relSalvo.id)
+      try{localStorage.removeItem(LS_KEY)}catch{}
+      setSaving(false)
+      showToast('✅ Voo salvo! Adicione fotos e gere o relatório.')
+    } else {
+      // Sem conexão: NÃO apaga o rascunho — fica salvo no aparelho e sincroniza
+      // sozinho assim que voltar o sinal (ver useEffect de pendingSync).
+      setSaving(false)
+      showToast('📴 Sem sinal agora. Voo salvo no aparelho e será enviado automaticamente quando reconectar.')
+    }
   }
 
   async function gerarRelatorioFinal() {
@@ -780,7 +825,7 @@ export default function PilotApp({onSwitchMode}) {
 
   function limpar(){
     try{localStorage.removeItem(LS_KEY)}catch{}
-    setForm(initForm());setOpState('idle');setRelId(null);setSaveStatus(null)
+    setForm(initForm());setOpState('idle');setRelId(null);setSaveStatus(null);setPendingSync(false)
     setObsFotos([null,null,null]);setObsFotoFiles([null,null,null])
     setFotoMapa(null);setFotoMapaFile(null)
     setStorageFotoMapa(null);setStorageObsFotos([null,null,null])
@@ -844,6 +889,13 @@ export default function PilotApp({onSwitchMode}) {
           <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
         </div>
       </div>
+      {pendingSync&&(
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#5a3d0a',padding:'6px 12px',fontSize:11,color:'#f0c040'}}>
+          <span>📴 Sem sincronizar — será enviado automaticamente com sinal</span>
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#f0c040',borderRadius:6,padding:'3px 9px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
+            onClick={()=>saveToSupabase(lastExtraData.current||{},false)}>🔄 Tentar agora</button>
+        </div>
+      )}
       <div style={sw.stepsWrap}>
         <div style={sw.stepsRow}>
           {STEPS.map((st,i)=>(
@@ -1629,7 +1681,10 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* Botão Iniciar Novo Voo — sempre visível */}
             <button style={{...sw.btnG,background:'#f4f8f5',color:'#1a7a4a',border:'1.5px solid #1a7a4a',marginBottom:10,width:'100%'}} onClick={()=>{
-              if(window.confirm('Iniciar novo voo? O voo atual será encerrado.')) limpar()
+              const aviso = pendingSync
+                ? '⚠️ Este voo ainda NÃO foi sincronizado (sem sinal)! Se iniciar um novo agora, esse relatório será perdido. Tem certeza?'
+                : 'Iniciar novo voo? O voo atual será encerrado.'
+              if(window.confirm(aviso)) limpar()
             }}>✈️ Iniciar Novo Voo</button>
 
             {/* E-mail sugerido */}
