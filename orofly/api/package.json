@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "web-push": "^3.6.7",
-    "@supabase/supabase-js": "^2.39.0"
-  }
-}
