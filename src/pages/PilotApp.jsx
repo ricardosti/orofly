@@ -136,16 +136,18 @@ function FS({label,val,onChange,children}) {
   )
 }
 
-// Calcula Delta T real: diferença entre temperatura seca e ponto de orvalho
+// Calcula Delta T real (uso agronômico): diferença entre temperatura seca (bulbo seco)
+// e temperatura de bulbo úmido — não confundir com ponto de orvalho, que é outra grandeza.
+// Bulbo úmido aproximado pela fórmula de Stull (2011), válida para RH entre 5% e 99% e T entre -20°C e 50°C.
 function calcDeltaT(tempC, umidadePercent) {
   const t = parseFloat(tempC)
   const rh = parseFloat(umidadePercent)
   if (isNaN(t) || isNaN(rh) || rh <= 0) return null
-  // Ponto de orvalho por Magnus: Td = (243.04 * (ln(rh/100) + 17.625*t/(243.04+t))) / (17.625 - (ln(rh/100) + 17.625*t/(243.04+t)))
-  const lnRh = Math.log(rh / 100)
-  const num = 17.625 * t / (243.04 + t)
-  const Td = 243.04 * (lnRh + num) / (17.625 - lnRh - num)
-  return Math.max(0, t - Td)
+  const tw = t * Math.atan(0.151977 * Math.sqrt(rh + 8.313659))
+    + Math.atan(t + rh) - Math.atan(rh - 1.676331)
+    + 0.00391838 * Math.pow(rh, 1.5) * Math.atan(0.023101 * rh)
+    - 4.686035
+  return Math.max(0, t - tw)
 }
 
 // Classifica cada parâmetro climático
@@ -315,6 +317,7 @@ export default function PilotApp({onSwitchMode}) {
   const [fotoPickerOpen, setFotoPickerOpen] = useState(null)
   const [wizardStep, setWizardStep] = useState(1)
   const [talhaoSearch, setTalhaoSearch] = useState('')
+  const [talhaoDropdownOpen, setTalhaoDropdownOpen] = useState(false)
   const [timerSecs, setTimerSecs] = useState(0)
 
   // Timer em tempo real durante o voo
@@ -974,49 +977,71 @@ export default function PilotApp({onSwitchMode}) {
                       ? talhoesFaz.filter(t=>t.nome.toLowerCase().includes(talhaoSearch.trim().toLowerCase()))
                       : talhoesFaz
                     if (temTalhoes) return (
-                      <div style={sw.fw}>
-                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                          <label style={sw.fl}>TALHÕES <span style={{fontWeight:400,color:'#aaa'}}>(selecione um ou mais)</span></label>
-                          <button type="button" onClick={toggleTodos} style={{background:'none',border:'none',color:'#1a7a4a',fontSize:12,fontWeight:600,cursor:'pointer',padding:'2px 0'}}>
-                            {todosSelecionados?'Limpar seleção':'Selecionar todos'}
-                          </button>
+                      <div style={{...sw.fw,position:'relative'}}>
+                        <label style={sw.fl}>TALHÕES <span style={{fontWeight:400,color:'#aaa'}}>(selecione um ou mais)</span></label>
+
+                        {/* Campo fechado — estilo igual ao select de Fazenda/Cliente */}
+                        <div onClick={()=>setTalhaoDropdownOpen(o=>!o)}
+                          style={{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:selecionados.length?'#111a14':'#aaa',background:'#fff',boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',fontFamily:"'DM Sans',sans-serif"}}>
+                          <span>{selecionados.length ? `${selecionados.length} talhão(ões) selecionado(s)` : 'Selecione os talhões...'}</span>
+                          <span style={{color:'#aaa',fontSize:11}}>{talhaoDropdownOpen?'▲':'▼'}</span>
                         </div>
-                        {talhoesFaz.length>6&&(
-                          <input style={{...sw.fi,marginBottom:8}} placeholder={`🔍 Buscar entre ${talhoesFaz.length} talhões...`}
-                            value={talhaoSearch} onChange={e=>setTalhaoSearch(e.target.value)}/>
-                        )}
-                        <div style={{border:'1px solid #dde8e2',borderRadius:10,overflow:'hidden',maxHeight:280,overflowY:'auto'}}>
-                          {talhoesVisiveis.length===0 ? (
-                            <div style={{padding:'14px',fontSize:13,color:'#aaa',textAlign:'center'}}>Nenhum talhão encontrado</div>
-                          ) : talhoesVisiveis.map(t=>{
-                            const sel = selecionados.includes(t.nome)
-                            return (
-                              <div key={t.id} onClick={()=>toggleTalhao(t)}
-                                style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',background:sel?'#e8f5ee':'#fff',borderBottom:'1px solid #f0f5f2'}}>
-                                <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${sel?'#1a7a4a':'#c3d4c9'}`,background:sel?'#1a7a4a':'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                                  {sel&&<span style={{color:'#fff',fontSize:11,fontWeight:700}}>✓</span>}
-                                </div>
-                                <span style={{fontSize:14,color:'#111a14',flex:1}}>{t.nome}</span>
-                                {t.area_ha&&<span style={{fontSize:12,color:'#1a7a4a',fontWeight:600}}>{t.area_ha} ha</span>}
+
+                        {talhaoDropdownOpen && (
+                          <>
+                            {/* backdrop transparente — fecha ao clicar fora */}
+                            <div onClick={()=>setTalhaoDropdownOpen(false)} style={{position:'fixed',inset:0,zIndex:90}}/>
+                            {/* painel flutuante */}
+                            <div style={{position:'absolute',top:'100%',left:0,right:0,marginTop:4,background:'#fff',border:'1px solid #dde8e2',borderRadius:10,boxShadow:'0 10px 30px rgba(0,0,0,.18)',zIndex:91,padding:10}}>
+                              <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+                                <button type="button" onClick={toggleTodos} style={{background:'none',border:'none',color:'#1a7a4a',fontSize:12,fontWeight:600,cursor:'pointer',padding:'2px 0'}}>
+                                  {todosSelecionados?'Limpar seleção':'Selecionar todos'}
+                                </button>
                               </div>
-                            )
-                          })}
-                        </div>
+                              {talhoesFaz.length>6&&(
+                                <input style={{...sw.fi,marginBottom:8}} placeholder={`🔍 Buscar entre ${talhoesFaz.length} talhões...`}
+                                  value={talhaoSearch} onChange={e=>setTalhaoSearch(e.target.value)}/>
+                              )}
+                              <div style={{border:'1px solid #f0f5f2',borderRadius:10,overflow:'hidden',maxHeight:240,overflowY:'auto'}}>
+                                {talhoesVisiveis.length===0 ? (
+                                  <div style={{padding:'14px',fontSize:13,color:'#aaa',textAlign:'center'}}>Nenhum talhão encontrado</div>
+                                ) : talhoesVisiveis.map(t=>{
+                                  const sel = selecionados.includes(t.nome)
+                                  return (
+                                    <div key={t.id} onClick={()=>toggleTalhao(t)}
+                                      style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',background:sel?'#e8f5ee':'#fff',borderBottom:'1px solid #f0f5f2'}}>
+                                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${sel?'#1a7a4a':'#c3d4c9'}`,background:sel?'#1a7a4a':'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                        {sel&&<span style={{color:'#fff',fontSize:11,fontWeight:700}}>✓</span>}
+                                      </div>
+                                      <span style={{fontSize:14,color:'#111a14',flex:1}}>{t.nome}</span>
+                                      {t.area_ha&&<span style={{fontSize:12,color:'#1a7a4a',fontWeight:600}}>{t.area_ha} ha</span>}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                              <input style={{...sw.fi,marginTop:8}} placeholder="Outro talhão? Digite aqui e Enter..." value=""
+                                onKeyDown={e=>{
+                                  if(e.key==='Enter'&&e.target.value.trim()){
+                                    const novos=[...selecionados,e.target.value.trim()]
+                                    const joined=novos.join(', ')
+                                    setForm(f=>({...f,talhao:joined,localizacao:joined}))
+                                    e.target.value=''
+                                  }
+                                }}
+                                onChange={()=>{}}/>
+                              <button type="button" onClick={()=>setTalhaoDropdownOpen(false)}
+                                style={{width:'100%',marginTop:8,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'9px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                                Concluído
+                              </button>
+                            </div>
+                          </>
+                        )}
+
                         {selecionados.length>0&&(
                           <div style={{marginTop:6,fontSize:12,color:'#1a7a4a',fontWeight:600}}>
                             ✅ {selecionados.length} talhão(ões) · Área total: {form.area_ha||'—'} ha
                           </div>
                         )}
-                        <input style={{...sw.fi,marginTop:8}} placeholder="Outro talhão? Digite aqui (separado por vírgula)..." value=""
-                          onKeyDown={e=>{
-                            if(e.key==='Enter'&&e.target.value.trim()){
-                              const novos=[...selecionados,e.target.value.trim()]
-                              const joined=novos.join(', ')
-                              setForm(f=>({...f,talhao:joined,localizacao:joined}))
-                              e.target.value=''
-                            }
-                          }}
-                          onChange={()=>{}}/>
                       </div>
                     )
                     return <FI label="TALHÃO" ph="Ex: Talhão 5, Zona 65..." val={form.talhao} onChange={e=>{setForm(f=>({...f,talhao:e.target.value,localizacao:e.target.value}));autoGPS()}}/>

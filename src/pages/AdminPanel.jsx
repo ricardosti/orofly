@@ -71,6 +71,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invMovimentos, setInvMovimentos] = useState([])
   const [movForm, setMovForm] = useState({produto:'',tipo:'entrada',quantidade:'',obs:''})
   const [movSaving, setMovSaving] = useState(false)
+  const [movFiltros, setMovFiltros] = useState({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})
   const [invTab, setInvTab] = useState('drones')
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
@@ -1251,14 +1252,16 @@ export default function AdminPanel({ onSwitchMode }) {
                   {/* Lista de voos com GPS */}
                   <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:16 }}>
                     {filtered.filter(r => r.gps_lat).map(rel => (
-                      <div key={rel.id} style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#c0392b':'#d0e4d8'}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                      <div key={rel.id} onClick={()=>{setSelected(rel);setTab('relatorios')}}
+                        style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#c0392b':'#d0e4d8'}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}>
                         <div>
                           <div style={{ fontWeight:600, fontSize:13, color:'#111a14' }}>{rel.cliente||'—'} — {rel.piloto_nome}</div>
                           <div style={{ fontSize:11, color:'#6b8070', marginTop:2 }}>{rel.gps_lat}, {rel.gps_lng} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
                         </div>
                         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                           <span style={{ background: STATUS_BG[rel.status]||'#f4f8f5', color: STATUS_COLOR[rel.status]||'#6b8070', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
-                          <a href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" style={{ background:'#1a7a4a', color:'#fff', borderRadius:8, padding:'5px 10px', fontSize:12, textDecoration:'none', whiteSpace:'nowrap' }}>📍 Ver</a>
+                          <a href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ background:'#1a7a4a', color:'#fff', borderRadius:8, padding:'5px 10px', fontSize:12, textDecoration:'none', whiteSpace:'nowrap' }}>📍 Ver</a>
+                          <span style={{ color:'#8aad94' }}>›</span>
                         </div>
                       </div>
                     ))}
@@ -1475,20 +1478,91 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* ── MOVIMENTOS DE ESTOQUE ── */}
                 {invTab==='movimentos' && (()=>{
                   const TIPO_LABEL = {baixa_relatorio:'📋 Baixa (relatório)',entrada:'📦 Entrada',perda:'⚠️ Perda',ajuste:'🔧 Ajuste'}
-                  const totalEntradas = invMovimentos.filter(m=>m.quantidade>0).reduce((a,m)=>a+m.quantidade,0)
-                  const totalSaidas = invMovimentos.filter(m=>m.quantidade<0).reduce((a,m)=>a+Math.abs(m.quantidade),0)
+                  const MOV_COLORS = ['#1a7a4a','#2da05e','#f0c040','#185fa5','#8e44ad','#e8a020','#c0392b','#6b8070']
+
+                  // Join com relatorios pra saber fazenda/cliente das baixas automáticas
+                  const relatorioById = {}
+                  relatorios.forEach(r=>{relatorioById[r.id]=r})
+                  const fazendaDoMovimento = m => m.relatorio_id ? relatorioById[m.relatorio_id]?.fazenda : null
+                  const fazendasDisponiveis = [...new Set(relatorios.map(r=>r.fazenda).filter(Boolean))].sort()
+
+                  const movFiltrados = invMovimentos.filter(m=>{
+                    if(movFiltros.produto && m.produto_nome!==movFiltros.produto) return false
+                    if(movFiltros.tipo && m.tipo!==movFiltros.tipo) return false
+                    if(movFiltros.fazenda && fazendaDoMovimento(m)!==movFiltros.fazenda) return false
+                    if(movFiltros.dataIni && new Date(m.created_at)<new Date(movFiltros.dataIni)) return false
+                    if(movFiltros.dataFim && new Date(m.created_at)>new Date(movFiltros.dataFim+'T23:59:59')) return false
+                    return true
+                  })
+
+                  const totalEntradas = movFiltrados.filter(m=>m.quantidade>0).reduce((a,m)=>a+m.quantidade,0)
+                  const totalSaidas = movFiltrados.filter(m=>m.quantidade<0).reduce((a,m)=>a+Math.abs(m.quantidade),0)
                   const porProduto = {}
-                  invMovimentos.filter(m=>m.quantidade<0).forEach(m=>{porProduto[m.produto_nome]=(porProduto[m.produto_nome]||0)+Math.abs(m.quantidade)})
-                  const maisConsumido = Object.entries(porProduto).sort((a,b)=>b[1]-a[1])[0]
+                  movFiltrados.filter(m=>m.quantidade<0).forEach(m=>{porProduto[m.produto_nome]=(porProduto[m.produto_nome]||0)+Math.abs(m.quantidade)})
+                  const rankingProdutos = Object.entries(porProduto).sort((a,b)=>b[1]-a[1])
+                  const maisConsumido = rankingProdutos[0]
+                  const chartProdutos = rankingProdutos.slice(0,8).map(([name,value])=>({name,value:parseFloat(value.toFixed(1))}))
+
+                  // Movimentação por dia (saídas), últimos 30 pontos do período filtrado
+                  const porDia = {}
+                  movFiltrados.forEach(m=>{
+                    const d = new Date(m.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})
+                    if(!porDia[d]) porDia[d]={dia:d,entradas:0,saidas:0}
+                    if(m.quantidade>0) porDia[d].entradas+=m.quantidade
+                    else porDia[d].saidas+=Math.abs(m.quantidade)
+                  })
+                  const chartTempo = Object.values(porDia).slice(-30).map(x=>({...x,entradas:parseFloat(x.entradas.toFixed(1)),saidas:parseFloat(x.saidas.toFixed(1))}))
+
+                  // Distribuição por tipo
+                  const porTipo = {}
+                  movFiltrados.forEach(m=>{porTipo[m.tipo]=(porTipo[m.tipo]||0)+Math.abs(m.quantidade)})
+                  const chartTipo = Object.entries(porTipo).map(([tipo,value])=>({name:TIPO_LABEL[tipo]||tipo,value:parseFloat(value.toFixed(1))}))
+
+                  const filtrosAtivos = Object.values(movFiltros).some(Boolean)
+
                   return (
                     <div>
+                      {/* Filtros */}
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:12,border:'1px solid #d0e4d8',alignItems:'center'}}>
+                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                          value={movFiltros.produto} onChange={e=>setMovFiltros(f=>({...f,produto:e.target.value}))}>
+                          <option value="">Todos os produtos</option>
+                          {invProdutos.map(p=><option key={p.id} value={p.nome}>{p.nome}</option>)}
+                        </select>
+                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                          value={movFiltros.fazenda} onChange={e=>setMovFiltros(f=>({...f,fazenda:e.target.value}))}>
+                          <option value="">Todas as fazendas</option>
+                          {fazendasDisponiveis.map(fz=><option key={fz} value={fz}>{fz}</option>)}
+                        </select>
+                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 170px'}}
+                          value={movFiltros.tipo} onChange={e=>setMovFiltros(f=>({...f,tipo:e.target.value}))}>
+                          <option value="">Todos os tipos</option>
+                          <option value="baixa_relatorio">📋 Baixa (relatório)</option>
+                          <option value="entrada">📦 Entrada</option>
+                          <option value="perda">⚠️ Perda</option>
+                          <option value="ajuste">🔧 Ajuste</option>
+                        </select>
+                        <div style={{display:'flex',alignItems:'center',gap:4}}>
+                          <span style={{fontSize:11,color:'#6b8070'}}>De:</span>
+                          <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataIni} onChange={e=>setMovFiltros(f=>({...f,dataIni:e.target.value}))}/>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:4}}>
+                          <span style={{fontSize:11,color:'#6b8070'}}>Até:</span>
+                          <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataFim} onChange={e=>setMovFiltros(f=>({...f,dataFim:e.target.value}))}/>
+                        </div>
+                        {filtrosAtivos && (
+                          <button style={{background:'none',border:'1px solid #e0b0a8',color:'#c0392b',borderRadius:8,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                            onClick={()=>setMovFiltros({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
+                        )}
+                      </div>
+
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(3,1fr)',gap:12,marginBottom:16}}>
                         <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ENTRADAS (TOTAL)</div>
+                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ENTRADAS (FILTRADO)</div>
                           <div style={{fontSize:20,fontWeight:700,color:'#1a7a4a'}}>+{totalEntradas.toFixed(1)}</div>
                         </div>
                         <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>SAÍDAS (TOTAL)</div>
+                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>SAÍDAS (FILTRADO)</div>
                           <div style={{fontSize:20,fontWeight:700,color:'#c0392b'}}>-{totalSaidas.toFixed(1)}</div>
                         </div>
                         <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
@@ -1496,6 +1570,56 @@ export default function AdminPanel({ onSwitchMode }) {
                           <div style={{fontSize:15,fontWeight:700,color:'#111a14'}}>{maisConsumido?`${maisConsumido[0]} (${maisConsumido[1].toFixed(1)})`:'—'}</div>
                         </div>
                       </div>
+
+                      {/* Gráficos */}
+                      {movFiltrados.length>0 && (
+                        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.3fr 1fr',gap:12,marginBottom:16}}>
+                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>📊 Consumo por Produto</div>
+                            {chartProdutos.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem saídas no período</div> : (
+                              <ResponsiveContainer width="100%" height={220}>
+                                <BarChart data={chartProdutos} layout="vertical" margin={{left:10,right:10}}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
+                                  <XAxis type="number" tick={{fontSize:10,fill:'#8aad94'}}/>
+                                  <YAxis type="category" dataKey="name" width={100} tick={{fontSize:10,fill:'#6b8070'}}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}}/>
+                                  <Bar dataKey="value" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            )}
+                          </div>
+                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>🥧 Por Tipo</div>
+                            {chartTipo.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados</div> : (
+                              <ResponsiveContainer width="100%" height={220}>
+                                <PieChart>
+                                  <Pie data={chartTipo} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({name,percent})=>`${(percent*100).toFixed(0)}%`}>
+                                    {chartTipo.map((_,i)=><Cell key={i} fill={MOV_COLORS[i%MOV_COLORS.length]}/>)}
+                                  </Pie>
+                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}}/>
+                                  <Legend wrapperStyle={{fontSize:11}}/>
+                                </PieChart>
+                              </ResponsiveContainer>
+                            )}
+                          </div>
+                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16,gridColumn:isMobile?'auto':'1 / -1'}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>📈 Movimentação ao Longo do Tempo</div>
+                            {chartTempo.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                              <ResponsiveContainer width="100%" height={200}>
+                                <BarChart data={chartTempo} margin={{top:5,right:10,left:-20,bottom:5}}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
+                                  <XAxis dataKey="dia" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false}/>
+                                  <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}}/>
+                                  <Legend wrapperStyle={{fontSize:11}}/>
+                                  <Bar dataKey="entradas" name="Entradas" fill="#1a7a4a" radius={[4,4,0,0]}/>
+                                  <Bar dataKey="saidas" name="Saídas" fill="#c0392b" radius={[4,4,0,0]}/>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Novo movimento manual */}
                       <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,marginBottom:16}}>
@@ -1527,22 +1651,28 @@ export default function AdminPanel({ onSwitchMode }) {
                         <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
                           Nenhum movimento ainda.<br/>As baixas aparecem aqui automaticamente quando um relatório é finalizado, ou rode o SQL de setup se a tabela ainda não existir.
                         </div>
+                      ) : movFiltrados.length===0 ? (
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:30,textAlign:'center',color:'#6b8070',fontSize:13}}>
+                          Nenhum movimento encontrado com esses filtros.
+                        </div>
                       ) : (
                         <div style={{overflowX:'auto'}}>
-                          <table style={{width:'100%',borderCollapse:'collapse',minWidth:520}}>
+                          <div style={{fontSize:11,color:'#8aad94',marginBottom:8}}>{movFiltrados.length} movimento(s)</div>
+                          <table style={{width:'100%',borderCollapse:'collapse',minWidth:600}}>
                             <thead>
                               <tr style={{background:'#f4f8f5'}}>
-                                {['Data','Produto','Tipo','Quantidade','Obs'].map(h=>(
+                                {['Data','Produto','Tipo','Fazenda','Quantidade','Obs'].map(h=>(
                                   <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
-                              {invMovimentos.slice(0,200).map((m,i)=>(
+                              {movFiltrados.slice(0,200).map((m,i)=>(
                                 <tr key={m.id} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
                                   <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070',whiteSpace:'nowrap'}}>{new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
                                   <td style={{padding:'8px 10px',fontSize:13,fontWeight:600,color:'#111a14'}}>{m.produto_nome}</td>
                                   <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{TIPO_LABEL[m.tipo]||m.tipo}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{fazendaDoMovimento(m)||'—'}</td>
                                   <td style={{padding:'8px 10px',fontSize:13,fontWeight:700,color:m.quantidade<0?'#c0392b':'#1a7a4a'}}>{m.quantidade>0?'+':''}{m.quantidade} {m.unidade||''}</td>
                                   <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{m.obs||'—'}</td>
                                 </tr>

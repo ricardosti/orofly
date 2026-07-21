@@ -98,11 +98,11 @@ export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFot
   pdfRow('Cliente', rel.cliente, true)
   pdfRow('Fazenda', rel.fazenda, false)
   if (areaBruta) pdfRow('Área Total (talhões)', areaBruta+' ha', true)
+  if (areaBruta) pdfRow('Área Realizada', areaNeta+' ha', false)
   if (bordaduraHa) {
     const detalheTxt = rel.bordadura_detalhe?.length ? ' ('+rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(', ')+')' : ''
-    pdfRow('Bordadura', bordaduraHa+' ha'+detalheTxt, false)
+    pdfRow('Bordadura', bordaduraHa+' ha'+detalheTxt, true)
   }
-  if (areaBruta) pdfRow('Área Aplicada', areaNeta+' ha', true)
   pdfRow('Piloto', rel.piloto_nome, false)
   pdfRow('Drone', rel.drone, true)
   gastos.forEach((g,i) => {
@@ -562,7 +562,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   // Bordadura — logo após o mapa, só se preenchida: mostra total, bordadura e líquido
   if(bordaduraHaC){
     doc.setFillColor(240,248,243);doc.roundedRect(C2,y2,CW,8,1.5,1.5,'F')
-    const trio = [['TOTAL:',areaBrutaC+' ha'],['BORDADURA:',bordaduraHaC+' ha'],['LÍQUIDA:',area+' ha']]
+    const trio = [['TOTAL:',areaBrutaC+' ha'],['REALIZADA:',area+' ha'],['BORDADURA:',bordaduraHaC+' ha']]
     const trioW = CW/3
     trio.forEach(([lbl,val],i)=>{
       const tx = C2+3+i*trioW
@@ -620,12 +620,13 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     }
   }
 
-  // Assinatura
+  // Assinatura (centralizada na faixa de 55mm)
   const sigX=C2+CW-55
-  doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',sigX,y2+4)
-  doc.setFontSize(10);doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigX,y2+12)
+  const sigMidX=sigX+27.5
+  doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',sigMidX,y2+4,{align:'center'})
+  doc.setFontSize(10);doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigMidX,y2+12,{align:'center'})
   doc.setDrawColor(...GR);doc.setLineWidth(0.3);doc.line(sigX,y2+13.5,C2+CW,y2+13.5)
-  doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigX,y2+19)
+  doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigMidX,y2+19,{align:'center'})
 
   // Rodapé col2
   doc.setFillColor(...G);doc.rect(C2,PH-M-8,CW,9,'F')
@@ -746,12 +747,13 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
         yR+=83
       }
 
-      // Assinatura
+      // Assinatura (centralizada na faixa de 55mm)
       const tSigX=C2+CW-55
-      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',tSigX,yR+4)
-      doc.setFontSize(10);doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK);doc.text(t.piloto_nome||'',tSigX,yR+12)
+      const tSigMidX=tSigX+27.5
+      doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',tSigMidX,yR+4,{align:'center'})
+      doc.setFontSize(10);doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK);doc.text(t.piloto_nome||'',tSigMidX,yR+12,{align:'center'})
       doc.setDrawColor(...GR);doc.setLineWidth(0.3);doc.line(tSigX,yR+13.5,C2+CW,yR+13.5)
-      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK);doc.text(t.piloto_nome||'',tSigX,yR+19)
+      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK);doc.text(t.piloto_nome||'',tSigMidX,yR+19,{align:'center'})
 
       // Rodapé
       doc.setFillColor(...G);doc.rect(C1,PH-M-8,PW-M-C1,9,'F')
@@ -856,8 +858,8 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
   <tr><td>Cliente</td><td>${rel.cliente||'—'}</td></tr>
   <tr><td>Fazenda</td><td>${rel.fazenda||'—'}</td></tr>
   ${areaBrutaW?`<tr><td>Área Total (talhões)</td><td>${areaBrutaW} ha</td></tr>`:''}
+  ${areaBrutaW?`<tr><td>Área Realizada</td><td>${areaNetaW} ha</td></tr>`:''}
   ${rel.bordadura?`<tr><td>Bordadura</td><td>${rel.bordadura} ha${rel.bordadura_detalhe?.length?' ('+rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(', ')+')':''}</td></tr>`:''}
-  ${areaBrutaW?`<tr><td>Área Aplicada</td><td>${areaNetaW} ha</td></tr>`:''}
   <tr><td>Localização</td><td>${rel.localizacao||'—'}</td></tr>
   ${rel.gps_lat?`<tr><td>Coordenadas GPS</td><td>${rel.gps_lat}, ${rel.gps_lng}</td></tr>`:''}
 </table>
