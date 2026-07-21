@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Orofly</string>
+    <string name="title_activity_main">Orofly</string>
+    <string name="package_name">com.ricardosti.orofly</string>
+    <string name="custom_url_scheme">com.ricardosti.orofly</string>
+</resources>
