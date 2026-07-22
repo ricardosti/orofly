@@ -515,6 +515,7 @@ export default function PilotApp({onSwitchMode}) {
   async function compartilharWhatsApp(){
     const texto = buildTxt(form,clienteVal,droneVal,produtoComUnidade)
     let file = fotoMapaFile
+    console.log('[compartilharWhatsApp] fotoMapaFile=',!!fotoMapaFile,'storageFotoMapa=',storageFotoMapa)
     if (!file && storageFotoMapa) {
       try {
         const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(storageFotoMapa,60)
@@ -841,13 +842,19 @@ export default function PilotApp({onSwitchMode}) {
       const {error}=await supabase.storage.from('relatorios').upload(`${profile.id}/${rid}/obs_${i}.jpg`,file,{upsert:true})
       urls.push(error?null:`${profile.id}/${rid}/obs_${i}.jpg`)
     }
+    if(urls.some(Boolean)) setStorageObsFotos(prev=>urls.map((u,i)=>u||prev[i]))
     return urls
   }
   async function uploadFotoMapa(rid){
     if(!fotoMapaFile) return null
     const path=`${profile.id}/${rid}/mapa.jpg`
     const {error}=await supabase.storage.from('relatorios').upload(path,fotoMapaFile,{upsert:true})
-    return error?null:path
+    if(error) return null
+    // Guarda o caminho no storage: o arquivo local (fotoMapaFile) some se o app recarregar
+    // (ex: reinstalar, sair de background por muito tempo). Com o path salvo, ainda dá pra
+    // buscar a foto de volta pra compartilhar/gerar PDF depois.
+    setStorageFotoMapa(path)
+    return path
   }
 
   function getGPS(){

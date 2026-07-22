@@ -18,21 +18,29 @@ async function blobToBase64(blob) {
 // e, se não suportar, cai no webFallbackUrl (ex: link wa.me só com texto).
 export async function compartilharNativo({ text, file, filename, webFallbackUrl }) {
   if (Capacitor.isNativePlatform()) {
+    console.log('[compartilharNativo] iniciando. temArquivo=', !!file, 'filename=', filename)
     try {
       const { Filesystem, Directory } = await import('@capacitor/filesystem')
       const { Share } = await import('@capacitor/share')
       let fileUri
       if (file) {
+        console.log('[compartilharNativo] arquivo recebido: size=', file.size, 'type=', file.type)
         const base64 = await blobToBase64(file)
+        console.log('[compartilharNativo] base64 gerado, tamanho=', base64.length)
         const written = await Filesystem.writeFile({ path: filename || 'compartilhar', data: base64, directory: Directory.Cache })
         fileUri = written.uri
+        console.log('[compartilharNativo] arquivo escrito em:', fileUri)
+      } else {
+        console.log('[compartilharNativo] sem arquivo pra anexar (file estava vazio/null)')
       }
+      console.log('[compartilharNativo] chamando Share.share, comArquivo=', !!fileUri)
       await Share.share({ text, files: fileUri ? [fileUri] : undefined, dialogTitle: 'Compartilhar' })
+      console.log('[compartilharNativo] Share.share concluído com sucesso')
       return true
     } catch (e) {
       // Usuário cancelando o menu de compartilhar não é erro
-      if (String(e?.message || '').toLowerCase().includes('cancel')) return true
-      console.error('Erro ao compartilhar (nativo):', e)
+      if (String(e?.message || '').toLowerCase().includes('cancel')) { console.log('[compartilharNativo] usuário cancelou'); return true }
+      console.error('[compartilharNativo] ERRO:', e?.message || e)
       return false
     }
   }
