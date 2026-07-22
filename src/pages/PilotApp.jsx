@@ -1044,7 +1044,9 @@ export default function PilotApp({onSwitchMode}) {
               {CULTURAS.map(c=><option key={c}>{c}</option>)}
             </FS>
 
-            <FS label="CLIENTE" val={form.cliente} onChange={e=>{setForm(f=>({...f,cliente:e.target.value}));autoGPS()}}>
+            <FS label="CLIENTE" val={form.cliente} onChange={e=>{
+              setForm(f=>({...f,cliente:e.target.value,fazenda:'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
+            }}>
               <option value="">Selecione o Cliente...</option>
               {CLIENTES.map(c=><option key={c}>{c}</option>)}
             </FS>
@@ -1062,7 +1064,7 @@ export default function PilotApp({onSwitchMode}) {
                     <>
                       <FS label="FAZENDA" val={selectVal} onChange={e=>{
                         const v=e.target.value==='Outros'?'':e.target.value
-                        setForm(f=>({...f,fazenda:v,talhao:'',localizacao:'',area_ha:''}));autoGPS()
+                        setForm(f=>({...f,fazenda:v,talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
                       }}>
                         <option value="">Selecione a Fazenda...</option>
                         {fazendasCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
