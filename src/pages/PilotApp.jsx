@@ -273,7 +273,7 @@ async function extrairMetadadosFoto(file) {
 
 export default function PilotApp({onSwitchMode}) {
   const {profile,signOut} = useAuth()
-  const [view,setView] = useState('form')
+  const [view,setView] = useState('home')
   const [form,setForm] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).form||initForm() } catch{}
     return initForm()
@@ -411,6 +411,12 @@ export default function PilotApp({onSwitchMode}) {
           setVoosCompartilhados(disponiveis)
         }
       })
+  }, [profile]) // eslint-disable-line
+
+  // Carrega histórico pra tela Home (resumo do dia/mês)
+  useEffect(() => {
+    if (!profile) return
+    loadFlights()
   }, [profile]) // eslint-disable-line
 
   function initTrechoForm() {
@@ -867,8 +873,10 @@ export default function PilotApp({onSwitchMode}) {
 
   async function loadFlights(){
     setLoadingFlights(true)
-    const {data}=await supabase.from('relatorios').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
-    setFlights(data||[]);setLoadingFlights(false)
+    try {
+      const {data}=await supabase.from('relatorios').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
+      setFlights(data||[])
+    } catch {} finally { setLoadingFlights(false) }
   }
 
   function openFlight(rel){
@@ -951,6 +959,7 @@ export default function PilotApp({onSwitchMode}) {
         </div>
         <div style={{display:'flex',gap:6}}>
           {onSwitchMode&&<button style={{background:'#f0c040',border:'none',color:'#111a14',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer',fontWeight:600}} onClick={onSwitchMode}>⚙️</button>}
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>setView('home')}>🏠</button>
           <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>{loadFlights();setView('flights')}}>📋</button>
           <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
         </div>
@@ -985,6 +994,99 @@ export default function PilotApp({onSwitchMode}) {
   )
 
 
+  if(view==='home') {
+    const draftAtivo = opState!=='idle' && opState!=='finished'
+    const hoje = new Date()
+    const mesmoDia = d => d && new Date(d).toDateString()===hoje.toDateString()
+    const mesmoMes = d => d && new Date(d).getMonth()===hoje.getMonth() && new Date(d).getFullYear()===hoje.getFullYear()
+    const finalizados = flights.filter(r=>r.status==='finalizado')
+    const voosHoje = finalizados.filter(r=>mesmoDia(r.dt_inicio||r.created_at))
+    const areaHoje = voosHoje.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+    const finalizadosMes = finalizados.filter(r=>mesmoMes(r.dt_inicio||r.created_at))
+    const areaMes = finalizadosMes.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+    const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
+    return (
+      <div style={s.wrap}>
+        <div style={s.header}>
+          <div style={s.headerInner}>
+            <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+            <div style={{display:'flex',gap:6}}>
+              {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+              <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+            </div>
+          </div>
+          <div style={s.headerSub}>Olá, {primeiroNome} 👋</div>
+        </div>
+
+        <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:14}}>
+          {/* Resumo do dia */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'14px 16px'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>VOOS HOJE</div>
+              <div style={{fontSize:24,fontWeight:700,color:'#111a14',fontFamily:"'Syne',sans-serif"}}>{voosHoje.length}</div>
+              <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{areaHoje.toFixed(1)} ha aplicados</div>
+            </div>
+            <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'14px 16px'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ESTE MÊS</div>
+              <div style={{fontSize:24,fontWeight:700,color:'#1a7a4a',fontFamily:"'Syne',sans-serif"}}>{areaMes.toFixed(0)}<span style={{fontSize:13,fontWeight:600}}> ha</span></div>
+              <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{finalizadosMes.length} voos finalizados</div>
+            </div>
+          </div>
+
+          {/* Voo em andamento */}
+          {draftAtivo && (
+            <div style={{background:'linear-gradient(135deg,#1a7a4a,#144d33)',borderRadius:16,padding:18,color:'#fff',cursor:'pointer'}} onClick={()=>setView('form')}>
+              <div style={{fontSize:11,fontWeight:700,opacity:.8,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':opState==='paused_day'?'🌙 FINALIZADO PARCIAL':'🟢 VOO EM ANDAMENTO'}</div>
+              <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Syne',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
+              <div style={{fontSize:12,opacity:.85,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
+            </div>
+          )}
+
+          {/* Ação principal */}
+          <button style={{background:draftAtivo?'#fff':'#1a7a4a',color:draftAtivo?'#1a7a4a':'#fff',border:draftAtivo?'2px solid #1a7a4a':'none',borderRadius:16,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
+            onClick={()=>{
+              if(draftAtivo){ if(!window.confirm('Já existe um voo em andamento. Descartar e começar um novo? (o voo atual continua salvo, você pode voltar por "Continuar voo")')) return }
+              limpar(); setView('form')
+            }}>
+            <span style={{fontSize:30}}>🚁</span>
+            <div>
+              <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Novo Voo</div>
+              <div style={{fontSize:12,opacity:.8}}>Iniciar uma nova operação</div>
+            </div>
+            <span style={{marginLeft:'auto',fontSize:18}}>›</span>
+          </button>
+
+          {/* Meus relatórios */}
+          <button style={{background:'#fff',color:'#111a14',border:'1px solid #e0ecea',borderRadius:16,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
+            onClick={()=>{loadFlights();setView('flights')}}>
+            <span style={{fontSize:30}}>📋</span>
+            <div>
+              <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
+              <div style={{fontSize:12,color:'#8aad94'}}>Ver histórico de voos</div>
+            </div>
+            <span style={{marginLeft:'auto',fontSize:18,color:'#8aad94'}}>›</span>
+          </button>
+
+          {/* Voos compartilhados pendentes */}
+          {voosCompartilhados.length>0&&(
+            <div style={{background:'#fffbea',border:'2px solid #f0c040',borderRadius:14,padding:14}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
+              {voosCompartilhados.map(v=>(
+                <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
+                  <div style={{fontWeight:700,fontSize:13,color:'#111a14'}}>{v.cliente} — {v.fazenda}</div>
+                  <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>Piloto: {v.piloto_nome}</div>
+                  <button style={{marginTop:8,background:'#f0c040',color:'#3a2a00',border:'none',borderRadius:8,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',width:'100%'}}
+                    onClick={()=>{ setTrechoModal(v); setTrechoForm(initTrechoForm()); setView('form') }}>➕ Adicionar meu trecho</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {toast&&<div style={s.toast}>{toast}</div>}
+      </div>
+    )
+  }
+
   if(view==='flights') return (
     <div style={s.wrap}>
       <div style={s.header}>
@@ -999,7 +1101,7 @@ export default function PilotApp({onSwitchMode}) {
       </div>
       <div style={s.statusBar}><span>📋 Histórico de voos</span></div>
       <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:10}}>
-        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('form')}>← Novo voo</button>
+        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('home')}>← Voltar</button>
         {loadingFlights?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Carregando...</div>
         :flights.length===0?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Nenhum voo registrado</div>
         :flights.map(rel=>(
