@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
+import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -353,16 +354,13 @@ export default function AdminPanel({ onSwitchMode }) {
           if (t) trechos = t
         }
         const doc = await gerarPDFCliente(relFinal, { ...opts, trechos })
-        doc.save(`relatorio-cliente-${nomeBase}.pdf`)
+        await salvarOuCompartilharPdf(doc, `relatorio-cliente-${nomeBase}.pdf`)
       } else if (tipo === 'word') {
         const blob = await gerarWordCliente(relFinal, opts)
-        const a = document.createElement('a')
-        a.href = URL.createObjectURL(blob)
-        a.download = `relatorio-cliente-${nomeBase}.doc`
-        a.click(); URL.revokeObjectURL(a.href)
+        await salvarOuCompartilharBlob(blob, `relatorio-cliente-${nomeBase}.doc`)
       } else {
         const doc = await gerarPDFRelatorio(relFinal, opts)
-        doc.save(`relatorio-tecnico-${nomeBase}.pdf`)
+        await salvarOuCompartilharPdf(doc, `relatorio-tecnico-${nomeBase}.pdf`)
       }
       showToast('✅ ' + (tipo==='word'?'Word':tipo==='cliente'?'PDF Cliente':'PDF técnico') + ' baixado!')
     } catch (e) { console.error(e); showToast('Erro ao gerar arquivo', 'error') }

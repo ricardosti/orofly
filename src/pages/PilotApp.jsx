@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
+import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
@@ -509,29 +510,22 @@ export default function PilotApp({onSwitchMode}) {
   const droneVal=form.drone==='Outros'?form.droneOutro:form.drone
 
   // Compartilha o relatório resumido no WhatsApp — tenta ir junto com a foto do mapa de
-  // pós-aplicação (menu nativo de compartilhar, quando suportado); se não der, manda só o texto.
+  // pós-aplicação. Usa o menu nativo de compartilhar do Android dentro do app empacotado
+  // (window.open/Web Share sozinhos não são confiáveis dentro do WebView).
   async function compartilharWhatsApp(){
     const texto = buildTxt(form,clienteVal,droneVal,produtoComUnidade)
-    try {
-      if (navigator.share) {
-        let file = fotoMapaFile
-        if (!file && storageFotoMapa) {
-          const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(storageFotoMapa,60)
-          if (signed?.signedUrl) {
-            const res = await fetch(signed.signedUrl)
-            const blob = await res.blob()
-            file = new File([blob],'mapa.jpg',{type:blob.type||'image/jpeg'})
-          }
+    let file = fotoMapaFile
+    if (!file && storageFotoMapa) {
+      try {
+        const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(storageFotoMapa,60)
+        if (signed?.signedUrl) {
+          const res = await fetch(signed.signedUrl)
+          const blob = await res.blob()
+          file = new File([blob],'mapa.jpg',{type:blob.type||'image/jpeg'})
         }
-        if (file && navigator.canShare?.({files:[file]})) {
-          await navigator.share({ text: texto, files: [file] })
-          return
-        }
-        await navigator.share({ text: texto })
-        return
-      }
-    } catch(e) { if (e.name==='AbortError') return }
-    window.open('https://wa.me/?text='+encodeURIComponent(texto),'_blank')
+      } catch(e) { console.error('Erro ao buscar foto do mapa para compartilhar:',e) }
+    }
+    await compartilharNativo({ text:texto, file, filename:'mapa.jpg', webFallbackUrl:'https://wa.me/?text='+encodeURIComponent(texto) })
   }
 
   // Anexa a evidência climática (foto de câmera/galeria ou PDF) no slot 1 (início) ou 2 (fim)
@@ -1823,7 +1817,7 @@ export default function PilotApp({onSwitchMode}) {
             <ReportView form={form} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles} prodFmt={produtoComUnidade}/>
             <button style={{...s.shareBtn,background:'#111a14',marginTop:12}} onClick={async()=>{
               const rel=await saveToSupabase({status:'finalizado'})
-              if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});doc.save('relatorio-orofly.pdf');showToast('✅ PDF salvo!')}
+              if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')}
             }}>📄 Baixar PDF</button>
             <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={compartilharWhatsApp}>💬 WhatsApp{(fotoMapaFile||storageFotoMapa)?' (com foto do mapa)':''}</button>
           </div>
