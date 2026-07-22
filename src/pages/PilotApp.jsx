@@ -508,6 +508,32 @@ export default function PilotApp({onSwitchMode}) {
   const clienteVal=form.cliente==='Outros'?form.clienteOutro:form.cliente
   const droneVal=form.drone==='Outros'?form.droneOutro:form.drone
 
+  // Compartilha o relatório resumido no WhatsApp — tenta ir junto com a foto do mapa de
+  // pós-aplicação (menu nativo de compartilhar, quando suportado); se não der, manda só o texto.
+  async function compartilharWhatsApp(){
+    const texto = buildTxt(form,clienteVal,droneVal,produtoComUnidade)
+    try {
+      if (navigator.share) {
+        let file = fotoMapaFile
+        if (!file && storageFotoMapa) {
+          const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(storageFotoMapa,60)
+          if (signed?.signedUrl) {
+            const res = await fetch(signed.signedUrl)
+            const blob = await res.blob()
+            file = new File([blob],'mapa.jpg',{type:blob.type||'image/jpeg'})
+          }
+        }
+        if (file && navigator.canShare?.({files:[file]})) {
+          await navigator.share({ text: texto, files: [file] })
+          return
+        }
+        await navigator.share({ text: texto })
+        return
+      }
+    } catch(e) { if (e.name==='AbortError') return }
+    window.open('https://wa.me/?text='+encodeURIComponent(texto),'_blank')
+  }
+
   // Anexa a evidência climática (foto de câmera/galeria ou PDF) no slot 1 (início) ou 2 (fim)
   async function handleEvidFile(slot,lbl,f){
     const isPdf=f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')
@@ -1799,7 +1825,7 @@ export default function PilotApp({onSwitchMode}) {
               const rel=await saveToSupabase({status:'finalizado'})
               if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});doc.save('relatorio-orofly.pdf');showToast('✅ PDF salvo!')}
             }}>📄 Baixar PDF</button>
-            <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={()=>window.open('https://wa.me/?text='+encodeURIComponent(buildTxt(form,clienteVal,droneVal,produtoComUnidade)),'_blank')}>💬 WhatsApp</button>
+            <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={compartilharWhatsApp}>💬 WhatsApp{(fotoMapaFile||storageFotoMapa)?' (com foto do mapa)':''}</button>
           </div>
         </div>
       )}
@@ -1926,7 +1952,12 @@ function buildTxt(form,clienteVal,droneVal,prodFmt){
   let t='🚁 *RELATÓRIO OROFLY*\n'+new Date().toLocaleString('pt-BR')+'\n\n'
   t+=`📋 *Operação*\n`
   t+=`Cliente: ${clienteVal}\nFazenda: ${form.fazenda}\nPiloto: ${form.piloto_nome}\nDrone: ${droneVal}\n`
-  if(form.area_ha) t+=`Área: ${form.area_ha} ha\n`
+  if(form.area_ha) t+=`Área total: ${form.area_ha} ha\n`
+  const bordTotal = bordaduraAtual(form)
+  if(bordTotal>0){
+    t+=`Bordadura: ${bordTotal} ha\n`
+    t+=`Área aplicada: ${areaLiquidaAtual(form)} ha\n`
+  }
   form.produtos.filter(Boolean).forEach((p,i)=>{t+=`Produto ${i+1}: ${prodFmt?prodFmt(p):p}\n`})
   if(form.tamanho_gota) t+=`Gota: ${form.tamanho_gota}\n`
   if(form.velocidade_drone) t+=`Velocidade: ${form.velocidade_drone} km/h\n`
