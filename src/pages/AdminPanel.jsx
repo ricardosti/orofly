@@ -58,6 +58,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [dashClientes, setDashClientes] = useState([])
   const [dashPilotos, setDashPilotos] = useState([])
   const [dashDrones, setDashDrones] = useState([])
+  const [dashFazendas, setDashFazendas] = useState([])
+  const [dashProdutos, setDashProdutos] = useState([])
   const [precoHa, setPrecoHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_preco_ha')||'0') } catch { return 0 } })
   const [workingDaysAnual, setWorkingDaysAnual] = useState(() => { try { return parseInt(localStorage.getItem('orofly_working_days')||'144') } catch { return 144 } })
   const [metaMensalHa, setMetaMensalHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_meta_mensal')||'0') } catch { return 0 } })
@@ -692,6 +694,8 @@ export default function AdminPanel({ onSwitchMode }) {
               if(dashClientes.length && !dashClientes.includes(r.cliente)) return false
               if(dashPilotos.length && !dashPilotos.includes(r.piloto_nome)) return false
               if(dashDrones.length && !dashDrones.includes(r.drone)) return false
+              if(dashFazendas.length && !dashFazendas.includes(r.fazenda)) return false
+              if(dashProdutos.length && !(r.produtos||[]).some(p=>dashProdutos.includes(p.split(' - ')[0]))) return false
               return true
             })
             const relTodos = relatorios.filter(r => r.status==='finalizado')
@@ -721,6 +725,17 @@ export default function AdminPanel({ onSwitchMode }) {
             rel.forEach(r => { const c=r.cliente||'—'; areaCliente[c]=(areaCliente[c]||0)+parseFloat(r.area_ha||0) })
             const topClientes = Object.entries(areaCliente).sort((a,b)=>b[1]-a[1]).slice(0,6)
               .map(([name,value])=>({name:name.replace('Raizen - ','R. '),value:parseFloat(value.toFixed(1))}))
+
+            // ── Área por fazenda ──
+            const fazendaStats = {}
+            rel.forEach(r => {
+              const f=r.fazenda||'—'
+              if(!fazendaStats[f]) fazendaStats[f]={area:0,voos:0,cliente:r.cliente||'—'}
+              fazendaStats[f].area+=parseFloat(r.area_ha||0)
+              fazendaStats[f].voos++
+            })
+            const rankingFazendas = Object.entries(fazendaStats).sort((a,b)=>b[1].area-a[1].area).slice(0,10)
+            const fazendasChart = rankingFazendas.slice(0,8).map(([name,s])=>({name:name.length>14?name.slice(0,13)+'…':name,value:parseFloat(s.area.toFixed(1))}))
 
             // ── Stats pilotos ──
             const pilotoStats = {}
@@ -849,21 +864,26 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
                   )}
                   {/* Multi-select filters */}
-                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr 1fr',gap:8}}>
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(5,1fr)',gap:8}}>
                     {[
                       ['Clientes',dashClientes,setDashClientes,[...new Set(relatorios.map(r=>r.cliente).filter(Boolean))]],
+                      ['Fazendas',dashFazendas,setDashFazendas,[...new Set(relatorios.map(r=>r.fazenda).filter(Boolean))].sort()],
                       ['Pilotos',dashPilotos,setDashPilotos,[...new Set(relatorios.map(r=>r.piloto_nome).filter(Boolean))]],
                       ['Drones',dashDrones,setDashDrones,[...new Set(relatorios.map(r=>r.drone).filter(Boolean))]],
+                      ['Produtos',dashProdutos,setDashProdutos,[...new Set(relatorios.flatMap(r=>(r.produtos||[]).map(p=>p.split(' - ')[0])).filter(Boolean))].sort()],
                     ].map(([lbl,sel,setSel,opts])=>(
-                      <select key={lbl} multiple style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px',fontSize:12,outline:'none',height:72,color:'#111a14'}}
-                        value={sel} onChange={e=>setSel(Array.from(e.target.selectedOptions,o=>o.value))}>
-                        {opts.map(o=><option key={o} value={o}>{o}</option>)}
-                      </select>
+                      <div key={lbl}>
+                        <div style={{fontSize:10,fontWeight:700,color:'#8aad94',marginBottom:3}}>{lbl.toUpperCase()}</div>
+                        <select multiple style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'6px',fontSize:12,outline:'none',height:72,color:'#111a14',boxSizing:'border-box'}}
+                          value={sel} onChange={e=>setSel(Array.from(e.target.selectedOptions,o=>o.value))}>
+                          {opts.map(o=><option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
                     ))}
                   </div>
-                  {(dashClientes.length||dashPilotos.length||dashDrones.length)>0&&(
+                  {(dashClientes.length||dashPilotos.length||dashDrones.length||dashFazendas.length||dashProdutos.length)>0&&(
                     <button style={{marginTop:8,background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:8,padding:'4px 12px',fontSize:12,cursor:'pointer'}}
-                      onClick={()=>{setDashClientes([]);setDashPilotos([]);setDashDrones([])}}>✕ Limpar filtros</button>
+                      onClick={()=>{setDashClientes([]);setDashPilotos([]);setDashDrones([]);setDashFazendas([]);setDashProdutos([])}}>✕ Limpar filtros</button>
                   )}
                 </div>
 
@@ -975,6 +995,49 @@ export default function AdminPanel({ onSwitchMode }) {
                       </ResponsiveContainer>
                     )}
                   </div>
+                </div>
+
+                {/* ── RANKING FAZENDAS ── */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                  <SecTitle>🌾 Área por Fazenda</SecTitle>
+                  {rankingFazendas.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={fazendasChart} layout="vertical" margin={{top:0,right:10,left:10,bottom:0}}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1" horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
+                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#6b8070'}} tickLine={false} width={90}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <Bar dataKey="value" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <div style={{overflowX:'auto'}}>
+                        <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                          <thead>
+                            <tr style={{background:'#f4f8f5'}}>
+                              {['#','Fazenda','Cliente','Voos','ha','% total'].map(h=>(
+                                <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rankingFazendas.map(([nome,s],i)=>(
+                              <tr key={nome} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
+                                <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#f0c040':i===1?'#aaa':i===2?'#cd7f32':'#8aad94'}}>
+                                  {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}
+                                </td>
+                                <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
+                                <td style={{padding:'8px 10px',color:'#6b8070'}}>{s.cliente}</td>
+                                <td style={{padding:'8px 10px',color:'#6b8070'}}>{s.voos}</td>
+                                <td style={{padding:'8px 10px',fontWeight:700,color:'#1a7a4a'}}>{s.area.toFixed(1)}</td>
+                                <td style={{padding:'8px 10px',color:'#6b8070'}}>{totalArea>0?((s.area/totalArea)*100).toFixed(0):0}%</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* ── RANKING PILOTOS ── */}
