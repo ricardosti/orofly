@@ -1156,10 +1156,12 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* FAZENDA — dropdown filtrado pelo cliente, com Outros */}
             {(()=>{
+              const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
               const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente)
               const temCadastro = fazendasCliente.length>0
-              const fazendaSel = fazendasCliente.find(fz=>fz.nome===form.fazenda)
-              const selectVal = fazendaSel ? form.fazenda : (form.fazenda ? 'Outros' : '')
+              // Comparação tolerante a maiúsculas/espaços — cadastro pode ter "Fazenda X " vs "FAZENDA X"
+              const fazendaSel = fazendasCliente.find(fz=>norm(fz.nome)===norm(form.fazenda))
+              const selectVal = fazendaSel ? fazendaSel.nome : (form.fazenda ? 'Outros' : '')
               return (
                 <>
                   {temCadastro ? (

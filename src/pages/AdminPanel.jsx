@@ -2046,7 +2046,13 @@ export default function AdminPanel({ onSwitchMode }) {
                         <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                           onClick={async()=>{
                             if(!fzForm.cliente||!fzForm.nome){alert('Preencha cliente e nome');return}
-                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:fzForm.nome,ativo:true})
+                            const nomeNorm = fzForm.nome.trim()
+                            const norm = s => s.trim().toLowerCase().replace(/\s+/g,' ')
+                            const mesmoCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente===fzForm.cliente)
+                            if(mesmoCliente){ alert(`"${mesmoCliente.nome}" já está cadastrada para ${fzForm.cliente}. Use a fazenda existente na lista abaixo em vez de duplicar.`); return }
+                            const outroCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente!==fzForm.cliente)
+                            if(outroCliente && !window.confirm(`Já existe uma fazenda chamada "${outroCliente.nome}" cadastrada para o cliente ${outroCliente.cliente}.\n\nSe for a mesma fazenda, cancele e corrija o cliente correto. Cadastrar mesmo assim como uma fazenda separada para ${fzForm.cliente}?`)) return
+                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:nomeNorm,ativo:true})
                             if(error){alert('Erro: '+error.message);return}
                             setFzForm({cliente:'',nome:''});fetchInventario()
                           }}>Salvar</button>
