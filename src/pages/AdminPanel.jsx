@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente } from '../lib/pdf'
+import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 
@@ -77,6 +77,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [movSaving, setMovSaving] = useState(false)
   const [movFiltros, setMovFiltros] = useState({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})
   const [invTab, setInvTab] = useState('drones')
+  const [fzTab, setFzTab] = useState('visao')
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
   const [clienteModal, setClienteModal] = useState(null)
@@ -430,6 +431,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['dashboard', '📊', 'Dashboard', ''],
           ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
           ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
+          ['fazendas', '🌾', 'Fazendas', invFazendas.length],
           ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
           ['pilotos', '👥', 'Usuários', pilotos.length]
         ].map(([id, icon, lbl, cnt]) => (
@@ -1387,115 +1389,24 @@ export default function AdminPanel({ onSwitchMode }) {
                     <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#111a14'}}>📦 Inventário</div>
                     <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos · {invClientes.length} clientes</div>
                   </div>
-                  {['drones','produtos','clientes'].includes(invTab) && (
+                  {['drones','produtos'].includes(invTab) && (
                     <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>{
                         if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')}
-                        else if(invTab==='produtos'){setProdutoForm(initProdutoForm());setProdutoModal('novo')}
-                        else{setClienteForm(initClienteForm());setClienteModal('novo')}
+                        else{setProdutoForm(initProdutoForm());setProdutoModal('novo')}
                       }}>
-                      + {invTab==='drones'?'Novo Drone':invTab==='produtos'?'Novo Produto':'Novo Cliente'}
+                      + {invTab==='drones'?'Novo Drone':'Novo Produto'}
                     </button>
                   )}
                 </div>
 
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['clientes','🏢 Clientes'],['fazendas','🌾 Fazendas'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
+                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
                     <button key={id} style={{background:invTab===id?'#1a7a4a':'#f4f8f5',color:invTab===id?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
                 </div>
-
-                {/* ── FAZENDAS & TALHÕES ── */}
-                {invTab==='fazendas' && (
-                  <div>
-                    {/* Form nova fazenda */}
-                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,marginBottom:16}}>
-                      <div style={{fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Nova Fazenda</div>
-                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
-                          value={fzForm.cliente} onChange={e=>setFzForm(f=>({...f,cliente:e.target.value}))}>
-                          <option value="">Cliente...</option>
-                          {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
-                        </select>
-                        <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
-                          placeholder="Nome da fazenda" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
-                        <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                          onClick={async()=>{
-                            if(!fzForm.cliente||!fzForm.nome){alert('Preencha cliente e nome');return}
-                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:fzForm.nome,ativo:true})
-                            if(error){alert('Erro: '+error.message);return}
-                            setFzForm({cliente:'',nome:''});fetchInventario()
-                          }}>Salvar</button>
-                      </div>
-                    </div>
-
-                    {/* Busca — filtra por cliente ou nome da fazenda */}
-                    {invFazendas.length>0 && (
-                      <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
-                        placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
-                    )}
-
-                    {/* Lista por cliente */}
-                    {invFazendas.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
-                        Nenhuma fazenda cadastrada.<br/>Cadastre acima ou rode o SQL das tabelas fazendas/talhoes.
-                      </div>
-                    ) : (()=>{
-                      const q = fzSearch.trim().toLowerCase()
-                      const fazendasFiltradas = q ? invFazendas.filter(f=>f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q)) : invFazendas
-                      if (q && fazendasFiltradas.length===0) return (
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:30,textAlign:'center',color:'#6b8070',fontSize:13}}>
-                          Nenhuma fazenda encontrada para "{fzSearch}".
-                        </div>
-                      )
-                      return [...new Set(fazendasFiltradas.map(f=>f.cliente))].map(cli=>(
-                        <div key={cli} style={{marginBottom:16}}>
-                          <div style={{fontSize:13,fontWeight:700,color:'#1a7a4a',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
-                          {fazendasFiltradas.filter(f=>f.cliente===cli).map(fz=>{
-                            const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
-                            const tf = tlForm[fz.id]||{nome:'',area_ha:''}
-                            return (
-                              <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14,marginBottom:10}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                                  <span style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</span>
-                                  <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
-                                    onClick={async()=>{
-                                      if(!window.confirm(`Excluir fazenda ${fz.nome} e todos os talhões?`))return
-                                      await supabase.from('fazendas').delete().eq('id',fz.id);fetchInventario()
-                                    }}>🗑️</button>
-                                </div>
-                                {talhoesFz.map(t=>(
-                                  <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f9fbfa',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
-                                    <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#1a7a4a'}}>· {t.area_ha} ha</strong>:''}</span>
-                                    <button style={{background:'none',border:'none',color:'#c0392b',cursor:'pointer',fontSize:14}}
-                                      onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
-                                  </div>
-                                ))}
-                                <div style={{display:'flex',gap:6,marginTop:8}}>
-                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
-                                    placeholder="Novo talhão..." value={tf.nome}
-                                    onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,nome:e.target.value}}))}/>
-                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
-                                    placeholder="Área (ha)" type="number" value={tf.area_ha}
-                                    onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,area_ha:e.target.value}}))}/>
-                                  <button style={{background:'#e8f5ee',color:'#1a7a4a',border:'none',borderRadius:7,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
-                                    onClick={async()=>{
-                                      if(!tf.nome){alert('Nome do talhão');return}
-                                      const {error}=await supabase.from('talhoes').insert({fazenda_id:fz.id,nome:tf.nome,area_ha:tf.area_ha?parseFloat(tf.area_ha):null,ativo:true})
-                                      if(error){alert('Erro: '+error.message);return}
-                                      setTlForm(s=>({...s,[fz.id]:{nome:'',area_ha:''}}));fetchInventario()
-                                    }}>+ Add</button>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      ))
-                    })()}
-                  </div>
-                )}
 
                 {/* ── MOVIMENTOS DE ESTOQUE ── */}
                 {invTab==='movimentos' && (()=>{
@@ -1919,8 +1830,230 @@ export default function AdminPanel({ onSwitchMode }) {
                   </div>
                 )}
 
-                {/* ── CLIENTES ── */}
-                {invTab==='clientes' && (
+              </div>
+            )
+          })()}
+
+          {/* ===== FAZENDAS & CLIENTES ===== */}
+          {tab === 'fazendas' && (() => {
+            const q = fzSearch.trim().toLowerCase()
+            const fazendasFiltradas = q ? invFazendas.filter(f=>f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q)) : invFazendas
+
+            const fazendasBI = fazendasFiltradas.map(fz => {
+              const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
+              const areaTotal = talhoesFz.reduce((a,t)=>a+parseFloat(t.area_ha||0),0)
+              const relatoriosFz = relatorios.filter(r=>
+                r.fazenda===fz.nome && r.cliente===fz.cliente && r.status==='finalizado' &&
+                (!fz.campanha_inicio || new Date(r.created_at) >= new Date(fz.campanha_inicio))
+              )
+              const areaRealizada = relatoriosFz.reduce((a,r)=>a+areaLiquida(r),0)
+              const pct = areaTotal>0 ? Math.min(100,(areaRealizada/areaTotal)*100) : null
+              return { ...fz, areaTotal, areaRealizada, pct, numTalhoes: talhoesFz.length, numVoos: relatoriosFz.length }
+            })
+
+            const somaTotal = fazendasBI.reduce((a,f)=>a+f.areaTotal,0)
+            const somaRealizada = fazendasBI.reduce((a,f)=>a+f.areaRealizada,0)
+            const pctGeral = somaTotal>0 ? Math.min(100,(somaRealizada/somaTotal)*100) : 0
+            const comCadastro = fazendasBI.filter(f=>f.areaTotal>0)
+            const chartFazendas = [...comCadastro].sort((a,b)=>b.pct-a.pct).slice(0,10)
+              .map(f=>({ name: f.nome.length>16?f.nome.slice(0,15)+'…':f.nome, pct: parseFloat(f.pct.toFixed(1)) }))
+
+            async function zerarProgresso(fz) {
+              if(!window.confirm(`Zerar o progresso de "${fz.nome}"?\n\nIsso reinicia a % de conclusão a partir de agora (o histórico de voos é mantido, só não conta mais pro cálculo). Use para uma nova aplicação/reaplicação na mesma área.`)) return
+              const { error } = await supabase.from('fazendas').update({ campanha_inicio: new Date().toISOString() }).eq('id', fz.id)
+              if(error){ showToast('Erro: '+error.message,'error'); return }
+              showToast('🔄 Progresso zerado!'); fetchInventario()
+            }
+
+            return (
+              <div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18,flexWrap:'wrap',gap:10}}>
+                  <div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#111a14'}}>🌾 Fazendas & Clientes</div>
+                    <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{invFazendas.length} fazendas · {invClientes.length} clientes</div>
+                  </div>
+                  {fzTab==='clientes' && (
+                    <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                      onClick={()=>{setClienteForm(initClienteForm());setClienteModal('novo')}}>
+                      + Novo Cliente
+                    </button>
+                  )}
+                </div>
+
+                {/* Sub-tabs */}
+                <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+                  {[['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes']].map(([id,lbl])=>(
+                    <button key={id} style={{background:fzTab===id?'#1a7a4a':'#f4f8f5',color:fzTab===id?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                      onClick={()=>setFzTab(id)}>{lbl}</button>
+                  ))}
+                </div>
+
+                {/* ── VISÃO GERAL (BI) ── */}
+                {fzTab==='visao' && (
+                  <div>
+                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>FAZENDAS CADASTRADAS</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#111a14'}}>{invFazendas.length}</div>
+                      </div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ÁREA TOTAL CADASTRADA</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#111a14'}}>{somaTotal.toFixed(1)} ha</div>
+                      </div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ÁREA REALIZADA</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#1a7a4a'}}>{somaRealizada.toFixed(1)} ha</div>
+                      </div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>% CONCLUÍDO (GERAL)</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#185fa5'}}>{pctGeral.toFixed(1)}%</div>
+                      </div>
+                    </div>
+
+                    {chartFazendas.length>0 && (
+                      <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16,marginBottom:16}}>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>📊 % Concluído por Fazenda (top 10)</div>
+                        <ResponsiveContainer width="100%" height={280}>
+                          <BarChart data={chartFazendas} layout="vertical" margin={{left:10,right:20}}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
+                            <XAxis type="number" domain={[0,100]} tick={{fontSize:10,fill:'#8aad94'}} unit="%"/>
+                            <YAxis type="category" dataKey="name" width={110} tick={{fontSize:10,fill:'#6b8070'}}/>
+                            <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={v=>`${v}%`}/>
+                            <Bar dataKey="pct" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+
+                    <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
+                      placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+
+                    {fazendasBI.length===0 ? (
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                        Nenhuma fazenda encontrada.
+                      </div>
+                    ) : (
+                      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
+                        {fazendasBI.map(fz=>(
+                          <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                              <div>
+                                <div style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</div>
+                                <div style={{fontSize:11,color:'#6b8070'}}>{fz.cliente}</div>
+                              </div>
+                              {fz.pct!==null && fz.numVoos>0 && (
+                                <button style={{background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:7,padding:'4px 8px',fontSize:10,cursor:'pointer'}}
+                                  onClick={()=>zerarProgresso(fz)}>🔄 Zerar</button>
+                              )}
+                            </div>
+                            {fz.pct===null ? (
+                              <div style={{fontSize:12,color:'#aaa',fontStyle:'italic'}}>Sem talhões cadastrados com área</div>
+                            ) : (
+                              <>
+                                <div style={{background:'#f0f4f1',borderRadius:20,height:8,overflow:'hidden',marginBottom:6}}>
+                                  <div style={{width:`${fz.pct}%`,height:'100%',background:fz.pct>=100?'#1a7a4a':'#f0c040',borderRadius:20}}/>
+                                </div>
+                                <div style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
+                                  <span style={{color:'#6b8070'}}>{fz.areaRealizada.toFixed(1)} / {fz.areaTotal.toFixed(1)} ha</span>
+                                  <span style={{fontWeight:700,color:'#1a7a4a'}}>{fz.pct.toFixed(0)}%</span>
+                                </div>
+                                {fz.campanha_inicio && <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Ciclo desde {new Date(fz.campanha_inicio).toLocaleDateString('pt-BR')}</div>}
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── FAZENDAS & TALHÕES (cadastro) ── */}
+                {fzTab==='fazendas' && (
+                  <div>
+                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,marginBottom:16}}>
+                      <div style={{fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Nova Fazenda</div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                          value={fzForm.cliente} onChange={e=>setFzForm(f=>({...f,cliente:e.target.value}))}>
+                          <option value="">Cliente...</option>
+                          {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
+                        </select>
+                        <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                          placeholder="Nome da fazenda" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
+                        <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                          onClick={async()=>{
+                            if(!fzForm.cliente||!fzForm.nome){alert('Preencha cliente e nome');return}
+                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:fzForm.nome,ativo:true})
+                            if(error){alert('Erro: '+error.message);return}
+                            setFzForm({cliente:'',nome:''});fetchInventario()
+                          }}>Salvar</button>
+                      </div>
+                    </div>
+
+                    {invFazendas.length>0 && (
+                      <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
+                        placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                    )}
+
+                    {invFazendas.length===0 ? (
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                        Nenhuma fazenda cadastrada.<br/>Cadastre acima ou rode o SQL das tabelas fazendas/talhoes.
+                      </div>
+                    ) : (()=>{
+                      if (q && fazendasFiltradas.length===0) return (
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:30,textAlign:'center',color:'#6b8070',fontSize:13}}>
+                          Nenhuma fazenda encontrada para "{fzSearch}".
+                        </div>
+                      )
+                      return [...new Set(fazendasFiltradas.map(f=>f.cliente))].map(cli=>(
+                        <div key={cli} style={{marginBottom:16}}>
+                          <div style={{fontSize:13,fontWeight:700,color:'#1a7a4a',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
+                          {fazendasFiltradas.filter(f=>f.cliente===cli).map(fz=>{
+                            const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
+                            const tf = tlForm[fz.id]||{nome:'',area_ha:''}
+                            return (
+                              <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14,marginBottom:10}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                                  <span style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</span>
+                                  <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                    onClick={async()=>{
+                                      if(!window.confirm(`Excluir fazenda ${fz.nome} e todos os talhões?`))return
+                                      await supabase.from('fazendas').delete().eq('id',fz.id);fetchInventario()
+                                    }}>🗑️</button>
+                                </div>
+                                {talhoesFz.map(t=>(
+                                  <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f9fbfa',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
+                                    <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#1a7a4a'}}>· {t.area_ha} ha</strong>:''}</span>
+                                    <button style={{background:'none',border:'none',color:'#c0392b',cursor:'pointer',fontSize:14}}
+                                      onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
+                                  </div>
+                                ))}
+                                <div style={{display:'flex',gap:6,marginTop:8}}>
+                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
+                                    placeholder="Novo talhão..." value={tf.nome}
+                                    onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,nome:e.target.value}}))}/>
+                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
+                                    placeholder="Área (ha)" type="number" value={tf.area_ha}
+                                    onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,area_ha:e.target.value}}))}/>
+                                  <button style={{background:'#e8f5ee',color:'#1a7a4a',border:'none',borderRadius:7,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                                    onClick={async()=>{
+                                      if(!tf.nome){alert('Nome do talhão');return}
+                                      const {error}=await supabase.from('talhoes').insert({fazenda_id:fz.id,nome:tf.nome,area_ha:tf.area_ha?parseFloat(tf.area_ha):null,ativo:true})
+                                      if(error){alert('Erro: '+error.message);return}
+                                      setTlForm(s=>({...s,[fz.id]:{nome:'',area_ha:''}}));fetchInventario()
+                                    }}>+ Add</button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ))
+                    })()}
+                  </div>
+                )}
+
+                {/* ── CLIENTES (cadastro) ── */}
+                {fzTab==='clientes' && (
                   <div>
                     {invClientes.length===0 ? (
                       <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
