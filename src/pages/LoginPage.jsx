@@ -11,8 +11,13 @@ export default function LoginPage() {
   async function handleSubmit(e) {
     e.preventDefault()
     setError(''); setLoading(true)
+    if (!navigator.onLine) {
+      setError('📴 Sem conexão. O primeiro login do dia precisa de internet (depois disso o app funciona offline normalmente).')
+      setLoading(false)
+      return
+    }
     const { error } = await signIn(email, password)
-    if (error) setError('E-mail ou senha incorretos.')
+    if (error) setError(/network|fetch/i.test(error.message||'') ? '📴 Sem conexão com o servidor. Tente novamente com sinal.' : 'E-mail ou senha incorretos.')
     setLoading(false)
   }
 

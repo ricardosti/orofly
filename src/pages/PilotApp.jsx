@@ -291,7 +291,13 @@ export default function PilotApp({onSwitchMode}) {
     try { const d=localStorage.getItem(LS_KEY); if(d) return !!JSON.parse(d).pendingSync } catch{}
     return false
   })
-  const lastExtraData = useRef({})
+  // Precisa restaurar do storage aqui também — se o app for encerrado pelo Android
+  // (fica em background sem sinal) e reaberto depois, essa ref reseta a {} e a
+  // sincronização automática reenviaria sem o status/dados corretos, ou nem reenviaria nada.
+  const lastExtraData = useRef((()=>{
+    try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).lastExtraData||{} } catch{}
+    return {}
+  })())
   const [saving,setSaving] = useState(false)
   const [saveStatus,setSaveStatus] = useState(null)
   const [toast,setToast] = useState('')
@@ -467,6 +473,8 @@ export default function PilotApp({onSwitchMode}) {
 
   // Sincronização automática: assim que o app fica online (ou ao reabrir com pendência),
   // reenvia o último salvamento que tinha falhado. Nada de dados perdidos por falta de sinal.
+  // Usa vários gatilhos porque o evento 'online' sozinho não é confiável dentro do WebView
+  // do app nativo (Android às vezes não dispara, principalmente vindo de background).
   useEffect(()=>{
     function tentarSincronizar(){
       if(!pendingSync || !navigator.onLine) return
@@ -474,8 +482,15 @@ export default function PilotApp({onSwitchMode}) {
     }
     tentarSincronizar()
     window.addEventListener('online',tentarSincronizar)
-    const id=setInterval(tentarSincronizar,30000)
-    return ()=>{ window.removeEventListener('online',tentarSincronizar); clearInterval(id) }
+    document.addEventListener('visibilitychange',tentarSincronizar)
+    window.addEventListener('focus',tentarSincronizar)
+    const id=setInterval(tentarSincronizar,15000)
+    return ()=>{
+      window.removeEventListener('online',tentarSincronizar)
+      document.removeEventListener('visibilitychange',tentarSincronizar)
+      window.removeEventListener('focus',tentarSincronizar)
+      clearInterval(id)
+    }
   },[pendingSync]) // eslint-disable-line
 
   // Avisa ao fechar com operação em andamento
@@ -492,6 +507,30 @@ export default function PilotApp({onSwitchMode}) {
 
   const clienteVal=form.cliente==='Outros'?form.clienteOutro:form.cliente
   const droneVal=form.drone==='Outros'?form.droneOutro:form.drone
+
+  // Anexa a evidência climática (foto de câmera/galeria ou PDF) no slot 1 (início) ou 2 (fim)
+  async function handleEvidFile(slot,lbl,f){
+    const isPdf=f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')
+    if(isPdf){
+      const a=[...obsFotos];a[slot]='pdf:'+f.name;setObsFotos(a)
+    }else{
+      const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[slot]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f)
+    }
+    const b=[...obsFotoFiles];b[slot]=f;setObsFotoFiles(b)
+    // Metadata: data original da foto (EXIF) ou do arquivo + tamanho/tipo/GPS
+    const metaFoto = isPdf ? {data:new Date(f.lastModified).toLocaleString('pt-BR'),lat:null,lng:null} : await extrairMetadadosFoto(f)
+    const chave = slot===1?'inicio':'fim'
+    setForm(fm=>({...fm,evid_meta:{...(fm.evid_meta||{}),[chave]:{
+      arquivo:f.name,
+      data_foto:metaFoto.data,
+      gps_lat:metaFoto.lat,
+      gps_lng:metaFoto.lng,
+      tamanho:(f.size/1024).toFixed(0)+' KB',
+      tipo:isPdf?'PDF':(f.type.split('/')[1]||'imagem').toUpperCase(),
+      incluir:true
+    }}}))
+    showToast('✅ Evidência '+lbl.toLowerCase()+' anexada!')
+  }
 
   // Adiciona unidade à dosagem ao salvar: "Moddus - 1.1" → "Moddus - 1.1 Kg/ha"
   const produtoComUnidade = (p) => {
@@ -1312,31 +1351,16 @@ export default function PilotApp({onSwitchMode}) {
                   {[[1,'INÍCIO'],[2,'FIM']].map(([slot,lbl])=>(
                     <div key={slot}>
                       <label style={{...sw.fl,marginBottom:4}}>{lbl}</label>
-                      <label style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'1.5px dashed #c3e0d0',borderRadius:10,padding:'12px 6px',cursor:'pointer',background:'#fff',minHeight:70,overflow:'hidden'}}>
-                        <input type="file" accept="image/*,.pdf" style={{display:'none'}}
+                      {[['evid-camera','image/*'],['evid-galeria','image/*'],['evid-pdf','.pdf']].map(([prefix,accept])=>(
+                        <input key={prefix} id={`${prefix}-${slot}`} type="file" accept={accept} {...(prefix==='evid-camera'?{capture:'environment'}:{})} style={{display:'none'}}
                           onChange={async e=>{
                             const f=e.target.files[0];if(!f)return
-                            const isPdf=f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')
-                            if(isPdf){
-                              const a=[...obsFotos];a[slot]='pdf:'+f.name;setObsFotos(a)
-                            }else{
-                              const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[slot]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f)
-                            }
-                            const b=[...obsFotoFiles];b[slot]=f;setObsFotoFiles(b)
-                            // Metadata: data original da foto (EXIF) ou do arquivo + tamanho/tipo/GPS
-                            const metaFoto = isPdf ? {data:new Date(f.lastModified).toLocaleString('pt-BR'),lat:null,lng:null} : await extrairMetadadosFoto(f)
-                            const chave = slot===1?'inicio':'fim'
-                            setForm(fm=>({...fm,evid_meta:{...(fm.evid_meta||{}),[chave]:{
-                              arquivo:f.name,
-                              data_foto:metaFoto.data,
-                              gps_lat:metaFoto.lat,
-                              gps_lng:metaFoto.lng,
-                              tamanho:(f.size/1024).toFixed(0)+' KB',
-                              tipo:isPdf?'PDF':(f.type.split('/')[1]||'imagem').toUpperCase(),
-                              incluir:true
-                            }}}))
-                            showToast('✅ Evidência '+lbl.toLowerCase()+' anexada!')
+                            await handleEvidFile(slot,lbl,f)
+                            e.target.value=''
                           }}/>
+                      ))}
+                      <div onClick={()=>setFotoPickerOpen({tipo:'evid',idx:slot,lbl})}
+                        style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'1.5px dashed #c3e0d0',borderRadius:10,padding:'12px 6px',cursor:'pointer',background:'#fff',minHeight:70,overflow:'hidden'}}>
                         {obsFotos[slot]?.startsWith?.('pdf:')
                           ? <><span style={{fontSize:22}}>📄</span><span style={{fontSize:9,color:'#6b8070',marginTop:2,textAlign:'center',wordBreak:'break-all'}}>{obsFotos[slot].slice(4)}</span></>
                           : obsFotos[slot]
@@ -1344,7 +1368,7 @@ export default function PilotApp({onSwitchMode}) {
                             : storageObsFotos[slot]
                               ? <StorageFotoSlot supabase={supabase} path={storageObsFotos[slot]}/>
                               : <><span style={{fontSize:20}}>📷</span><span style={{fontSize:9,color:'#aaa',marginTop:2}}>Anexar</span></>}
-                      </label>
+                      </div>
                       {/* Card de metadata + flag incluir no relatório */}
                       {(()=>{
                         const chave = slot===1?'inicio':'fim'
@@ -1828,20 +1852,28 @@ export default function PilotApp({onSwitchMode}) {
       {fotoPickerOpen && (
         <div style={s.modalOverlay} onClick={()=>setFotoPickerOpen(null)}>
           <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:'#111a14',marginBottom:20}}>📷 Adicionar foto</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:'#111a14',marginBottom:20}}>{fotoPickerOpen.tipo==='evid'?`📎 Evidência — ${fotoPickerOpen.lbl}`:'📷 Adicionar foto'}</div>
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
                 onClick={()=>{
-                  const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-camera' : `obs-camera-${fotoPickerOpen.idx}`
+                  const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-camera' : fotoPickerOpen.tipo==='evid' ? `evid-camera-${fotoPickerOpen.idx}` : `obs-camera-${fotoPickerOpen.idx}`
                   setFotoPickerOpen(null)
                   setTimeout(()=>document.getElementById(id)?.click(),150)
                 }}>📸 Tirar foto com câmera</button>
               <button style={{background:'#185fa5',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
                 onClick={()=>{
-                  const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-galeria' : `obs-galeria-${fotoPickerOpen.idx}`
+                  const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-galeria' : fotoPickerOpen.tipo==='evid' ? `evid-galeria-${fotoPickerOpen.idx}` : `obs-galeria-${fotoPickerOpen.idx}`
                   setFotoPickerOpen(null)
                   setTimeout(()=>document.getElementById(id)?.click(),150)
                 }}>🖼️ Escolher da galeria</button>
+              {fotoPickerOpen.tipo==='evid'&&(
+                <button style={{background:'#6b4fa0',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
+                  onClick={()=>{
+                    const id = `evid-pdf-${fotoPickerOpen.idx}`
+                    setFotoPickerOpen(null)
+                    setTimeout(()=>document.getElementById(id)?.click(),150)
+                  }}>📄 Anexar PDF</button>
+              )}
               <button style={{background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:12,padding:12,fontSize:14,cursor:'pointer'}}
                 onClick={()=>setFotoPickerOpen(null)}>Cancelar</button>
             </div>

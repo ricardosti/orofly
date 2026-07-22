@@ -10,9 +10,27 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
-      else setLoading(false)
+      if (session?.user) {
+        setUser(session.user)
+        try { localStorage.setItem('orofly_session_cache', JSON.stringify({ id: session.user.id, email: session.user.email })) } catch {}
+        fetchProfile(session.user.id)
+        return
+      }
+      // Sem sessão válida localmente — normalmente é porque o token de acesso expirou
+      // (dura ~1h) e a renovação automática precisa de internet pra acontecer. Se estiver
+      // offline e já existir um login anterior salvo, deixa continuar em vez de barrar no
+      // login (o piloto não tem como digitar a senha sem sinal de qualquer forma).
+      if (!navigator.onLine) {
+        try {
+          const cachedUser = JSON.parse(localStorage.getItem('orofly_session_cache') || 'null')
+          const cachedProfile = JSON.parse(localStorage.getItem('orofly_profile_cache') || 'null')
+          if (cachedUser && cachedProfile && cachedProfile.id === cachedUser.id) {
+            setUser(cachedUser); setProfile(cachedProfile); setLoading(false)
+            return
+          }
+        } catch {}
+      }
+      setUser(null); setLoading(false)
     })
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null)
