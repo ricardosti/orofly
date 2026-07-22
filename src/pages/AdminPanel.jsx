@@ -338,6 +338,27 @@ export default function AdminPanel({ onSwitchMode }) {
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
   }
 
+  async function resetarSenha(piloto) {
+    const novaSenha = window.prompt(`Nova senha para ${piloto.nome} (mínimo 6 caracteres):`)
+    if (!novaSenha) return
+    if (novaSenha.length < 6) { showToast('Senha mínima 6 caracteres', 'error'); return }
+    try {
+      const res = await fetch(`${API_BASE}/api/reset-password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, novaSenha }) })
+      const d = await res.json(); if (d.error) throw new Error(d.error)
+      showToast('🔑 Senha redefinida!')
+    } catch (e) { showToast('Erro: ' + e.message, 'error') }
+  }
+
+  async function deletarUsuario(piloto) {
+    if (piloto.id === profile?.id) { showToast('Você não pode deletar sua própria conta', 'error'); return }
+    if (!window.confirm(`Deletar o usuário ${piloto.nome} (${piloto.email})?\n\nEssa ação NÃO pode ser desfeita — remove o login e o perfil por completo.`)) return
+    try {
+      const res = await fetch(`${API_BASE}/api/delete-user`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id }) })
+      const d = await res.json(); if (d.error) throw new Error(d.error)
+      showToast('🗑️ Usuário deletado'); fetchAll()
+    } catch (e) { showToast('Erro: ' + e.message, 'error') }
+  }
+
   async function gerarPDF(rel, localFotoMapa, localObsFotos, tipo='interno') {
     showToast('⏳ Gerando ' + (tipo==='word'?'Word':tipo==='cliente'?'PDF Cliente':'PDF técnico') + '...')
     try {
@@ -2006,7 +2027,11 @@ export default function AdminPanel({ onSwitchMode }) {
                             <button style={{ background: p.role==='admin'?'#faeeda':'#e8f5ee', color: p.role==='admin'?'#854f0b':'#0f6e56', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleRole(p)}>
                               {p.role==='admin'?'→ Piloto':'→ Admin'}
                             </button>
-                            <button style={{ background: p.ativo?'#fee':'#e8f5ee', color: p.ativo?'#c0392b':'#1a7a4a', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
+                            <button style={{ background: p.ativo?'#fee':'#e8f5ee', color: p.ativo?'#c0392b':'#1a7a4a', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
+                            <button style={{ background:'#eef2fb', color:'#2952a3', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => resetarSenha(p)}>🔑 Senha</button>
+                            {p.id !== profile?.id && (
+                              <button style={{ background:'#fee', color:'#c0392b', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={() => deletarUsuario(p)}>🗑️ Deletar</button>
+                            )}
                           </td>
                         </tr>
                       ))}
