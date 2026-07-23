@@ -78,6 +78,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invMovimentos, setInvMovimentos] = useState([])
   const [custos, setCustos] = useState([])
   const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',dataIni:'',dataFim:''})
+  const [agenda, setAgenda] = useState([])
+  const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',data_prevista:'',produto:'',observacao:''})
+  const [agendaSaving, setAgendaSaving] = useState(false)
+  const [agendaFiltros, setAgendaFiltros] = useState({piloto:'',status:''})
   const [movForm, setMovForm] = useState({produto:'',tipo:'entrada',quantidade:'',obs:''})
   const [movSaving, setMovSaving] = useState(false)
   const [movFiltros, setMovFiltros] = useState({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})
@@ -248,14 +252,16 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: rels }, usersRes, { data: desp }] = await Promise.all([
+    const [{ data: rels }, usersRes, { data: desp }, { data: agend }] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
       fetch(`${API_BASE}/api/list-users`),
-      supabase.from('despesas').select('*').order('created_at', { ascending: false })
+      supabase.from('despesas').select('*').order('created_at', { ascending: false }),
+      supabase.from('agendamentos').select('*').order('data_prevista', { ascending: true })
     ])
     const rs = rels || []
     setRelatorios(rs)
     setCustos(desp || [])
+    setAgenda(agend || [])
     if (usersRes.ok) { const d = await usersRes.json(); setPilotos(d.users || []) }
     const counts = {}
     rs.forEach(r => { counts[r.piloto_id] = (counts[r.piloto_id] || 0) + 1 })
@@ -439,6 +445,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
           ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
           ['fazendas', '🌾', 'Fazendas', invFazendas.length],
+          ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
           ['custos', '💰', 'Custos', custos.length],
           ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
           ['pilotos', '👥', 'Usuários', pilotos.length]
@@ -2325,6 +2332,145 @@ export default function AdminPanel({ onSwitchMode }) {
                             </div>
                           )}
                           {c.observacao && <div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{c.observacao}</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* ===== AGENDA (voos programados) ===== */}
+          {tab === 'agenda' && (() => {
+            const pilotosAtivos = pilotos.filter(p=>p.ativo!==false)
+            const fazendasDoCliente = invFazendas.filter(f=>f.cliente===agendaForm.cliente)
+            const hoje = new Date(); hoje.setHours(0,0,0,0)
+
+            async function salvarAgendamento(){
+              if(!agendaForm.piloto_id||!agendaForm.cliente||!agendaForm.fazenda||!agendaForm.data_prevista){
+                showToast('Preencha piloto, cliente, fazenda e data','error'); return
+              }
+              setAgendaSaving(true)
+              try {
+                const piloto = pilotos.find(p=>p.id===agendaForm.piloto_id)
+                const { error } = await supabase.from('agendamentos').insert({
+                  piloto_id: agendaForm.piloto_id, piloto_nome: piloto?.nome||piloto?.email,
+                  cliente: agendaForm.cliente, fazenda: agendaForm.fazenda,
+                  data_prevista: agendaForm.data_prevista, produto: agendaForm.produto||null,
+                  observacao: agendaForm.observacao||null, status:'pendente',
+                })
+                if(error) throw error
+                showToast('📅 Agendamento criado!')
+                setAgendaForm({piloto_id:'',cliente:'',fazenda:'',data_prevista:'',produto:'',observacao:''})
+                fetchAll()
+              } catch(e){ showToast('Erro: '+e.message,'error') } finally { setAgendaSaving(false) }
+            }
+
+            async function mudarStatus(a,status){
+              await supabase.from('agendamentos').update({status}).eq('id',a.id)
+              fetchAll()
+            }
+            async function excluirAgendamento(a){
+              if(!window.confirm(`Excluir agendamento de ${a.piloto_nome} em ${a.fazenda}?`)) return
+              await supabase.from('agendamentos').delete().eq('id',a.id)
+              fetchAll()
+            }
+
+            const agendaFiltrada = agenda.filter(a=>{
+              if(agendaFiltros.piloto && a.piloto_id!==agendaFiltros.piloto) return false
+              if(agendaFiltros.status && a.status!==agendaFiltros.status) return false
+              return true
+            })
+
+            const STATUS_BADGE = {
+              pendente:{ label:'Pendente', bg:'#fff3e0', cor:'#f2960f' },
+              concluido:{ label:'Concluído', bg:'#e3f7ec', cor:'#0e9f6e' },
+              cancelado:{ label:'Cancelado', bg:'#fdeaea', cor:'#e5484d' },
+            }
+
+            return (
+              <div>
+                <div style={{ marginBottom:18 }}>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>📅 Agenda</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{agenda.filter(a=>a.status==='pendente').length} pendentes · {agenda.length} no total</div>
+                </div>
+
+                {/* Novo agendamento */}
+                <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:12,fontFamily:"'Syne',sans-serif"}}>+ Novo Agendamento</div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.piloto_id} onChange={e=>setAgendaForm(f=>({...f,piloto_id:e.target.value}))}>
+                      <option value="">Piloto...</option>
+                      {pilotosAtivos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
+                    </select>
+                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.cliente} onChange={e=>setAgendaForm(f=>({...f,cliente:e.target.value,fazenda:''}))}>
+                      <option value="">Cliente...</option>
+                      {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
+                    </select>
+                  </div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                    {fazendasDoCliente.length>0 ? (
+                      <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.fazenda} onChange={e=>setAgendaForm(f=>({...f,fazenda:e.target.value}))}>
+                        <option value="">Fazenda...</option>
+                        {fazendasDoCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
+                      </select>
+                    ) : (
+                      <input style={{...sG.fi,flex:'1 1 160px'}} placeholder="Nome da fazenda" value={agendaForm.fazenda} onChange={e=>setAgendaForm(f=>({...f,fazenda:e.target.value}))}/>
+                    )}
+                    <input type="date" style={{...sG.fi,flex:'1 1 140px'}} value={agendaForm.data_prevista} onChange={e=>setAgendaForm(f=>({...f,data_prevista:e.target.value}))}/>
+                    <select style={{...sG.fi,flex:'1 1 140px'}} value={agendaForm.produto} onChange={e=>setAgendaForm(f=>({...f,produto:e.target.value}))}>
+                      <option value="">Produto (opcional)...</option>
+                      {['Inseticida','Herbicida','Fungicida'].map(p=><option key={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <input style={{...sG.fi,marginBottom:12}} placeholder="Observação (opcional)" value={agendaForm.observacao} onChange={e=>setAgendaForm(f=>({...f,observacao:e.target.value}))}/>
+                  <button style={{...sG.btn,opacity:agendaSaving?.6:1}} disabled={agendaSaving} onClick={salvarAgendamento}>{agendaSaving?'Salvando...':'📅 Agendar'}</button>
+                </div>
+
+                {/* Filtros */}
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
+                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={agendaFiltros.piloto} onChange={e=>setAgendaFiltros(f=>({...f,piloto:e.target.value}))}>
+                    <option value="">Todos os pilotos</option>
+                    {pilotosAtivos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
+                  </select>
+                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={agendaFiltros.status} onChange={e=>setAgendaFiltros(f=>({...f,status:e.target.value}))}>
+                    <option value="">Todos os status</option>
+                    <option value="pendente">Pendente</option>
+                    <option value="concluido">Concluído</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                </div>
+
+                {/* Lista */}
+                {agendaFiltrada.length===0 ? (
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum agendamento encontrado.</div>
+                ) : (
+                  <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                    {agendaFiltrada.map(a=>{
+                      const atrasado = a.status==='pendente' && new Date(a.data_prevista)<hoje
+                      const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
+                      return (
+                        <div key={a.id} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,boxShadow:'0 4px 14px rgba(11,18,16,0.04)'}}>
+                          <div>
+                            <div style={{display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{fontWeight:700,fontSize:14}}>{a.piloto_nome}</span>
+                              <span style={{background:badge.bg,color:badge.cor,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{badge.label}</span>
+                              {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
+                            </div>
+                            <div style={{fontSize:12,color:'#5c7568',marginTop:3}}>{a.cliente} — {a.fazenda}{a.produto?` · ${a.produto}`:''}</div>
+                            <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</div>
+                            {a.observacao&&<div style={{fontSize:11,color:'#5c7568',marginTop:4,fontStyle:'italic'}}>{a.observacao}</div>}
+                          </div>
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                            {a.status==='pendente'&&(
+                              <>
+                                <button style={{background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'concluido')}>✓ Concluído</button>
+                                <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'cancelado')}>Cancelar</button>
+                              </>
+                            )}
+                            <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirAgendamento(a)}>🗑️</button>
+                          </div>
                         </div>
                       )
                     })}

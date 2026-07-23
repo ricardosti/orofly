@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
+import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto } from '../lib/pdf'
@@ -373,6 +374,8 @@ export default function PilotApp({onSwitchMode}) {
   const [notaSaving,setNotaSaving] = useState(false)
   const [minhasNotas,setMinhasNotas] = useState([])
   const [loadingNotas,setLoadingNotas] = useState(false)
+  const [minhaAgenda,setMinhaAgenda] = useState([])
+  const [loadingAgenda,setLoadingAgenda] = useState(false)
   const [tempoDias,setTempoDias] = useState(null)
   const [tempoLoading,setTempoLoading] = useState(false)
   const [tempoErro,setTempoErro] = useState('')
@@ -434,6 +437,7 @@ export default function PilotApp({onSwitchMode}) {
   useEffect(() => {
     if (!profile) return
     loadFlights()
+    loadAgenda()
   }, [profile]) // eslint-disable-line
 
   function initTrechoForm() {
@@ -911,6 +915,20 @@ export default function PilotApp({onSwitchMode}) {
     } catch {} finally { setLoadingNotas(false) }
   }
 
+  async function loadAgenda(){
+    setLoadingAgenda(true)
+    try {
+      const {data}=await supabase.from('agendamentos').select('*').eq('piloto_id',profile.id).order('data_prevista',{ascending:true})
+      setMinhaAgenda(data||[])
+    } catch {} finally { setLoadingAgenda(false) }
+  }
+
+  function iniciarVooAgendado(a){
+    limpar()
+    setForm(f=>({...f,cliente:a.cliente,fazenda:a.fazenda,produto:a.produto||''}))
+    setView('form')
+  }
+
   function handleNotaFoto(f){
     if(!f) return
     const r=new FileReader()
@@ -935,6 +953,7 @@ export default function PilotApp({onSwitchMode}) {
         return {
           data: dataStr,
           tempMax: data.daily.temperature_2m_max[i], tempMin: data.daily.temperature_2m_min[i],
+          umidade: umidMeioDia,
           chuvaProb: data.daily.precipitation_probability_max[i], chuvaMm: data.daily.precipitation_sum[i],
           ventoMax: data.daily.windspeed_10m_max[i],
           deltaT, deltaTClass: deltaT!=null?classificarClimaParam('delta_t',deltaT.toFixed(1)):null,
@@ -1226,6 +1245,26 @@ export default function PilotApp({onSwitchMode}) {
             <span style={{marginLeft:'auto',fontSize:18,color:'#7ba38f'}}>›</span>
           </button>
 
+          {/* Agenda de voos programados */}
+          {(()=>{
+            const pendentes = minhaAgenda.filter(a=>a.status==='pendente')
+            const proximo = pendentes[0]
+            return (
+              <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:24,padding:'18px 20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+                onClick={()=>{loadAgenda();setView('agenda')}}>
+                <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,position:'relative'}}>
+                  📅
+                  {pendentes.length>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,borderRadius:20,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{pendentes.length}</span>}
+                </span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Minha Agenda</div>
+                  <div style={{fontSize:12,color:'#7ba38f'}}>{proximo?`Próximo: ${proximo.cliente} — ${proximo.fazenda}`:'Nenhum voo programado'}</div>
+                </div>
+                <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
+              </button>
+            )
+          })()}
+
           {/* Notas de despesa + Previsão do tempo */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px 14px',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:8,cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
@@ -1433,35 +1472,107 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{fontSize:13,color:'#5c7568'}}>📍 {tempoLocal}</div>
               <button style={{...s.nowBtn,padding:'6px 12px',fontSize:11}} onClick={()=>{setTempoDias(null);setTempoErro('')}}>Trocar local</button>
             </div>
+
+            {/* Gráfico de tendência dos 5 dias */}
+            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px 8px 8px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6,paddingLeft:8}}>TEMPERATURA MÁX. E CHANCE DE CHUVA</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <ComposedChart data={tempoDias.map((d,i)=>({
+                  dia: i===0?'Hoje':new Date(d.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short'}),
+                  temp: Math.round(d.tempMax), chuva: Math.round(d.chuvaProb),
+                }))} margin={{top:5,right:10,left:-20,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                  <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false}/>
+                  <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                  <Bar dataKey="chuva" fill="#2f6fed" radius={[6,6,0,0]} opacity={0.35} name="Chuva %"/>
+                  <Line type="monotone" dataKey="temp" stroke="#f2960f" strokeWidth={2.5} dot={{r:3}} name="Temp °C"/>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
             {tempoDias.map((d,i)=>{
               const dataObj = new Date(d.data+'T12:00:00')
               const diaLabel = i===0?'Hoje':dataObj.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})
               const chuvaAlerta = d.chuvaProb>=50
               return (
                 <div key={d.data} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                    <div style={{fontSize:14,fontWeight:700,fontFamily:"'Syne',sans-serif",textTransform:'capitalize'}}>{diaLabel}</div>
-                    <div style={{fontSize:14,color:'#5c7568'}}>{Math.round(d.tempMin)}° / {Math.round(d.tempMax)}°C</div>
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                  <div style={{fontSize:14,fontWeight:700,fontFamily:"'Syne',sans-serif",textTransform:'capitalize',marginBottom:10}}>{diaLabel}</div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                    <div style={{background:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>🌡️ TEMPERATURA</div>
+                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.tempMin)}° / {Math.round(d.tempMax)}°</div>
+                    </div>
+                    <div style={{background:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💧 UMIDADE (13H)</div>
+                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{d.umidade!=null?`${Math.round(d.umidade)}%`:'—'}</div>
+                    </div>
+                    <div style={{background:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💨 VENTO MÁX.</div>
+                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.ventoMax)} km/h</div>
+                    </div>
                     <div style={{background:chuvaAlerta?'#e6f1fb':'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>CHUVA</div>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>☔ CHUVA</div>
                       <div style={{fontSize:16,fontWeight:700,color:chuvaAlerta?'#2f6fed':'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>
-                      {chuvaAlerta&&<div style={{fontSize:10,color:'#2f6fed',marginTop:2}}>☔ Risco de chuva</div>}
-                    </div>
-                    <div style={{background:d.deltaTClass?d.deltaTClass.bg:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>DELTA T (13H)</div>
-                      <div style={{fontSize:16,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>
-                      {d.deltaTClass&&<div style={{fontSize:10,color:d.deltaTClass.cor,marginTop:2}}>{d.deltaTClass.icon} {d.deltaTClass.label}</div>}
                     </div>
                   </div>
-                  <div style={{fontSize:11,color:'#7ba38f',marginTop:8}}>💨 Vento até {Math.round(d.ventoMax)} km/h</div>
+                  <div style={{background:d.deltaTClass?d.deltaTClass.bg:'#f1f8f4',borderRadius:14,padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>⚖️ DELTA T (13H)</div>
+                      {d.deltaTClass&&<div style={{fontSize:11,color:d.deltaTClass.cor,marginTop:2,fontWeight:600}}>{d.deltaTClass.icon} {d.deltaTClass.label}</div>}
+                    </div>
+                    <div style={{fontSize:20,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>
+                  </div>
                 </div>
               )
             })}
-            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Open-Meteo · Delta T estimado às 13h, referência para o horário mais comum de aplicação</div>
+            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Open-Meteo · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação</div>
           </>
         )}
+      </div>
+      <BottomNav/>
+      {toast&&<div style={s.toast}>{toast}</div>}
+    </div>
+  )
+
+  if(view==='agenda') return (
+    <div style={{...s.wrap,paddingBottom:90}}>
+      <div style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+          <div style={{display:'flex',gap:6}}>
+            {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+            <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+          </div>
+        </div>
+        <div style={s.headerSub}>📅 Minha Agenda</div>
+      </div>
+
+      <div style={{padding:16,display:'flex',flexDirection:'column',gap:10}}>
+        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
+
+        {loadingAgenda?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Carregando...</div>
+        :minhaAgenda.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:40,background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>Nenhum voo programado pelo admin ainda</div>
+        :minhaAgenda.map(a=>{
+          const hoje = new Date(); hoje.setHours(0,0,0,0)
+          const atrasado = a.status==='pendente' && new Date(a.data_prevista)<hoje
+          const STATUS_BADGE = {pendente:{label:'Pendente',bg:'#fff3e0',cor:'#f2960f'},concluido:{label:'Concluído',bg:'#e3f7ec',cor:'#0e9f6e'},cancelado:{label:'Cancelado',bg:'#fdeaea',cor:'#e5484d'}}
+          const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
+          return (
+            <div key={a.id} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                <span style={{background:badge.bg,color:badge.cor,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{badge.label}</span>
+                {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
+              </div>
+              <div style={{fontWeight:700,fontSize:15,fontFamily:"'Syne',sans-serif"}}>{a.cliente} — {a.fazenda}</div>
+              <div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}{a.produto?` · ${a.produto}`:''}</div>
+              {a.observacao&&<div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{a.observacao}</div>}
+              {a.status==='pendente'&&(
+                <button style={{...sw.btnG,marginTop:12,padding:'12px'}} onClick={()=>iniciarVooAgendado(a)}>🚁 Iniciar este voo</button>
+              )}
+            </div>
+          )
+        })}
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
