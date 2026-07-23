@@ -76,6 +76,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
   const [fzSearch, setFzSearch] = useState('')
   const [invMovimentos, setInvMovimentos] = useState([])
+  const [custos, setCustos] = useState([])
+  const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',dataIni:'',dataFim:''})
   const [movForm, setMovForm] = useState({produto:'',tipo:'entrada',quantidade:'',obs:''})
   const [movSaving, setMovSaving] = useState(false)
   const [movFiltros, setMovFiltros] = useState({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})
@@ -246,12 +248,14 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: rels }, usersRes] = await Promise.all([
+    const [{ data: rels }, usersRes, { data: desp }] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
-      fetch(`${API_BASE}/api/list-users`)
+      fetch(`${API_BASE}/api/list-users`),
+      supabase.from('despesas').select('*').order('created_at', { ascending: false })
     ])
     const rs = rels || []
     setRelatorios(rs)
+    setCustos(desp || [])
     if (usersRes.ok) { const d = await usersRes.json(); setPilotos(d.users || []) }
     const counts = {}
     rs.forEach(r => { counts[r.piloto_id] = (counts[r.piloto_id] || 0) + 1 })
@@ -435,6 +439,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
           ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
           ['fazendas', '🌾', 'Fazendas', invFazendas.length],
+          ['custos', '💰', 'Custos', custos.length],
           ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
           ['pilotos', '👥', 'Usuários', pilotos.length]
         ].map(([id, icon, lbl, cnt]) => (
@@ -585,7 +590,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             <div style={{ fontWeight:600, fontSize:14, color:'#0b1210' }}>{rel.cliente||'—'}</div>
                             <span style={{ background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                           </div>
-                          <div style={{ fontSize:12, color:'#5c7568' }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}</div>
+                          <div style={{ fontSize:12, color:'#5c7568' }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}{rel.ordem_servico?` · OS ${rel.ordem_servico}`:''}</div>
                           <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}</div>
                         </div>
                         {isSel && (
@@ -2190,6 +2195,139 @@ export default function AdminPanel({ onSwitchMode }) {
                           disabled={invSaving} onClick={salvarCliente}>{invSaving?'Salvando...':'💾 Salvar'}</button>
                       </div>
                     </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* ===== CUSTOS (notas de despesa) ===== */}
+          {tab === 'custos' && (() => {
+            const CATEGORIA_ICON = {'Almoço':'🍽️','Gasolina':'⛽','Hotel':'🏨','Outros':'🧾'}
+            const pilotosDisponiveis = [...new Set(custos.map(c=>c.piloto_nome).filter(Boolean))].sort()
+            const relatorioById = {}
+            relatorios.forEach(r=>{relatorioById[r.id]=r})
+
+            const custosFiltrados = custos.filter(c=>{
+              if(custosFiltros.piloto && c.piloto_nome!==custosFiltros.piloto) return false
+              if(custosFiltros.categoria && c.categoria!==custosFiltros.categoria) return false
+              if(custosFiltros.dataIni && new Date(c.data)<new Date(custosFiltros.dataIni)) return false
+              if(custosFiltros.dataFim && new Date(c.data)>new Date(custosFiltros.dataFim)) return false
+              return true
+            })
+
+            const totalGeral = custosFiltrados.reduce((a,c)=>a+parseFloat(c.valor||0),0)
+            const porCategoria = {}
+            custosFiltrados.forEach(c=>{porCategoria[c.categoria]=(porCategoria[c.categoria]||0)+parseFloat(c.valor||0)})
+            const maiorCategoria = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1])[0]
+
+            const porPiloto = {}
+            custosFiltrados.forEach(c=>{
+              const n=c.piloto_nome||'—'
+              if(!porPiloto[n]) porPiloto[n]={total:0,qtd:0}
+              porPiloto[n].total+=parseFloat(c.valor||0); porPiloto[n].qtd++
+            })
+            const rankingPiloto = Object.entries(porPiloto).sort((a,b)=>b[1].total-a[1].total)
+
+            const filtrosAtivos = Object.values(custosFiltros).some(Boolean)
+
+            return (
+              <div>
+                <div style={{ marginBottom:18 }}>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>💰 Custos</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{custos.length} notas registradas</div>
+                </div>
+
+                {/* Filtros */}
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:16,border:'1px solid #dcebe3',alignItems:'center'}}>
+                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                    value={custosFiltros.piloto} onChange={e=>setCustosFiltros(f=>({...f,piloto:e.target.value}))}>
+                    <option value="">Todos os pilotos</option>
+                    {pilotosDisponiveis.map(p=><option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 160px'}}
+                    value={custosFiltros.categoria} onChange={e=>setCustosFiltros(f=>({...f,categoria:e.target.value}))}>
+                    <option value="">Todas categorias</option>
+                    {['Almoço','Gasolina','Hotel','Outros'].map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <span style={{fontSize:11,color:'#5c7568'}}>De:</span>
+                    <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={custosFiltros.dataIni} onChange={e=>setCustosFiltros(f=>({...f,dataIni:e.target.value}))}/>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <span style={{fontSize:11,color:'#5c7568'}}>Até:</span>
+                    <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={custosFiltros.dataFim} onChange={e=>setCustosFiltros(f=>({...f,dataFim:e.target.value}))}/>
+                  </div>
+                  {filtrosAtivos && (
+                    <button style={{background:'none',border:'1px solid #f0b0a8',color:'#e5484d',borderRadius:12,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                      onClick={()=>setCustosFiltros({piloto:'',categoria:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
+                  )}
+                </div>
+
+                {/* KPIs */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(3,1fr)',gap:12,marginBottom:16}}>
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>TOTAL (FILTRADO)</div>
+                    <div style={{fontSize:22,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {totalGeral.toFixed(2)}</div>
+                  </div>
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>NOTAS NO PERÍODO</div>
+                    <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{custosFiltrados.length}</div>
+                  </div>
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>MAIOR CATEGORIA</div>
+                    <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{maiorCategoria?`${CATEGORIA_ICON[maiorCategoria[0]]||''} ${maiorCategoria[0]}`:'—'}</div>
+                    {maiorCategoria&&<div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>R$ {maiorCategoria[1].toFixed(2)}</div>}
+                  </div>
+                </div>
+
+                {/* Ranking por piloto */}
+                {rankingPiloto.length>0 && (
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <SecTitle>Total por Piloto</SecTitle>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                        <thead><tr style={{background:'#f1f8f4'}}>{['Piloto','Notas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {rankingPiloto.map(([nome,st],i)=>(
+                            <tr key={nome} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
+                              <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
+                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.qtd}</td>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:'#0e9f6e'}}>R$ {st.total.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Lista de notas */}
+                {custosFiltrados.length===0 ? (
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhuma nota encontrada.</div>
+                ) : (
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(260px,1fr))',gap:12}}>
+                    {custosFiltrados.map(c=>{
+                      const rel = c.relatorio_id ? relatorioById[c.relatorio_id] : null
+                      return (
+                        <div key={c.id} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:14}}>{CATEGORIA_ICON[c.categoria]||'🧾'} {c.categoria}</div>
+                              <div style={{fontSize:11,color:'#5c7568'}}>{c.piloto_nome} · {new Date(c.data).toLocaleDateString('pt-BR')}</div>
+                            </div>
+                            <div style={{fontWeight:700,fontSize:16,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {parseFloat(c.valor).toFixed(2)}</div>
+                          </div>
+                          {c.foto_url && <StoragePhoto supabase={supabase} path={c.foto_url} bucket="relatorios" small/>}
+                          {c.ordem_servico && (
+                            <div style={{fontSize:11,marginTop:8,color: rel?'#0e9f6e':'#f2960f',fontWeight:600}}>
+                              {rel?`✅ Vinculado: ${rel.cliente} — ${rel.fazenda} (OS ${c.ordem_servico})`:`⚠️ OS ${c.ordem_servico} informada, sem voo correspondente`}
+                            </div>
+                          )}
+                          {c.observacao && <div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{c.observacao}</div>}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>

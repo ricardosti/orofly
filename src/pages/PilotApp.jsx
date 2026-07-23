@@ -10,6 +10,7 @@ const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
 const PRODUTO_FAZENDA_OPTS = ['Inseticida','Herbicida','Fungicida']
+const CATEGORIA_DESPESA_OPTS = [['Almoço','🍽️'],['Gasolina','⛽'],['Hotel','🏨'],['Outros','🧾']]
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
@@ -288,6 +289,10 @@ export default function PilotApp({onSwitchMode}) {
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).relId||null } catch{}
     return null
   })
+  const [osAtual,setOsAtual] = useState(()=>{
+    try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).osAtual||null } catch{}
+    return null
+  })
   // true quando o último salvamento falhou (provavelmente sem sinal) e ainda não foi sincronizado
   const [pendingSync,setPendingSync] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return !!JSON.parse(d).pendingSync } catch{}
@@ -362,6 +367,17 @@ export default function PilotApp({onSwitchMode}) {
   const [kmlFiles,setKmlFiles] = useState([])
   const [flights,setFlights] = useState([])
   const [loadingFlights,setLoadingFlights] = useState(false)
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:''})
+  const [notaFotoPreview,setNotaFotoPreview] = useState(null)
+  const [notaFotoFile,setNotaFotoFile] = useState(null)
+  const [notaSaving,setNotaSaving] = useState(false)
+  const [minhasNotas,setMinhasNotas] = useState([])
+  const [loadingNotas,setLoadingNotas] = useState(false)
+  const [tempoDias,setTempoDias] = useState(null)
+  const [tempoLoading,setTempoLoading] = useState(false)
+  const [tempoErro,setTempoErro] = useState('')
+  const [tempoLocal,setTempoLocal] = useState('')
+  const [tempoCep,setTempoCep] = useState('')
   const toastTimer=useRef(null)
   const retryTimer=useRef(null)
   const pendingPayload=useRef(null)
@@ -476,8 +492,8 @@ export default function PilotApp({onSwitchMode}) {
   }, [relId]) // eslint-disable-line
   useEffect(()=>{
     if(opState==='idle') return
-    try { localStorage.setItem(LS_KEY,JSON.stringify({form,opState,relId,pendingSync,lastExtraData:lastExtraData.current})) } catch{}
-  },[form,opState,relId,pendingSync])
+    try { localStorage.setItem(LS_KEY,JSON.stringify({form,opState,relId,osAtual,pendingSync,lastExtraData:lastExtraData.current})) } catch{}
+  },[form,opState,relId,osAtual,pendingSync])
 
   // Sincronização automática: assim que o app fica online (ou ao reabrir com pendência),
   // reenvia o último salvamento que tinha falhado. Nada de dados perdidos por falta de sinal.
@@ -570,6 +586,12 @@ export default function PilotApp({onSwitchMode}) {
     return `${nome} - ${dose} ${unidadeDoProduto(nome)}/ha`
   }
 
+  function gerarOrdemServico() {
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789' // sem caracteres ambíguos (0/o, 1/l/i)
+    let s=''; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)]
+    return s
+  }
+
   async function saveToSupabase(extraData={},retry=true) {
     lastExtraData.current = extraData
     const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
@@ -589,13 +611,14 @@ export default function PilotApp({onSwitchMode}) {
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
+      ...(!relId ? {ordem_servico:gerarOrdemServico()} : {}),
       ...extraData
     }
     setSaveStatus('saving')
     try {
       let result
       if(relId){result=await supabase.from('relatorios').update(payload).eq('id',relId).select().single()}
-      else{result=await supabase.from('relatorios').insert(payload).select().single();if(result.data)setRelId(result.data.id)}
+      else{result=await supabase.from('relatorios').insert(payload).select().single();if(result.data){setRelId(result.data.id);setOsAtual(result.data.ordem_servico||null)}}
       if(result.error) throw result.error
       setSaveStatus('saved');pendingPayload.current=null
       if(pendingSync){setPendingSync(false);showToast('✅ Sincronizado com sucesso!')}
@@ -880,8 +903,105 @@ export default function PilotApp({onSwitchMode}) {
     } catch {} finally { setLoadingFlights(false) }
   }
 
+  async function loadNotas(){
+    setLoadingNotas(true)
+    try {
+      const {data}=await supabase.from('despesas').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
+      setMinhasNotas(data||[])
+    } catch {} finally { setLoadingNotas(false) }
+  }
+
+  function handleNotaFoto(f){
+    if(!f) return
+    const r=new FileReader()
+    r.onload=ev=>setNotaFotoPreview(ev.target.result)
+    r.readAsDataURL(f)
+    setNotaFotoFile(f)
+  }
+
+  async function buscarPrevisao(lat,lon,local){
+    setTempoLoading(true); setTempoErro(''); setTempoDias(null)
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max&hourly=temperature_2m,relativehumidity_2m&timezone=auto&forecast_days=5`
+      const res = await fetch(url)
+      if(!res.ok) throw new Error('Falha ao buscar previsão')
+      const data = await res.json()
+      const dias = (data.daily?.time||[]).map((dataStr,i)=>{
+        // Pega temperatura/umidade por volta das 13h (janela típica de aplicação) pra estimar o Delta T do dia
+        const idxHora = (data.hourly?.time||[]).findIndex(t=>t.startsWith(dataStr)&&t.endsWith('T13:00'))
+        const tempMeioDia = idxHora>=0 ? data.hourly.temperature_2m[idxHora] : data.daily.temperature_2m_max[i]
+        const umidMeioDia = idxHora>=0 ? data.hourly.relativehumidity_2m[idxHora] : null
+        const deltaT = umidMeioDia!=null ? calcDeltaT(tempMeioDia,umidMeioDia) : null
+        return {
+          data: dataStr,
+          tempMax: data.daily.temperature_2m_max[i], tempMin: data.daily.temperature_2m_min[i],
+          chuvaProb: data.daily.precipitation_probability_max[i], chuvaMm: data.daily.precipitation_sum[i],
+          ventoMax: data.daily.windspeed_10m_max[i],
+          deltaT, deltaTClass: deltaT!=null?classificarClimaParam('delta_t',deltaT.toFixed(1)):null,
+        }
+      })
+      setTempoDias(dias); setTempoLocal(local)
+    } catch(e){ setTempoErro('Não foi possível buscar a previsão. Confira sua conexão e tente de novo.') }
+    finally { setTempoLoading(false) }
+  }
+
+  function buscarPorGPS(){
+    if(!navigator.geolocation){ setTempoErro('GPS não disponível neste dispositivo.'); return }
+    setTempoLoading(true); setTempoErro('')
+    navigator.geolocation.getCurrentPosition(
+      pos=>buscarPrevisao(pos.coords.latitude,pos.coords.longitude,'Sua localização (GPS)'),
+      ()=>{ setTempoLoading(false); setTempoErro('Não deu pra pegar o GPS. Digite o CEP abaixo.') },
+      {enableHighAccuracy:true,timeout:10000}
+    )
+  }
+
+  async function buscarPorCep(){
+    const cep = tempoCep.replace(/\D/g,'')
+    if(cep.length!==8){ setTempoErro('Digite um CEP válido (8 números).'); return }
+    setTempoLoading(true); setTempoErro('')
+    try {
+      const viaCep = await fetch(`https://viacep.com.br/ws/${cep}/json/`).then(r=>r.json())
+      if(viaCep.erro) throw new Error('CEP não encontrado')
+      const cidade = viaCep.localidade, uf = viaCep.uf
+      const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cidade)}&count=5&language=pt&format=json`).then(r=>r.json())
+      const match = (geo.results||[]).find(r=>r.country_code==='BR') || (geo.results||[])[0]
+      if(!match) throw new Error('Cidade não encontrada')
+      await buscarPrevisao(match.latitude,match.longitude,`${cidade}, ${uf}`)
+    } catch(e){ setTempoLoading(false); setTempoErro('Não encontramos esse CEP. Confira e tente de novo.') }
+  }
+
+  async function salvarNota(){
+    if(!notaForm.categoria){showToast('Selecione a categoria','error');return}
+    if(!notaForm.valor||parseFloat(notaForm.valor)<=0){showToast('Informe o valor','error');return}
+    setNotaSaving(true)
+    try {
+      let foto_url = null
+      if(notaFotoFile){
+        const path = `despesas/${profile.id}/${Date.now()}.jpg`
+        const {error:upErr} = await supabase.storage.from('relatorios').upload(path,notaFotoFile,{upsert:true})
+        if(!upErr) foto_url = path
+      }
+      let relatorio_id = null
+      const osDigitada = notaForm.ordem_servico.trim()
+      if(osDigitada){
+        const {data:relMatch} = await supabase.from('relatorios').select('id').eq('piloto_id',profile.id).ilike('ordem_servico',osDigitada).maybeSingle()
+        if(relMatch) relatorio_id = relMatch.id
+      }
+      const {error} = await supabase.from('despesas').insert({
+        piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
+        categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
+        ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
+      })
+      if(error) throw error
+      showToast(relatorio_id?'✅ Nota salva e vinculada ao voo!':'✅ Nota salva!')
+      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:''})
+      setNotaFotoPreview(null); setNotaFotoFile(null)
+      loadNotas()
+    } catch(e){ showToast('Erro: '+e.message,'error') } finally { setNotaSaving(false) }
+  }
+
   function openFlight(rel){
-    setForm(initForm(rel)); setRelId(rel.id)
+    setForm(initForm(rel)); setRelId(rel.id); setOsAtual(rel.ordem_servico||null)
     const st = rel.status==='finalizado'?'finished':rel.status==='em_operacao'?'running':rel.status==='pausado'?'paused':rel.status==='pausado_dia'?'paused_day':'idle'
     setOpState(st)
     setObsFotos([null,null,null]); setObsFotoFiles([null,null,null])
@@ -900,7 +1020,7 @@ export default function PilotApp({onSwitchMode}) {
 
   function limpar(){
     try{localStorage.removeItem(LS_KEY)}catch{}
-    setForm(initForm());setOpState('idle');setRelId(null);setSaveStatus(null);setPendingSync(false)
+    setForm(initForm());setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
     setObsFotos([null,null,null]);setObsFotoFiles([null,null,null])
     setFotoMapa(null);setFotoMapaFile(null)
     setStorageFotoMapa(null);setStorageObsFotos([null,null,null])
@@ -1076,6 +1196,7 @@ export default function PilotApp({onSwitchMode}) {
               <span style={{position:'absolute',right:-10,bottom:-14,fontSize:64,opacity:.15}}>🚁</span>
               <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':opState==='paused_day'?'🌙 FINALIZADO PARCIAL':'🟢 VOO EM ANDAMENTO'}</div>
               <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Syne',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
+              {osAtual&&<div style={{fontSize:10,fontFamily:'ui-monospace,monospace',opacity:.8,marginTop:2}}>OS {osAtual}</div>}
               <div style={{fontSize:12,opacity:.9,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
             </div>
           )}
@@ -1104,6 +1225,22 @@ export default function PilotApp({onSwitchMode}) {
             </div>
             <span style={{marginLeft:'auto',fontSize:18,color:'#7ba38f'}}>›</span>
           </button>
+
+          {/* Notas de despesa + Previsão do tempo */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px 14px',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:8,cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+              onClick={()=>{loadNotas();setView('notas')}}>
+              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center'}}>🧾</span>
+              <div style={{fontSize:13,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
+              <div style={{fontSize:11,color:'#7ba38f'}}>Almoço, gasolina, hotel...</div>
+            </button>
+            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px 14px',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:8,cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+              onClick={()=>setView('tempo')}>
+              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center'}}>🌤️</span>
+              <div style={{fontSize:13,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Previsão do Tempo</div>
+              <div style={{fontSize:11,color:'#7ba38f'}}>Chuva e Delta T dos próximos dias</div>
+            </button>
+          </div>
 
           {/* Voos compartilhados pendentes */}
           {voosCompartilhados.length>0&&(
@@ -1155,9 +1292,176 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{fontSize:11,color:'#5c7568',marginTop:2}}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
               </div>
             </div>
-            <div style={{fontSize:12,color:'#aaa',marginTop:6}}>Toque para abrir ✏️</div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6}}>
+              <span style={{fontSize:12,color:'#aaa'}}>Toque para abrir ✏️</span>
+              {rel.ordem_servico&&<span style={{fontSize:10,fontFamily:'ui-monospace,monospace',fontWeight:600,color:'#0e9f6e',background:'#e3f7ec',padding:'2px 8px',borderRadius:20}}>OS {rel.ordem_servico}</span>}
+            </div>
           </div>
         ))}
+      </div>
+      <BottomNav/>
+      {toast&&<div style={s.toast}>{toast}</div>}
+    </div>
+  )
+
+  if(view==='notas') return (
+    <div style={{...s.wrap,paddingBottom:90}}>
+      <div style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+          <div style={{display:'flex',gap:6}}>
+            {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+            <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+          </div>
+        </div>
+        <div style={s.headerSub}>🧾 Cadastro de Notas</div>
+      </div>
+
+      <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
+
+        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+          {/* Foto da nota */}
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>FOTO DA NOTA</div>
+          {notaFotoPreview ? (
+            <div style={{position:'relative',marginBottom:14}}>
+              <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:220,objectFit:'cover',borderRadius:14,display:'block'}}/>
+              <button style={{position:'absolute',top:8,right:8,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:28,height:28,cursor:'pointer'}}
+                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null)}}>✕</button>
+            </div>
+          ) : (
+            <div style={{display:'flex',gap:10,marginBottom:14}}>
+              <button style={{flex:1,background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:16,padding:'14px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>document.getElementById('nota-camera')?.click()}>📸 Câmera</button>
+              <button style={{flex:1,background:'#e6f1fb',color:'#2f6fed',border:'none',borderRadius:16,padding:'14px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>document.getElementById('nota-galeria')?.click()}>🖼️ Galeria</button>
+            </div>
+          )}
+          <input id="nota-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
+          <input id="nota-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
+
+          {/* Categoria */}
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>CATEGORIA</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
+            {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>(
+              <button key={cat} type="button" style={{background:notaForm.categoria===cat?'#0e9f6e':'#f1f8f4',color:notaForm.categoria===cat?'#fff':'#0b1210',border:'none',borderRadius:16,padding:'10px 8px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
+                onClick={()=>setNotaForm(f=>({...f,categoria:cat}))}>{ic} {cat}</button>
+            ))}
+          </div>
+
+          {/* Valor + data */}
+          <div style={{display:'flex',gap:10,marginBottom:14}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VALOR (R$)</div>
+              <input type="number" style={sw.fi} placeholder="0,00" value={notaForm.valor} onChange={e=>setNotaForm(f=>({...f,valor:e.target.value}))}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
+              <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
+            </div>
+          </div>
+
+          {/* Ordem de serviço */}
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>ORDEM DE SERVIÇO (OPCIONAL)</div>
+          <input style={{...sw.fi,marginBottom:4}} placeholder="Ex: 132134b — vincula a um voo" value={notaForm.ordem_servico} onChange={e=>setNotaForm(f=>({...f,ordem_servico:e.target.value}))}/>
+          <div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>Encontre a OS na lista de "Meus Relatórios"</div>
+
+          {/* Observação */}
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>OBSERVAÇÃO (OPCIONAL)</div>
+          <input style={{...sw.fi,marginBottom:16}} placeholder="Ex: almoço com equipe" value={notaForm.observacao} onChange={e=>setNotaForm(f=>({...f,observacao:e.target.value}))}/>
+
+          <button style={{...sw.btnG,opacity:notaSaving?.7:1}} disabled={notaSaving} onClick={salvarNota}>{notaSaving?'Salvando...':'💾 Salvar Nota'}</button>
+        </div>
+
+        {/* Notas recentes */}
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>Notas Recentes</div>
+          {loadingNotas?<div style={{textAlign:'center',color:'#5c7568',padding:20}}>Carregando...</div>
+          :minhasNotas.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:20,fontSize:13}}>Nenhuma nota cadastrada ainda</div>
+          :minhasNotas.map(n=>(
+            <div key={n.id} style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontWeight:600,fontSize:13,color:'#0b1210'}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
+                <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(n.data).toLocaleDateString('pt-BR')}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}</div>
+              </div>
+              <div style={{fontWeight:700,fontSize:14,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <BottomNav/>
+      {toast&&<div style={s.toast}>{toast}</div>}
+    </div>
+  )
+
+  if(view==='tempo') return (
+    <div style={{...s.wrap,paddingBottom:90}}>
+      <div style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+          <div style={{display:'flex',gap:6}}>
+            {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+            <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+          </div>
+        </div>
+        <div style={s.headerSub}>🌤️ Previsão do Tempo</div>
+      </div>
+
+      <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
+
+        {!tempoDias && (
+          <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+            <button style={{...sw.btnG,opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorGPS}>{tempoLoading?'Buscando...':'📍 Usar meu GPS'}</button>
+            <div style={{textAlign:'center',fontSize:11,color:'#7ba38f',margin:'14px 0'}}>ou digite seu CEP</div>
+            <div style={{display:'flex',gap:8}}>
+              <input style={{...sw.fi,flex:1}} placeholder="00000-000" value={tempoCep} maxLength={9}
+                onChange={e=>{
+                  let v=e.target.value.replace(/\D/g,'').slice(0,8)
+                  if(v.length>5) v=v.slice(0,5)+'-'+v.slice(5)
+                  setTempoCep(v)
+                }}/>
+              <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'0 20px',fontSize:14,fontWeight:600,cursor:'pointer',opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorCep}>Buscar</button>
+            </div>
+            {tempoErro&&<div style={{marginTop:12,background:'#fdeaea',color:'#e5484d',borderRadius:12,padding:'10px 14px',fontSize:13}}>{tempoErro}</div>}
+          </div>
+        )}
+
+        {tempoDias && (
+          <>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{fontSize:13,color:'#5c7568'}}>📍 {tempoLocal}</div>
+              <button style={{...s.nowBtn,padding:'6px 12px',fontSize:11}} onClick={()=>{setTempoDias(null);setTempoErro('')}}>Trocar local</button>
+            </div>
+            {tempoDias.map((d,i)=>{
+              const dataObj = new Date(d.data+'T12:00:00')
+              const diaLabel = i===0?'Hoje':dataObj.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})
+              const chuvaAlerta = d.chuvaProb>=50
+              return (
+                <div key={d.data} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                    <div style={{fontSize:14,fontWeight:700,fontFamily:"'Syne',sans-serif",textTransform:'capitalize'}}>{diaLabel}</div>
+                    <div style={{fontSize:14,color:'#5c7568'}}>{Math.round(d.tempMin)}° / {Math.round(d.tempMax)}°C</div>
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                    <div style={{background:chuvaAlerta?'#e6f1fb':'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>CHUVA</div>
+                      <div style={{fontSize:16,fontWeight:700,color:chuvaAlerta?'#2f6fed':'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>
+                      {chuvaAlerta&&<div style={{fontSize:10,color:'#2f6fed',marginTop:2}}>☔ Risco de chuva</div>}
+                    </div>
+                    <div style={{background:d.deltaTClass?d.deltaTClass.bg:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>DELTA T (13H)</div>
+                      <div style={{fontSize:16,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>
+                      {d.deltaTClass&&<div style={{fontSize:10,color:d.deltaTClass.cor,marginTop:2}}>{d.deltaTClass.icon} {d.deltaTClass.label}</div>}
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:8}}>💨 Vento até {Math.round(d.ventoMax)} km/h</div>
+                </div>
+              )
+            })}
+            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Open-Meteo · Delta T estimado às 13h, referência para o horário mais comum de aplicação</div>
+          </>
+        )}
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
