@@ -615,15 +615,16 @@ export default function PilotApp({onSwitchMode}) {
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
-      ...(!relId ? {ordem_servico:gerarOrdemServico()} : {}),
+      ...(!osAtual ? {ordem_servico:gerarOrdemServico()} : {}),
       ...extraData
     }
     setSaveStatus('saving')
     try {
       let result
       if(relId){result=await supabase.from('relatorios').update(payload).eq('id',relId).select().single()}
-      else{result=await supabase.from('relatorios').insert(payload).select().single();if(result.data){setRelId(result.data.id);setOsAtual(result.data.ordem_servico||null)}}
+      else{result=await supabase.from('relatorios').insert(payload).select().single();if(result.data)setRelId(result.data.id)}
       if(result.error) throw result.error
+      if(result.data && !osAtual) setOsAtual(result.data.ordem_servico||null)
       setSaveStatus('saved');pendingPayload.current=null
       if(pendingSync){setPendingSync(false);showToast('✅ Sincronizado com sucesso!')}
       if(retryTimer.current) clearTimeout(retryTimer.current)
