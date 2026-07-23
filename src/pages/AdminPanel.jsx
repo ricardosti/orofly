@@ -15,6 +15,7 @@ const STATUS_BG    = { rascunho:'#f4f8f5', em_operacao:'#e8f5ee', pausado:'#fdf3
 const COND_KEYS    = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS  = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
+const PRODUTO_FAZENDA_OPTS = ['Inseticida','Herbicida','Fungicida']
 
 function useIsMobile() {
   const [m, setM] = useState(() => window.innerWidth < 768)
@@ -71,7 +72,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invClientes, setInvClientes] = useState([])
   const [invFazendas, setInvFazendas] = useState([])
   const [invTalhoes, setInvTalhoes] = useState([])
-  const [fzForm, setFzForm] = useState({cliente:'',nome:''})
+  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:''})
   const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
   const [fzSearch, setFzSearch] = useState('')
   const [invMovimentos, setInvMovimentos] = useState([])
@@ -584,7 +585,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             <div style={{ fontWeight:600, fontSize:14, color:'#111a14' }}>{rel.cliente||'—'}</div>
                             <span style={{ background: STATUS_BG[rel.status]||'#f4f8f5', color: STATUS_COLOR[rel.status]||'#6b8070', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                           </div>
-                          <div style={{ fontSize:12, color:'#6b8070' }}>{rel.fazenda} · {rel.piloto_nome}</div>
+                          <div style={{ fontSize:12, color:'#6b8070' }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}</div>
                           <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}</div>
                         </div>
                         {isSel && (
@@ -2002,7 +2003,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                               <div>
                                 <div style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</div>
-                                <div style={{fontSize:11,color:'#6b8070'}}>{fz.cliente}</div>
+                                <div style={{fontSize:11,color:'#6b8070'}}>{fz.cliente}{fz.produto?` · ${fz.produto}`:''}</div>
                               </div>
                               {fz.pct!==null && fz.numVoos>0 && (
                                 <button style={{background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:7,padding:'4px 8px',fontSize:10,cursor:'pointer'}}
@@ -2043,6 +2044,11 @@ export default function AdminPanel({ onSwitchMode }) {
                         </select>
                         <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
                           placeholder="Nome da fazenda" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
+                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 140px'}}
+                          value={fzForm.produto} onChange={e=>setFzForm(f=>({...f,produto:e.target.value}))}>
+                          <option value="">Produto...</option>
+                          {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
+                        </select>
                         <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                           onClick={async()=>{
                             if(!fzForm.cliente||!fzForm.nome){alert('Preencha cliente e nome');return}
@@ -2052,9 +2058,9 @@ export default function AdminPanel({ onSwitchMode }) {
                             if(mesmoCliente){ alert(`"${mesmoCliente.nome}" já está cadastrada para ${fzForm.cliente}. Use a fazenda existente na lista abaixo em vez de duplicar.`); return }
                             const outroCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente!==fzForm.cliente)
                             if(outroCliente && !window.confirm(`Já existe uma fazenda chamada "${outroCliente.nome}" cadastrada para o cliente ${outroCliente.cliente}.\n\nSe for a mesma fazenda, cancele e corrija o cliente correto. Cadastrar mesmo assim como uma fazenda separada para ${fzForm.cliente}?`)) return
-                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:nomeNorm,ativo:true})
+                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,ativo:true})
                             if(error){alert('Erro: '+error.message);return}
-                            setFzForm({cliente:'',nome:''});fetchInventario()
+                            setFzForm({cliente:'',nome:'',produto:''});fetchInventario()
                           }}>Salvar</button>
                       </div>
                     </div>
@@ -2083,7 +2089,10 @@ export default function AdminPanel({ onSwitchMode }) {
                             return (
                               <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14,marginBottom:10}}>
                                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                                  <span style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</span>
+                                  <span style={{fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8}}>
+                                    🌾 {fz.nome}
+                                    {fz.produto && <span style={{background:'#e6f0ea',color:'#145c38',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{fz.produto}</span>}
+                                  </span>
                                   <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                     onClick={async()=>{
                                       if(!window.confirm(`Excluir fazenda ${fz.nome} e todos os talhões?`))return

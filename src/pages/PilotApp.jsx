@@ -9,6 +9,7 @@ const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - 
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
+const PRODUTO_FAZENDA_OPTS = ['Inseticida','Herbicida','Fungicida']
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
@@ -28,7 +29,7 @@ function initForm(data) {
     const ini=parseDt(data.dt_inicio), fim=parseDt(data.dt_fim)
     return {
       cultura:data.cultura||'',cliente:data.cliente||'',clienteOutro:'',
-      fazenda:data.fazenda||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
+      fazenda:data.fazenda||'',produto:data.produto||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
       produtos:data.produtos?.length
         ? data.produtos.map(p=>{
@@ -50,7 +51,7 @@ function initForm(data) {
     }
   }
   return {
-    cultura:'',cliente:'',clienteOutro:'',fazenda:'',area_ha:'',talhao:'',
+    cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',
     piloto_nome:'',drone:'',droneOutro:'',
     produtos:[''],tamanho_gota:'',velocidade_drone:'',
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
@@ -387,7 +388,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,ativo').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
@@ -579,7 +580,7 @@ export default function PilotApp({onSwitchMode}) {
     const payload={
       piloto_id:profile.id,
       cultura:form.cultura||null,
-      cliente:clienteVal,fazenda:form.fazenda,area_ha:form.area_ha,
+      cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,
       piloto_nome:profile.nome||profile.email,
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
@@ -1147,7 +1148,7 @@ export default function PilotApp({onSwitchMode}) {
             </FS>
 
             <FS label="CLIENTE" val={form.cliente} onChange={e=>{
-              setForm(f=>({...f,cliente:e.target.value,fazenda:'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
+              setForm(f=>({...f,cliente:e.target.value,fazenda:'',produto:'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
             }}>
               <option value="">Selecione o Cliente...</option>
               {CLIENTES.map(c=><option key={c}>{c}</option>)}
@@ -1168,7 +1169,8 @@ export default function PilotApp({onSwitchMode}) {
                     <>
                       <FS label="FAZENDA" val={selectVal} onChange={e=>{
                         const v=e.target.value==='Outros'?'':e.target.value
-                        setForm(f=>({...f,fazenda:v,talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
+                        const fzEscolhida = fazendasCliente.find(fz=>norm(fz.nome)===norm(v))
+                        setForm(f=>({...f,fazenda:v,produto:fzEscolhida?.produto||'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
                       }}>
                         <option value="">Selecione a Fazenda...</option>
                         {fazendasCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
@@ -1178,6 +1180,13 @@ export default function PilotApp({onSwitchMode}) {
                     </>
                   ) : (
                     <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
+                  )}
+
+                  {form.fazenda&&(
+                    <FS label="PRODUTO" val={form.produto} onChange={e=>setForm(f=>({...f,produto:e.target.value}))}>
+                      <option value="">Selecione o Produto...</option>
+                      {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
+                    </FS>
                   )}
 
                   {/* TALHÕES — lista multi-seleção; soma as áreas dos selecionados */}
