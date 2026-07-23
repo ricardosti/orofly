@@ -277,6 +277,27 @@ async function extrairMetadadosFoto(file) {
 export default function PilotApp({onSwitchMode}) {
   const {profile,signOut} = useAuth()
   const [view,setView] = useState('home')
+  const isPopRef = useRef(false)
+  const isFirstViewRef = useRef(true)
+
+  // Faz o botão/gesto de voltar do navegador (e do Android) navegar entre as telas do
+  // app em vez de sair do site — sem isso não há histórico de navegação nenhum, então
+  // "voltar" tenta sair da página logo na primeira tela.
+  useEffect(() => {
+    window.history.replaceState({view:'home'}, '')
+    const onPopState = (e) => {
+      isPopRef.current = true
+      setView(e.state?.view || 'home')
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, []) // eslint-disable-line
+
+  useEffect(() => {
+    if (isFirstViewRef.current) { isFirstViewRef.current = false; return }
+    if (isPopRef.current) { isPopRef.current = false; return }
+    window.history.pushState({view}, '')
+  }, [view])
   const [form,setForm] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).form||initForm() } catch{}
     return initForm()
@@ -493,6 +514,17 @@ export default function PilotApp({onSwitchMode}) {
           }
         })
     }
+  }, [relId]) // eslint-disable-line
+
+  // Recupera (ou gera na hora) a ordem de serviço de um rascunho já aberto antes desse recurso existir —
+  // sem isso, ela só apareceria depois do próximo salvamento manual do piloto.
+  useEffect(() => {
+    if (!relId || osAtual) return
+    supabase.from('relatorios').select('ordem_servico').eq('id', relId).single().then(({data}) => {
+      if (data?.ordem_servico) { setOsAtual(data.ordem_servico); return }
+      const novo = gerarOrdemServico()
+      supabase.from('relatorios').update({ordem_servico:novo}).eq('id',relId).then(()=>setOsAtual(novo))
+    })
   }, [relId]) // eslint-disable-line
   useEffect(()=>{
     if(opState==='idle') return
@@ -1419,12 +1451,15 @@ export default function PilotApp({onSwitchMode}) {
           {loadingNotas?<div style={{textAlign:'center',color:'#5c7568',padding:20}}>Carregando...</div>
           :minhasNotas.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:20,fontSize:13}}>Nenhuma nota cadastrada ainda</div>
           :minhasNotas.map(n=>(
-            <div key={n.id} style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',marginBottom:8,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div>
-                <div style={{fontWeight:600,fontSize:13,color:'#0b1210'}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
-                <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(n.data).toLocaleDateString('pt-BR')}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}</div>
+            <div key={n.id} style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',marginBottom:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div>
+                  <div style={{fontWeight:600,fontSize:13,color:'#0b1210'}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(n.data).toLocaleDateString('pt-BR')}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}</div>
+                </div>
+                <div style={{fontWeight:700,fontSize:14,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
               </div>
-              <div style={{fontWeight:700,fontSize:14,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
+              {n.foto_url && <div style={{marginTop:10}}><StorageFotoSlot supabase={supabase} path={n.foto_url} height={120}/></div>}
             </div>
           ))}
         </div>
