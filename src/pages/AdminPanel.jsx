@@ -438,9 +438,9 @@ export default function AdminPanel({ onSwitchMode }) {
           ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
           ['pilotos', '👥', 'Usuários', pilotos.length]
         ].map(([id, icon, lbl, cnt]) => (
-          <button key={id} style={{ display:'flex', alignItems:'center', gap:8, width:'100%', background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':'#7ba38f', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3 }}
+          <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#0e9f6e,#0a6e4f)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':'#7ba38f', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
             onClick={() => { setTab(id); setSidebarOpen(false) }}>
-            <span>{icon}</span>
+            <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{icon}</span>
             <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
             <span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?'#0b1210':'#5c7568', fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>
           </button>
@@ -483,7 +483,7 @@ export default function AdminPanel({ onSwitchMode }) {
     <div style={{ display:'flex', minHeight:'100vh', background:'#f1f8f4', fontFamily:"'DM Sans',sans-serif" }}>
 
       {!isMobile && (
-        <aside style={{ width:240, background:'#0b1210', display:'flex', flexDirection:'column', position:'sticky', top:0, height:'100vh', flexShrink:0, overflowY:'auto' }}>
+        <aside style={{ width:240, background:'linear-gradient(180deg,#0b1210 0%,#0a1613 100%)', display:'flex', flexDirection:'column', position:'sticky', top:0, height:'100vh', flexShrink:0, overflowY:'auto' }}>
           <NavContent />
         </aside>
       )}
@@ -826,14 +826,14 @@ export default function AdminPanel({ onSwitchMode }) {
             const COLORS = ['#0e9f6e','#22c476','#ffb020','#2f6fed','#8e44ad','#f2960f','#e5484d','#5c7568']
 
             const Card = ({title,value,sub,color='#0e9f6e',icon}) => (
-              <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                   <div>
                     <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
-                    <div style={{fontSize:isMobile?22:28,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1}}>{value}</div>
+                    <div style={{fontSize:isMobile?22:28,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{value}</div>
                     {sub&&<div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>{sub}</div>}
                   </div>
-                  {icon&&<div style={{fontSize:28,opacity:.7}}>{icon}</div>}
+                  {icon&&<div style={{width:44,height:44,borderRadius:14,background:color+'1a',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>{icon}</div>}
                 </div>
               </div>
             )

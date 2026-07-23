@@ -924,14 +924,14 @@ export default function PilotApp({onSwitchMode}) {
 
   const sw = {
     wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#fff',fontFamily:"'DM Sans',sans-serif"},
-    header:{background:'#0e9f6e',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 0'},
+    header:{background:'linear-gradient(135deg,#0e9f6e 0%,#0a6e4f 100%)',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 0'},
     logoRow:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12},
     logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#fff',display:'flex',alignItems:'center',gap:8},
     stepsWrap:{padding:'0 18px 14px'},
     stepsRow:{display:'flex',alignItems:'center'},
-    stepCirc:{width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,flexShrink:0},
+    stepCirc:{width:28,height:28,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,flexShrink:0,transition:'all .2s'},
     stepDone:{background:'#fff',color:'#0e9f6e'},
-    stepActive:{background:'#fff',color:'#0e9f6e',boxShadow:'0 0 0 3px rgba(255,255,255,0.4)'},
+    stepActive:{background:'#ffb020',color:'#3a2a00',boxShadow:'0 0 0 5px rgba(255,176,32,0.28)',transform:'scale(1.08)'},
     stepNext:{background:'rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.65)'},
     stepLine:{flex:1,height:2,background:'rgba(255,255,255,0.25)'},
     stepLineDone:{flex:1,height:2,background:'#fff'},
@@ -994,6 +994,26 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
+  const BottomNav = () => (
+    <div style={{position:'fixed',left:0,right:0,bottom:0,maxWidth:480,margin:'0 auto',background:'#fff',borderTop:'1px solid #dcebe3',padding:'10px 20px calc(env(safe-area-inset-bottom,0px) + 10px)',display:'flex',justifyContent:'space-around',alignItems:'flex-end',zIndex:50,boxShadow:'0 -8px 24px rgba(11,18,16,0.06)'}}>
+      <div onClick={()=>setView('home')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='home'?'#0e9f6e':'#a9beb1',minWidth:52}}>
+        <span style={{fontSize:20}}>🏠</span>
+        <span style={{fontSize:10,fontWeight:700}}>Início</span>
+      </div>
+      <div onClick={()=>{
+          const ativo = opState!=='idle' && opState!=='finished'
+          if(ativo){ setView('form'); return }
+          limpar(); setView('form')
+        }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',marginTop:-26}}>
+        <span style={{width:52,height:52,borderRadius:'50%',background:'linear-gradient(135deg,#0e9f6e,#22c476)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,boxShadow:'0 8px 20px rgba(14,159,110,0.45)',border:'4px solid #fff'}}>🚁</span>
+        <span style={{fontSize:10,fontWeight:700,color:'#0e9f6e'}}>Novo Voo</span>
+      </div>
+      <div onClick={()=>{loadFlights();setView('flights')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='flights'?'#0e9f6e':'#a9beb1',minWidth:52}}>
+        <span style={{fontSize:20}}>📋</span>
+        <span style={{fontSize:10,fontWeight:700}}>Relatórios</span>
+      </div>
+    </div>
+  )
 
   if(view==='home') {
     const draftAtivo = opState!=='idle' && opState!=='finished'
@@ -1006,61 +1026,78 @@ export default function PilotApp({onSwitchMode}) {
     const finalizadosMes = finalizados.filter(r=>mesmoMes(r.dt_inicio||r.created_at))
     const areaMes = finalizadosMes.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
     const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
+    const iniciais = (profile?.nome||'P').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
     return (
       <div style={s.wrap}>
-        <div style={s.header}>
-          <div style={s.headerInner}>
-            <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
-            <div style={{display:'flex',gap:6}}>
-              {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
-              <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+        <div style={{background:'linear-gradient(135deg,#0e9f6e 0%,#0a6e4f 65%,#0b3d26 100%)',position:'relative',paddingBottom:34,overflow:'hidden'}}>
+          <div style={{position:'absolute',top:-60,right:-40,width:180,height:180,borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}/>
+          <div style={{position:'absolute',bottom:10,left:-30,width:110,height:110,borderRadius:'50%',background:'rgba(255,176,32,0.15)'}}/>
+          <div style={{position:'relative',padding:'calc(env(safe-area-inset-top,0px) + 18px) 18px 0'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={{color:'#ffb020'}}>.</span></span></div>
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                {onSwitchMode&&<button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={onSwitchMode}>⚙️</button>}
+                <button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
+              </div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:12,marginTop:20}}>
+              <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,255,255,0.18)',border:'2px solid rgba(255,255,255,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,color:'#fff',fontSize:16,flexShrink:0}}>{iniciais}</div>
+              <div>
+                <div style={{fontSize:12,color:'rgba(255,255,255,0.75)'}}>Bem-vindo de volta</div>
+                <div style={{fontSize:19,fontWeight:700,color:'#fff',fontFamily:"'Syne',sans-serif"}}>{primeiroNome} 👋</div>
+              </div>
             </div>
           </div>
-          <div style={s.headerSub}>Olá, {primeiroNome} 👋</div>
+          <svg viewBox="0 0 400 40" preserveAspectRatio="none" style={{position:'absolute',bottom:-1,left:0,width:'100%',height:34,display:'block'}}>
+            <path d="M0,40 C100,0 300,0 400,40 Z" fill="#f1f8f4"/>
+          </svg>
         </div>
 
-        <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:14}}>
+        <div style={{padding:'6px 16px 100px',flex:1,display:'flex',flexDirection:'column',gap:14,marginTop:-6}}>
           {/* Resumo do dia */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'14px 16px'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>VOOS HOJE</div>
-              <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{voosHoje.length}</div>
+            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{width:32,height:32,borderRadius:10,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,marginBottom:8}}>✈️</div>
+              <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.4}}>VOOS HOJE</div>
+              <div style={{fontSize:26,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{voosHoje.length}</div>
               <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{areaHoje.toFixed(1)} ha aplicados</div>
             </div>
-            <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'14px 16px'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ESTE MÊS</div>
-              <div style={{fontSize:24,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>{areaMes.toFixed(0)}<span style={{fontSize:13,fontWeight:600}}> ha</span></div>
+            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{width:32,height:32,borderRadius:10,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,marginBottom:8}}>📊</div>
+              <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.4}}>ESTE MÊS</div>
+              <div style={{fontSize:26,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{areaMes.toFixed(0)}<span style={{fontSize:13,fontWeight:600}}> ha</span></div>
               <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{finalizadosMes.length} voos finalizados</div>
             </div>
           </div>
 
           {/* Voo em andamento */}
           {draftAtivo && (
-            <div style={{background:'linear-gradient(135deg,#0e9f6e,#144d33)',borderRadius:16,padding:18,color:'#fff',cursor:'pointer'}} onClick={()=>setView('form')}>
-              <div style={{fontSize:11,fontWeight:700,opacity:.8,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':opState==='paused_day'?'🌙 FINALIZADO PARCIAL':'🟢 VOO EM ANDAMENTO'}</div>
+            <div style={{background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',borderRadius:22,padding:18,color:'#fff',cursor:'pointer',boxShadow:'0 10px 26px rgba(14,159,110,0.35)',position:'relative',overflow:'hidden'}} onClick={()=>setView('form')}>
+              <span style={{position:'absolute',right:-10,bottom:-14,fontSize:64,opacity:.15}}>🚁</span>
+              <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':opState==='paused_day'?'🌙 FINALIZADO PARCIAL':'🟢 VOO EM ANDAMENTO'}</div>
               <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Syne',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
-              <div style={{fontSize:12,opacity:.85,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
+              <div style={{fontSize:12,opacity:.9,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
             </div>
           )}
 
           {/* Ação principal */}
-          <button style={{background:draftAtivo?'#fff':'#0e9f6e',color:draftAtivo?'#0e9f6e':'#fff',border:draftAtivo?'2px solid #0e9f6e':'none',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
+          <button style={{background:draftAtivo?'#fff':'linear-gradient(135deg,#0e9f6e,#22c476)',color:draftAtivo?'#0e9f6e':'#fff',border:draftAtivo?'2px solid #0e9f6e':'none',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:draftAtivo?'none':'0 10px 24px rgba(14,159,110,0.3)'}}
             onClick={()=>{
               if(draftAtivo){ if(!window.confirm('Já existe um voo em andamento. Descartar e começar um novo? (o voo atual continua salvo, você pode voltar por "Continuar voo")')) return }
               limpar(); setView('form')
             }}>
-            <span style={{fontSize:30}}>🚁</span>
+            <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:draftAtivo?'#e3f7ec':'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🚁</span>
             <div>
               <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Novo Voo</div>
-              <div style={{fontSize:12,opacity:.8}}>Iniciar uma nova operação</div>
+              <div style={{fontSize:12,opacity:.85}}>Iniciar uma nova operação</div>
             </div>
             <span style={{marginLeft:'auto',fontSize:18}}>›</span>
           </button>
 
           {/* Meus relatórios */}
-          <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
+          <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
             onClick={()=>{loadFlights();setView('flights')}}>
-            <span style={{fontSize:30}}>📋</span>
+            <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:'#eef5f0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>📋</span>
             <div>
               <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
               <div style={{fontSize:12,color:'#7ba38f'}}>Ver histórico de voos</div>
@@ -1083,13 +1120,14 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           )}
         </div>
+        <BottomNav/>
         {toast&&<div style={s.toast}>{toast}</div>}
       </div>
     )
   }
 
   if(view==='flights') return (
-    <div style={s.wrap}>
+    <div style={{...s.wrap,paddingBottom:80}}>
       <div style={s.header}>
         <div style={s.headerInner}>
           <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
@@ -1106,7 +1144,7 @@ export default function PilotApp({onSwitchMode}) {
         {loadingFlights?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Carregando...</div>
         :flights.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Nenhum voo registrado</div>
         :flights.map(rel=>(
-          <div key={rel.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:'14px 16px',cursor:'pointer'}} onClick={()=>openFlight(rel)}>
+          <div key={rel.id} style={{background:'#fff',borderRadius:18,border:'1px solid #d7e6dc',padding:'14px 16px',cursor:'pointer',boxShadow:'0 4px 14px rgba(11,18,16,0.05)'}} onClick={()=>openFlight(rel)}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
               <div>
                 <div style={{fontWeight:600,fontSize:14,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{rel.cliente||'—'}</div>
@@ -1121,6 +1159,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
         ))}
       </div>
+      <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
     </div>
   )
