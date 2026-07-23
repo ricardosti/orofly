@@ -130,17 +130,17 @@ function DtRow({prefix,form,setForm,label}) {
 function FI({label,ph,val,onChange,type='text',styles}) {
   return (
     <div style={{marginBottom:14}}>
-      <label style={{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
-      <input type={type} style={{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}} placeholder={ph||''} value={val||''} onChange={onChange}/>
+      <label style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
+      <input type={type} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}} placeholder={ph||''} value={val||''} onChange={onChange}/>
     </div>
   )
 }
 function FS({label,val,onChange,children}) {
   return (
     <div style={{marginBottom:14}}>
-      <label style={{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
+      <label style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
       <div style={{position:'relative'}}>
-        <select style={{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'}} value={val||''} onChange={onChange}>{children}</select>
+        <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'}} value={val||''} onChange={onChange}>{children}</select>
         <span style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
       </div>
     </div>
@@ -166,25 +166,25 @@ function classificarClimaParam(key, valor) {
   const v = parseFloat(valor)
   if (isNaN(v)) return null
   if (key === 'vento') {
-    if (v < 3) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Calmaria: risco de inversão térmica' }
-    if (v <= 15) return { status: 'apta', label: 'Apta', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Condição ideal para aplicação' }
-    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Vento forte: deriva severa' }
+    if (v < 3) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Calmaria: risco de inversão térmica' }
+    if (v <= 15) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Condição ideal para aplicação' }
+    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Vento forte: deriva severa' }
   }
   if (key === 'umidade') {
-    if (v < 50) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Ar muito seco: evaporação severa' }
-    if (v <= 90) return { status: 'apta', label: 'Apta', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Faixa segura para aplicação' }
-    return { status: 'alerta', label: 'Atenção', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Saturação: risco de lavagem' }
+    if (v < 50) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Ar muito seco: evaporação severa' }
+    if (v <= 90) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Faixa segura para aplicação' }
+    return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Saturação: risco de lavagem' }
   }
   if (key === 'temperatura') {
-    if (v < 10) return { status: 'alerta', label: 'Atenção', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Frio: absorção reduzida pelas plantas' }
-    if (v <= 30) return { status: 'apta', label: 'Apta', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Temperatura ideal para aplicação' }
-    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#c0392b', bg: '#fdeaea', icon: '⚠️', diag: 'Estresse térmico: fechamento estomático' }
+    if (v < 10) return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Frio: absorção reduzida pelas plantas' }
+    if (v <= 30) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Temperatura ideal para aplicação' }
+    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Estresse térmico: fechamento estomático' }
   }
   if (key === 'delta_t') {
-    if (v < 2) return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Cerração/neblina: escorrimento e inversão térmica. Não aplicar.' }
-    if (v <= 7) return { status: 'apta', label: 'Ideal', cor: '#1a7a4a', bg: '#e8f5ee', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
-    if (v < 8) return { status: 'alerta', label: 'Atenção', cor: '#e8a020', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
-    return { status: 'nao_conforme', label: 'Não Pode Voar', cor: '#c0392b', bg: '#fdeaea', icon: '🚫', diag: 'Delta T ≥ 8: evaporação excessiva. Interromper a aplicação.' }
+    if (v < 2) return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: 'Cerração/neblina: escorrimento e inversão térmica. Não aplicar.' }
+    if (v <= 7) return { status: 'apta', label: 'Ideal', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
+    if (v < 8) return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
+    return { status: 'nao_conforme', label: 'Não Pode Voar', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: 'Delta T ≥ 8: evaporação excessiva. Interromper a aplicação.' }
   }
   return null
 }
@@ -193,9 +193,9 @@ function classificarCondicaoGeral(form, sufixo) {
   const params = ['vento','umidade','temperatura','delta_t']
   const resultados = params.map(k => classificarClimaParam(k, form[k+sufixo])).filter(Boolean)
   if (resultados.length === 0) return null
-  if (resultados.some(r => r.status === 'nao_conforme')) return { status: 'nao_conforme', label: 'NÃO RECOMENDADO', cor: '#c0392b' }
-  if (resultados.some(r => r.status === 'alerta')) return { status: 'alerta', label: 'ATENÇÃO', cor: '#e8a020' }
-  return { status: 'apta', label: 'CONDIÇÕES APTAS PARA VOO', cor: '#1a7a4a' }
+  if (resultados.some(r => r.status === 'nao_conforme')) return { status: 'nao_conforme', label: 'NÃO RECOMENDADO', cor: '#e5484d' }
+  if (resultados.some(r => r.status === 'alerta')) return { status: 'alerta', label: 'ATENÇÃO', cor: '#f2960f' }
+  return { status: 'apta', label: 'CONDIÇÕES APTAS PARA VOO', cor: '#0e9f6e' }
 }
 
 const PARAM_ICONS = { vento: '💨', umidade: '💧', temperatura: '🌡️', delta_t: '⚖️' }
@@ -924,14 +924,14 @@ export default function PilotApp({onSwitchMode}) {
 
   const sw = {
     wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#fff',fontFamily:"'DM Sans',sans-serif"},
-    header:{background:'#1a7a4a',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 0'},
+    header:{background:'#0e9f6e',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 0'},
     logoRow:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12},
     logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#fff',display:'flex',alignItems:'center',gap:8},
     stepsWrap:{padding:'0 18px 14px'},
     stepsRow:{display:'flex',alignItems:'center'},
     stepCirc:{width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,flexShrink:0},
-    stepDone:{background:'#fff',color:'#1a7a4a'},
-    stepActive:{background:'#fff',color:'#1a7a4a',boxShadow:'0 0 0 3px rgba(255,255,255,0.4)'},
+    stepDone:{background:'#fff',color:'#0e9f6e'},
+    stepActive:{background:'#fff',color:'#0e9f6e',boxShadow:'0 0 0 3px rgba(255,255,255,0.4)'},
     stepNext:{background:'rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.65)'},
     stepLine:{flex:1,height:2,background:'rgba(255,255,255,0.25)'},
     stepLineDone:{flex:1,height:2,background:'#fff'},
@@ -939,16 +939,16 @@ export default function PilotApp({onSwitchMode}) {
     stepLbl:{fontSize:9,color:'rgba(255,255,255,0.6)',flex:1,textAlign:'center'},
     stepLblActive:{fontSize:9,color:'#fff',flex:1,textAlign:'center',fontWeight:700},
     body:{flex:1,overflowY:'auto',padding:'20px 18px 8px'},
-    pageTitle:{fontSize:20,fontWeight:700,color:'#111a14',marginBottom:4,fontFamily:"'Syne',sans-serif"},
-    pageSub:{fontSize:12,color:'#8aad94',marginBottom:20},
+    pageTitle:{fontSize:20,fontWeight:700,color:'#0b1210',marginBottom:4,fontFamily:"'Syne',sans-serif"},
+    pageSub:{fontSize:12,color:'#7ba38f',marginBottom:20},
     fw:{marginBottom:14},
-    fl:{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"},
-    fi:{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"},
-    fs:{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#111a14',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'},
+    fl:{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"},
+    fi:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"},
+    fs:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'},
     btnBar:{padding:'12px 18px 24px',background:'#fff',borderTop:'1px solid #f0f0f0',boxSizing:'border-box'},
-    btnG:{width:'100%',background:'#1a7a4a',color:'#fff',border:'none',borderRadius:14,padding:'15px',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8},
+    btnG:{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:'16px',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 6px 18px rgba(14,159,110,0.35)'},
     timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
-    statusBadge:(st)=>({display:'inline-flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:600,background:st==='running'?'#e8f5ee':st==='paused'?'#fff3e0':'#f5f5f5',color:st==='running'?'#1a7a4a':st==='paused'?'#e8a020':'#888'}),
+    statusBadge:(st)=>({display:'inline-flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:600,background:st==='running'?'#e3f7ec':st==='paused'?'#fff3e0':'#f5f5f5',color:st==='running'?'#0e9f6e':st==='paused'?'#f2960f':'#888'}),
   }
 
   const WHeader = () => (
@@ -959,16 +959,16 @@ export default function PilotApp({onSwitchMode}) {
           Orofly
         </div>
         <div style={{display:'flex',gap:6}}>
-          {onSwitchMode&&<button style={{background:'#f0c040',border:'none',color:'#111a14',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer',fontWeight:600}} onClick={onSwitchMode}>⚙️</button>}
-          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>setView('home')}>🏠</button>
-          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>{loadFlights();setView('flights')}}>📋</button>
-          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
+          {onSwitchMode&&<button style={{background:'#ffb020',border:'none',color:'#0b1210',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer',fontWeight:600}} onClick={onSwitchMode}>⚙️</button>}
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>setView('home')}>🏠</button>
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>{loadFlights();setView('flights')}}>📋</button>
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
         </div>
       </div>
       {pendingSync&&(
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#5a3d0a',padding:'6px 12px',fontSize:11,color:'#f0c040'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#5a3d0a',padding:'6px 12px',fontSize:11,color:'#ffb020'}}>
           <span>📴 Sem sincronizar — será enviado automaticamente com sinal</span>
-          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#f0c040',borderRadius:6,padding:'3px 9px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
+          <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#ffb020',borderRadius:14,padding:'3px 9px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
             onClick={()=>saveToSupabase(lastExtraData.current||{},false)}>🔄 Tentar agora</button>
         </div>
       )}
@@ -1010,7 +1010,7 @@ export default function PilotApp({onSwitchMode}) {
       <div style={s.wrap}>
         <div style={s.header}>
           <div style={s.headerInner}>
-            <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+            <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
             <div style={{display:'flex',gap:6}}>
               {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
               <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
@@ -1022,21 +1022,21 @@ export default function PilotApp({onSwitchMode}) {
         <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:14}}>
           {/* Resumo do dia */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'14px 16px'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>VOOS HOJE</div>
-              <div style={{fontSize:24,fontWeight:700,color:'#111a14',fontFamily:"'Syne',sans-serif"}}>{voosHoje.length}</div>
-              <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{areaHoje.toFixed(1)} ha aplicados</div>
+            <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'14px 16px'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>VOOS HOJE</div>
+              <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{voosHoje.length}</div>
+              <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{areaHoje.toFixed(1)} ha aplicados</div>
             </div>
-            <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'14px 16px'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ESTE MÊS</div>
-              <div style={{fontSize:24,fontWeight:700,color:'#1a7a4a',fontFamily:"'Syne',sans-serif"}}>{areaMes.toFixed(0)}<span style={{fontSize:13,fontWeight:600}}> ha</span></div>
-              <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{finalizadosMes.length} voos finalizados</div>
+            <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'14px 16px'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ESTE MÊS</div>
+              <div style={{fontSize:24,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>{areaMes.toFixed(0)}<span style={{fontSize:13,fontWeight:600}}> ha</span></div>
+              <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{finalizadosMes.length} voos finalizados</div>
             </div>
           </div>
 
           {/* Voo em andamento */}
           {draftAtivo && (
-            <div style={{background:'linear-gradient(135deg,#1a7a4a,#144d33)',borderRadius:16,padding:18,color:'#fff',cursor:'pointer'}} onClick={()=>setView('form')}>
+            <div style={{background:'linear-gradient(135deg,#0e9f6e,#144d33)',borderRadius:16,padding:18,color:'#fff',cursor:'pointer'}} onClick={()=>setView('form')}>
               <div style={{fontSize:11,fontWeight:700,opacity:.8,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':opState==='paused_day'?'🌙 FINALIZADO PARCIAL':'🟢 VOO EM ANDAMENTO'}</div>
               <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Syne',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
               <div style={{fontSize:12,opacity:.85,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
@@ -1044,7 +1044,7 @@ export default function PilotApp({onSwitchMode}) {
           )}
 
           {/* Ação principal */}
-          <button style={{background:draftAtivo?'#fff':'#1a7a4a',color:draftAtivo?'#1a7a4a':'#fff',border:draftAtivo?'2px solid #1a7a4a':'none',borderRadius:16,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
+          <button style={{background:draftAtivo?'#fff':'#0e9f6e',color:draftAtivo?'#0e9f6e':'#fff',border:draftAtivo?'2px solid #0e9f6e':'none',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
             onClick={()=>{
               if(draftAtivo){ if(!window.confirm('Já existe um voo em andamento. Descartar e começar um novo? (o voo atual continua salvo, você pode voltar por "Continuar voo")')) return }
               limpar(); setView('form')
@@ -1058,25 +1058,25 @@ export default function PilotApp({onSwitchMode}) {
           </button>
 
           {/* Meus relatórios */}
-          <button style={{background:'#fff',color:'#111a14',border:'1px solid #e0ecea',borderRadius:16,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
+          <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left'}}
             onClick={()=>{loadFlights();setView('flights')}}>
             <span style={{fontSize:30}}>📋</span>
             <div>
               <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
-              <div style={{fontSize:12,color:'#8aad94'}}>Ver histórico de voos</div>
+              <div style={{fontSize:12,color:'#7ba38f'}}>Ver histórico de voos</div>
             </div>
-            <span style={{marginLeft:'auto',fontSize:18,color:'#8aad94'}}>›</span>
+            <span style={{marginLeft:'auto',fontSize:18,color:'#7ba38f'}}>›</span>
           </button>
 
           {/* Voos compartilhados pendentes */}
           {voosCompartilhados.length>0&&(
-            <div style={{background:'#fffbea',border:'2px solid #f0c040',borderRadius:14,padding:14}}>
+            <div style={{background:'#fffbea',border:'2px solid #ffb020',borderRadius:14,padding:14}}>
               <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
               {voosCompartilhados.map(v=>(
                 <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
-                  <div style={{fontWeight:700,fontSize:13,color:'#111a14'}}>{v.cliente} — {v.fazenda}</div>
-                  <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>Piloto: {v.piloto_nome}</div>
-                  <button style={{marginTop:8,background:'#f0c040',color:'#3a2a00',border:'none',borderRadius:8,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',width:'100%'}}
+                  <div style={{fontWeight:700,fontSize:13,color:'#0b1210'}}>{v.cliente} — {v.fazenda}</div>
+                  <div style={{fontSize:11,color:'#5c7568',marginTop:2}}>Piloto: {v.piloto_nome}</div>
+                  <button style={{marginTop:8,background:'#ffb020',color:'#3a2a00',border:'none',borderRadius:16,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',width:'100%'}}
                     onClick={()=>{ setTrechoModal(v); setTrechoForm(initTrechoForm()); setView('form') }}>➕ Adicionar meu trecho</button>
                 </div>
               ))}
@@ -1092,7 +1092,7 @@ export default function PilotApp({onSwitchMode}) {
     <div style={s.wrap}>
       <div style={s.header}>
         <div style={s.headerInner}>
-          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
           <div style={{display:'flex',gap:6}}>
             {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
             <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
@@ -1103,18 +1103,18 @@ export default function PilotApp({onSwitchMode}) {
       <div style={s.statusBar}><span>📋 Histórico de voos</span></div>
       <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:10}}>
         <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('home')}>← Voltar</button>
-        {loadingFlights?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Carregando...</div>
-        :flights.length===0?<div style={{textAlign:'center',color:'#6b8070',padding:40}}>Nenhum voo registrado</div>
+        {loadingFlights?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Carregando...</div>
+        :flights.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Nenhum voo registrado</div>
         :flights.map(rel=>(
-          <div key={rel.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:'14px 16px',cursor:'pointer'}} onClick={()=>openFlight(rel)}>
+          <div key={rel.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:'14px 16px',cursor:'pointer'}} onClick={()=>openFlight(rel)}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
               <div>
-                <div style={{fontWeight:600,fontSize:14,color:'#111a14',fontFamily:"'Syne',sans-serif"}}>{rel.cliente||'—'}</div>
-                <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{rel.fazenda}{rel.area_ha?` · ${rel.area_ha}ha`:''} · {rel.drone}</div>
+                <div style={{fontWeight:600,fontSize:14,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{rel.cliente||'—'}</div>
+                <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{rel.fazenda}{rel.area_ha?` · ${rel.area_ha}ha`:''} · {rel.drone}</div>
               </div>
               <div style={{textAlign:'right'}}>
-                <div style={{fontSize:12,fontWeight:600,color:{em_operacao:'#1a7a4a',pausado:'#e8a020',finalizado:'#185fa5',sos:'#c0392b'}[rel.status]||'#6b8070'}}>{STATUS_LABEL[rel.status]||rel.status}</div>
-                <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
+                <div style={{fontSize:12,fontWeight:600,color:{em_operacao:'#0e9f6e',pausado:'#f2960f',finalizado:'#2f6fed',sos:'#e5484d'}[rel.status]||'#5c7568'}}>{STATUS_LABEL[rel.status]||rel.status}</div>
+                <div style={{fontSize:11,color:'#5c7568',marginTop:2}}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
               </div>
             </div>
             <div style={{fontSize:12,color:'#aaa',marginTop:6}}>Toque para abrir ✏️</div>
@@ -1137,9 +1137,9 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageSub}>Passo 1 de 5: Dados do voo</div>
 
             {/* Piloto — só exibe */}
-            <div style={{...sw.fw,background:'#f4f8f5',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
-              <div style={{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,fontFamily:"'Syne',sans-serif",marginBottom:3}}>PILOTO</div>
-              <div style={{fontSize:14,fontWeight:600,color:'#1a7a4a'}}>{profile?.nome}</div>
+            <div style={{...sw.fw,background:'#f1f8f4',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,fontFamily:"'Syne',sans-serif",marginBottom:3}}>PILOTO</div>
+              <div style={{fontSize:14,fontWeight:600,color:'#0e9f6e'}}>{profile?.nome}</div>
             </div>
 
             <FS label="CULTURA" val={form.cultura} onChange={e=>{setForm(f=>({...f,cultura:e.target.value}));autoGPS()}}>
@@ -1215,7 +1215,7 @@ export default function PilotApp({onSwitchMode}) {
 
                         {/* Campo fechado — estilo igual ao select de Fazenda/Cliente */}
                         <div onClick={()=>setTalhaoDropdownOpen(o=>!o)}
-                          style={{width:'100%',border:'1px solid #dde8e2',borderRadius:10,padding:'12px 14px',fontSize:14,color:selecionados.length?'#111a14':'#aaa',background:'#fff',boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',fontFamily:"'DM Sans',sans-serif"}}>
+                          style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:selecionados.length?'#0b1210':'#aaa',background:'#fff',boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',fontFamily:"'DM Sans',sans-serif"}}>
                           <span>{selecionados.length ? `${selecionados.length} talhão(ões) selecionado(s)` : 'Selecione os talhões...'}</span>
                           <span style={{color:'#aaa',fontSize:11}}>{talhaoDropdownOpen?'▲':'▼'}</span>
                         </div>
@@ -1225,9 +1225,9 @@ export default function PilotApp({onSwitchMode}) {
                             {/* backdrop transparente — fecha ao clicar fora */}
                             <div onClick={()=>setTalhaoDropdownOpen(false)} style={{position:'fixed',inset:0,zIndex:90}}/>
                             {/* painel flutuante */}
-                            <div style={{position:'absolute',top:'100%',left:0,right:0,marginTop:4,background:'#fff',border:'1px solid #dde8e2',borderRadius:10,boxShadow:'0 10px 30px rgba(0,0,0,.18)',zIndex:91,padding:10}}>
+                            <div style={{position:'absolute',top:'100%',left:0,right:0,marginTop:4,background:'#fff',border:'1px solid #e0ece5',borderRadius:10,boxShadow:'0 10px 30px rgba(0,0,0,.18)',zIndex:91,padding:10}}>
                               <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
-                                <button type="button" onClick={toggleTodos} style={{background:'none',border:'none',color:'#1a7a4a',fontSize:12,fontWeight:600,cursor:'pointer',padding:'2px 0'}}>
+                                <button type="button" onClick={toggleTodos} style={{background:'none',border:'none',color:'#0e9f6e',fontSize:12,fontWeight:600,cursor:'pointer',padding:'2px 0'}}>
                                   {todosSelecionados?'Limpar seleção':'Selecionar todos'}
                                 </button>
                               </div>
@@ -1242,12 +1242,12 @@ export default function PilotApp({onSwitchMode}) {
                                   const sel = selecionados.includes(t.nome)
                                   return (
                                     <div key={t.id} onClick={()=>toggleTalhao(t)}
-                                      style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',background:sel?'#e8f5ee':'#fff',borderBottom:'1px solid #f0f5f2'}}>
-                                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${sel?'#1a7a4a':'#c3d4c9'}`,background:sel?'#1a7a4a':'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                      style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',background:sel?'#e3f7ec':'#fff',borderBottom:'1px solid #f0f5f2'}}>
+                                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${sel?'#0e9f6e':'#c3d4c9'}`,background:sel?'#0e9f6e':'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                                         {sel&&<span style={{color:'#fff',fontSize:11,fontWeight:700}}>✓</span>}
                                       </div>
-                                      <span style={{fontSize:14,color:'#111a14',flex:1}}>{t.nome}</span>
-                                      {t.area_ha&&<span style={{fontSize:12,color:'#1a7a4a',fontWeight:600}}>{t.area_ha} ha</span>}
+                                      <span style={{fontSize:14,color:'#0b1210',flex:1}}>{t.nome}</span>
+                                      {t.area_ha&&<span style={{fontSize:12,color:'#0e9f6e',fontWeight:600}}>{t.area_ha} ha</span>}
                                     </div>
                                   )
                                 })}
@@ -1263,7 +1263,7 @@ export default function PilotApp({onSwitchMode}) {
                                 }}
                                 onChange={()=>{}}/>
                               <button type="button" onClick={()=>setTalhaoDropdownOpen(false)}
-                                style={{width:'100%',marginTop:8,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'9px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                                style={{width:'100%',marginTop:8,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:8,padding:'9px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
                                 Concluído
                               </button>
                             </div>
@@ -1271,7 +1271,7 @@ export default function PilotApp({onSwitchMode}) {
                         )}
 
                         {selecionados.length>0&&(
-                          <div style={{marginTop:6,fontSize:12,color:'#1a7a4a',fontWeight:600}}>
+                          <div style={{marginTop:6,fontSize:12,color:'#0e9f6e',fontWeight:600}}>
                             ✅ {selecionados.length} talhão(ões) · Área total: {form.area_ha||'—'} ha
                           </div>
                         )}
@@ -1292,21 +1292,21 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* GPS — exibe silenciosamente */}
             {form.gps_lat&&(
-              <div style={{...sw.fw,background:'#e8f5ee',borderRadius:10,padding:'8px 14px',display:'flex',alignItems:'center',gap:8}}>
+              <div style={{...sw.fw,background:'#e3f7ec',borderRadius:10,padding:'8px 14px',display:'flex',alignItems:'center',gap:8}}>
                 <span style={{fontSize:14}}>📍</span>
-                <span style={{fontSize:12,color:'#1a7a4a',fontWeight:500}}>{form.gps_lat}, {form.gps_lng}</span>
-                <a href={`https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`} target="_blank" rel="noreferrer" style={{marginLeft:'auto',fontSize:11,color:'#1a7a4a',textDecoration:'none'}}>🗺️ Maps</a>
+                <span style={{fontSize:12,color:'#0e9f6e',fontWeight:500}}>{form.gps_lat}, {form.gps_lng}</span>
+                <a href={`https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`} target="_blank" rel="noreferrer" style={{marginLeft:'auto',fontSize:11,color:'#0e9f6e',textDecoration:'none'}}>🗺️ Maps</a>
               </div>
             )}
 
             {voosCompartilhados.length>0&&(
-              <div style={{background:'#fffbea',border:'2px solid #f0c040',borderRadius:12,padding:14,marginTop:4}}>
+              <div style={{background:'#fffbea',border:'2px solid #ffb020',borderRadius:12,padding:14,marginTop:4}}>
                 <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
                 {voosCompartilhados.map(v=>(
                   <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
-                    <div style={{fontWeight:700,fontSize:13,color:'#111a14'}}>{v.cliente} — {v.fazenda}</div>
-                    <div style={{fontSize:11,color:'#6b8070',marginTop:2}}>Piloto: {v.piloto_nome}</div>
-                    <button style={{marginTop:8,background:'#f0c040',color:'#3a2a00',border:'none',borderRadius:8,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',width:'100%'}}
+                    <div style={{fontWeight:700,fontSize:13,color:'#0b1210'}}>{v.cliente} — {v.fazenda}</div>
+                    <div style={{fontSize:11,color:'#5c7568',marginTop:2}}>Piloto: {v.piloto_nome}</div>
+                    <button style={{marginTop:8,background:'#ffb020',color:'#3a2a00',border:'none',borderRadius:16,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer',width:'100%'}}
                       onClick={()=>{ setTrechoModal(v); setTrechoForm(initTrechoForm()) }}>➕ Adicionar meu trecho</button>
                   </div>
                 ))}
@@ -1315,7 +1315,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
-              <button style={{...sw.btnG,background:'#fdeaea',color:'#c0392b',flex:'0 0 90px'}} onClick={()=>{
+              <button style={{...sw.btnG,background:'#fdeaea',color:'#e5484d',flex:'0 0 90px'}} onClick={()=>{
                 if(window.confirm('Limpar TODO o formulário? Isso apaga todos os dados preenchidos.')) limpar()
               }}>🗑️ Limpar</button>
               <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(2) }}>Próximo →</button>
@@ -1364,28 +1364,28 @@ export default function PilotApp({onSwitchMode}) {
                       <input style={{...sw.fi}} placeholder="Ex: 1.1" value={dosagem}
                         onChange={e=>{const arr=[...form.produtos];arr[i]=nome?`${nome} - ${e.target.value}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
                     </div>
-                    {form.produtos.length>1&&<button style={{background:'none',border:'none',color:'#c0392b',fontSize:22,cursor:'pointer',padding:'8px 4px'}} onClick={()=>setForm(f=>({...f,produtos:f.produtos.filter((_,j)=>j!==i)}))}>×</button>}
+                    {form.produtos.length>1&&<button style={{background:'none',border:'none',color:'#e5484d',fontSize:22,cursor:'pointer',padding:'8px 4px'}} onClick={()=>setForm(f=>({...f,produtos:f.produtos.filter((_,j)=>j!==i)}))}>×</button>}
                   </div>
                   {(selectVal==='Outros'||(!PRODUTOS_LIST.includes(nome)&&nome))&&(
                     <input style={{...sw.fi,marginTop:8}} placeholder="Nome do produto..." value={nome==='Outros'?'':nome}
                       onChange={e=>{const arr=[...form.produtos];arr[i]=dosagem?`${e.target.value} - ${dosagem}`:e.target.value;setForm(f=>({...f,produtos:arr}))}}/>
                   )}
                   {nome&&dosagem&&(
-                    <div style={{marginTop:6,fontSize:12,color:'#1a7a4a',fontWeight:600,background:'#e8f5ee',borderRadius:8,padding:'6px 10px',display:'inline-block'}}>
+                    <div style={{marginTop:6,fontSize:12,color:'#0e9f6e',fontWeight:600,background:'#e3f7ec',borderRadius:8,padding:'6px 10px',display:'inline-block'}}>
                       🧪 {nome} — Dosagem: {dosagem} {unidadeDoProduto(nome)}/ha
                     </div>
                   )}
                 </div>
               )
             })}
-            <button style={{width:'100%',background:'#f4f8f5',border:'1px dashed #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'11px',fontSize:13,fontWeight:500,cursor:'pointer',marginBottom:14}} onClick={()=>setForm(f=>({...f,produtos:[...f.produtos,'']}))}>+ Adicionar produto</button>
+            <button style={{width:'100%',background:'#f1f8f4',border:'1px dashed #c3e0d0',color:'#0e9f6e',borderRadius:18,padding:'11px',fontSize:13,fontWeight:500,cursor:'pointer',marginBottom:14}} onClick={()=>setForm(f=>({...f,produtos:[...f.produtos,'']}))}>+ Adicionar produto</button>
 
             {/* Tamanho da gota — número + µm */}
             <div style={sw.fw}>
               <label style={sw.fl}>TAMANHO DA GOTA</label>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 <input type="number" style={{...sw.fi,flex:1}} placeholder="Ex: 200" value={form.tamanho_gota} onChange={e=>setForm(f=>({...f,tamanho_gota:e.target.value}))}/>
-                <span style={{fontSize:15,fontWeight:600,color:'#6b8070',flexShrink:0}}>µm</span>
+                <span style={{fontSize:15,fontWeight:600,color:'#5c7568',flexShrink:0}}>µm</span>
               </div>
             </div>
 
@@ -1395,7 +1395,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
-              <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(1)}>← Voltar</button>
+              <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(1)}>← Voltar</button>
               <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(3) }}>Próximo →</button>
             </div>
           </div>
@@ -1420,7 +1420,7 @@ export default function PilotApp({onSwitchMode}) {
               )}
 
               {/* Botão clima */}
-              <button style={{width:'100%',background:'#e8f5ee',border:'1px solid #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
+              <button style={{width:'100%',background:'#e3f7ec',border:'1px solid #c3e0d0',color:'#0e9f6e',borderRadius:18,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
                 onClick={fetchClima}>
                 🌤️ Buscar clima atual (GPS)
               </button>
@@ -1432,11 +1432,11 @@ export default function PilotApp({onSwitchMode}) {
                 const classifF = valF ? classificarClimaParam(key, valF) : null
                 const classifPrincipal = classifI || classifF
                 return (
-                  <div key={key} style={{background:classifPrincipal?classifPrincipal.bg:'#f9fbfa',borderRadius:14,padding:'14px 16px',marginBottom:10,border:`1.5px solid ${classifPrincipal?classifPrincipal.cor+'44':'#e0ecea'}`}}>
+                  <div key={key} style={{background:classifPrincipal?classifPrincipal.bg:'#f7fbf8',borderRadius:14,padding:'14px 16px',marginBottom:10,border:`1.5px solid ${classifPrincipal?classifPrincipal.cor+'44':'#dcebe3'}`}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
                         <span style={{fontSize:22}}>{PARAM_ICONS[key]}</span>
-                        <div style={{fontSize:11,fontWeight:700,color:'#6b8070',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]} <span style={{fontWeight:400,color:'#8aad94'}}>({PARAM_UNITS[key]})</span></div>
+                        <div style={{fontSize:11,fontWeight:700,color:'#5c7568',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]} <span style={{fontWeight:400,color:'#7ba38f'}}>({PARAM_UNITS[key]})</span></div>
                       </div>
                       {classifPrincipal && (
                         <div style={{display:'flex',alignItems:'center',gap:5}}>
@@ -1460,7 +1460,7 @@ export default function PilotApp({onSwitchMode}) {
                             return next
                           })}/>
                         {classifI&&<div style={{fontSize:10,color:classifI.cor,fontWeight:600,marginTop:3}}>{classifI.icon} {classifI.label}</div>}
-                        {key==='delta_t'&&<div style={{fontSize:9,color:'#8aad94',marginTop:2}}>calculado automático · editável</div>}
+                        {key==='delta_t'&&<div style={{fontSize:9,color:'#7ba38f',marginTop:2}}>calculado automático · editável</div>}
                       </div>
                       <div>
                         <label style={{...sw.fl,marginBottom:4}}>FIM</label>
@@ -1482,13 +1482,13 @@ export default function PilotApp({onSwitchMode}) {
                 )
               })}
 
-              <div style={{fontSize:11,color:'#8aad94',textAlign:'center',marginTop:4}}>
+              <div style={{fontSize:11,color:'#7ba38f',textAlign:'center',marginTop:4}}>
                 📊 Classificação conforme matriz técnica de pulverização (Delta T, vento, umidade e temperatura)
               </div>
 
               {/* Evidências climáticas (foto ou PDF de ferramenta agro) */}
-              <div style={{marginTop:16,background:'#f4f8f5',borderRadius:12,padding:14,border:'1px solid #d0e4d8'}}>
-                <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>📎 EVIDÊNCIA CLIMÁTICA <span style={{fontWeight:400,color:'#8aad94'}}>(foto ou PDF)</span></div>
+              <div style={{marginTop:16,background:'#f1f8f4',borderRadius:12,padding:14,border:'1px solid #d7e6dc'}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#0e9f6e',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>📎 EVIDÊNCIA CLIMÁTICA <span style={{fontWeight:400,color:'#7ba38f'}}>(foto ou PDF)</span></div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                   {[[1,'INÍCIO'],[2,'FIM']].map(([slot,lbl])=>(
                     <div key={slot}>
@@ -1504,7 +1504,7 @@ export default function PilotApp({onSwitchMode}) {
                       <div onClick={()=>setFotoPickerOpen({tipo:'evid',idx:slot,lbl})}
                         style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',border:'1.5px dashed #c3e0d0',borderRadius:10,padding:'12px 6px',cursor:'pointer',background:'#fff',minHeight:70,overflow:'hidden'}}>
                         {obsFotos[slot]?.startsWith?.('pdf:')
-                          ? <><span style={{fontSize:22}}>📄</span><span style={{fontSize:9,color:'#6b8070',marginTop:2,textAlign:'center',wordBreak:'break-all'}}>{obsFotos[slot].slice(4)}</span></>
+                          ? <><span style={{fontSize:22}}>📄</span><span style={{fontSize:9,color:'#5c7568',marginTop:2,textAlign:'center',wordBreak:'break-all'}}>{obsFotos[slot].slice(4)}</span></>
                           : obsFotos[slot]
                             ? <img src={obsFotos[slot]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:8}}/>
                             : storageObsFotos[slot]
@@ -1517,26 +1517,26 @@ export default function PilotApp({onSwitchMode}) {
                         const meta = form.evid_meta?.[chave]
                         if(!meta) return null
                         return (
-                          <div style={{marginTop:5,background:'#fff',border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 9px'}}>
-                            <div style={{fontSize:9,color:'#6b8070',lineHeight:1.6}}>
-                              <div style={{fontWeight:700,color:'#111a14',wordBreak:'break-all'}}>📄 {meta.arquivo}</div>
+                          <div style={{marginTop:5,background:'#fff',border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px'}}>
+                            <div style={{fontSize:9,color:'#5c7568',lineHeight:1.6}}>
+                              <div style={{fontWeight:700,color:'#0b1210',wordBreak:'break-all'}}>📄 {meta.arquivo}</div>
                               <div>📅 {meta.data_foto}</div>
                               <div>{meta.tipo} · {meta.tamanho}</div>
                               {meta.gps_lat && meta.gps_lng && (
-                                <div>📍 <a href={`https://maps.google.com/?q=${meta.gps_lat},${meta.gps_lng}`} target="_blank" rel="noreferrer" style={{color:'#1a7a4a',fontWeight:600}}>{meta.gps_lat}, {meta.gps_lng}</a></div>
+                                <div>📍 <a href={`https://maps.google.com/?q=${meta.gps_lat},${meta.gps_lng}`} target="_blank" rel="noreferrer" style={{color:'#0e9f6e',fontWeight:600}}>{meta.gps_lat}, {meta.gps_lng}</a></div>
                               )}
                             </div>
-                            <label style={{display:'flex',alignItems:'center',gap:5,marginTop:5,cursor:'pointer',fontSize:10,fontWeight:600,color:meta.incluir!==false?'#1a7a4a':'#8aad94'}}>
+                            <label style={{display:'flex',alignItems:'center',gap:5,marginTop:5,cursor:'pointer',fontSize:10,fontWeight:600,color:meta.incluir!==false?'#0e9f6e':'#7ba38f'}}>
                               <input type="checkbox" checked={meta.incluir!==false}
                                 onChange={e=>setForm(fm=>({...fm,evid_meta:{...fm.evid_meta,[chave]:{...meta,incluir:e.target.checked}}}))}
-                                style={{accentColor:'#1a7a4a'}}/>
+                                style={{accentColor:'#0e9f6e'}}/>
                               Incluir no relatório
                             </label>
                           </div>
                         )
                       })()}
                       {(obsFotos[slot]||storageObsFotos[slot])&&(
-                        <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer',width:'100%',marginTop:4}}
+                        <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'3px',fontSize:10,cursor:'pointer',width:'100%',marginTop:4}}
                           onClick={()=>{const a=[...obsFotos];a[slot]=null;setObsFotos(a);const b=[...obsFotoFiles];b[slot]=null;setObsFotoFiles(b);const chave=slot===1?'inicio':'fim';setForm(fm=>{const em={...(fm.evid_meta||{})};delete em[chave];return {...fm,evid_meta:em}})}}>🗑️ Remover</button>
                       )}
                     </div>
@@ -1546,7 +1546,7 @@ export default function PilotApp({onSwitchMode}) {
             </div>
             <div style={sw.btnBar}>
               <div style={{display:'flex',gap:8}}>
-                <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
+                <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
                 <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(opState==='finished'?5:4) }}>
                   {opState==='finished'?'Ir para Relatório →':'Próximo →'}
                 </button>
@@ -1564,7 +1564,7 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageSub}>Passo 4 de 5: Controle do voo</div>
 
             {/* Resumo */}
-            <div style={{background:'#1a7a4a',borderRadius:14,padding:'12px 16px',color:'#fff',marginBottom:16}}>
+            <div style={{background:'#0e9f6e',borderRadius:14,padding:'12px 16px',color:'#fff',marginBottom:16}}>
               <div style={{fontSize:12,opacity:.8,marginBottom:2}}>{form.cultura&&`${form.cultura} · `}{clienteVal} · {form.fazenda}</div>
               <div style={{fontSize:13,fontWeight:600}}>{form.talhao&&`Talhão: ${form.talhao} · `}{form.area_ha&&`${form.area_ha} ha`}</div>
             </div>
@@ -1572,7 +1572,7 @@ export default function PilotApp({onSwitchMode}) {
             {/* Status */}
             <div style={{display:'flex',justifyContent:'center',marginBottom:16}}>
               <span style={sw.statusBadge(opState)}>
-                <span style={{width:7,height:7,borderRadius:'50%',background:opState==='running'?'#1a7a4a':opState==='paused'?'#e8a020':'#aaa',display:'inline-block',marginRight:6}}/>
+                <span style={{width:7,height:7,borderRadius:'50%',background:opState==='running'?'#0e9f6e':opState==='paused'?'#f2960f':'#aaa',display:'inline-block',marginRight:6}}/>
                 {opLabel}
               </span>
             </div>
@@ -1585,23 +1585,23 @@ export default function PilotApp({onSwitchMode}) {
               return (
                 <div style={sw.timerWrap}>
                   <svg width="130" height="130" viewBox="0 0 130 130">
-                    <circle cx="65" cy="65" r="46" fill="none" stroke="#e8f5ee" strokeWidth="7"/>
-                    <circle cx="65" cy="65" r="46" fill="none" stroke={opState==='paused'?'#e8a020':'#1a7a4a'} strokeWidth="7"
+                    <circle cx="65" cy="65" r="46" fill="none" stroke="#e3f7ec" strokeWidth="7"/>
+                    <circle cx="65" cy="65" r="46" fill="none" stroke={opState==='paused'?'#f2960f':'#0e9f6e'} strokeWidth="7"
                       strokeDasharray="289" strokeDashoffset={offset}
                       strokeLinecap="round" transform="rotate(-90 65 65)"
                       style={{transition:'stroke-dashoffset 1s linear'}}/>
-                    <text x="65" y="70" textAnchor="middle" fontSize="19" fontWeight="700" fill="#111a14" fontFamily="DM Sans,sans-serif">
+                    <text x="65" y="70" textAnchor="middle" fontSize="19" fontWeight="700" fill="#0b1210" fontFamily="DM Sans,sans-serif">
                       {pad(h)}:{pad(m)}:{pad(sec)}
                     </text>
                   </svg>
-                  <div style={{fontSize:11,color:'#8aad94',marginTop:4}}>{opState==='paused'?'⏸ PAUSADO':'tempo de operação'}</div>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>{opState==='paused'?'⏸ PAUSADO':'tempo de operação'}</div>
                 </div>
               )
             })()}
 
             {/* Botões — Iniciar, Pausar, Finalizar */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-              <button style={{background:'#e8f5ee',border:'none',borderRadius:12,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
+              <button style={{background:'#e3f7ec',border:'none',borderRadius:20,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
                 disabled={opState!=='idle'||saving}
                 onClick={()=>{
                   const n=nowParts()
@@ -1610,14 +1610,14 @@ export default function PilotApp({onSwitchMode}) {
                   setChecklistOpen(true)
                 }}>
                 <span style={{fontSize:26}}>▶️</span>
-                <span style={{fontSize:12,fontWeight:700,color:'#1a7a4a'}}>Iniciar</span>
+                <span style={{fontSize:12,fontWeight:700,color:'#0e9f6e'}}>Iniciar</span>
               </button>
-              <button style={{background:'#fff3e0',border:'none',borderRadius:12,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+              <button style={{background:'#fff3e0',border:'none',borderRadius:20,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
                 disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
                 <span style={{fontSize:26}}>{opState==='paused'?'▶️':'⏸️'}</span>
-                <span style={{fontSize:12,fontWeight:700,color:'#e8a020'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
+                <span style={{fontSize:12,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
               </button>
-              <button style={{background:'#fdeaea',border:'none',borderRadius:12,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+              <button style={{background:'#fdeaea',border:'none',borderRadius:20,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
                 disabled={opState!=='running'&&opState!=='paused'}
                 onClick={()=>{
                   const n=nowParts()
@@ -1627,20 +1627,20 @@ export default function PilotApp({onSwitchMode}) {
                   showToast('🌤️ Preencha as condições climáticas do FIM da operação')
                 }}>
                 <span style={{fontSize:26}}>⏹️</span>
-                <span style={{fontSize:12,fontWeight:700,color:'#c0392b'}}>Finalizar</span>
+                <span style={{fontSize:12,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
               </button>
             </div>
 
             {/* Horários editáveis — preenchidos pelo sistema, ajustáveis */}
-            <div style={{background:'#f9fbfa',borderRadius:12,padding:'12px 14px',marginBottom:12,border:'1px solid #e8eee8'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#6b8070',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>🕐 HORÁRIOS <span style={{fontWeight:400,color:'#8aad94'}}>(sistema preenche, você pode editar)</span></div>
+            <div style={{background:'#f7fbf8',borderRadius:12,padding:'12px 14px',marginBottom:12,border:'1px solid #e8eee8'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>🕐 HORÁRIOS <span style={{fontWeight:400,color:'#7ba38f'}}>(sistema preenche, você pode editar)</span></div>
               <DtRow prefix="dt_inicio" form={form} setForm={setForm} label="INÍCIO" />
               <DtRow prefix="dt_fim" form={form} setForm={setForm} label="FIM" />
             </div>
 
             {/* Finalizado Parcial */}
             {(opState==='running'||opState==='paused')&&(
-              <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:12,padding:'12px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
+              <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:20,padding:'12px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
                 onClick={async()=>{
                   setOpState('paused_day')
                   await saveToSupabase({status:'pausado_dia'})
@@ -1654,7 +1654,7 @@ export default function PilotApp({onSwitchMode}) {
             {opState==='paused_day'&&(
               <div style={{background:'#1a1a2e',borderRadius:12,padding:'14px',marginBottom:12,color:'#fff',textAlign:'center'}}>
                 <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>🌙 Finalizado Parcial</div>
-                <button style={{background:'#f0c040',color:'#111a14',border:'none',borderRadius:10,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
+                <button style={{background:'#ffb020',color:'#0b1210',border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
                   onClick={async()=>{
                     setOpState('running');setTimerSecs(0)
                     await saveToSupabase({status:'em_operacao'})
@@ -1665,7 +1665,7 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* SOS */}
             {(opState==='running'||opState==='paused')&&(
-              <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:12,padding:'13px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
+              <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:20,padding:'13px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
                 onClick={()=>!sosLoading&&setSosConfirm(true)} disabled={sosLoading}>
                 🆘 {sosLoading?'ENVIANDO SOS...':'SOS — EMERGÊNCIA'}
               </button>
@@ -1673,23 +1673,23 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* Salvo */}
             {relId&&opState!=='idle'&&(
-              <div style={{background:'#e8f5ee',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#1a7a4a',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div style={{background:'#e3f7ec',borderRadius:10,padding:'10px 14px',fontSize:12,color:'#0e9f6e',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
                 <span>✅ Dados salvos automaticamente</span>
-                <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>saveToSupabase({status:opState==='running'?'em_operacao':'pausado'})}>{saveStatus==='saving'?'...':'💾'}</button>
+                <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>saveToSupabase({status:opState==='running'?'em_operacao':'pausado'})}>{saveStatus==='saving'?'...':'💾'}</button>
               </div>
             )}
 
             {/* Pausas */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-              <span style={{fontSize:11,fontWeight:600,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>PAUSAS</span>
-              <button style={{background:'#f4f8f5',border:'1px solid #d0e4d8',color:'#1a7a4a',borderRadius:8,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+              <span style={{fontSize:11,fontWeight:600,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>PAUSAS</span>
+              <button style={{background:'#f1f8f4',border:'1px solid #d7e6dc',color:'#0e9f6e',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                 onClick={()=>setForm(f=>({...f,pausas:[...(f.pausas||[]),{inicio:new Date().toISOString(),fim:null,motivo:''}]}))}>+ Pausa</button>
             </div>
             {(form.pausas||[]).map((pausa,i)=>(
-              <div key={i} style={{background:'#f9fbfa',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #e8eee8'}}>
+              <div key={i} style={{background:'#f7fbf8',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #e8eee8'}}>
                 <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                  <span style={{fontSize:12,fontWeight:600,color:'#6b8070'}}>Pausa {i+1}</span>
-                  <button style={{background:'none',border:'none',color:'#c0392b',cursor:'pointer',fontSize:16}} onClick={()=>setForm(f=>({...f,pausas:f.pausas.filter((_,j)=>j!==i)}))}>×</button>
+                  <span style={{fontSize:12,fontWeight:600,color:'#5c7568'}}>Pausa {i+1}</span>
+                  <button style={{background:'none',border:'none',color:'#e5484d',cursor:'pointer',fontSize:16}} onClick={()=>setForm(f=>({...f,pausas:f.pausas.filter((_,j)=>j!==i)}))}>×</button>
                 </div>
                 {(()=>{
                   const MOTIVOS_PAUSA = ['Vento fora dos padrões','Delta T fora dos padrões','Manutenção','Alimentação','Abastecimento','Troca de bateria']
@@ -1718,13 +1718,13 @@ export default function PilotApp({onSwitchMode}) {
                     </>
                   )
                 })()}
-                <div style={{fontSize:11,color:'#8aad94'}}>{new Date(pausa.inicio).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} → {pausa.fim?new Date(pausa.fim).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em andamento'}</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>{new Date(pausa.inicio).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} → {pausa.fim?new Date(pausa.fim).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em andamento'}</div>
               </div>
             ))}
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
-              <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(3)}>← Voltar</button>
+              <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(3)}>← Voltar</button>
               <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(5) }}>Próximo →</button>
             </div>
           </div>
@@ -1743,14 +1743,14 @@ export default function PilotApp({onSwitchMode}) {
             <div style={{marginBottom:16}}>
               <label style={sw.fl}>FOTO DE OBSERVAÇÃO</label>
               <div style={{display:'flex',flexDirection:'column',gap:4,maxWidth:160}}>
-                <div style={{border:'1.5px dashed #dde8e2',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#fafcfa',...((obsFotos[0]||storageObsFotos[0])?{border:'none',padding:0}:{})}}
+                <div style={{border:'1.5px dashed #e0ece5',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#f8fbf9',...((obsFotos[0]||storageObsFotos[0])?{border:'none',padding:0}:{})}}
                   onClick={()=>setFotoPickerOpen({tipo:'obs',idx:0})}>
                   {obsFotos[0]?<img src={obsFotos[0]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:10}}/>
                     :storageObsFotos[0]?<StorageFotoSlot supabase={supabase} path={storageObsFotos[0]}/>
                     :<><div style={{fontSize:22}}>📷</div><div style={{fontSize:10,color:'#aaa',marginTop:2}}>Adicionar foto</div></>}
                 </div>
                 {(obsFotos[0]||storageObsFotos[0])&&(
-                  <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'3px',fontSize:10,cursor:'pointer'}}
+                  <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'3px',fontSize:10,cursor:'pointer'}}
                     onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[0]=null;setObsFotos(a);const b=[...obsFotoFiles];b[0]=null;setObsFotoFiles(b)}}>🗑️</button>
                 )}
                 <input id="obs-galeria-0" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
@@ -1761,7 +1761,7 @@ export default function PilotApp({onSwitchMode}) {
             {/* Foto mapa */}
             <div style={sw.fw}>
               <label style={sw.fl}>MAPA DE PÓS APLICAÇÃO</label>
-              <div style={{border:'1.5px dashed #dde8e2',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',background:'#fafcfa',...((fotoMapa||storageFotoMapa)?{padding:0,border:'none'}:{})}}
+              <div style={{border:'1.5px dashed #e0ece5',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',background:'#f8fbf9',...((fotoMapa||storageFotoMapa)?{padding:0,border:'none'}:{})}}
                 onClick={()=>setFotoPickerOpen({tipo:'mapa',idx:0})}>
                 <input id="mapa-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f)}}/>
                 <input id="mapa-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f)}}/>
@@ -1782,13 +1782,13 @@ export default function PilotApp({onSwitchMode}) {
                     <label style={sw.fl}>BORDADURA POR TALHÃO (Ha)</label>
                     {talhoesSel.map(nome=>(
                       <div key={nome} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                        <span style={{fontSize:13,color:'#111a14',flex:1}}>{nome}</span>
+                        <span style={{fontSize:13,color:'#0b1210',flex:1}}>{nome}</span>
                         <input type="number" style={{...sw.fi,width:90}} placeholder="0" value={form.bordaduraPorTalhao?.[nome]||''}
                           onChange={e=>setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:e.target.value}}))}/>
                       </div>
                     ))}
                     {total>0&&form.area_ha&&(
-                      <div style={{fontSize:12,color:'#1a7a4a',fontWeight:600,marginTop:4,marginBottom:14}}>
+                      <div style={{fontSize:12,color:'#0e9f6e',fontWeight:600,marginTop:4,marginBottom:14}}>
                         Bordadura total: {total} ha · Área aplicada: {Math.max(0,parseFloat(form.area_ha)-total).toFixed(2)} ha
                       </div>
                     )}
@@ -1799,7 +1799,7 @@ export default function PilotApp({onSwitchMode}) {
                 <>
                   <FI label="BORDADURA (Ha)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
                   {form.bordadura&&form.area_ha&&(
-                    <div style={{fontSize:12,color:'#1a7a4a',fontWeight:600,marginTop:-8,marginBottom:14}}>
+                    <div style={{fontSize:12,color:'#0e9f6e',fontWeight:600,marginTop:-8,marginBottom:14}}>
                       Área aplicada (descontando bordadura): {areaLiquidaAtual(form)} ha
                     </div>
                   )}
@@ -1810,14 +1810,14 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.fw}>
               <label style={sw.fl}>ARQUIVOS KML</label>
               {kmlFiles.map((f,i)=>(
-                <div key={i} style={{display:'flex',alignItems:'center',gap:8,background:'#f4f8f5',borderRadius:10,padding:'10px 12px',marginBottom:6,border:'1px solid #e8eee8'}}>
+                <div key={i} style={{display:'flex',alignItems:'center',gap:8,background:'#f1f8f4',borderRadius:10,padding:'10px 12px',marginBottom:6,border:'1px solid #e8eee8'}}>
                   <span>📄</span><span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
-                  <button style={{background:'none',border:'none',color:'#c0392b',fontSize:18,cursor:'pointer'}} onClick={()=>setKmlFiles(a=>a.filter((_,j)=>j!==i))}>×</button>
+                  <button style={{background:'none',border:'none',color:'#e5484d',fontSize:18,cursor:'pointer'}} onClick={()=>setKmlFiles(a=>a.filter((_,j)=>j!==i))}>×</button>
                 </div>
               ))}
-              <label style={{display:'block',border:'1.5px dashed #dde8e2',borderRadius:10,padding:13,textAlign:'center',cursor:'pointer',background:'#fafcfa'}}>
+              <label style={{display:'block',border:'1.5px dashed #e0ece5',borderRadius:10,padding:13,textAlign:'center',cursor:'pointer',background:'#f8fbf9'}}>
                 <input type="file" accept=".kml,.kmz" multiple style={{display:'none'}} onChange={e=>setKmlFiles(a=>[...a,...Array.from(e.target.files)])}/>
-                <span style={{fontSize:13,color:'#8aad94'}}>📂 Adicionar KML / KMZ</span>
+                <span style={{fontSize:13,color:'#7ba38f'}}>📂 Adicionar KML / KMZ</span>
               </label>
             </div>
 
@@ -1833,12 +1833,12 @@ export default function PilotApp({onSwitchMode}) {
               const comDose = gastos.filter(g=>g.dose!=null)
               if(!comDose.length) return null
               return (
-                <div style={{background:'#f4f8f5',borderRadius:12,padding:14,marginBottom:16,border:'1px solid #d0e4d8'}}>
-                  <div style={{fontSize:12,fontWeight:700,color:'#1a7a4a',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>⚗️ EXPECTATIVA DE GASTO POR PRODUTO</div>
+                <div style={{background:'#f1f8f4',borderRadius:12,padding:14,marginBottom:16,border:'1px solid #d7e6dc'}}>
+                  <div style={{fontSize:12,fontWeight:700,color:'#0e9f6e',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>⚗️ EXPECTATIVA DE GASTO POR PRODUTO</div>
                   {comDose.map((g,i)=>(
                     <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'4px 0',borderBottom:i<comDose.length-1?'1px solid #e8eee8':'none'}}>
-                      <span style={{color:'#111a14'}}>{g.nome}</span>
-                      <span style={{fontWeight:600,color:'#1a7a4a'}}>{g.total} {g.unidade}</span>
+                      <span style={{color:'#0b1210'}}>{g.nome}</span>
+                      <span style={{fontWeight:600,color:'#0e9f6e'}}>{g.total} {g.unidade}</span>
                     </div>
                   ))}
                 </div>
@@ -1846,7 +1846,7 @@ export default function PilotApp({onSwitchMode}) {
             })()}
 
             {/* Botão Iniciar Novo Voo — sempre visível */}
-            <button style={{...sw.btnG,background:'#f4f8f5',color:'#1a7a4a',border:'1.5px solid #1a7a4a',marginBottom:10,width:'100%'}} onClick={()=>{
+            <button style={{...sw.btnG,background:'#f1f8f4',color:'#0e9f6e',border:'1.5px solid #0e9f6e',marginBottom:10,width:'100%'}} onClick={()=>{
               const aviso = pendingSync
                 ? '⚠️ Este voo ainda NÃO foi sincronizado (sem sinal)! Se iniciar um novo agora, esse relatório será perdido. Tem certeza?'
                 : 'Iniciar novo voo? O voo atual será encerrado.'
@@ -1855,9 +1855,9 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* E-mail sugerido */}
             {opState==='finished'&&(
-              <div style={{background:'#f4f8f5',borderRadius:12,padding:14,marginBottom:10,border:'1px solid #d0e4d8'}}>
-                <div style={{fontSize:12,fontWeight:700,color:'#6b8070',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>📧 ENVIAR POR E-MAIL</div>
-                <div style={{fontSize:12,color:'#6b8070',marginBottom:10,lineHeight:1.5,background:'#fff',borderRadius:8,padding:10,border:'1px solid #e0ecea'}}>
+              <div style={{background:'#f1f8f4',borderRadius:12,padding:14,marginBottom:10,border:'1px solid #d7e6dc'}}>
+                <div style={{fontSize:12,fontWeight:700,color:'#5c7568',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>📧 ENVIAR POR E-MAIL</div>
+                <div style={{fontSize:12,color:'#5c7568',marginBottom:10,lineHeight:1.5,background:'#fff',borderRadius:8,padding:10,border:'1px solid #dcebe3'}}>
                   <strong>De:</strong> datafly@orofly.com.br<br/>
                   <strong>Assunto:</strong> Relatório de Aplicação — {form.cultura||'Cultura'} · {clienteVal} · {form.fazenda}<br/><br/>
                   Boa tarde,<br/><br/>
@@ -1871,14 +1871,14 @@ export default function PilotApp({onSwitchMode}) {
                   Atenciosamente,<br/>
                   <strong>Equipe Orofly</strong> | datafly@orofly.com.br
                 </div>
-                <div style={{fontSize:11,color:'#8aad94',textAlign:'center'}}>📌 Integração de e-mail disponível em breve via orofly.com.br</div>
+                <div style={{fontSize:11,color:'#7ba38f',textAlign:'center'}}>📌 Integração de e-mail disponível em breve via orofly.com.br</div>
               </div>
             )}
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
-              <button style={{...sw.btnG,background:'#f4f8f5',color:'#6b8070',flex:'0 0 80px'}} onClick={()=>setWizardStep(4)}>← Voltar</button>
-              <button style={{...sw.btnG,background:'#fff',color:'#1a7a4a',border:'1.5px solid #1a7a4a',flex:'0 0 110px'}} disabled={saveStatus==='saving'} onClick={async()=>{await saveToSupabase();showToast('💾 Progresso salvo!')}}>
+              <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(4)}>← Voltar</button>
+              <button style={{...sw.btnG,background:'#fff',color:'#0e9f6e',border:'1.5px solid #0e9f6e',flex:'0 0 110px'}} disabled={saveStatus==='saving'} onClick={async()=>{await saveToSupabase();showToast('💾 Progresso salvo!')}}>
                 {saveStatus==='saving'?'...':'💾 Salvar'}
               </button>
               <button style={{...sw.btnG,flex:1,opacity:opState==='finished'?1:.5,cursor:opState==='finished'?'pointer':'default'}} disabled={opState!=='finished'||saving} onClick={gerarRelatorioFinal}>
@@ -1897,7 +1897,7 @@ export default function PilotApp({onSwitchMode}) {
               ✅ Checklist Pré-Voo
               <button style={s.modalClose} onClick={()=>setChecklistOpen(false)}>✕</button>
             </div>
-            <div style={{fontSize:12,color:'#6b8070',marginBottom:18}}>Confirme os itens antes de iniciar. Você pode pular se preferir.</div>
+            <div style={{fontSize:12,color:'#5c7568',marginBottom:18}}>Confirme os itens antes de iniciar. Você pode pular se preferir.</div>
             {[
               ['bateria','🔋','Bateria carregada e verificada'],
               ['calibracao','🧭','Drone calibrado (bússola e IMU)'],
@@ -1906,25 +1906,25 @@ export default function PilotApp({onSwitchMode}) {
               ['equipamento','🔧','Equipamento e bocais verificados'],
               ['comunicacao','📡','Comunicação com a equipe estabelecida'],
             ].map(([key,icon,label])=>(
-              <div key={key} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 0',borderBottom:'1px solid #f0f4f1',cursor:'pointer'}}
+              <div key={key} style={{display:'flex',alignItems:'center',gap:12,padding:'11px 0',borderBottom:'1px solid #eef5f0',cursor:'pointer'}}
                 onClick={()=>setChecklistItems(c=>({...c,[key]:!c[key]}))}>
-                <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${checklistItems[key]?'#1a7a4a':'#d0e4d8'}`,background:checklistItems[key]?'#1a7a4a':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all .15s'}}>
+                <div style={{width:22,height:22,borderRadius:6,border:`2px solid ${checklistItems[key]?'#0e9f6e':'#d7e6dc'}`,background:checklistItems[key]?'#0e9f6e':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all .15s'}}>
                   {checklistItems[key]&&<span style={{color:'#fff',fontSize:13,fontWeight:700}}>✓</span>}
                 </div>
                 <span style={{fontSize:15}}>{icon}</span>
-                <span style={{fontSize:14,color:checklistItems[key]?'#111a14':'#6b8070',fontWeight:checklistItems[key]?500:400}}>{label}</span>
+                <span style={{fontSize:14,color:checklistItems[key]?'#0b1210':'#5c7568',fontWeight:checklistItems[key]?500:400}}>{label}</span>
               </div>
             ))}
-            <div style={{marginTop:6,padding:'8px 0',fontSize:12,color:'#6b8070',textAlign:'center'}}>
+            <div style={{marginTop:6,padding:'8px 0',fontSize:12,color:'#5c7568',textAlign:'center'}}>
               {Object.values(checklistItems).filter(Boolean).length} / {Object.keys(checklistItems).length} itens confirmados
             </div>
             <div style={{display:'flex',gap:10,marginTop:16}}>
-              <button style={{...s.shareBtn,background:'#f4f8f5',color:'#6b8070',flex:1,fontSize:13}} onClick={()=>{setChecklistOpen(false);opIniciar()}}>
+              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1,fontSize:13}} onClick={()=>{setChecklistOpen(false);opIniciar()}}>
                 Pular checklist
               </button>
-              <button style={{...s.shareBtn,background:'#1a7a4a',flex:2,position:'relative',overflow:'hidden'}} onClick={()=>{setChecklistOpen(false);opIniciar()}}>
+              <button style={{...s.shareBtn,background:'#0e9f6e',flex:2,position:'relative',overflow:'hidden'}} onClick={()=>{setChecklistOpen(false);opIniciar()}}>
                 {Object.values(checklistItems).every(Boolean)?'✅ Tudo pronto — Iniciar!':'▶ Iniciar assim mesmo'}
-                <div style={{position:'absolute',bottom:0,left:0,right:0,height:3,background:'#f0c040'}}/>
+                <div style={{position:'absolute',bottom:0,left:0,right:0,height:3,background:'#ffb020'}}/>
               </button>
             </div>
           </div>
@@ -1937,7 +1937,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>Relatório <button style={s.modalClose} onClick={()=>setModalOpen(false)}>✕</button></div>
             <ReportView form={form} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles} prodFmt={produtoComUnidade}/>
-            <button style={{...s.shareBtn,background:'#111a14',marginTop:12}} onClick={async()=>{
+            <button style={{...s.shareBtn,background:'#0b1210',marginTop:12}} onClick={async()=>{
               const rel=await saveToSupabase({status:'finalizado'})
               if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')}
             }}>📄 Baixar PDF</button>
@@ -1950,12 +1950,12 @@ export default function PilotApp({onSwitchMode}) {
       {sosConfirm&&(
         <div style={s.modalOverlay} onClick={()=>setSosConfirm(false)}>
           <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
-            <div style={{...s.modalTitle,color:'#c0392b'}}>🆘 Confirmar SOS</div>
-            <p style={{fontSize:15,color:'#111a14',marginBottom:8,lineHeight:1.6}}>Isso vai alertar <strong>todos os administradores</strong> imediatamente com sua localização GPS.</p>
+            <div style={{...s.modalTitle,color:'#e5484d'}}>🆘 Confirmar SOS</div>
+            <p style={{fontSize:15,color:'#0b1210',marginBottom:8,lineHeight:1.6}}>Isso vai alertar <strong>todos os administradores</strong> imediatamente com sua localização GPS.</p>
             <p style={{fontSize:13,color:'#e74c3c',marginBottom:24}}>Use apenas em caso de emergência real.</p>
             <div style={{display:'flex',gap:10}}>
-              <button style={{...s.shareBtn,background:'#f4f8f5',color:'#6b8070',flex:1}} onClick={()=>setSosConfirm(false)}>Cancelar</button>
-              <button style={{...s.shareBtn,background:'#c0392b',flex:1}} onClick={acionarSOS}>🆘 Confirmar SOS</button>
+              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setSosConfirm(false)}>Cancelar</button>
+              <button style={{...s.shareBtn,background:'#e5484d',flex:1}} onClick={acionarSOS}>🆘 Confirmar SOS</button>
             </div>
           </div>
         </div>
@@ -1966,10 +1966,10 @@ export default function PilotApp({onSwitchMode}) {
         <div style={s.modalOverlay} onClick={()=>setExitConfirm(false)}>
           <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>⚠️ Operação em andamento</div>
-            <p style={{fontSize:14,color:'#6b8070',marginBottom:20,lineHeight:1.6}}>Você tem uma operação em andamento. Os dados estão salvos. Deseja sair?</p>
+            <p style={{fontSize:14,color:'#5c7568',marginBottom:20,lineHeight:1.6}}>Você tem uma operação em andamento. Os dados estão salvos. Deseja sair?</p>
             <div style={{display:'flex',gap:10}}>
-              <button style={{...s.shareBtn,background:'#f4f8f5',color:'#6b8070',flex:1}} onClick={()=>setExitConfirm(false)}>Cancelar</button>
-              <button style={{...s.shareBtn,background:'#c0392b',flex:1}} onClick={()=>{setExitConfirm(false);signOut()}}>Sair</button>
+              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setExitConfirm(false)}>Cancelar</button>
+              <button style={{...s.shareBtn,background:'#e5484d',flex:1}} onClick={()=>{setExitConfirm(false);signOut()}}>Sair</button>
             </div>
           </div>
         </div>
@@ -1980,11 +1980,11 @@ export default function PilotApp({onSwitchMode}) {
         <div style={s.modalOverlay} onClick={()=>setFinalizeConfirm(null)}>
           <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>⚠️ Campos obrigatórios</div>
-            <p style={{fontSize:14,color:'#6b8070',marginBottom:8}}>Os seguintes campos estão incompletos:</p>
-            <ul style={{paddingLeft:20,marginBottom:20}}>{finalizeConfirm.erros.map(e=><li key={e} style={{fontSize:14,color:'#c0392b',marginBottom:4}}>{e}</li>)}</ul>
+            <p style={{fontSize:14,color:'#5c7568',marginBottom:8}}>Os seguintes campos estão incompletos:</p>
+            <ul style={{paddingLeft:20,marginBottom:20}}>{finalizeConfirm.erros.map(e=><li key={e} style={{fontSize:14,color:'#e5484d',marginBottom:4}}>{e}</li>)}</ul>
             <div style={{display:'flex',gap:10}}>
-              <button style={{...s.shareBtn,background:'#f4f8f5',color:'#6b8070',flex:1}} onClick={()=>setFinalizeConfirm(null)}>Voltar</button>
-              <button style={{...s.shareBtn,background:'#e8a020',flex:1}} onClick={executarFinalizacao}>Finalizar assim mesmo</button>
+              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setFinalizeConfirm(null)}>Voltar</button>
+              <button style={{...s.shareBtn,background:'#f2960f',flex:1}} onClick={executarFinalizacao}>Finalizar assim mesmo</button>
             </div>
           </div>
         </div>
@@ -1994,29 +1994,29 @@ export default function PilotApp({onSwitchMode}) {
       {fotoPickerOpen && (
         <div style={s.modalOverlay} onClick={()=>setFotoPickerOpen(null)}>
           <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:'#111a14',marginBottom:20}}>{fotoPickerOpen.tipo==='evid'?`📎 Evidência — ${fotoPickerOpen.lbl}`:'📷 Adicionar foto'}</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:'#0b1210',marginBottom:20}}>{fotoPickerOpen.tipo==='evid'?`📎 Evidência — ${fotoPickerOpen.lbl}`:'📷 Adicionar foto'}</div>
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
-              <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
+              <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
                 onClick={()=>{
                   const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-camera' : fotoPickerOpen.tipo==='evid' ? `evid-camera-${fotoPickerOpen.idx}` : `obs-camera-${fotoPickerOpen.idx}`
                   setFotoPickerOpen(null)
                   setTimeout(()=>document.getElementById(id)?.click(),150)
                 }}>📸 Tirar foto com câmera</button>
-              <button style={{background:'#185fa5',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
+              <button style={{background:'#2f6fed',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
                 onClick={()=>{
                   const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-galeria' : fotoPickerOpen.tipo==='evid' ? `evid-galeria-${fotoPickerOpen.idx}` : `obs-galeria-${fotoPickerOpen.idx}`
                   setFotoPickerOpen(null)
                   setTimeout(()=>document.getElementById(id)?.click(),150)
                 }}>🖼️ Escolher da galeria</button>
               {fotoPickerOpen.tipo==='evid'&&(
-                <button style={{background:'#6b4fa0',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
+                <button style={{background:'#6b4fa0',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
                   onClick={()=>{
                     const id = `evid-pdf-${fotoPickerOpen.idx}`
                     setFotoPickerOpen(null)
                     setTimeout(()=>document.getElementById(id)?.click(),150)
                   }}>📄 Anexar PDF</button>
               )}
-              <button style={{background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:12,padding:12,fontSize:14,cursor:'pointer'}}
+              <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:20,padding:12,fontSize:14,cursor:'pointer'}}
                 onClick={()=>setFotoPickerOpen(null)}>Cancelar</button>
             </div>
           </div>
@@ -2037,7 +2037,7 @@ function StorageFotoSlot({ supabase, path, height=60 }) {
       if (!error && data?.signedUrl) setUrl(data.signedUrl)
     })
   }, [path, supabase])
-  if (!url) return <div style={{fontSize:10,color:'#6b8070',padding:8}}>⏳</div>
+  if (!url) return <div style={{fontSize:10,color:'#5c7568',padding:8}}>⏳</div>
   return <img src={url} alt="foto" style={{width:'100%',height,objectFit:'cover',borderRadius:8,display:'block'}} />
 }
 
@@ -2055,9 +2055,9 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
     ['Observação',form.obs1||form.obs2],
   ].filter(([,v])=>v)
   return <div>{rows.map(([l,v])=>(
-    <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid #f0f4f1',fontSize:13}}>
-      <span style={{color:'#6b8070',fontWeight:500,minWidth:110}}>{l}</span>
-      <span style={{color:'#111a14',textAlign:'right',flex:1,wordBreak:'break-word'}}>{v}</span>
+    <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid #eef5f0',fontSize:13}}>
+      <span style={{color:'#5c7568',fontWeight:500,minWidth:110}}>{l}</span>
+      <span style={{color:'#0b1210',textAlign:'right',flex:1,wordBreak:'break-word'}}>{v}</span>
     </div>
   ))}</div>
 }
@@ -2098,79 +2098,79 @@ function buildTxt(form,clienteVal,droneVal,prodFmt){
 function Sec({title,icon,children}){return <div style={s.section}><div style={s.sectionHeader}>{icon} {title}</div>{children}</div>}
 
 const s={
-  wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#f4f8f5',fontFamily:"'DM Sans',sans-serif"},
+  wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#f1f8f4',fontFamily:"'DM Sans',sans-serif"},
   // ── Header verde novo design ──
-  header:{background:'#1a7a4a',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 12px'},
+  header:{background:'#0e9f6e',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 12px'},
   headerInner:{display:'flex',alignItems:'center',justifyContent:'space-between'},
   logo:{display:'flex',alignItems:'center',gap:8},
   logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#fff',letterSpacing:-0.5},
   dot:{color:'rgba(255,255,255,0.6)'},
   headerSub:{fontSize:11,color:'rgba(255,255,255,0.7)',marginTop:3},
-  logoutBtn:{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer'},
-  switchBtn:{background:'#f0c040',border:'none',color:'#111a14',borderRadius:8,padding:'5px 10px',fontSize:12,cursor:'pointer',fontWeight:600},
+  logoutBtn:{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer'},
+  switchBtn:{background:'#ffb020',border:'none',color:'#0b1210',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer',fontWeight:600},
   // ── Steps bar ──
-  stepsBar:{background:'#1a7a4a',padding:'6px 18px 14px',display:'flex',flexDirection:'column',alignItems:'center',gap:4},
+  stepsBar:{background:'#0e9f6e',padding:'6px 18px 14px',display:'flex',flexDirection:'column',alignItems:'center',gap:4},
   stepsRow:{display:'flex',alignItems:'center',gap:0},
   stepCircle:{width:26,height:26,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700},
-  stepDone:{background:'#fff',color:'#1a7a4a'},
-  stepActive:{background:'#fff',color:'#1a7a4a',boxShadow:'0 0 0 3px rgba(255,255,255,0.35)'},
+  stepDone:{background:'#fff',color:'#0e9f6e'},
+  stepActive:{background:'#fff',color:'#0e9f6e',boxShadow:'0 0 0 3px rgba(255,255,255,0.35)'},
   stepNext:{background:'rgba(255,255,255,0.2)',color:'rgba(255,255,255,0.7)'},
   stepLine:{width:30,height:2,background:'rgba(255,255,255,0.3)'},
   stepLineDone:{width:30,height:2,background:'#fff'},
   stepLabel:{fontSize:10,color:'rgba(255,255,255,0.8)',letterSpacing:0.3},
   // ── Status / op bar ──
-  statusBar:{background:'#1a7a4a',padding:'6px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:12,color:'rgba(255,255,255,0.85)'},
-  statusDot:{display:'inline-block',width:7,height:7,background:'#f0c040',borderRadius:'50%',marginRight:5},
+  statusBar:{background:'#0e9f6e',padding:'6px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:12,color:'rgba(255,255,255,0.85)'},
+  statusDot:{display:'inline-block',width:7,height:7,background:'#ffb020',borderRadius:'50%',marginRight:5},
   opBar:{display:'flex',gap:8,padding:'10px 16px',background:'#fff',borderBottom:'1px solid #e8f0ec'},
   opBtn:{flex:1,padding:'10px 4px',border:'none',borderRadius:12,fontFamily:"'Syne',sans-serif",fontSize:12,fontWeight:600,cursor:'pointer',color:'#fff'},
   // ── Body e cards ──
   body:{padding:14,flex:1,display:'flex',flexDirection:'column',gap:10,paddingBottom:80},
-  section:{background:'#fff',borderRadius:14,border:'0.5px solid #e0ecea',overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.04)'},
-  sectionHeader:{background:'#f2f9f5',padding:'9px 14px',fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'#1a7a4a',borderBottom:'0.5px solid #e0ecea'},
+  section:{background:'#fff',borderRadius:14,border:'0.5px solid #dcebe3',overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.04)'},
+  sectionHeader:{background:'#f2f9f5',padding:'9px 14px',fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'#0e9f6e',borderBottom:'0.5px solid #dcebe3'},
   field:{padding:'11px 14px',borderBottom:'0.5px solid #f0f5f2'},
-  label:{fontSize:10,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:4,fontFamily:"'Syne',sans-serif",textTransform:'uppercase'},
-  input:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent'},
-  textarea:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent',resize:'none'},
-  select:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent',appearance:'none',cursor:'pointer'},
+  label:{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:4,fontFamily:"'Syne',sans-serif",textTransform:'uppercase'},
+  input:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent'},
+  textarea:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',resize:'none'},
+  select:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',appearance:'none',cursor:'pointer'},
   dtRow:{display:'flex',alignItems:'center',gap:6},
-  dateInput:{flex:1,border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#111a14',background:'transparent',appearance:'none'},
+  dateInput:{flex:1,border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',appearance:'none'},
   timeSelects:{display:'flex',alignItems:'center',gap:2},
-  timeSelect:{background:'#f2f9f5',border:'1px solid #d0e4d8',borderRadius:7,color:'#111a14',fontSize:14,padding:'3px 4px',width:48,textAlign:'center',appearance:'none',cursor:'pointer',outline:'none'},
-  timeSep:{fontSize:16,fontWeight:600,color:'#6b8070'},
-  nowBtn:{background:'#f2f9f5',border:'1px solid #d0e4d8',color:'#1a7a4a',borderRadius:8,padding:'4px 10px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
+  timeSelect:{background:'#f2f9f5',border:'1px solid #d7e6dc',borderRadius:7,color:'#0b1210',fontSize:14,padding:'3px 4px',width:48,textAlign:'center',appearance:'none',cursor:'pointer',outline:'none'},
+  timeSep:{fontSize:16,fontWeight:600,color:'#5c7568'},
+  nowBtn:{background:'#f2f9f5',border:'1px solid #d7e6dc',color:'#0e9f6e',borderRadius:16,padding:'4px 10px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
   gpsRow:{display:'flex',alignItems:'center',gap:8},
-  gpsBtn:{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
-  mapsLink:{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'#1a7a4a',textDecoration:'none',marginTop:6},
-  tabs:{display:'flex',borderBottom:'0.5px solid #e0ecea'},
-  tab:{flex:1,padding:9,fontSize:12,fontWeight:600,textAlign:'center',cursor:'pointer',color:'#8aad94',borderBottom:'2px solid transparent',fontFamily:"'Syne',sans-serif",letterSpacing:.5},
-  tabActive:{color:'#1a7a4a',borderBottomColor:'#1a7a4a'},
-  prodInput:{background:'#f4f8f5',border:'1px solid #e0ecea',borderRadius:10,padding:'8px 10px',fontSize:14,fontFamily:"'DM Sans',sans-serif",color:'#111a14',outline:'none'},
-  remBtn:{background:'none',border:'none',color:'#c0392b',fontSize:20,cursor:'pointer',flexShrink:0},
-  addBtn:{background:'#f2f9f5',border:'1px dashed #c3e0d0',color:'#1a7a4a',borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:500,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center'},
+  gpsBtn:{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
+  mapsLink:{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'#0e9f6e',textDecoration:'none',marginTop:6},
+  tabs:{display:'flex',borderBottom:'0.5px solid #dcebe3'},
+  tab:{flex:1,padding:9,fontSize:12,fontWeight:600,textAlign:'center',cursor:'pointer',color:'#7ba38f',borderBottom:'2px solid transparent',fontFamily:"'Syne',sans-serif",letterSpacing:.5},
+  tabActive:{color:'#0e9f6e',borderBottomColor:'#0e9f6e'},
+  prodInput:{background:'#f1f8f4',border:'1px solid #dcebe3',borderRadius:10,padding:'8px 10px',fontSize:14,fontFamily:"'DM Sans',sans-serif",color:'#0b1210',outline:'none'},
+  remBtn:{background:'none',border:'none',color:'#e5484d',fontSize:20,cursor:'pointer',flexShrink:0},
+  addBtn:{background:'#f2f9f5',border:'1px dashed #c3e0d0',color:'#0e9f6e',borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:500,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center'},
   obsFotos:{display:'flex',gap:8,padding:'0 14px 14px'},
-  fotoSlot:{flex:1,border:'1.5px dashed #d0e4d8',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#fafcfa'},
+  fotoSlot:{flex:1,border:'1.5px dashed #d7e6dc',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#f8fbf9'},
   fotoSlotImg:{width:'100%',height:56,objectFit:'cover',borderRadius:8},
-  photoArea:{margin:'0 14px 14px',border:'1.5px dashed #d0e4d8',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',display:'block',background:'#fafcfa'},
-  kmlItem:{display:'flex',alignItems:'center',gap:8,background:'#f4f8f5',borderRadius:10,padding:'8px 14px',margin:'4px 14px 0',border:'0.5px solid #e0ecea'},
-  kmlAdd:{margin:'8px 14px 14px',border:'1.5px dashed #d0e4d8',borderRadius:12,padding:13,textAlign:'center',cursor:'pointer',display:'block'},
+  photoArea:{margin:'0 14px 14px',border:'1.5px dashed #d7e6dc',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',display:'block',background:'#f8fbf9'},
+  kmlItem:{display:'flex',alignItems:'center',gap:8,background:'#f1f8f4',borderRadius:10,padding:'8px 14px',margin:'4px 14px 0',border:'0.5px solid #dcebe3'},
+  kmlAdd:{margin:'8px 14px 14px',border:'1.5px dashed #d7e6dc',borderRadius:12,padding:13,textAlign:'center',cursor:'pointer',display:'block'},
   footer:{padding:'0 14px 16px',display:'flex',flexDirection:'column',gap:10},
-  btnPrimary:{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:14,padding:16,fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,cursor:'pointer',position:'relative',overflow:'hidden'},
-  btnAccent:{position:'absolute',bottom:0,left:0,right:0,height:3,background:'#f0c040'},
-  btnSecondary:{background:'transparent',color:'#1a7a4a',border:'1.5px solid #1a7a4a',borderRadius:14,padding:13,fontSize:14,fontWeight:500,cursor:'pointer'},
+  btnPrimary:{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:14,padding:16,fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,cursor:'pointer',position:'relative',overflow:'hidden'},
+  btnAccent:{position:'absolute',bottom:0,left:0,right:0,height:3,background:'#ffb020'},
+  btnSecondary:{background:'transparent',color:'#0e9f6e',border:'1.5px solid #0e9f6e',borderRadius:14,padding:13,fontSize:14,fontWeight:500,cursor:'pointer'},
   // ── Timer circular ──
   timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
   // ── Bottom nav ──
-  bottomNav:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:'#fff',borderTop:'0.5px solid #e0ecea',display:'flex',zIndex:50,paddingBottom:'env(safe-area-inset-bottom,0px)'},
+  bottomNav:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:480,background:'#fff',borderTop:'0.5px solid #dcebe3',display:'flex',zIndex:50,paddingBottom:'env(safe-area-inset-bottom,0px)'},
   navItem:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 4px 10px',gap:2,cursor:'pointer',border:'none',background:'none'},
   navIcon:{fontSize:20,color:'#b0c4b8'},
-  navIconActive:{fontSize:20,color:'#1a7a4a'},
+  navIconActive:{fontSize:20,color:'#0e9f6e'},
   navLabel:{fontSize:9,color:'#b0c4b8',fontWeight:500,fontFamily:"'Syne',sans-serif"},
-  navLabelActive:{fontSize:9,color:'#1a7a4a',fontWeight:700,fontFamily:"'Syne',sans-serif"},
+  navLabelActive:{fontSize:9,color:'#0e9f6e',fontWeight:700,fontFamily:"'Syne',sans-serif"},
   // ── Modals ──
   modalOverlay:{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:100,display:'flex',alignItems:'flex-end',justifyContent:'center'},
   modal:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:480,maxHeight:'85vh',overflowY:'auto'},
-  modalTitle:{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:'#111a14',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'},
-  modalClose:{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#6b8070'},
+  modalTitle:{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:'#0b1210',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'},
+  modalClose:{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#5c7568'},
   shareBtn:{color:'#fff',border:'none',borderRadius:14,padding:14,fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',width:'100%'},
-  toast:{position:'fixed',bottom:80,left:'50%',transform:'translateX(-50%)',background:'#111a14',color:'#fff',padding:'12px 24px',borderRadius:100,fontSize:13,fontWeight:500,zIndex:200,whiteSpace:'nowrap',borderBottom:'3px solid #f0c040'},
+  toast:{position:'fixed',bottom:80,left:'50%',transform:'translateX(-50%)',background:'#0b1210',color:'#fff',padding:'12px 24px',borderRadius:100,fontSize:13,fontWeight:500,zIndex:200,whiteSpace:'nowrap',borderBottom:'3px solid #ffb020'},
 }

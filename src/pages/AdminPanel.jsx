@@ -10,8 +10,8 @@ import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/native
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
 const API_BASE = 'https://orofly.vercel.app'
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
-const STATUS_COLOR = { rascunho:'#6b8070', em_operacao:'#1a7a4a', pausado:'#e8a020', pausado_dia:'#1a1a2e', finalizado:'#185fa5', sos:'#c0392b', sos_resolvido:'#6b8070' }
-const STATUS_BG    = { rascunho:'#f4f8f5', em_operacao:'#e8f5ee', pausado:'#fdf3e0', pausado_dia:'#e8e8f5', finalizado:'#e6f1fb', sos:'#fdeaea', sos_resolvido:'#f4f8f5' }
+const STATUS_COLOR = { rascunho:'#5c7568', em_operacao:'#0e9f6e', pausado:'#f2960f', pausado_dia:'#1a1a2e', finalizado:'#2f6fed', sos:'#e5484d', sos_resolvido:'#5c7568' }
+const STATUS_BG    = { rascunho:'#f1f8f4', em_operacao:'#e3f7ec', pausado:'#fdf3e0', pausado_dia:'#e8e8f5', finalizado:'#e6f1fb', sos:'#fdeaea', sos_resolvido:'#f1f8f4' }
 const COND_KEYS    = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS  = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
@@ -411,18 +411,18 @@ export default function AdminPanel({ onSwitchMode }) {
     <>
       <div style={{ padding: '24px 20px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          <span style={{ fontFamily:"'Syne',sans-serif", fontSize: 19, fontWeight: 700, color: '#fff', letterSpacing: -0.5 }}>Orofly<span style={{ color: '#f0c040' }}>.</span></span>
-          <span style={{ background: '#f0c040', color: '#111a14', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6 }}>ADMIN</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          <span style={{ fontFamily:"'Syne',sans-serif", fontSize: 19, fontWeight: 700, color: '#fff', letterSpacing: -0.5 }}>Orofly<span style={{ color: '#ffb020' }}>.</span></span>
+          <span style={{ background: '#ffb020', color: '#0b1210', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6 }}>ADMIN</span>
         </div>
-        <div style={{ fontSize: 10, color: pushAtivo ? '#2da05e' : '#4a6e56', letterSpacing: 1 }}>
+        <div style={{ fontSize: 10, color: pushAtivo ? '#22c476' : '#4a6e56', letterSpacing: 1 }}>
           {pushAtivo ? '🔔 Notificações ativas' : 'Painel de Administração'}
         </div>
       </div>
 
       {/* ALERTA SOS */}
       {sosAtivos.length > 0 && (
-        <div style={{ margin: '0 12px 8px', background: '#c0392b', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }} onClick={() => setTab('mapa')}>
+        <div style={{ margin: '0 12px 8px', background: '#e5484d', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }} onClick={() => setTab('mapa')}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>🆘 {sosAtivos.length} SOS ATIVO{sosAtivos.length > 1 ? 'S' : ''}</div>
           <div style={{ fontSize: 11, color: '#fcc', marginTop: 2 }}>Toque para ver no mapa</div>
         </div>
@@ -438,20 +438,20 @@ export default function AdminPanel({ onSwitchMode }) {
           ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
           ['pilotos', '👥', 'Usuários', pilotos.length]
         ].map(([id, icon, lbl, cnt]) => (
-          <button key={id} style={{ display:'flex', alignItems:'center', gap:8, width:'100%', background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:10, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':'#8aad94', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3 }}
+          <button key={id} style={{ display:'flex', alignItems:'center', gap:8, width:'100%', background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':'#7ba38f', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3 }}
             onClick={() => { setTab(id); setSidebarOpen(false) }}>
             <span>{icon}</span>
             <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
-            <span style={{ background: tab===id?'#f0c040':'#1e3828', color: tab===id?'#111a14':'#6b8070', fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>
+            <span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?'#0b1210':'#5c7568', fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>
           </button>
         ))}
       </nav>
 
       <div style={{ padding:'10px 20px', borderTop:'1px solid #1e3828', borderBottom:'1px solid #1e3828', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4 }}>
         {[
-          ['Em voo', relatorios.filter(r=>r.status==='em_operacao').length, '#2da05e'],
-          ['Pausados', relatorios.filter(r=>r.status==='pausado').length, '#e8a020'],
-          ['SOS', sosAtivos.length, '#c0392b']
+          ['Em voo', relatorios.filter(r=>r.status==='em_operacao').length, '#22c476'],
+          ['Pausados', relatorios.filter(r=>r.status==='pausado').length, '#f2960f'],
+          ['SOS', sosAtivos.length, '#e5484d']
         ].map(([lbl,val,cor]) => (
           <div key={lbl} style={{ textAlign:'center' }}>
             <div style={{ fontFamily:"'Syne',sans-serif", fontSize:18, fontWeight:700, color:cor }}>{val}</div>
@@ -462,35 +462,35 @@ export default function AdminPanel({ onSwitchMode }) {
 
       <div style={{ padding:'14px 20px' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-          <div style={{ width:30, height:30, borderRadius:'50%', background:'#1a7a4a', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:13 }}>{profile?.nome?.[0]?.toUpperCase()}</div>
+          <div style={{ width:30, height:30, borderRadius:'50%', background:'#0e9f6e', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:13 }}>{profile?.nome?.[0]?.toUpperCase()}</div>
           <div>
             <div style={{ fontSize:12, fontWeight:500, color:'#fff' }}>{profile?.nome}</div>
-            <div style={{ fontSize:10, color:'#8aad94' }}>Admin</div>
+            <div style={{ fontSize:10, color:'#7ba38f' }}>Admin</div>
           </div>
         </div>
         {onSwitchMode && (
-          <button style={{ width:'100%', background:'#f0c040', border:'none', color:'#111a14', borderRadius:8, padding:'8px', fontSize:12, cursor:'pointer', fontFamily:"'Syne',sans-serif", fontWeight:700, marginBottom:8 }} onClick={onSwitchMode}>
+          <button style={{ width:'100%', background:'#ffb020', border:'none', color:'#0b1210', borderRadius:16, padding:'8px', fontSize:12, cursor:'pointer', fontFamily:"'Syne',sans-serif", fontWeight:700, marginBottom:8 }} onClick={onSwitchMode}>
             🚁 Modo Piloto
           </button>
         )}
-        <button style={{ width:'100%', background:'transparent', border:'1px solid #1e3828', color:'#4a6e56', borderRadius:8, padding:'7px', fontSize:12, cursor:'pointer' }} onClick={signOut}>Sair</button>
+        <button style={{ width:'100%', background:'transparent', border:'1px solid #1e3828', color:'#4a6e56', borderRadius:16, padding:'7px', fontSize:12, cursor:'pointer' }} onClick={signOut}>Sair</button>
         <div style={{ textAlign:'center', fontSize:10, color:'#2d4a38', marginTop:8, letterSpacing:1 }}>v3.8</div>
       </div>
     </>
   )
 
   return (
-    <div style={{ display:'flex', minHeight:'100vh', background:'#f4f8f5', fontFamily:"'DM Sans',sans-serif" }}>
+    <div style={{ display:'flex', minHeight:'100vh', background:'#f1f8f4', fontFamily:"'DM Sans',sans-serif" }}>
 
       {!isMobile && (
-        <aside style={{ width:240, background:'#111a14', display:'flex', flexDirection:'column', position:'sticky', top:0, height:'100vh', flexShrink:0, overflowY:'auto' }}>
+        <aside style={{ width:240, background:'#0b1210', display:'flex', flexDirection:'column', position:'sticky', top:0, height:'100vh', flexShrink:0, overflowY:'auto' }}>
           <NavContent />
         </aside>
       )}
 
       {isMobile && sidebarOpen && (
         <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex' }}>
-          <div style={{ width:260, background:'#111a14', display:'flex', flexDirection:'column', overflowY:'auto' }}><NavContent /></div>
+          <div style={{ width:260, background:'#0b1210', display:'flex', flexDirection:'column', overflowY:'auto' }}><NavContent /></div>
           <div style={{ flex:1, background:'rgba(0,0,0,.5)' }} onClick={() => setSidebarOpen(false)} />
         </div>
       )}
@@ -498,18 +498,18 @@ export default function AdminPanel({ onSwitchMode }) {
       <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0 }}>
 
         {isMobile && (
-          <div style={{ background:'#111a14', padding:'11px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:100 }}>
+          <div style={{ background:'#0b1210', padding:'11px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:100 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <button style={{ background:'transparent', border:'none', color:'#8aad94', fontSize:22, cursor:'pointer' }} onClick={() => setSidebarOpen(true)}>☰</button>
-              <span style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, color:'#fff' }}>Orofly<span style={{ color:'#f0c040' }}>.</span></span>
-              {sosAtivos.length > 0 && <span style={{ background:'#c0392b', color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20 }}>🆘 {sosAtivos.length}</span>}
+              <button style={{ background:'transparent', border:'none', color:'#7ba38f', fontSize:22, cursor:'pointer' }} onClick={() => setSidebarOpen(true)}>☰</button>
+              <span style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, color:'#fff' }}>Orofly<span style={{ color:'#ffb020' }}>.</span></span>
+              {sosAtivos.length > 0 && <span style={{ background:'#e5484d', color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20 }}>🆘 {sosAtivos.length}</span>}
             </div>
             <div style={{ display:'flex', gap:6 }}>
               {[['relatorios','📋'],['dashboard','📊'],['mapa','🗺️'],['inventario','📦'],['pilotos','👥']].map(([id,ic]) => (
-                <button key={id} style={{ background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontSize:16, color: tab===id?'#fff':'#8aad94' }} onClick={() => setTab(id)}>{ic}</button>
+                <button key={id} style={{ background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:16, padding:'6px 10px', cursor:'pointer', fontSize:16, color: tab===id?'#fff':'#7ba38f' }} onClick={() => setTab(id)}>{ic}</button>
               ))}
-              {onSwitchMode && <button style={{ background:'#f0c040', border:'none', borderRadius:8, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:700 }} onClick={onSwitchMode}>🚁</button>}
-              <button style={{ background:'transparent', border:'1px solid #2d4a38', color:'#8aad94', borderRadius:8, padding:'5px 10px', fontSize:11, cursor:'pointer' }} onClick={signOut}>Sair</button>
+              {onSwitchMode && <button style={{ background:'#ffb020', border:'none', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:700 }} onClick={onSwitchMode}>🚁</button>}
+              <button style={{ background:'transparent', border:'1px solid #2d4a38', color:'#7ba38f', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer' }} onClick={signOut}>Sair</button>
             </div>
           </div>
         )}
@@ -520,22 +520,22 @@ export default function AdminPanel({ onSwitchMode }) {
           {tab === 'relatorios' && (
             <div>
               <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#111a14' }}>Relatórios de Voo</div>
-                <div style={{ fontSize:12, color:'#6b8070', marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>Relatórios de Voo</div>
+                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
               </div>
 
               {sosAtivos.length > 0 && (
-                <div style={{ background:'#fdeaea', border:'2px solid #c0392b', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:'#c0392b', marginBottom:8 }}>🆘 SOS ATIVOS — {sosAtivos.length} alerta(s)</div>
+                <div style={{ background:'#fdeaea', border:'2px solid #e5484d', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:'#e5484d', marginBottom:8 }}>🆘 SOS ATIVOS — {sosAtivos.length} alerta(s)</div>
                   {sosAtivos.map(r => (
                     <div key={r.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingBottom:8, borderBottom:'1px solid #f5c6c6' }}>
                       <div>
-                        <div style={{ fontSize:13, color:'#111a14', fontWeight:600 }}>{r.piloto_nome} — {r.cliente||'sem cliente'}</div>
-                        <div style={{ fontSize:11, color:'#c0392b', marginTop:2 }}>{r.obs1}</div>
-                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ fontSize:11, color:'#c0392b', fontWeight:600 }}>📍 Ver localização</a>}
+                        <div style={{ fontSize:13, color:'#0b1210', fontWeight:600 }}>{r.piloto_nome} — {r.cliente||'sem cliente'}</div>
+                        <div style={{ fontSize:11, color:'#e5484d', marginTop:2 }}>{r.obs1}</div>
+                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ fontSize:11, color:'#e5484d', fontWeight:600 }}>📍 Ver localização</a>}
                       </div>
                       <button
-                        style={{ background:'#1a7a4a', color:'#fff', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}
+                        style={{ background:'#0e9f6e', color:'#fff', border:'none', borderRadius:16, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}
                         onClick={() => resolverSOS(r)}
                       >
                         ✅ Resolver
@@ -545,7 +545,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
 
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d0e4d8', alignItems:'center' }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d7e6dc', alignItems:'center' }}>
                 {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
@@ -559,44 +559,44 @@ export default function AdminPanel({ onSwitchMode }) {
                   <option value="rascunho">Rascunho</option>
                 </select>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>De:</span>
+                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>De:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>Até:</span>
+                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>Até:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#c0392b', borderRadius:8, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
-              {loading ? <div style={{ textAlign:'center', color:'#6b8070', padding:40 }}>Carregando...</div>
-              : filtered.length === 0 ? <div style={{ textAlign:'center', color:'#6b8070', padding:40 }}>Nenhum relatório</div>
+              {loading ? <div style={{ textAlign:'center', color:'#5c7568', padding:40 }}>Carregando...</div>
+              : filtered.length === 0 ? <div style={{ textAlign:'center', color:'#5c7568', padding:40 }}>Nenhum relatório</div>
               : isMobile ? (
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   {filtered.map(rel => {
                     const tempo = calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)
                     const isSel = selected?.id === rel.id
                     return (
-                      <div key={rel.id} style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#c0392b':isSel?'#1a7a4a':'#d0e4d8'}`, overflow:'hidden' }}>
+                      <div key={rel.id} style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#e5484d':isSel?'#0e9f6e':'#d7e6dc'}`, overflow:'hidden' }}>
                         <div style={{ padding:'13px 15px', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
                           <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                            <div style={{ fontWeight:600, fontSize:14, color:'#111a14' }}>{rel.cliente||'—'}</div>
-                            <span style={{ background: STATUS_BG[rel.status]||'#f4f8f5', color: STATUS_COLOR[rel.status]||'#6b8070', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                            <div style={{ fontWeight:600, fontSize:14, color:'#0b1210' }}>{rel.cliente||'—'}</div>
+                            <span style={{ background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                           </div>
-                          <div style={{ fontSize:12, color:'#6b8070' }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}</div>
+                          <div style={{ fontSize:12, color:'#5c7568' }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}</div>
                           <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}</div>
                         </div>
                         {isSel && (
-                          <div style={{ padding:'10px 15px', borderTop:'1px solid #f0f4f1', background:'#f9fbfa' }}>
+                          <div style={{ padding:'10px 15px', borderTop:'1px solid #eef5f0', background:'#f7fbf8' }}>
                             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: (rel.kml_arquivos?.length > 0) ? 10 : 0 }}>
-                              <button style={sG.actBtn('#185fa5')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
-                              <button style={sG.actBtn('#111a14')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'interno') }}>📄 PDF</button>
-                              <button style={sG.actBtn('#2da05e')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢 Cliente</button>
+                              <button style={sG.actBtn('#2f6fed')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
+                              <button style={sG.actBtn('#0b1210')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'interno') }}>📄 PDF</button>
+                              <button style={sG.actBtn('#22c476')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢 Cliente</button>
                               <button style={sG.actBtn('#1a5fa5')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝 Word</button>
-                              {rel.gps_lat && <a style={{ ...sG.actBtn('#1a7a4a'), textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer">🗺️</a>}
-                              <button style={sG.actBtn('#c0392b')} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
+                              {rel.gps_lat && <a style={{ ...sG.actBtn('#0e9f6e'), textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer">🗺️</a>}
+                              <button style={sG.actBtn('#e5484d')} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
                             </div>
                             {/* KML no mobile */}
                             {rel.kml_arquivos?.length > 0 && (
@@ -609,13 +609,13 @@ export default function AdminPanel({ onSwitchMode }) {
                   })}
                 </div>
               ) : (
-                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d0e4d8', overflow:'hidden' }}>
+                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden' }}>
                   <div style={{ overflowX:'auto' }}>
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead>
-                        <tr style={{ background:'#f4f8f5' }}>
+                        <tr style={{ background:'#f1f8f4' }}>
                           {['Cliente','Fazenda','Piloto','Drone','Status','Data','Tempo','Ações'].map(h => (
-                            <th key={h} style={{ padding:'11px 14px', textAlign:'left', fontSize:11, fontWeight:700, color:'#6b8070', letterSpacing:0.5, borderBottom:'1px solid #d0e4d8', whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>{h}</th>
+                            <th key={h} style={{ padding:'11px 14px', textAlign:'left', fontSize:11, fontWeight:700, color:'#5c7568', letterSpacing:0.5, borderBottom:'1px solid #d7e6dc', whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -625,26 +625,26 @@ export default function AdminPanel({ onSwitchMode }) {
                           const isSel = selected?.id === rel.id
                           return (
                             <React.Fragment key={rel.id}>
-                              <tr style={{ background: rel.status==='sos'?'#fdeaea':isSel?'#e8f5ee':i%2===0?'#fff':'#f9fbfa', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
+                              <tr style={{ background: rel.status==='sos'?'#fdeaea':isSel?'#e3f7ec':i%2===0?'#fff':'#f7fbf8', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
                                 <td style={{ ...sG.td, fontWeight:600 }}>{rel.cliente||'—'}</td>
                                 <td style={sG.td}>{rel.fazenda||'—'}</td>
                                 <td style={sG.td}>{rel.piloto_nome||'—'}</td>
                                 <td style={sG.td}>{rel.drone||'—'}</td>
-                                <td style={sG.td}><span style={{ background: STATUS_BG[rel.status]||'#f4f8f5', color: STATUS_COLOR[rel.status]||'#6b8070', fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
+                                <td style={sG.td}><span style={{ background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
                                 <td style={sG.td}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</td>
-                                <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:'#6b8070' }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
+                                <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:'#5c7568' }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
                                   <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
                                   <button title="PDF Técnico" style={sG.iconBtn} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'interno') }}>📄</button>
-                                  <button title="PDF Cliente" style={{...sG.iconBtn,color:'#2da05e'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
-                                  <button title="Word / Google Docs" style={{...sG.iconBtn,color:'#185fa5'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝</button>
+                                  <button title="PDF Cliente" style={{...sG.iconBtn,color:'#22c476'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
+                                  <button title="Word / Google Docs" style={{...sG.iconBtn,color:'#2f6fed'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝</button>
                                   {rel.gps_lat && <a title="Maps" style={{ ...sG.iconBtn, textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>🗺️</a>}
-                                  <button title="Deletar" style={{ ...sG.iconBtn, color:'#c0392b' }} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
+                                  <button title="Deletar" style={{ ...sG.iconBtn, color:'#e5484d' }} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
                                 </td>
                               </tr>
                               {isSel && (
                                 <tr>
-                                  <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:'2px solid #d0e4d8', padding:0 }}>
+                                  <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:'2px solid #d7e6dc', padding:0 }}>
                                     <div style={{ display:'flex', gap:20, padding:'16px 20px', flexWrap:'wrap' }}>
                                       <DetailCol title="Localização" items={[['Local',rel.localizacao],['GPS',rel.gps_lat?`${rel.gps_lat}, ${rel.gps_lng}`:'—']]} />
                                       <DetailCol title="Cond. Início" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_i']])} />
@@ -823,15 +823,15 @@ export default function AdminPanel({ onSwitchMode }) {
               })
             })
 
-            const COLORS = ['#1a7a4a','#2da05e','#f0c040','#185fa5','#8e44ad','#e8a020','#c0392b','#6b8070']
+            const COLORS = ['#0e9f6e','#22c476','#ffb020','#2f6fed','#8e44ad','#f2960f','#e5484d','#5c7568']
 
-            const Card = ({title,value,sub,color='#1a7a4a',icon}) => (
-              <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+            const Card = ({title,value,sub,color='#0e9f6e',icon}) => (
+              <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                   <div>
-                    <div style={{fontSize:11,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
+                    <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
                     <div style={{fontSize:isMobile?22:28,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1}}>{value}</div>
-                    {sub&&<div style={{fontSize:11,color:'#8aad94',marginTop:4}}>{sub}</div>}
+                    {sub&&<div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>{sub}</div>}
                   </div>
                   {icon&&<div style={{fontSize:28,opacity:.7}}>{icon}</div>}
                 </div>
@@ -840,7 +840,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
             const SecTitle = ({children,action}) => (
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#111a14'}}>{children}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210'}}>{children}</div>
                 {action}
               </div>
             )
@@ -848,20 +848,20 @@ export default function AdminPanel({ onSwitchMode }) {
             return (
               <div>
                 {/* ── FILTROS ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'16px',marginBottom:16}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,marginBottom:12,color:'#111a14'}}>🔍 Filtros</div>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',marginBottom:16}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,marginBottom:12,color:'#0b1210'}}>🔍 Filtros</div>
                   {/* Período */}
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
                     {[['hoje','Hoje'],['semana','7 dias'],['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano'],['custom','Personalizado']].map(([v,l])=>(
-                      <button key={v} style={{background:dashPeriodo===v?'#1a7a4a':'#f4f8f5',color:dashPeriodo===v?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                      <button key={v} style={{background:dashPeriodo===v?'#0e9f6e':'#f1f8f4',color:dashPeriodo===v?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                         onClick={()=>setDashPeriodo(v)}>{l}</button>
                     ))}
                   </div>
                   {dashPeriodo==='custom'&&(
                     <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
-                      <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataIni} onChange={e=>setDashDataIni(e.target.value)}/>
-                      <span style={{alignSelf:'center',color:'#8aad94'}}>até</span>
-                      <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataFim} onChange={e=>setDashDataFim(e.target.value)}/>
+                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataIni} onChange={e=>setDashDataIni(e.target.value)}/>
+                      <span style={{alignSelf:'center',color:'#7ba38f'}}>até</span>
+                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataFim} onChange={e=>setDashDataFim(e.target.value)}/>
                     </div>
                   )}
                   {/* Multi-select filters */}
@@ -874,8 +874,8 @@ export default function AdminPanel({ onSwitchMode }) {
                       ['Produtos',dashProdutos,setDashProdutos,[...new Set(relatorios.flatMap(r=>(r.produtos||[]).map(p=>p.split(' - ')[0])).filter(Boolean))].sort()],
                     ].map(([lbl,sel,setSel,opts])=>(
                       <div key={lbl}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#8aad94',marginBottom:3}}>{lbl.toUpperCase()}</div>
-                        <select multiple style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'6px',fontSize:12,outline:'none',height:72,color:'#111a14',boxSizing:'border-box'}}
+                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:3}}>{lbl.toUpperCase()}</div>
+                        <select multiple style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'6px',fontSize:12,outline:'none',height:72,color:'#0b1210',boxSizing:'border-box'}}
                           value={sel} onChange={e=>setSel(Array.from(e.target.selectedOptions,o=>o.value))}>
                           {opts.map(o=><option key={o} value={o}>{o}</option>)}
                         </select>
@@ -883,7 +883,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     ))}
                   </div>
                   {(dashClientes.length||dashPilotos.length||dashDrones.length||dashFazendas.length||dashProdutos.length)>0&&(
-                    <button style={{marginTop:8,background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:8,padding:'4px 12px',fontSize:12,cursor:'pointer'}}
+                    <button style={{marginTop:8,background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'4px 12px',fontSize:12,cursor:'pointer'}}
                       onClick={()=>{setDashClientes([]);setDashPilotos([]);setDashDrones([]);setDashFazendas([]);setDashProdutos([])}}>✕ Limpar filtros</button>
                   )}
                 </div>
@@ -891,17 +891,17 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* ── KPIs ── */}
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
                   <Card title="ÁREA APLICADA" value={totalArea.toFixed(1)+' ha'} sub={`${totalVoos} voos`} icon="📐"/>
-                  <Card title="HORAS VOADAS" value={fmtH(totalMins)} sub={`${eficiencia} ha/h eficiência`} color="#185fa5" icon="⏱️"/>
+                  <Card title="HORAS VOADAS" value={fmtH(totalMins)} sub={`${eficiencia} ha/h eficiência`} color="#2f6fed" icon="⏱️"/>
                   <Card title="PILOTOS ATIVOS" value={Object.keys(pilotoStats).length} sub="no período" color="#8e44ad" icon="👨‍✈️"/>
-                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
-                    <div style={{fontSize:11,fontWeight:600,color:'#8aad94',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>💰 PREÇO / HA</div>
+                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+                    <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>💰 PREÇO / HA</div>
                     <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                      <span style={{fontSize:13,color:'#6b8070',fontWeight:600}}>R$</span>
+                      <span style={{fontSize:13,color:'#5c7568',fontWeight:600}}>R$</span>
                       <input
                         type="number"
                         value={precoHa||''}
                         placeholder="0,00"
-                        style={{flex:1,border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:18,fontWeight:700,color:'#e8a020',outline:'none',textAlign:'right',width:'100%'}}
+                        style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:18,fontWeight:700,color:'#f2960f',outline:'none',textAlign:'right',width:'100%'}}
                         onChange={e=>{
                           const v=parseFloat(e.target.value)||0
                           setPrecoHa(v)
@@ -909,35 +909,35 @@ export default function AdminPanel({ onSwitchMode }) {
                         }}/>
                     </div>
                     {precoHa>0
-                      ? <div style={{fontSize:11,color:'#1a7a4a',fontWeight:600}}>= {(totalArea*precoHa).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
-                      : <div style={{fontSize:10,color:'#8aad94'}}>Digite o valor por hectare</div>
+                      ? <div style={{fontSize:11,color:'#0e9f6e',fontWeight:600}}>= {(totalArea*precoHa).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+                      : <div style={{fontSize:10,color:'#7ba38f'}}>Digite o valor por hectare</div>
                     }
                   </div>
                 </div>
 
                 {/* ── KPIs SECUNDÁRIOS ── */}
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
-                  <Card title="PROJEÇÃO MÊS" value={projecaoMes+' ha'} sub={`+${projecaoRestante} ha previstos`} color="#2da05e" icon="📈"/>
-                  <Card title="MÉDIA DIÁRIA" value={ritmoHa.toFixed(1)+' ha/dia'} sub="no período" color="#185fa5" icon="📅"/>
-                  <Card title="MÉDIA POR VOO" value={totalVoos>0?(totalArea/totalVoos).toFixed(1)+' ha':'—'} sub="eficiência/voo" color="#e8a020" icon="✈️"/>
-                  <Card title="DRONES EM USO" value={Object.keys(droneStats).length} sub={`${relatorios.filter(r=>r.status==='em_operacao').length} voando agora`} color="#c0392b" icon="🚁"/>
+                  <Card title="PROJEÇÃO MÊS" value={projecaoMes+' ha'} sub={`+${projecaoRestante} ha previstos`} color="#22c476" icon="📈"/>
+                  <Card title="MÉDIA DIÁRIA" value={ritmoHa.toFixed(1)+' ha/dia'} sub="no período" color="#2f6fed" icon="📅"/>
+                  <Card title="MÉDIA POR VOO" value={totalVoos>0?(totalArea/totalVoos).toFixed(1)+' ha':'—'} sub="eficiência/voo" color="#f2960f" icon="✈️"/>
+                  <Card title="DRONES EM USO" value={Object.keys(droneStats).length} sub={`${relatorios.filter(r=>r.status==='em_operacao').length} voando agora`} color="#e5484d" icon="🚁"/>
                 </div>
 
                 {/* ── ÚLTIMOS VOOS — clique abre o relatório na aba Relatórios ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
                   <SecTitle>🗂️ Últimos Voos</SecTitle>
-                  {rel.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem voos no período</div> : (
+                  {rel.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem voos no período</div> : (
                     <div style={{display:'flex',flexDirection:'column',gap:6}}>
                       {[...rel].sort((a,b)=>new Date(b.dt_inicio||b.created_at)-new Date(a.dt_inicio||a.created_at)).slice(0,8).map(r=>(
                         <div key={r.id} onClick={()=>{setSelected(r);setTab('relatorios')}}
-                          style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',borderRadius:10,background:'#f9fbfa',border:'1px solid #f0f4f1',cursor:'pointer'}}>
+                          style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',borderRadius:10,background:'#f7fbf8',border:'1px solid #eef5f0',cursor:'pointer'}}>
                           <div>
-                            <div style={{fontSize:13,fontWeight:600,color:'#111a14'}}>{r.cliente||'—'} — {r.fazenda||'—'}</div>
-                            <div style={{fontSize:11,color:'#8aad94',marginTop:2}}>{r.piloto_nome} · {r.dt_inicio?new Date(r.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div>
+                            <div style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{r.cliente||'—'} — {r.fazenda||'—'}</div>
+                            <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{r.piloto_nome} · {r.dt_inicio?new Date(r.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div>
                           </div>
                           <div style={{display:'flex',alignItems:'center',gap:10}}>
-                            <span style={{fontSize:12,fontWeight:600,color:'#1a7a4a'}}>{r.area_ha?`${r.area_ha} ha`:'—'}</span>
-                            <span style={{color:'#8aad94'}}>›</span>
+                            <span style={{fontSize:12,fontWeight:600,color:'#0e9f6e'}}>{r.area_ha?`${r.area_ha} ha`:'—'}</span>
+                            <span style={{color:'#7ba38f'}}>›</span>
                           </div>
                         </div>
                       ))}
@@ -946,22 +946,22 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── GRÁFICO TIMELINE ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
                   <SecTitle>📈 Área Aplicada ao Longo do Tempo (ha)</SecTitle>
-                  {areaTimeline.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                  {areaTimeline.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
                     <ResponsiveContainer width="100%" height={200}>
                       <AreaChart data={areaTimeline} margin={{top:5,right:10,left:-20,bottom:5}}>
                         <defs>
                           <linearGradient id="gradArea" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#1a7a4a" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#1a7a4a" stopOpacity={0}/>
+                            <stop offset="5%" stopColor="#0e9f6e" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#0e9f6e" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
-                        <XAxis dataKey="dia" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false}/>
-                        <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
-                        <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
-                        <Area type="monotone" dataKey="area" stroke="#1a7a4a" strokeWidth={2} fill="url(#gradArea)"/>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                        <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false}/>
+                        <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                        <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                        <Area type="monotone" dataKey="area" stroke="#0e9f6e" strokeWidth={2} fill="url(#gradArea)"/>
                       </AreaChart>
                     </ResponsiveContainer>
                   )}
@@ -969,23 +969,23 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* ── GRÁFICOS CLIENTES + PRODUTOS ── */}
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16,marginBottom:16}}>
-                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px'}}>
+                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px'}}>
                     <SecTitle>🏢 Área por Cliente (ha)</SecTitle>
-                    {topClientes.length===0 ? <div style={{color:'#8aad94',fontSize:13}}>Sem dados</div> : (
+                    {topClientes.length===0 ? <div style={{color:'#7ba38f',fontSize:13}}>Sem dados</div> : (
                       <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={topClientes} layout="vertical" margin={{top:0,right:10,left:10,bottom:0}}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1" horizontal={false}/>
-                          <XAxis type="number" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
-                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#6b8070'}} tickLine={false} width={70}/>
-                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
-                          <Bar dataKey="value" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0" horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#5c7568'}} tickLine={false} width={70}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <Bar dataKey="value" fill="#0e9f6e" radius={[0,6,6,0]}/>
                         </BarChart>
                       </ResponsiveContainer>
                     )}
                   </div>
-                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px'}}>
+                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px'}}>
                     <SecTitle>🧪 Produtos Mais Aplicados (ha)</SecTitle>
-                    {topProdutos.length===0 ? <div style={{color:'#8aad94',fontSize:13}}>Sem dados</div> : (
+                    {topProdutos.length===0 ? <div style={{color:'#7ba38f',fontSize:13}}>Sem dados</div> : (
                       <ResponsiveContainer width="100%" height={200}>
                         <PieChart>
                           <Pie data={topProdutos} cx="50%" cy="50%" outerRadius={75} dataKey="value" nameKey="name" label={({name,percent})=>`${name} ${(percent*100).toFixed(0)}%`} labelLine={false} fontSize={9}>
@@ -999,39 +999,39 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── RANKING FAZENDAS ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
                   <SecTitle>🌾 Área por Fazenda</SecTitle>
-                  {rankingFazendas.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                  {rankingFazendas.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
                     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
                       <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={fazendasChart} layout="vertical" margin={{top:0,right:10,left:10,bottom:0}}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1" horizontal={false}/>
-                          <XAxis type="number" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
-                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#6b8070'}} tickLine={false} width={90}/>
-                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
-                          <Bar dataKey="value" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0" horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#5c7568'}} tickLine={false} width={90}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <Bar dataKey="value" fill="#0e9f6e" radius={[0,6,6,0]}/>
                         </BarChart>
                       </ResponsiveContainer>
                       <div style={{overflowX:'auto'}}>
                         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                           <thead>
-                            <tr style={{background:'#f4f8f5'}}>
+                            <tr style={{background:'#f1f8f4'}}>
                               {['#','Fazenda','Cliente','Voos','ha','% total'].map(h=>(
-                                <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                                <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {rankingFazendas.map(([nome,s],i)=>(
-                              <tr key={nome} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
-                                <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#f0c040':i===1?'#aaa':i===2?'#cd7f32':'#8aad94'}}>
+                              <tr key={nome} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
+                                <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':'#7ba38f'}}>
                                   {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}
                                 </td>
                                 <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
-                                <td style={{padding:'8px 10px',color:'#6b8070'}}>{s.cliente}</td>
-                                <td style={{padding:'8px 10px',color:'#6b8070'}}>{s.voos}</td>
-                                <td style={{padding:'8px 10px',fontWeight:700,color:'#1a7a4a'}}>{s.area.toFixed(1)}</td>
-                                <td style={{padding:'8px 10px',color:'#6b8070'}}>{totalArea>0?((s.area/totalArea)*100).toFixed(0):0}%</td>
+                                <td style={{padding:'8px 10px',color:'#5c7568'}}>{s.cliente}</td>
+                                <td style={{padding:'8px 10px',color:'#5c7568'}}>{s.voos}</td>
+                                <td style={{padding:'8px 10px',fontWeight:700,color:'#0e9f6e'}}>{s.area.toFixed(1)}</td>
+                                <td style={{padding:'8px 10px',color:'#5c7568'}}>{totalArea>0?((s.area/totalArea)*100).toFixed(0):0}%</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1042,19 +1042,19 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── RANKING PILOTOS ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
                   <SecTitle>🏆 Performance de Pilotos</SecTitle>
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
                     <div>
-                      <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>ÁREA VOADA (ha)</div>
+                      <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>ÁREA VOADA (ha)</div>
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={pilotosChart} margin={{top:0,right:0,left:-30,bottom:0}}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
-                          <XAxis dataKey="name" tick={{fontSize:10,fill:'#6b8070'}} tickLine={false}/>
-                          <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
-                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                          <XAxis dataKey="name" tick={{fontSize:10,fill:'#5c7568'}} tickLine={false}/>
+                          <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
                           <Bar dataKey="area" radius={[6,6,0,0]}>
-                            {pilotosChart.map((_,i)=><Cell key={i} fill={i===0?'#f0c040':i===1?'#aaa':i===2?'#cd7f32':COLORS[0]}/>)}
+                            {pilotosChart.map((_,i)=><Cell key={i} fill={i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':COLORS[0]}/>)}
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
@@ -1062,22 +1062,22 @@ export default function AdminPanel({ onSwitchMode }) {
                     <div style={{overflowX:'auto'}}>
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                         <thead>
-                          <tr style={{background:'#f4f8f5'}}>
+                          <tr style={{background:'#f1f8f4'}}>
                             {['#','Piloto','Voos','ha','ha/h'].map(h=>(
-                              <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                              <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {rankingPilotos.map(([nome,st],i)=>(
-                            <tr key={nome} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
-                              <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#f0c040':i===1?'#aaa':i===2?'#cd7f32':'#8aad94'}}>
+                            <tr key={nome} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':'#7ba38f'}}>
                                 {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}
                               </td>
                               <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
-                              <td style={{padding:'8px 10px',color:'#6b8070'}}>{st.voos}</td>
-                              <td style={{padding:'8px 10px',fontWeight:700,color:'#1a7a4a'}}>{st.area.toFixed(1)}</td>
-                              <td style={{padding:'8px 10px',color:'#6b8070'}}>{st.minutos>0?(st.area/(st.minutos/60)).toFixed(1):'—'}</td>
+                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.voos}</td>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:'#0e9f6e'}}>{st.area.toFixed(1)}</td>
+                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.minutos>0?(st.area/(st.minutos/60)).toFixed(1):'—'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1087,24 +1087,24 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── HEATMAP DIAS DA SEMANA ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
                   <SecTitle>📅 Produtividade por Dia da Semana</SecTitle>
                   <ResponsiveContainer width="100%" height={120}>
                     <BarChart data={heatData} margin={{top:5,right:10,left:-30,bottom:5}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
-                      <XAxis dataKey="dia" tick={{fontSize:11,fill:'#6b8070'}} tickLine={false}/>
-                      <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
-                      <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={(v)=>[v,'Voos']}/>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                      <XAxis dataKey="dia" tick={{fontSize:11,fill:'#5c7568'}} tickLine={false}/>
+                      <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                      <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v,'Voos']}/>
                       <Bar dataKey="voos" radius={[6,6,0,0]}>
-                        {heatData.map((entry,i)=><Cell key={i} fill={entry.voos===Math.max(...heatData.map(d=>d.voos))?'#f0c040':'#1a7a4a'}/>)}
+                        {heatData.map((entry,i)=><Cell key={i} fill={entry.voos===Math.max(...heatData.map(d=>d.voos))?'#ffb020':'#0e9f6e'}/>)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                  <div style={{fontSize:11,color:'#8aad94',textAlign:'center',marginTop:4}}>⭐ Dia mais produtivo: {heatData.reduce((a,b)=>a.voos>b.voos?a:b,{voos:0,dia:'—'}).dia}</div>
+                  <div style={{fontSize:11,color:'#7ba38f',textAlign:'center',marginTop:4}}>⭐ Dia mais produtivo: {heatData.reduce((a,b)=>a.voos>b.voos?a:b,{voos:0,dia:'—'}).dia}</div>
                 </div>
 
                 {/* ── DRONES + MANUTENÇÃO ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
                   <SecTitle>🚁 Controle de Horas por Drone</SecTitle>
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
                     {Object.entries(droneStats).sort((a,b)=>b[1].minutos-a[1].minutos).map(([drone,st])=>{
@@ -1112,68 +1112,68 @@ export default function AdminPanel({ onSwitchMode }) {
                       const limite=droneHorasLimite[drone]||100
                       const pct=Math.min(100,(horas/limite)*100)
                       const alerta=pct>=90, aviso=pct>=70&&pct<90
-                      const cor=alerta?'#c0392b':aviso?'#e8a020':'#1a7a4a'
+                      const cor=alerta?'#e5484d':aviso?'#f2960f':'#0e9f6e'
                       // Previsão de quando vai bater o limite
                       const horasPorVoo = st.voos>0 ? horas/st.voos : 0
                       const voosRestantes = horasPorVoo>0 ? Math.floor((limite-horas)/horasPorVoo) : null
                       return (
-                        <div key={drone} style={{background:alerta?'#fdeaea':aviso?'#fdf3e0':'#f9fbfa',borderRadius:10,padding:'12px 14px',border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#e0ecea'}`}}>
+                        <div key={drone} style={{background:alerta?'#fdeaea':aviso?'#fdf3e0':'#f7fbf8',borderRadius:10,padding:'12px 14px',border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#dcebe3'}`}}>
                           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
                             <div>
                               <span style={{fontWeight:600,fontSize:14}}>{drone}</span>
-                              {alerta&&<span style={{marginLeft:8,background:'#c0392b',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
-                              {aviso&&!alerta&&<span style={{marginLeft:8,background:'#e8a020',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
-                              {voosRestantes!==null&&!alerta&&<span style={{marginLeft:8,fontSize:11,color:'#8aad94'}}>~{voosRestantes} voos para manutenção</span>}
+                              {alerta&&<span style={{marginLeft:8,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
+                              {aviso&&!alerta&&<span style={{marginLeft:8,background:'#f2960f',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
+                              {voosRestantes!==null&&!alerta&&<span style={{marginLeft:8,fontSize:11,color:'#7ba38f'}}>~{voosRestantes} voos para manutenção</span>}
                             </div>
                             <div style={{display:'flex',alignItems:'center',gap:8}}>
                               <span style={{fontWeight:700,color:cor}}>{fmtH(st.minutos)}</span>
-                              <span style={{color:'#8aad94',fontSize:12}}>/</span>
-                              <input type="number" value={limite} min={1} style={{width:60,border:'1px solid #d0e4d8',borderRadius:6,padding:'3px 6px',fontSize:12,textAlign:'center',outline:'none'}}
+                              <span style={{color:'#7ba38f',fontSize:12}}>/</span>
+                              <input type="number" value={limite} min={1} style={{width:60,border:'1px solid #d7e6dc',borderRadius:6,padding:'3px 6px',fontSize:12,textAlign:'center',outline:'none'}}
                                 onChange={e=>{const n={...droneHorasLimite,[drone]:parseInt(e.target.value)||100};setDroneHorasLimite(n);localStorage.setItem('orofly_drone_horas',JSON.stringify(n))}}/>
-                              <span style={{fontSize:11,color:'#8aad94'}}>h</span>
+                              <span style={{fontSize:11,color:'#7ba38f'}}>h</span>
                             </div>
                           </div>
                           <div style={{background:'#e0e0e0',borderRadius:20,height:8,overflow:'hidden'}}>
                             <div style={{background:`linear-gradient(90deg,${cor},${cor}bb)`,height:'100%',borderRadius:20,width:`${pct}%`,transition:'width .5s'}}/>
                           </div>
-                          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#8aad94',marginTop:4}}>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#7ba38f',marginTop:4}}>
                             <span>{st.voos} voos registrados</span>
                             <span>{pct.toFixed(0)}% do limite</span>
                           </div>
                         </div>
                       )
                     })}
-                    {Object.keys(droneStats).length===0&&<div style={{color:'#8aad94',fontSize:13}}>Nenhum dado de drone ainda</div>}
+                    {Object.keys(droneStats).length===0&&<div style={{color:'#7ba38f',fontSize:13}}>Nenhum dado de drone ainda</div>}
                   </div>
                 </div>
 
                 {/* ── WORKING DAYS + FORECAST SEMANAL ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:'20px',marginBottom:16}}>
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
                   <SecTitle>📅 Working Days &amp; Forecast Mensal</SecTitle>
 
                   {/* Config */}
-                  <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16,padding:'12px',background:'#f4f8f5',borderRadius:10}}>
+                  <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16,padding:'12px',background:'#f1f8f4',borderRadius:10}}>
                     <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                      <label style={{fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>DIAS ÚTEIS/ANO</label>
-                      <input type="number" value={workingDaysAnual} style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,width:80,outline:'none',textAlign:'center'}}
+                      <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>DIAS ÚTEIS/ANO</label>
+                      <input type="number" value={workingDaysAnual} style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,width:80,outline:'none',textAlign:'center'}}
                         onChange={e=>{const v=parseInt(e.target.value)||144;setWorkingDaysAnual(v);localStorage.setItem('orofly_working_days',v)}}/>
-                      <span style={{fontSize:10,color:'#8aad94'}}>≈ {workingDaysMes} dias/mês</span>
+                      <span style={{fontSize:10,color:'#7ba38f'}}>≈ {workingDaysMes} dias/mês</span>
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                      <label style={{fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>META MENSAL (ha)</label>
-                      <input type="number" value={metaMensalHa||''} placeholder="Ex: 5000" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'6px 10px',fontSize:13,width:100,outline:'none',textAlign:'center'}}
+                      <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>META MENSAL (ha)</label>
+                      <input type="number" value={metaMensalHa||''} placeholder="Ex: 5000" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,width:100,outline:'none',textAlign:'center'}}
                         onChange={e=>{const v=parseFloat(e.target.value)||0;setMetaMensalHa(v);localStorage.setItem('orofly_meta_mensal',v)}}/>
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:4,justifyContent:'flex-end'}}>
-                      <div style={{fontSize:12,color:'#6b8070'}}>Working days decorridos: <strong style={{color:'#1a7a4a'}}>{workingDaysDecorridos}</strong></div>
-                      <div style={{fontSize:12,color:'#6b8070'}}>Working days restantes: <strong style={{color:'#185fa5'}}>{workingDaysRestantes}</strong></div>
-                      <div style={{fontSize:12,color:'#6b8070'}}>ha/dia útil: <strong style={{color:'#1a7a4a'}}>{haPerWorkingDay.toFixed(1)}</strong></div>
+                      <div style={{fontSize:12,color:'#5c7568'}}>Working days decorridos: <strong style={{color:'#0e9f6e'}}>{workingDaysDecorridos}</strong></div>
+                      <div style={{fontSize:12,color:'#5c7568'}}>Working days restantes: <strong style={{color:'#2f6fed'}}>{workingDaysRestantes}</strong></div>
+                      <div style={{fontSize:12,color:'#5c7568'}}>ha/dia útil: <strong style={{color:'#0e9f6e'}}>{haPerWorkingDay.toFixed(1)}</strong></div>
                     </div>
                     {taxaAtingimentoMeta && (
                       <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,marginLeft:'auto'}}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif"}}>PREVISÃO META</div>
-                        <div style={{fontSize:28,fontWeight:700,color:parseInt(taxaAtingimentoMeta)>=100?'#1a7a4a':parseInt(taxaAtingimentoMeta)>=70?'#e8a020':'#c0392b',fontFamily:"'Syne',sans-serif"}}>{taxaAtingimentoMeta}%</div>
-                        <div style={{fontSize:10,color:'#8aad94'}}>{projecaoWorkingDay} / {metaMensalHa} ha</div>
+                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>PREVISÃO META</div>
+                        <div style={{fontSize:28,fontWeight:700,color:parseInt(taxaAtingimentoMeta)>=100?'#0e9f6e':parseInt(taxaAtingimentoMeta)>=70?'#f2960f':'#e5484d',fontFamily:"'Syne',sans-serif"}}>{taxaAtingimentoMeta}%</div>
+                        <div style={{fontSize:10,color:'#7ba38f'}}>{projecaoWorkingDay} / {metaMensalHa} ha</div>
                       </div>
                     )}
                   </div>
@@ -1182,9 +1182,9 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{overflowX:'auto'}}>
                     <table style={{width:'100%',borderCollapse:'collapse',minWidth:400}}>
                       <thead>
-                        <tr style={{background:'#f4f8f5'}}>
+                        <tr style={{background:'#f1f8f4'}}>
                           {['Semana','Período','Realizado (ha)','Planejado (ha)','% Meta','Status'].map(h=>(
-                            <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
+                            <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1192,19 +1192,19 @@ export default function AdminPanel({ onSwitchMode }) {
                         {semanas.map(({s,label,iniSem,fimSem,realizado,planejado,isCurrent,isPast})=>{
                           const pct = planejado>0 ? ((realizado/planejado)*100).toFixed(0) : '—'
                           const pctNum = parseInt(pct)
-                          const corPct = pctNum>=100?'#1a7a4a':pctNum>=70?'#e8a020':'#c0392b'
+                          const corPct = pctNum>=100?'#0e9f6e':pctNum>=70?'#f2960f':'#e5484d'
                           const fmtSemData = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`
                           return (
-                            <tr key={s} style={{background:isCurrent?'#e8f5ee':s%2===0?'#f9fbfa':'#fff',fontWeight:isCurrent?600:400}}>
+                            <tr key={s} style={{background:isCurrent?'#e3f7ec':s%2===0?'#f7fbf8':'#fff',fontWeight:isCurrent?600:400}}>
                               <td style={{padding:'9px 10px',fontSize:13}}>
-                                <span style={{background:isCurrent?'#1a7a4a':isPast?'#d0e4d8':'#f4f8f5',color:isCurrent?'#fff':isPast?'#6b8070':'#8aad94',padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:700}}>{label}</span>
-                                {isCurrent&&<span style={{marginLeft:6,fontSize:10,color:'#1a7a4a'}}>← atual</span>}
+                                <span style={{background:isCurrent?'#0e9f6e':isPast?'#d7e6dc':'#f1f8f4',color:isCurrent?'#fff':isPast?'#5c7568':'#7ba38f',padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:700}}>{label}</span>
+                                {isCurrent&&<span style={{marginLeft:6,fontSize:10,color:'#0e9f6e'}}>← atual</span>}
                               </td>
-                              <td style={{padding:'9px 10px',fontSize:12,color:'#6b8070'}}>{fmtSemData(iniSem)} – {fmtSemData(fimSem)}</td>
-                              <td style={{padding:'9px 10px',fontSize:14,fontWeight:700,color:isPast||isCurrent?'#111a14':'#aaa'}}>
+                              <td style={{padding:'9px 10px',fontSize:12,color:'#5c7568'}}>{fmtSemData(iniSem)} – {fmtSemData(fimSem)}</td>
+                              <td style={{padding:'9px 10px',fontSize:14,fontWeight:700,color:isPast||isCurrent?'#0b1210':'#aaa'}}>
                                 {isPast||isCurrent ? realizado : <span style={{color:'#ccc'}}>—</span>}
                               </td>
-                              <td style={{padding:'9px 10px',fontSize:13,color:'#6b8070'}}>{planejado}</td>
+                              <td style={{padding:'9px 10px',fontSize:13,color:'#5c7568'}}>{planejado}</td>
                               <td style={{padding:'9px 10px'}}>
                                 {(isPast||isCurrent)&&pct!=='—'&&(
                                   <div>
@@ -1222,11 +1222,11 @@ export default function AdminPanel({ onSwitchMode }) {
                           )
                         })}
                         {/* Total */}
-                        <tr style={{background:'#f4f8f5',fontWeight:700,borderTop:'2px solid #d0e4d8'}}>
-                          <td colSpan={2} style={{padding:'10px',fontSize:12,fontFamily:"'Syne',sans-serif",color:'#111a14'}}>TOTAL DO MÊS</td>
-                          <td style={{padding:'10px',fontSize:14,color:'#1a7a4a'}}>{totalArea.toFixed(1)}</td>
-                          <td style={{padding:'10px',fontSize:13,color:'#6b8070'}}>{metaMensalHa||projecaoMes}</td>
-                          <td colSpan={2} style={{padding:'10px',fontSize:13,color:taxaAtingimentoMeta&&parseInt(taxaAtingimentoMeta)>=100?'#1a7a4a':'#e8a020'}}>
+                        <tr style={{background:'#f1f8f4',fontWeight:700,borderTop:'2px solid #d7e6dc'}}>
+                          <td colSpan={2} style={{padding:'10px',fontSize:12,fontFamily:"'Syne',sans-serif",color:'#0b1210'}}>TOTAL DO MÊS</td>
+                          <td style={{padding:'10px',fontSize:14,color:'#0e9f6e'}}>{totalArea.toFixed(1)}</td>
+                          <td style={{padding:'10px',fontSize:13,color:'#5c7568'}}>{metaMensalHa||projecaoMes}</td>
+                          <td colSpan={2} style={{padding:'10px',fontSize:13,color:taxaAtingimentoMeta&&parseInt(taxaAtingimentoMeta)>=100?'#0e9f6e':'#f2960f'}}>
                             {taxaAtingimentoMeta ? `Previsão: ${taxaAtingimentoMeta}% da meta` : `Projeção: ${projecaoMes} ha`}
                           </td>
                         </tr>
@@ -1236,17 +1236,17 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── ANÁLISE PREDITIVA ── */}
-                <div style={{background:'linear-gradient(135deg,#111a14,#1a7a4a)',borderRadius:14,padding:'20px',marginBottom:16,color:'#fff'}}>
+                <div style={{background:'linear-gradient(135deg,#0b1210,#0e9f6e)',borderRadius:14,padding:'20px',marginBottom:16,color:'#fff'}}>
                   <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,marginBottom:14}}>🔮 Análise Preditiva</div>
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12}}>
                     <div style={{background:'rgba(255,255,255,.08)',borderRadius:10,padding:14}}>
                       <div style={{fontSize:11,opacity:.7,marginBottom:4}}>PROJEÇÃO DO MÊS ATUAL</div>
-                      <div style={{fontSize:24,fontWeight:700,color:'#f0c040'}}>{projecaoMes} ha</div>
+                      <div style={{fontSize:24,fontWeight:700,color:'#ffb020'}}>{projecaoMes} ha</div>
                       <div style={{fontSize:11,opacity:.7,marginTop:4}}>Faltam {diasRestantes} dias • +{projecaoRestante} ha previstos</div>
                     </div>
                     <div style={{background:'rgba(255,255,255,.08)',borderRadius:10,padding:14}}>
                       <div style={{fontSize:11,opacity:.7,marginBottom:4}}>RITMO ATUAL</div>
-                      <div style={{fontSize:24,fontWeight:700,color:'#f0c040'}}>{ritmoHa.toFixed(1)} ha/dia</div>
+                      <div style={{fontSize:24,fontWeight:700,color:'#ffb020'}}>{ritmoHa.toFixed(1)} ha/dia</div>
                       <div style={{fontSize:11,opacity:.7,marginTop:4}}>Média dos últimos {diasDecorridos} dias</div>
                     </div>
                     {/* Alertas preditivos */}
@@ -1286,27 +1286,27 @@ export default function AdminPanel({ onSwitchMode }) {
             <div>
               <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
                 <div>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#111a14' }}>🗺️ Mapa de Voos</div>
-                  <div style={{ fontSize:12, color:'#6b8070', marginTop:2 }}>{filtered.filter(r=>r.gps_lat).length} voos com GPS · atualiza a cada 30s</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>🗺️ Mapa de Voos</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{filtered.filter(r=>r.gps_lat).length} voos com GPS · atualiza a cada 30s</div>
                 </div>
               </div>
 
               {sosAtivos.length > 0 && (
-                <div style={{ background:'#fdeaea', border:'2px solid #c0392b', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:'#c0392b', marginBottom:8 }}>🆘 SOS ATIVOS</div>
+                <div style={{ background:'#fdeaea', border:'2px solid #e5484d', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:'#e5484d', marginBottom:8 }}>🆘 SOS ATIVOS</div>
                   {sosAtivos.map(r => (
                     <div key={r.id} style={{ fontSize:13, display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingBottom:8, borderBottom:'1px solid #f5c6c6' }}>
                       <div>
                         <div style={{ fontWeight:600 }}>{r.piloto_nome} — {r.obs1}</div>
-                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ color:'#c0392b', fontWeight:600, fontSize:12 }}>📍 Abrir no Maps</a>}
+                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ color:'#e5484d', fontWeight:600, fontSize:12 }}>📍 Abrir no Maps</a>}
                       </div>
-                      <button style={{ background:'#1a7a4a', color:'#fff', border:'none', borderRadius:8, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }} onClick={() => resolverSOS(r)}>✅ Resolver</button>
+                      <button style={{ background:'#0e9f6e', color:'#fff', border:'none', borderRadius:16, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }} onClick={() => resolverSOS(r)}>✅ Resolver</button>
                     </div>
                   ))}
                 </div>
               )}
 
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d0e4d8', alignItems:'center' }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d7e6dc', alignItems:'center' }}>
                 {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
@@ -1320,15 +1320,15 @@ export default function AdminPanel({ onSwitchMode }) {
                   <option value="rascunho">Rascunho</option>
                 </select>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>De:</span>
+                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>De:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>Até:</span>
+                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>Até:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#c0392b', borderRadius:8, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -1341,22 +1341,22 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:16 }}>
                     {filtered.filter(r => r.gps_lat).map(rel => (
                       <div key={rel.id} onClick={()=>{setSelected(rel);setTab('relatorios')}}
-                        style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#c0392b':'#d0e4d8'}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}>
+                        style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#e5484d':'#d7e6dc'}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}>
                         <div>
-                          <div style={{ fontWeight:600, fontSize:13, color:'#111a14' }}>{rel.cliente||'—'} — {rel.piloto_nome}</div>
-                          <div style={{ fontSize:11, color:'#6b8070', marginTop:2 }}>{rel.gps_lat}, {rel.gps_lng} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
+                          <div style={{ fontWeight:600, fontSize:13, color:'#0b1210' }}>{rel.cliente||'—'} — {rel.piloto_nome}</div>
+                          <div style={{ fontSize:11, color:'#5c7568', marginTop:2 }}>{rel.gps_lat}, {rel.gps_lng} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
                         </div>
                         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                          <span style={{ background: STATUS_BG[rel.status]||'#f4f8f5', color: STATUS_COLOR[rel.status]||'#6b8070', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
-                          <a href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ background:'#1a7a4a', color:'#fff', borderRadius:8, padding:'5px 10px', fontSize:12, textDecoration:'none', whiteSpace:'nowrap' }}>📍 Ver</a>
-                          <span style={{ color:'#8aad94' }}>›</span>
+                          <span style={{ background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                          <a href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ background:'#0e9f6e', color:'#fff', borderRadius:8, padding:'5px 10px', fontSize:12, textDecoration:'none', whiteSpace:'nowrap' }}>📍 Ver</a>
+                          <span style={{ color:'#7ba38f' }}>›</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </>
               ) : (
-                <div style={{ textAlign:'center', color:'#6b8070', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d0e4d8' }}>
+                <div style={{ textAlign:'center', color:'#5c7568', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
                   <div style={{ fontSize:40, marginBottom:12 }}>🗺️</div>
                   <div style={{ fontSize:15, fontWeight:600, marginBottom:8 }}>Nenhum voo com GPS</div>
                   <div style={{ fontSize:13 }}>Os voos aparecerão aqui quando os pilotos capturarem o GPS durante a operação.</div>
@@ -1373,29 +1373,29 @@ export default function AdminPanel({ onSwitchMode }) {
             return (
               <div>
                 <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#111a14' }}>🛰️ Trajetos KML</div>
-                  <div style={{ fontSize:12, color:'#6b8070', marginTop:2 }}>{comKml.length} voos com trajeto KML enviado · selecione quais sobrepor no mapa</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>🛰️ Trajetos KML</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{comKml.length} voos com trajeto KML enviado · selecione quais sobrepor no mapa</div>
                 </div>
 
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d0e4d8', alignItems:'center' }}>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d7e6dc', alignItems:'center' }}>
                   {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                     <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                   ))}
                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                    <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>De:</span>
+                    <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>De:</span>
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                    <span style={{ fontSize:11, color:'#6b8070', whiteSpace:'nowrap' }}>Até:</span>
+                    <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>Até:</span>
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                   </div>
                   {Object.values(filters).some(Boolean) && (
-                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#c0392b', borderRadius:8, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                   )}
                 </div>
 
                 {comKml.length === 0 ? (
-                  <div style={{ textAlign:'center', color:'#6b8070', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d0e4d8' }}>
+                  <div style={{ textAlign:'center', color:'#5c7568', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
                     <div style={{ fontSize:40, marginBottom:12 }}>🛰️</div>
                     <div style={{ fontSize:15, fontWeight:600, marginBottom:8 }}>Nenhum voo com KML</div>
                     <div style={{ fontSize:13 }}>Os trajetos aparecem aqui quando o piloto envia o arquivo KML/KMZ da aeronave no relatório.</div>
@@ -1404,18 +1404,18 @@ export default function AdminPanel({ onSwitchMode }) {
                   <>
                     <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:14 }}>
                       {comKml.map(rel => (
-                        <label key={rel.id} style={{ display:'flex', alignItems:'center', gap:10, background:'#fff', borderRadius:10, border:'1px solid #d0e4d8', padding:'9px 14px', cursor:'pointer', fontSize:13 }}>
+                        <label key={rel.id} style={{ display:'flex', alignItems:'center', gap:10, background:'#fff', borderRadius:10, border:'1px solid #d7e6dc', padding:'9px 14px', cursor:'pointer', fontSize:13 }}>
                           <input type="checkbox" checked={selectedKmlIds.includes(rel.id)} onChange={() => toggleKml(rel.id)} />
-                          <span style={{ fontWeight:600, color:'#111a14' }}>{rel.cliente||'—'} — {rel.piloto_nome}</span>
-                          <span style={{ color:'#6b8070', fontSize:11 }}>{rel.drone} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</span>
-                          <span style={{ marginLeft:'auto', background: STATUS_BG[rel.status]||'#f4f8f5', color: STATUS_COLOR[rel.status]||'#6b8070', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                          <span style={{ fontWeight:600, color:'#0b1210' }}>{rel.cliente||'—'} — {rel.piloto_nome}</span>
+                          <span style={{ color:'#5c7568', fontSize:11 }}>{rel.drone} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</span>
+                          <span style={{ marginLeft:'auto', background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                         </label>
                       ))}
                     </div>
 
                     {selectedKmlIds.length > 0 && (
                       <div style={{ display:'flex', gap:8, marginBottom:14 }}>
-                        <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#c0392b', borderRadius:10, padding:'9px 14px', fontSize:13, cursor:'pointer' }} onClick={() => setSelectedKmlIds([])}>✕ Limpar seleção</button>
+                        <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:18, padding:'9px 14px', fontSize:13, cursor:'pointer' }} onClick={() => setSelectedKmlIds([])}>✕ Limpar seleção</button>
                       </div>
                     )}
 
@@ -1450,11 +1450,11 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* Header */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18,flexWrap:'wrap',gap:10}}>
                   <div>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#111a14'}}>📦 Inventário</div>
-                    <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos · {invClientes.length} clientes</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#0b1210'}}>📦 Inventário</div>
+                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos · {invClientes.length} clientes</div>
                   </div>
                   {['drones','produtos'].includes(invTab) && (
-                    <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>{
                         if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')}
                         else{setProdutoForm(initProdutoForm());setProdutoModal('novo')}
@@ -1467,7 +1467,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
                   {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
-                    <button key={id} style={{background:invTab===id?'#1a7a4a':'#f4f8f5',color:invTab===id?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    <button key={id} style={{background:invTab===id?'#0e9f6e':'#f1f8f4',color:invTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
                 </div>
@@ -1475,7 +1475,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* ── MOVIMENTOS DE ESTOQUE ── */}
                 {invTab==='movimentos' && (()=>{
                   const TIPO_LABEL = {baixa_relatorio:'📋 Baixa (relatório)',entrada:'📦 Entrada',perda:'⚠️ Perda',ajuste:'🔧 Ajuste'}
-                  const MOV_COLORS = ['#1a7a4a','#2da05e','#f0c040','#185fa5','#8e44ad','#e8a020','#c0392b','#6b8070']
+                  const MOV_COLORS = ['#0e9f6e','#22c476','#ffb020','#2f6fed','#8e44ad','#f2960f','#e5484d','#5c7568']
 
                   // Join com relatorios pra saber fazenda/cliente das baixas automáticas
                   const relatorioById = {}
@@ -1520,18 +1520,18 @@ export default function AdminPanel({ onSwitchMode }) {
                   return (
                     <div>
                       {/* Filtros */}
-                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:12,border:'1px solid #d0e4d8',alignItems:'center'}}>
-                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:12,border:'1px solid #d7e6dc',alignItems:'center'}}>
+                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
                           value={movFiltros.produto} onChange={e=>setMovFiltros(f=>({...f,produto:e.target.value}))}>
                           <option value="">Todos os produtos</option>
                           {invProdutos.map(p=><option key={p.id} value={p.nome}>{p.nome}</option>)}
                         </select>
-                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
                           value={movFiltros.fazenda} onChange={e=>setMovFiltros(f=>({...f,fazenda:e.target.value}))}>
                           <option value="">Todas as fazendas</option>
                           {fazendasDisponiveis.map(fz=><option key={fz} value={fz}>{fz}</option>)}
                         </select>
-                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 170px'}}
+                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 170px'}}
                           value={movFiltros.tipo} onChange={e=>setMovFiltros(f=>({...f,tipo:e.target.value}))}>
                           <option value="">Todos os tipos</option>
                           <option value="baixa_relatorio">📋 Baixa (relatório)</option>
@@ -1540,77 +1540,77 @@ export default function AdminPanel({ onSwitchMode }) {
                           <option value="ajuste">🔧 Ajuste</option>
                         </select>
                         <div style={{display:'flex',alignItems:'center',gap:4}}>
-                          <span style={{fontSize:11,color:'#6b8070'}}>De:</span>
-                          <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataIni} onChange={e=>setMovFiltros(f=>({...f,dataIni:e.target.value}))}/>
+                          <span style={{fontSize:11,color:'#5c7568'}}>De:</span>
+                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataIni} onChange={e=>setMovFiltros(f=>({...f,dataIni:e.target.value}))}/>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:4}}>
-                          <span style={{fontSize:11,color:'#6b8070'}}>Até:</span>
-                          <input type="date" style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataFim} onChange={e=>setMovFiltros(f=>({...f,dataFim:e.target.value}))}/>
+                          <span style={{fontSize:11,color:'#5c7568'}}>Até:</span>
+                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataFim} onChange={e=>setMovFiltros(f=>({...f,dataFim:e.target.value}))}/>
                         </div>
                         {filtrosAtivos && (
-                          <button style={{background:'none',border:'1px solid #e0b0a8',color:'#c0392b',borderRadius:8,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                          <button style={{background:'none',border:'1px solid #e0b0a8',color:'#e5484d',borderRadius:16,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
                             onClick={()=>setMovFiltros({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
                         )}
                       </div>
 
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(3,1fr)',gap:12,marginBottom:16}}>
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ENTRADAS (FILTRADO)</div>
-                          <div style={{fontSize:20,fontWeight:700,color:'#1a7a4a'}}>+{totalEntradas.toFixed(1)}</div>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ENTRADAS (FILTRADO)</div>
+                          <div style={{fontSize:20,fontWeight:700,color:'#0e9f6e'}}>+{totalEntradas.toFixed(1)}</div>
                         </div>
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>SAÍDAS (FILTRADO)</div>
-                          <div style={{fontSize:20,fontWeight:700,color:'#c0392b'}}>-{totalSaidas.toFixed(1)}</div>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>SAÍDAS (FILTRADO)</div>
+                          <div style={{fontSize:20,fontWeight:700,color:'#e5484d'}}>-{totalSaidas.toFixed(1)}</div>
                         </div>
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>PRODUTO MAIS CONSUMIDO</div>
-                          <div style={{fontSize:15,fontWeight:700,color:'#111a14'}}>{maisConsumido?`${maisConsumido[0]} (${maisConsumido[1].toFixed(1)})`:'—'}</div>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>PRODUTO MAIS CONSUMIDO</div>
+                          <div style={{fontSize:15,fontWeight:700,color:'#0b1210'}}>{maisConsumido?`${maisConsumido[0]} (${maisConsumido[1].toFixed(1)})`:'—'}</div>
                         </div>
                       </div>
 
                       {/* Gráficos */}
                       {movFiltrados.length>0 && (
                         <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.3fr 1fr',gap:12,marginBottom:16}}>
-                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16}}>
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>📊 Consumo por Produto</div>
-                            {chartProdutos.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem saídas no período</div> : (
+                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>📊 Consumo por Produto</div>
+                            {chartProdutos.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem saídas no período</div> : (
                               <ResponsiveContainer width="100%" height={220}>
                                 <BarChart data={chartProdutos} layout="vertical" margin={{left:10,right:10}}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
-                                  <XAxis type="number" tick={{fontSize:10,fill:'#8aad94'}}/>
-                                  <YAxis type="category" dataKey="name" width={100} tick={{fontSize:10,fill:'#6b8070'}}/>
-                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}}/>
-                                  <Bar dataKey="value" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                                  <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}}/>
+                                  <YAxis type="category" dataKey="name" width={100} tick={{fontSize:10,fill:'#5c7568'}}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                                  <Bar dataKey="value" fill="#0e9f6e" radius={[0,6,6,0]}/>
                                 </BarChart>
                               </ResponsiveContainer>
                             )}
                           </div>
-                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16}}>
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>🥧 Por Tipo</div>
-                            {chartTipo.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados</div> : (
+                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>🥧 Por Tipo</div>
+                            {chartTipo.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados</div> : (
                               <ResponsiveContainer width="100%" height={220}>
                                 <PieChart>
                                   <Pie data={chartTipo} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({name,percent})=>`${(percent*100).toFixed(0)}%`}>
                                     {chartTipo.map((_,i)=><Cell key={i} fill={MOV_COLORS[i%MOV_COLORS.length]}/>)}
                                   </Pie>
-                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
                                   <Legend wrapperStyle={{fontSize:11}}/>
                                 </PieChart>
                               </ResponsiveContainer>
                             )}
                           </div>
-                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16,gridColumn:isMobile?'auto':'1 / -1'}}>
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>📈 Movimentação ao Longo do Tempo</div>
-                            {chartTempo.length===0 ? <div style={{color:'#8aad94',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16,gridColumn:isMobile?'auto':'1 / -1'}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>📈 Movimentação ao Longo do Tempo</div>
+                            {chartTempo.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
                               <ResponsiveContainer width="100%" height={200}>
                                 <BarChart data={chartTempo} margin={{top:5,right:10,left:-20,bottom:5}}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
-                                  <XAxis dataKey="dia" tick={{fontSize:10,fill:'#8aad94'}} tickLine={false}/>
-                                  <YAxis tick={{fontSize:10,fill:'#8aad94'}} tickLine={false} axisLine={false}/>
-                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}}/>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                                  <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false}/>
+                                  <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
                                   <Legend wrapperStyle={{fontSize:11}}/>
-                                  <Bar dataKey="entradas" name="Entradas" fill="#1a7a4a" radius={[4,4,0,0]}/>
-                                  <Bar dataKey="saidas" name="Saídas" fill="#c0392b" radius={[4,4,0,0]}/>
+                                  <Bar dataKey="entradas" name="Entradas" fill="#0e9f6e" radius={[4,4,0,0]}/>
+                                  <Bar dataKey="saidas" name="Saídas" fill="#e5484d" radius={[4,4,0,0]}/>
                                 </BarChart>
                               </ResponsiveContainer>
                             )}
@@ -1619,59 +1619,59 @@ export default function AdminPanel({ onSwitchMode }) {
                       )}
 
                       {/* Novo movimento manual */}
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,marginBottom:16}}>
-                        <div style={{fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Novo Movimento</div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,marginBottom:16}}>
+                        <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Novo Movimento</div>
                         <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-                          <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                          <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
                             value={movForm.produto} onChange={e=>setMovForm(f=>({...f,produto:e.target.value}))}>
                             <option value="">Produto...</option>
                             {invProdutos.filter(p=>p.ativo).map(p=><option key={p.id}>{p.nome}</option>)}
                           </select>
-                          <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 160px'}}
+                          <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 160px'}}
                             value={movForm.tipo} onChange={e=>setMovForm(f=>({...f,tipo:e.target.value}))}>
                             <option value="entrada">📦 Entrada (compra)</option>
                             <option value="perda">⚠️ Perda</option>
                             <option value="ajuste">🔧 Ajuste</option>
                           </select>
-                          <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 120px'}}
+                          <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 120px'}}
                             type="number" placeholder="Quantidade" value={movForm.quantidade} onChange={e=>setMovForm(f=>({...f,quantidade:e.target.value}))}/>
-                          <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 200px'}}
+                          <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 200px'}}
                             placeholder="Observação (opcional)" value={movForm.obs} onChange={e=>setMovForm(f=>({...f,obs:e.target.value}))}/>
-                          <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:movSaving?'default':'pointer',opacity:movSaving?.6:1}}
+                          <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:movSaving?'default':'pointer',opacity:movSaving?.6:1}}
                             disabled={movSaving} onClick={salvarMovimento}>{movSaving?'Salvando...':'Salvar'}</button>
                         </div>
-                        <div style={{fontSize:11,color:'#8aad94',marginTop:8}}>Entrada soma ao estoque · Perda e Ajuste você digita a quantidade a remover (ou negativa, para ajuste que soma).</div>
+                        <div style={{fontSize:11,color:'#7ba38f',marginTop:8}}>Entrada soma ao estoque · Perda e Ajuste você digita a quantidade a remover (ou negativa, para ajuste que soma).</div>
                       </div>
 
                       {/* Histórico */}
                       {invMovimentos.length===0 ? (
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
                           Nenhum movimento ainda.<br/>As baixas aparecem aqui automaticamente quando um relatório é finalizado, ou rode o SQL de setup se a tabela ainda não existir.
                         </div>
                       ) : movFiltrados.length===0 ? (
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:30,textAlign:'center',color:'#6b8070',fontSize:13}}>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:30,textAlign:'center',color:'#5c7568',fontSize:13}}>
                           Nenhum movimento encontrado com esses filtros.
                         </div>
                       ) : (
                         <div style={{overflowX:'auto'}}>
-                          <div style={{fontSize:11,color:'#8aad94',marginBottom:8}}>{movFiltrados.length} movimento(s)</div>
+                          <div style={{fontSize:11,color:'#7ba38f',marginBottom:8}}>{movFiltrados.length} movimento(s)</div>
                           <table style={{width:'100%',borderCollapse:'collapse',minWidth:600}}>
                             <thead>
-                              <tr style={{background:'#f4f8f5'}}>
+                              <tr style={{background:'#f1f8f4'}}>
                                 {['Data','Produto','Tipo','Fazenda','Quantidade','Obs'].map(h=>(
-                                  <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#8aad94',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
+                                  <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
                               {movFiltrados.slice(0,200).map((m,i)=>(
-                                <tr key={m.id} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070',whiteSpace:'nowrap'}}>{new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
-                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:600,color:'#111a14'}}>{m.produto_nome}</td>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{TIPO_LABEL[m.tipo]||m.tipo}</td>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{fazendaDoMovimento(m)||'—'}</td>
-                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:700,color:m.quantidade<0?'#c0392b':'#1a7a4a'}}>{m.quantidade>0?'+':''}{m.quantidade} {m.unidade||''}</td>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#6b8070'}}>{m.obs||'—'}</td>
+                                <tr key={m.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568',whiteSpace:'nowrap'}}>{new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:600,color:'#0b1210'}}>{m.produto_nome}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568'}}>{TIPO_LABEL[m.tipo]||m.tipo}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568'}}>{fazendaDoMovimento(m)||'—'}</td>
+                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:700,color:m.quantidade<0?'#e5484d':'#0e9f6e'}}>{m.quantidade>0?'+':''}{m.quantidade} {m.unidade||''}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568'}}>{m.obs||'—'}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1686,7 +1686,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {invTab==='drones' && (
                   <div>
                     {invDrones.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
                         Nenhum drone cadastrado ainda.<br/>Clique em "+ Novo Drone" para começar.
                       </div>
                     ) : (
@@ -1696,29 +1696,29 @@ export default function AdminPanel({ onSwitchMode }) {
                           const limite = d.horas_limite || 100
                           const pct = Math.min(100,(horasMin/60/limite)*100)
                           const alerta = pct>=90, aviso = pct>=70&&pct<90
-                          const cor = alerta?'#c0392b':aviso?'#e8a020':'#1a7a4a'
+                          const cor = alerta?'#e5484d':aviso?'#f2960f':'#0e9f6e'
                           return (
-                            <div key={d.id} style={{background:'#fff',borderRadius:12,border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#d0e4d8'}`,padding:16,position:'relative'}}>
-                              {!d.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:'#c0392b',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
-                              {alerta && <span style={{position:'absolute',top:12,right:12,background:'#c0392b',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
-                              {aviso && !alerta && <span style={{position:'absolute',top:12,right:12,background:'#e8a020',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
-                              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#111a14',marginBottom:2}}>{d.nome}</div>
-                              <div style={{fontSize:12,color:'#6b8070',marginBottom:10}}>{d.fabricante} {d.modelo} {d.serial?`· S/N: ${d.serial}`:''}</div>
+                            <div key={d.id} style={{background:'#fff',borderRadius:12,border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#d7e6dc'}`,padding:16,position:'relative'}}>
+                              {!d.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
+                              {alerta && <span style={{position:'absolute',top:12,right:12,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
+                              {aviso && !alerta && <span style={{position:'absolute',top:12,right:12,background:'#f2960f',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
+                              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:2}}>{d.nome}</div>
+                              <div style={{fontSize:12,color:'#5c7568',marginBottom:10}}>{d.fabricante} {d.modelo} {d.serial?`· S/N: ${d.serial}`:''}</div>
                               {/* Barra horas */}
                               <div style={{marginBottom:10}}>
                                 <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
-                                  <span style={{color:'#6b8070'}}>Horas voadas</span>
+                                  <span style={{color:'#5c7568'}}>Horas voadas</span>
                                   <span style={{fontWeight:700,color:cor}}>{fmtH(horasMin)} / {limite}h</span>
                                 </div>
-                                <div style={{background:'#f0f4f1',borderRadius:20,height:7,overflow:'hidden'}}>
+                                <div style={{background:'#eef5f0',borderRadius:20,height:7,overflow:'hidden'}}>
                                   <div style={{background:cor,height:'100%',borderRadius:20,width:`${pct}%`,transition:'width .5s'}}/>
                                 </div>
                               </div>
-                              {d.obs && <div style={{fontSize:11,color:'#6b8070',marginBottom:8,fontStyle:'italic'}}>{d.obs}</div>}
+                              {d.obs && <div style={{fontSize:11,color:'#5c7568',marginBottom:8,fontStyle:'italic'}}>{d.obs}</div>}
                               <div style={{display:'flex',gap:6}}>
-                                <button style={{flex:1,background:'#f4f8f5',color:'#1a7a4a',border:'none',borderRadius:8,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
+                                <button style={{flex:1,background:'#f1f8f4',color:'#0e9f6e',border:'none',borderRadius:16,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
                                   onClick={()=>{setDroneForm(initDroneForm(d));setDroneModal(d)}}>✏️ Editar</button>
-                                <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:8,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
+                                <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
                                   onClick={()=>deletarDrone(d.id)}>🗑️</button>
                               </div>
                             </div>
@@ -1733,16 +1733,16 @@ export default function AdminPanel({ onSwitchMode }) {
                 {invTab==='produtos' && (
                   <div>
                     {invProdutos.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
                         Nenhum produto cadastrado ainda.<br/>Clique em "+ Novo Produto" para começar.
                       </div>
                     ) : (
                       <div style={{overflowX:'auto'}}>
                         <table style={{width:'100%',borderCollapse:'collapse',minWidth:560}}>
                           <thead>
-                            <tr style={{background:'#f4f8f5'}}>
+                            <tr style={{background:'#f1f8f4'}}>
                               {['Produto','Fabricante','Estoque','Mínimo','Validade','Registro MAPA',''].map(h=>(
-                                <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:'#6b8070',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                                <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:'#5c7568',fontFamily:"'Syne',sans-serif"}}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -1753,28 +1753,28 @@ export default function AdminPanel({ onSwitchMode }) {
                               const vencido = dias !== null && dias < 0
                               const baixo = p.estoque_atual <= p.estoque_minimo && p.estoque_minimo > 0
                               return (
-                                <tr key={p.id} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
+                                <tr key={p.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
                                   <td style={{padding:'9px 12px'}}>
-                                    <div style={{fontWeight:600,fontSize:13,color:p.ativo?'#111a14':'#aaa'}}>{p.nome}</div>
-                                    {!p.ativo && <span style={{fontSize:10,color:'#c0392b'}}>inativo</span>}
+                                    <div style={{fontWeight:600,fontSize:13,color:p.ativo?'#0b1210':'#aaa'}}>{p.nome}</div>
+                                    {!p.ativo && <span style={{fontSize:10,color:'#e5484d'}}>inativo</span>}
                                   </td>
-                                  <td style={{padding:'9px 12px',fontSize:12,color:'#6b8070'}}>{p.fabricante||'—'}</td>
+                                  <td style={{padding:'9px 12px',fontSize:12,color:'#5c7568'}}>{p.fabricante||'—'}</td>
                                   <td style={{padding:'9px 12px'}}>
-                                    <span style={{fontWeight:700,color:baixo?'#c0392b':'#1a7a4a',fontSize:13}}>{p.estoque_atual} {p.unidade}</span>
-                                    {baixo && <span style={{marginLeft:4,fontSize:10,color:'#c0392b'}}>⚠️ baixo</span>}
+                                    <span style={{fontWeight:700,color:baixo?'#e5484d':'#0e9f6e',fontSize:13}}>{p.estoque_atual} {p.unidade}</span>
+                                    {baixo && <span style={{marginLeft:4,fontSize:10,color:'#e5484d'}}>⚠️ baixo</span>}
                                   </td>
-                                  <td style={{padding:'9px 12px',fontSize:12,color:'#6b8070'}}>{p.estoque_minimo} {p.unidade}</td>
+                                  <td style={{padding:'9px 12px',fontSize:12,color:'#5c7568'}}>{p.estoque_minimo} {p.unidade}</td>
                                   <td style={{padding:'9px 12px'}}>
-                                    <span style={{fontSize:12,color:vencido?'#c0392b':vencendo?'#e8a020':'#111a14',fontWeight:vencido||vencendo?700:400}}>
+                                    <span style={{fontSize:12,color:vencido?'#e5484d':vencendo?'#f2960f':'#0b1210',fontWeight:vencido||vencendo?700:400}}>
                                       {fmtData(p.validade)}
                                       {vencido && ' ⛔'}{vencendo && !vencido && ` (${dias}d)`}
                                     </span>
                                   </td>
-                                  <td style={{padding:'9px 12px',fontSize:12,color:'#6b8070'}}>{p.registro_mapa||'—'}</td>
+                                  <td style={{padding:'9px 12px',fontSize:12,color:'#5c7568'}}>{p.registro_mapa||'—'}</td>
                                   <td style={{padding:'9px 12px',whiteSpace:'nowrap'}}>
-                                    <button style={{background:'#f4f8f5',color:'#1a7a4a',border:'none',borderRadius:6,padding:'4px 8px',fontSize:11,cursor:'pointer',marginRight:4}}
+                                    <button style={{background:'#f1f8f4',color:'#0e9f6e',border:'none',borderRadius:14,padding:'4px 8px',fontSize:11,cursor:'pointer',marginRight:4}}
                                       onClick={()=>{setProdutoForm(initProdutoForm(p));setProdutoModal(p)}}>✏️</button>
-                                    <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:6,padding:'4px 8px',fontSize:11,cursor:'pointer'}}
+                                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'4px 8px',fontSize:11,cursor:'pointer'}}
                                       onClick={()=>deletarProduto(p.id)}>🗑️</button>
                                   </td>
                                 </tr>
@@ -1797,28 +1797,28 @@ export default function AdminPanel({ onSwitchMode }) {
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                         {[['NOME / IDENTIFICAÇÃO','nome','text','Ex: OROFLY_01'],['FABRICANTE','fabricante','text','DJI'],['MODELO','modelo','text','T70'],['Nº DE SÉRIE','serial','text',''],['ANO DE AQUISIÇÃO','ano_aquisicao','number','2024'],['LIMITE DE HORAS','horas_limite','number','100']].map(([lbl,key,type,ph])=>(
                           <div key={key} style={{gridColumn:key==='nome'?'1/-1':'auto'}}>
-                            <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>{lbl}</div>
-                            <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>{lbl}</div>
+                            <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                               type={type} placeholder={ph} value={droneForm[key]||''}
                               onChange={e=>setDroneForm(f=>({...f,[key]:e.target.value}))} />
                           </div>
                         ))}
                         <div style={{gridColumn:'1/-1'}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
-                          <textarea style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
                             value={droneForm.obs||''} onChange={e=>setDroneForm(f=>({...f,obs:e.target.value}))} />
                         </div>
                         <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setDroneForm(f=>({...f,ativo:!f.ativo}))}>
-                          <div style={{width:36,height:20,borderRadius:10,background:droneForm.ativo?'#1a7a4a':'#d0e4d8',position:'relative',transition:'all .2s',flexShrink:0}}>
+                          <div style={{width:36,height:20,borderRadius:10,background:droneForm.ativo?'#0e9f6e':'#d7e6dc',position:'relative',transition:'all .2s',flexShrink:0}}>
                             <div style={{width:14,height:14,borderRadius:7,background:'#fff',position:'absolute',top:3,left:droneForm.ativo?19:3,transition:'all .2s'}}/>
                           </div>
-                          <span style={{fontSize:13,color:'#111a14'}}>Drone ativo</span>
+                          <span style={{fontSize:13,color:'#0b1210'}}>Drone ativo</span>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:20}}>
-                        <button style={{flex:1,background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:10,padding:12,fontSize:13,cursor:'pointer'}}
+                        <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
                           onClick={()=>setDroneModal(null)}>Cancelar</button>
-                        <button style={{flex:2,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
+                        <button style={{flex:2,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
                           disabled={invSaving} onClick={salvarDrone}>{invSaving?'Salvando...':'💾 Salvar'}</button>
                       </div>
                     </div>
@@ -1835,59 +1835,59 @@ export default function AdminPanel({ onSwitchMode }) {
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                         {[['NOME DO PRODUTO','nome','text','Ex: Triclon'],['FABRICANTE','fabricante','text','Syngenta'],['UNIDADE','unidade','text','L'],['REGISTRO MAPA','registro_mapa','text','BR-00000']].map(([lbl,key,type,ph])=>(
                           <div key={key} style={{gridColumn:key==='nome'?'1/-1':'auto'}}>
-                            <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>{lbl}</div>
-                            <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>{lbl}</div>
+                            <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                               type={type} placeholder={ph} value={produtoForm[key]||''}
                               onChange={e=>setProdutoForm(f=>({...f,[key]:e.target.value}))} />
                           </div>
                         ))}
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>ESTOQUE ATUAL</div>
-                          <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>ESTOQUE ATUAL</div>
+                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="number" step="0.1" value={produtoForm.estoque_atual||0}
                             onChange={e=>setProdutoForm(f=>({...f,estoque_atual:e.target.value}))} />
                         </div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>ESTOQUE MÍNIMO</div>
-                          <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>ESTOQUE MÍNIMO</div>
+                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="number" step="0.1" value={produtoForm.estoque_minimo||0}
                             onChange={e=>setProdutoForm(f=>({...f,estoque_minimo:e.target.value}))} />
                         </div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>DOSE PADRÃO ({produtoForm.unidade||'L'}/ha)</div>
-                          <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>DOSE PADRÃO ({produtoForm.unidade||'L'}/ha)</div>
+                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="number" step="0.001" placeholder="Ex: 0.6" value={produtoForm.dose_padrao??''}
                             onChange={e=>setProdutoForm(f=>({...f,dose_padrao:e.target.value}))} />
                         </div>
                         <div style={{display:'flex',alignItems:'flex-end',paddingBottom:6}}>
-                          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#6b8070',cursor:'pointer'}}>
+                          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#5c7568',cursor:'pointer'}}>
                             <input type="checkbox" checked={produtoForm.dose_auto!==false}
                               onChange={e=>setProdutoForm(f=>({...f,dose_auto:e.target.checked}))}/>
                             Pré-preencher no app
                           </label>
                         </div>
                         <div style={{gridColumn:'1/-1'}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>VALIDADE</div>
-                          <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>VALIDADE</div>
+                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="date" value={produtoForm.validade||''}
                             onChange={e=>setProdutoForm(f=>({...f,validade:e.target.value}))} />
                         </div>
                         <div style={{gridColumn:'1/-1'}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
-                          <textarea style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
                             value={produtoForm.obs||''} onChange={e=>setProdutoForm(f=>({...f,obs:e.target.value}))} />
                         </div>
                         <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setProdutoForm(f=>({...f,ativo:!f.ativo}))}>
-                          <div style={{width:36,height:20,borderRadius:10,background:produtoForm.ativo?'#1a7a4a':'#d0e4d8',position:'relative',transition:'all .2s',flexShrink:0}}>
+                          <div style={{width:36,height:20,borderRadius:10,background:produtoForm.ativo?'#0e9f6e':'#d7e6dc',position:'relative',transition:'all .2s',flexShrink:0}}>
                             <div style={{width:14,height:14,borderRadius:7,background:'#fff',position:'absolute',top:3,left:produtoForm.ativo?19:3,transition:'all .2s'}}/>
                           </div>
-                          <span style={{fontSize:13,color:'#111a14'}}>Produto ativo</span>
+                          <span style={{fontSize:13,color:'#0b1210'}}>Produto ativo</span>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:20}}>
-                        <button style={{flex:1,background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:10,padding:12,fontSize:13,cursor:'pointer'}}
+                        <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
                           onClick={()=>setProdutoModal(null)}>Cancelar</button>
-                        <button style={{flex:2,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
+                        <button style={{flex:2,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
                           disabled={invSaving} onClick={salvarProduto}>{invSaving?'Salvando...':'💾 Salvar'}</button>
                       </div>
                     </div>
@@ -1933,11 +1933,11 @@ export default function AdminPanel({ onSwitchMode }) {
               <div>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18,flexWrap:'wrap',gap:10}}>
                   <div>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#111a14'}}>🌾 Fazendas & Clientes</div>
-                    <div style={{fontSize:12,color:'#6b8070',marginTop:2}}>{invFazendas.length} fazendas · {invClientes.length} clientes</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#0b1210'}}>🌾 Fazendas & Clientes</div>
+                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{invFazendas.length} fazendas · {invClientes.length} clientes</div>
                   </div>
                   {fzTab==='clientes' && (
-                    <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>{setClienteForm(initClienteForm());setClienteModal('novo')}}>
                       + Novo Cliente
                     </button>
@@ -1947,7 +1947,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
                   {[['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes']].map(([id,lbl])=>(
-                    <button key={id} style={{background:fzTab===id?'#1a7a4a':'#f4f8f5',color:fzTab===id?'#fff':'#6b8070',border:'none',borderRadius:8,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    <button key={id} style={{background:fzTab===id?'#0e9f6e':'#f1f8f4',color:fzTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setFzTab(id)}>{lbl}</button>
                   ))}
                 </div>
@@ -1956,57 +1956,57 @@ export default function AdminPanel({ onSwitchMode }) {
                 {fzTab==='visao' && (
                   <div>
                     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>FAZENDAS CADASTRADAS</div>
-                        <div style={{fontSize:20,fontWeight:700,color:'#111a14'}}>{invFazendas.length}</div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>FAZENDAS CADASTRADAS</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#0b1210'}}>{invFazendas.length}</div>
                       </div>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ÁREA TOTAL CADASTRADA</div>
-                        <div style={{fontSize:20,fontWeight:700,color:'#111a14'}}>{somaTotal.toFixed(1)} ha</div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ÁREA TOTAL CADASTRADA</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#0b1210'}}>{somaTotal.toFixed(1)} ha</div>
                       </div>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>ÁREA REALIZADA</div>
-                        <div style={{fontSize:20,fontWeight:700,color:'#1a7a4a'}}>{somaRealizada.toFixed(1)} ha</div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ÁREA REALIZADA</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#0e9f6e'}}>{somaRealizada.toFixed(1)} ha</div>
                       </div>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#8aad94',marginBottom:4}}>% CONCLUÍDO (GERAL)</div>
-                        <div style={{fontSize:20,fontWeight:700,color:'#185fa5'}}>{pctGeral.toFixed(1)}%</div>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>% CONCLUÍDO (GERAL)</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#2f6fed'}}>{pctGeral.toFixed(1)}%</div>
                       </div>
                     </div>
 
                     {chartFazendas.length>0 && (
-                      <div style={{background:'#fff',borderRadius:14,border:'1px solid #e0ecea',padding:16,marginBottom:16}}>
-                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10}}>📊 % Concluído por Fazenda (top 10)</div>
+                      <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16,marginBottom:16}}>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>📊 % Concluído por Fazenda (top 10)</div>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart data={chartFazendas} layout="vertical" margin={{left:10,right:20}}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f1"/>
-                            <XAxis type="number" domain={[0,100]} tick={{fontSize:10,fill:'#8aad94'}} unit="%"/>
-                            <YAxis type="category" dataKey="name" width={110} tick={{fontSize:10,fill:'#6b8070'}}/>
-                            <Tooltip contentStyle={{borderRadius:10,border:'1px solid #e0ecea',fontSize:12}} formatter={v=>`${v}%`}/>
-                            <Bar dataKey="pct" fill="#1a7a4a" radius={[0,6,6,0]}/>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                            <XAxis type="number" domain={[0,100]} tick={{fontSize:10,fill:'#7ba38f'}} unit="%"/>
+                            <YAxis type="category" dataKey="name" width={110} tick={{fontSize:10,fill:'#5c7568'}}/>
+                            <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={v=>`${v}%`}/>
+                            <Bar dataKey="pct" fill="#0e9f6e" radius={[0,6,6,0]}/>
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                     )}
 
-                    <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
+                    <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
                       placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
 
                     {fazendasBI.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
                         Nenhuma fazenda encontrada.
                       </div>
                     ) : (
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
                         {fazendasBI.map(fz=>(
-                          <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14}}>
+                          <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                               <div>
                                 <div style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</div>
-                                <div style={{fontSize:11,color:'#6b8070'}}>{fz.cliente}{fz.produto?` · ${fz.produto}`:''}</div>
+                                <div style={{fontSize:11,color:'#5c7568'}}>{fz.cliente}{fz.produto?` · ${fz.produto}`:''}</div>
                               </div>
                               {fz.pct!==null && fz.numVoos>0 && (
-                                <button style={{background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:7,padding:'4px 8px',fontSize:10,cursor:'pointer'}}
+                                <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:15,padding:'4px 8px',fontSize:10,cursor:'pointer'}}
                                   onClick={()=>zerarProgresso(fz)}>🔄 Zerar</button>
                               )}
                             </div>
@@ -2014,12 +2014,12 @@ export default function AdminPanel({ onSwitchMode }) {
                               <div style={{fontSize:12,color:'#aaa',fontStyle:'italic'}}>Sem talhões cadastrados com área</div>
                             ) : (
                               <>
-                                <div style={{background:'#f0f4f1',borderRadius:20,height:8,overflow:'hidden',marginBottom:6}}>
-                                  <div style={{width:`${fz.pct}%`,height:'100%',background:fz.pct>=100?'#1a7a4a':'#f0c040',borderRadius:20}}/>
+                                <div style={{background:'#eef5f0',borderRadius:20,height:8,overflow:'hidden',marginBottom:6}}>
+                                  <div style={{width:`${fz.pct}%`,height:'100%',background:fz.pct>=100?'#0e9f6e':'#ffb020',borderRadius:20}}/>
                                 </div>
                                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
-                                  <span style={{color:'#6b8070'}}>{fz.areaRealizada.toFixed(1)} / {fz.areaTotal.toFixed(1)} ha</span>
-                                  <span style={{fontWeight:700,color:'#1a7a4a'}}>{fz.pct.toFixed(0)}%</span>
+                                  <span style={{color:'#5c7568'}}>{fz.areaRealizada.toFixed(1)} / {fz.areaTotal.toFixed(1)} ha</span>
+                                  <span style={{fontWeight:700,color:'#0e9f6e'}}>{fz.pct.toFixed(0)}%</span>
                                 </div>
                                 {fz.campanha_inicio && <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Ciclo desde {new Date(fz.campanha_inicio).toLocaleDateString('pt-BR')}</div>}
                               </>
@@ -2034,22 +2034,22 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* ── FAZENDAS & TALHÕES (cadastro) ── */}
                 {fzTab==='fazendas' && (
                   <div>
-                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,marginBottom:16}}>
-                      <div style={{fontSize:13,fontWeight:700,color:'#111a14',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Nova Fazenda</div>
+                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,marginBottom:16}}>
+                      <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Nova Fazenda</div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
                           value={fzForm.cliente} onChange={e=>setFzForm(f=>({...f,cliente:e.target.value}))}>
                           <option value="">Cliente...</option>
                           {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
                         </select>
-                        <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                        <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
                           placeholder="Nome da fazenda" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
-                        <select style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 140px'}}
+                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 140px'}}
                           value={fzForm.produto} onChange={e=>setFzForm(f=>({...f,produto:e.target.value}))}>
                           <option value="">Produto...</option>
                           {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
                         </select>
-                        <button style={{background:'#1a7a4a',color:'#fff',border:'none',borderRadius:8,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                        <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                           onClick={async()=>{
                             if(!fzForm.cliente||!fzForm.nome){alert('Preencha cliente e nome');return}
                             const nomeNorm = fzForm.nome.trim()
@@ -2066,54 +2066,54 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
 
                     {invFazendas.length>0 && (
-                      <input style={{border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
+                      <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
                         placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
                     )}
 
                     {invFazendas.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
                         Nenhuma fazenda cadastrada.<br/>Cadastre acima ou rode o SQL das tabelas fazendas/talhoes.
                       </div>
                     ) : (()=>{
                       if (q && fazendasFiltradas.length===0) return (
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:30,textAlign:'center',color:'#6b8070',fontSize:13}}>
+                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:30,textAlign:'center',color:'#5c7568',fontSize:13}}>
                           Nenhuma fazenda encontrada para "{fzSearch}".
                         </div>
                       )
                       return [...new Set(fazendasFiltradas.map(f=>f.cliente))].map(cli=>(
                         <div key={cli} style={{marginBottom:16}}>
-                          <div style={{fontSize:13,fontWeight:700,color:'#1a7a4a',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
+                          <div style={{fontSize:13,fontWeight:700,color:'#0e9f6e',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
                           {fazendasFiltradas.filter(f=>f.cliente===cli).map(fz=>{
                             const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
                             const tf = tlForm[fz.id]||{nome:'',area_ha:''}
                             return (
-                              <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:14,marginBottom:10}}>
+                              <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14,marginBottom:10}}>
                                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                                   <span style={{fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8}}>
                                     🌾 {fz.nome}
                                     {fz.produto && <span style={{background:'#e6f0ea',color:'#145c38',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{fz.produto}</span>}
                                   </span>
-                                  <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:7,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                  <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                     onClick={async()=>{
                                       if(!window.confirm(`Excluir fazenda ${fz.nome} e todos os talhões?`))return
                                       await supabase.from('fazendas').delete().eq('id',fz.id);fetchInventario()
                                     }}>🗑️</button>
                                 </div>
                                 {talhoesFz.map(t=>(
-                                  <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f9fbfa',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
-                                    <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#1a7a4a'}}>· {t.area_ha} ha</strong>:''}</span>
-                                    <button style={{background:'none',border:'none',color:'#c0392b',cursor:'pointer',fontSize:14}}
+                                  <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f7fbf8',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
+                                    <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#0e9f6e'}}>· {t.area_ha} ha</strong>:''}</span>
+                                    <button style={{background:'none',border:'none',color:'#e5484d',cursor:'pointer',fontSize:14}}
                                       onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
                                   </div>
                                 ))}
                                 <div style={{display:'flex',gap:6,marginTop:8}}>
-                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
+                                  <input style={{border:'1px solid #d7e6dc',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
                                     placeholder="Novo talhão..." value={tf.nome}
                                     onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,nome:e.target.value}}))}/>
-                                  <input style={{border:'1px solid #d0e4d8',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
+                                  <input style={{border:'1px solid #d7e6dc',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
                                     placeholder="Área (ha)" type="number" value={tf.area_ha}
                                     onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,area_ha:e.target.value}}))}/>
-                                  <button style={{background:'#e8f5ee',color:'#1a7a4a',border:'none',borderRadius:7,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                                  <button style={{background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:15,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                                     onClick={async()=>{
                                       if(!tf.nome){alert('Nome do talhão');return}
                                       const {error}=await supabase.from('talhoes').insert({fazenda_id:fz.id,nome:tf.nome,area_ha:tf.area_ha?parseFloat(tf.area_ha):null,ativo:true})
@@ -2134,20 +2134,20 @@ export default function AdminPanel({ onSwitchMode }) {
                 {fzTab==='clientes' && (
                   <div>
                     {invClientes.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:40,textAlign:'center',color:'#6b8070'}}>
+                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
                         Nenhum cliente cadastrado ainda.<br/>Clique em "+ Novo Cliente" para começar.
                       </div>
                     ) : (
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(260px,1fr))',gap:12}}>
                         {invClientes.map(c=>(
-                          <div key={c.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d0e4d8',padding:16,position:'relative'}}>
-                            {!c.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:'#c0392b',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#111a14',marginBottom:4}}>🏢 {c.nome}</div>
-                            {c.obs && <div style={{fontSize:11,color:'#6b8070',marginBottom:8,fontStyle:'italic'}}>{c.obs}</div>}
+                          <div key={c.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,position:'relative'}}>
+                            {!c.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:4}}>🏢 {c.nome}</div>
+                            {c.obs && <div style={{fontSize:11,color:'#5c7568',marginBottom:8,fontStyle:'italic'}}>{c.obs}</div>}
                             <div style={{display:'flex',gap:6,marginTop:8}}>
-                              <button style={{flex:1,background:'#f4f8f5',color:'#1a7a4a',border:'none',borderRadius:8,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
+                              <button style={{flex:1,background:'#f1f8f4',color:'#0e9f6e',border:'none',borderRadius:16,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
                                 onClick={()=>{setClienteForm(initClienteForm(c));setClienteModal(c)}}>✏️ Editar</button>
-                              <button style={{background:'#fdeaea',color:'#c0392b',border:'none',borderRadius:8,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
+                              <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
                                 onClick={()=>deletarCliente(c.id)}>🗑️</button>
                             </div>
                           </div>
@@ -2166,27 +2166,27 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                       <div style={{display:'flex',flexDirection:'column',gap:12}}>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>NOME DO CLIENTE</div>
-                          <input style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>NOME DO CLIENTE</div>
+                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             placeholder="Ex: Raizen - Bonfim" value={clienteForm.nome||''}
                             onChange={e=>setClienteForm(f=>({...f,nome:e.target.value}))} />
                         </div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#6b8070',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
-                          <textarea style={{width:'100%',border:'1px solid #d0e4d8',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
                             value={clienteForm.obs||''} onChange={e=>setClienteForm(f=>({...f,obs:e.target.value}))} />
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
-                          <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#1a7a4a':'#d0e4d8',position:'relative',transition:'all .2s',flexShrink:0}}>
+                          <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#0e9f6e':'#d7e6dc',position:'relative',transition:'all .2s',flexShrink:0}}>
                             <div style={{width:14,height:14,borderRadius:7,background:'#fff',position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>
                           </div>
-                          <span style={{fontSize:13,color:'#111a14'}}>Cliente ativo</span>
+                          <span style={{fontSize:13,color:'#0b1210'}}>Cliente ativo</span>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:20}}>
-                        <button style={{flex:1,background:'#f4f8f5',color:'#6b8070',border:'none',borderRadius:10,padding:12,fontSize:13,cursor:'pointer'}}
+                        <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
                           onClick={()=>setClienteModal(null)}>Cancelar</button>
-                        <button style={{flex:2,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
+                        <button style={{flex:2,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
                           disabled={invSaving} onClick={salvarCliente}>{invSaving?'Salvando...':'💾 Salvar'}</button>
                       </div>
                     </div>
@@ -2200,11 +2200,11 @@ export default function AdminPanel({ onSwitchMode }) {
           {tab === 'pilotos' && (
             <div>
               <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#111a14' }}>Gestão de Usuários</div>
-                <div style={{ fontSize:12, color:'#6b8070', marginTop:2 }}>{pilotos.length} usuários</div>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>Gestão de Usuários</div>
+                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{pilotos.length} usuários</div>
               </div>
               <div style={{ display:'flex', gap:20, flexDirection: isMobile?'column':'row', alignItems:'flex-start' }}>
-                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d0e4d8', padding:20, width: isMobile?'100%':280, flexShrink:0 }}>
+                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', padding:20, width: isMobile?'100%':280, flexShrink:0 }}>
                   <div style={{ fontFamily:"'Syne',sans-serif", fontSize:14, fontWeight:700, marginBottom:16 }}>+ Novo usuário</div>
                   <form onSubmit={criarUsuario} style={{ display:'flex', flexDirection:'column', gap:12 }}>
                     {[['Nome completo','nome','text','João Silva'],['E-mail','email','email','piloto@email.com'],['Senha','senha','password','Mínimo 6 caracteres']].map(([lbl,key,type,ph]) => (
@@ -2224,24 +2224,24 @@ export default function AdminPanel({ onSwitchMode }) {
                   </form>
                 </div>
                 <div style={{ flex:1, overflowX:'auto' }}>
-                  <table style={{ width:'100%', borderCollapse:'collapse', background:'#fff', borderRadius:12, border:'1px solid #d0e4d8', overflow:'hidden' }}>
-                    <thead><tr style={{ background:'#f4f8f5' }}>{['Usuário','E-mail','Perfil','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'10px 13px', textAlign:'left', fontSize:11, fontWeight:700, color:'#6b8070', borderBottom:'1px solid #d0e4d8', fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
+                  <table style={{ width:'100%', borderCollapse:'collapse', background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden' }}>
+                    <thead><tr style={{ background:'#f1f8f4' }}>{['Usuário','E-mail','Perfil','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'10px 13px', textAlign:'left', fontSize:11, fontWeight:700, color:'#5c7568', borderBottom:'1px solid #d7e6dc', fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {pilotos.map((p, i) => (
-                        <tr key={p.id} style={{ background: i%2===0?'#fff':'#f9fbfa', opacity: p.ativo?1:.5 }}>
-                          <td style={sG.td}><div style={{ display:'flex', alignItems:'center', gap:8 }}><div style={{ width:30, height:30, borderRadius:'50%', background: p.role==='admin'?'#faeeda':'#e8f5ee', color: p.role==='admin'?'#854f0b':'#1a7a4a', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div><span style={{ fontWeight:500 }}>{p.nome}</span></div></td>
-                          <td style={{ ...sG.td, color:'#6b8070', fontSize:12 }}>{p.email}</td>
-                          <td style={sG.td}><span style={{ background: p.role==='admin'?'#faeeda':'#e8f5ee', color: p.role==='admin'?'#854f0b':'#0f6e56', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.role==='admin'?'⚙️ Admin':'🚁 Piloto'}</span></td>
-                          <td style={{ ...sG.td, fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#1a7a4a', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
-                          <td style={{ ...sG.td }}><span style={{ background: p.ativo?'#e8f5ee':'#fee', color: p.ativo?'#1a7a4a':'#c0392b', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.ativo?'Ativo':'Inativo'}</span></td>
+                        <tr key={p.id} style={{ background: i%2===0?'#fff':'#f7fbf8', opacity: p.ativo?1:.5 }}>
+                          <td style={sG.td}><div style={{ display:'flex', alignItems:'center', gap:8 }}><div style={{ width:30, height:30, borderRadius:'50%', background: p.role==='admin'?'#faeeda':'#e3f7ec', color: p.role==='admin'?'#854f0b':'#0e9f6e', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div><span style={{ fontWeight:500 }}>{p.nome}</span></div></td>
+                          <td style={{ ...sG.td, color:'#5c7568', fontSize:12 }}>{p.email}</td>
+                          <td style={sG.td}><span style={{ background: p.role==='admin'?'#faeeda':'#e3f7ec', color: p.role==='admin'?'#854f0b':'#0a6e4f', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.role==='admin'?'⚙️ Admin':'🚁 Piloto'}</span></td>
+                          <td style={{ ...sG.td, fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#0e9f6e', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
+                          <td style={{ ...sG.td }}><span style={{ background: p.ativo?'#e3f7ec':'#fee', color: p.ativo?'#0e9f6e':'#e5484d', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.ativo?'Ativo':'Inativo'}</span></td>
                           <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
-                            <button style={{ background: p.role==='admin'?'#faeeda':'#e8f5ee', color: p.role==='admin'?'#854f0b':'#0f6e56', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleRole(p)}>
+                            <button style={{ background: p.role==='admin'?'#faeeda':'#e3f7ec', color: p.role==='admin'?'#854f0b':'#0a6e4f', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleRole(p)}>
                               {p.role==='admin'?'→ Piloto':'→ Admin'}
                             </button>
-                            <button style={{ background: p.ativo?'#fee':'#e8f5ee', color: p.ativo?'#c0392b':'#1a7a4a', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
-                            <button style={{ background:'#eef2fb', color:'#2952a3', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => resetarSenha(p)}>🔑 Senha</button>
+                            <button style={{ background: p.ativo?'#fee':'#e3f7ec', color: p.ativo?'#e5484d':'#0e9f6e', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
+                            <button style={{ background:'#eef2fb', color:'#2952a3', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => resetarSenha(p)}>🔑 Senha</button>
                             {p.id !== profile?.id && (
-                              <button style={{ background:'#fee', color:'#c0392b', border:'none', borderRadius:8, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={() => deletarUsuario(p)}>🗑️ Deletar</button>
+                              <button style={{ background:'#fee', color:'#e5484d', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={() => deletarUsuario(p)}>🗑️ Deletar</button>
                             )}
                           </td>
                         </tr>
@@ -2259,9 +2259,9 @@ export default function AdminPanel({ onSwitchMode }) {
       {editModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems: isMobile?'flex-end':'center', justifyContent:'center', padding: isMobile?0:24 }}>
           <div style={{ background:'#fff', borderRadius: isMobile?'20px 20px 0 0':16, width:'100%', maxWidth: isMobile?'100%':920, maxHeight: isMobile?'95vh':'90vh', display:'flex', flexDirection:'column' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'15px 20px', borderBottom:'1px solid #f0f4f1', flexShrink:0 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'15px 20px', borderBottom:'1px solid #eef5f0', flexShrink:0 }}>
               <span style={{ fontFamily:"'Syne',sans-serif", fontSize:16, fontWeight:700 }}>✏️ Editar Relatório</span>
-              <button style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#6b8070' }} onClick={resetEdit}>✕</button>
+              <button style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#5c7568' }} onClick={resetEdit}>✕</button>
             </div>
             <div style={{ padding:'16px 20px', overflowY:'auto', flex:1 }}>
               <SecTitle>IDENTIFICAÇÃO</SecTitle>
@@ -2293,7 +2293,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
                     <div style={sG.label}>MAPA</div>
                     {(editFotoMapa || editModal.foto_mapa_url) && (
-                      <button style={{ background:'none', border:'none', color:'#c0392b', fontSize:11, cursor:'pointer', padding:'2px 6px' }}
+                      <button style={{ background:'none', border:'none', color:'#e5484d', fontSize:11, cursor:'pointer', padding:'2px 6px' }}
                         onClick={async () => {
                           if (editModal.foto_mapa_url && !editFotoMapaFile) {
                             await supabase.storage.from('relatorios').remove([editModal.foto_mapa_url])
@@ -2304,11 +2304,11 @@ export default function AdminPanel({ onSwitchMode }) {
                         }}>🗑️ Remover</button>
                     )}
                   </div>
-                  <label style={{ display:'block', border:'1.5px dashed #d0e4d8', borderRadius:10, padding:10, textAlign:'center', cursor:'pointer', marginTop:4 }}>
+                  <label style={{ display:'block', border:'1.5px dashed #d7e6dc', borderRadius:10, padding:10, textAlign:'center', cursor:'pointer', marginTop:4 }}>
                     <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => { const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>setEditFotoMapa(ev.target.result); r.readAsDataURL(f); setEditFotoMapaFile(f) }} />
                     {editFotoMapa ? <img src={editFotoMapa} alt="mapa" style={{ width:'100%', maxHeight:120, objectFit:'cover', borderRadius:8 }} />
                       : editModal.foto_mapa_url ? <StoragePhoto supabase={supabase} path={editModal.foto_mapa_url} bucket="relatorios" />
-                      : <div style={{ padding:'16px 0', fontSize:12, color:'#6b8070' }}>🗺️ Clique para adicionar</div>}
+                      : <div style={{ padding:'16px 0', fontSize:12, color:'#5c7568' }}>🗺️ Clique para adicionar</div>}
                   </label>
                 </div>
                 <div>
@@ -2316,14 +2316,14 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ display:'flex', gap:8, marginTop:4 }}>
                     {[0,1,2].map(i => (
                       <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
-                        <label style={{ border:'1.5px dashed #d0e4d8', borderRadius:10, padding:8, textAlign:'center', cursor:'pointer', minHeight:70, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                        <label style={{ border:'1.5px dashed #d7e6dc', borderRadius:10, padding:8, textAlign:'center', cursor:'pointer', minHeight:70, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
                           <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => { const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{const a=[...editObsFotos];a[i]=ev.target.result;setEditObsFotos(a)}; r.readAsDataURL(f); const a=[...editObsFotoFiles];a[i]=f;setEditObsFotoFiles(a) }} />
                           {editObsFotos[i] ? <img src={editObsFotos[i]} alt="" style={{ width:'100%', height:60, objectFit:'cover', borderRadius:6 }} />
                             : editModal.obs_fotos_urls?.[i] ? <StoragePhoto supabase={supabase} path={editModal.obs_fotos_urls[i]} bucket="relatorios" small />
                             : <span style={{ fontSize:18 }}>📷</span>}
                         </label>
                         {(editObsFotos[i] || editModal.obs_fotos_urls?.[i]) && (
-                          <button style={{ background:'#fdeaea', color:'#c0392b', border:'none', borderRadius:6, padding:'3px', fontSize:10, cursor:'pointer', width:'100%' }}
+                          <button style={{ background:'#fdeaea', color:'#e5484d', border:'none', borderRadius:14, padding:'3px', fontSize:10, cursor:'pointer', width:'100%' }}
                             onClick={async () => {
                               if (editModal.obs_fotos_urls?.[i] && !editObsFotoFiles[i]) {
                                 await supabase.storage.from('relatorios').remove([editModal.obs_fotos_urls[i]])
@@ -2348,11 +2348,11 @@ export default function AdminPanel({ onSwitchMode }) {
                 {(editModal.kml_arquivos||[]).length > 0 && (
                   <div style={{ marginBottom:8 }}>
                     {(editModal.kml_arquivos||[]).map((nome, i) => (
-                      <div key={i} style={{ display:'flex', alignItems:'center', gap:8, background:'#f4f8f5', borderRadius:8, padding:'8px 12px', marginBottom:6, border:'1px solid #d0e4d8' }}>
+                      <div key={i} style={{ display:'flex', alignItems:'center', gap:8, background:'#f1f8f4', borderRadius:8, padding:'8px 12px', marginBottom:6, border:'1px solid #d7e6dc' }}>
                         <span>📄</span>
                         <span style={{ flex:1, fontSize:13, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{nome}</span>
                         {editModal.kml_paths?.[i] && (
-                          <button style={{ background:'#185fa5', color:'#fff', border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
+                          <button style={{ background:'#2f6fed', color:'#fff', border:'none', borderRadius:14, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
                             onClick={async () => {
                               const { data } = await supabase.storage.from('relatorios').createSignedUrl(editModal.kml_paths[i], 60)
                               if (data?.signedUrl) {
@@ -2361,7 +2361,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               }
                             }}>⬇</button>
                         )}
-                        <button style={{ background:'#fdeaea', color:'#c0392b', border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
+                        <button style={{ background:'#fdeaea', color:'#e5484d', border:'none', borderRadius:14, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
                           onClick={async () => {
                             // Remove do Storage se tiver path
                             if (editModal.kml_paths?.[i]) {
@@ -2376,7 +2376,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     ))}
                   </div>
                 )}
-                <label style={{ display:'flex', alignItems:'center', gap:8, border:'1.5px dashed #d0e4d8', borderRadius:10, padding:'10px 14px', cursor:'pointer', fontSize:13, color:'#6b8070' }}>
+                <label style={{ display:'flex', alignItems:'center', gap:8, border:'1.5px dashed #d7e6dc', borderRadius:10, padding:'10px 14px', cursor:'pointer', fontSize:13, color:'#5c7568' }}>
                   <input type="file" accept=".kml,.kmz" multiple style={{ display:'none' }} onChange={async e => {
                     const files = Array.from(e.target.files)
                     if (!files.length) return
@@ -2396,16 +2396,16 @@ export default function AdminPanel({ onSwitchMode }) {
                 </label>
               </div>
             </div>
-            <div style={{ borderTop:'1px solid #f0f4f1', flexShrink:0 }}>
+            <div style={{ borderTop:'1px solid #eef5f0', flexShrink:0 }}>
               {/* Linha de exportação */}
               <div style={{ display:'flex', gap:6, padding:'10px 20px 0', flexWrap:'wrap' }}>
-                <div style={{ fontSize:11, color:'#6b8070', width:'100%', marginBottom:4, fontWeight:600 }}>EXPORTAR:</div>
+                <div style={{ fontSize:11, color:'#5c7568', width:'100%', marginBottom:4, fontWeight:600 }}>EXPORTAR:</div>
                 {[
-                  ['📄 PDF Técnico', '#111a14', 'interno'],
-                  ['🟢 PDF Cliente', '#2da05e', 'cliente'],
-                  ['📝 Word / Docs', '#185fa5', 'word'],
+                  ['📄 PDF Técnico', '#0b1210', 'interno'],
+                  ['🟢 PDF Cliente', '#22c476', 'cliente'],
+                  ['📝 Word / Docs', '#2f6fed', 'word'],
                 ].map(([label, bg, tipo]) => (
-                  <button key={tipo} style={{ background:bg, color:'#fff', border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, cursor:'pointer', fontWeight:600, opacity:saving?.6:1 }}
+                  <button key={tipo} style={{ background:bg, color:'#fff', border:'none', borderRadius:16, padding:'7px 14px', fontSize:12, cursor:'pointer', fontWeight:600, opacity:saving?.6:1 }}
                     disabled={saving}
                     onClick={async () => {
                       setSaving(true)
@@ -2433,7 +2433,7 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
               {/* Linha de ação */}
               <div style={{ display:'flex', gap:8, padding:'10px 20px 12px' }}>
-                <button style={{ ...sG.btn, background:'#f4f8f5', color:'#6b8070', flex:1 }} onClick={resetEdit}>Cancelar</button>
+                <button style={{ ...sG.btn, background:'#f1f8f4', color:'#5c7568', flex:1 }} onClick={resetEdit}>Cancelar</button>
                 <button style={{ ...sG.btn, flex:2, opacity:saving?.6:1 }} disabled={saving} onClick={salvarEdicao}>{saving?'Salvando...':'💾 Salvar'}</button>
               </div>
             </div>
@@ -2446,22 +2446,22 @@ export default function AdminPanel({ onSwitchMode }) {
           <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
             <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, marginBottom:10 }}>🗑️ Confirmar exclusão</div>
             <p style={{ fontSize:14, marginBottom:6 }}>Deletar relatório de <strong>{confirmDelete.cliente}</strong>?</p>
-            <p style={{ fontSize:12, color:'#c0392b', marginBottom:18 }}>Esta ação não pode ser desfeita.</p>
+            <p style={{ fontSize:12, color:'#e5484d', marginBottom:18 }}>Esta ação não pode ser desfeita.</p>
             <div style={{ display:'flex', gap:10 }}>
-              <button style={{ ...sG.btn, background:'#f4f8f5', color:'#6b8070', flex:1 }} onClick={() => setConfirmDelete(null)}>Cancelar</button>
-              <button style={{ ...sG.btn, background:'#c0392b', flex:1 }} onClick={() => deletarRelatorio(confirmDelete.id)}>Deletar</button>
+              <button style={{ ...sG.btn, background:'#f1f8f4', color:'#5c7568', flex:1 }} onClick={() => setConfirmDelete(null)}>Cancelar</button>
+              <button style={{ ...sG.btn, background:'#e5484d', flex:1 }} onClick={() => deletarRelatorio(confirmDelete.id)}>Deletar</button>
             </div>
           </div>
         </div>
       )}
 
-      {toast && <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', background: toast.type==='error'?'#c0392b':'#111a14', color:'#fff', padding:'12px 24px', borderRadius:100, fontSize:13, fontWeight:500, zIndex:400, whiteSpace:'nowrap', borderBottom:'3px solid #f0c040', boxShadow:'0 4px 20px rgba(0,0,0,.2)' }}>{toast.msg}</div>}
+      {toast && <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', background: toast.type==='error'?'#e5484d':'#0b1210', color:'#fff', padding:'12px 24px', borderRadius:100, fontSize:13, fontWeight:500, zIndex:400, whiteSpace:'nowrap', borderBottom:'3px solid #ffb020', boxShadow:'0 4px 20px rgba(0,0,0,.2)' }}>{toast.msg}</div>}
     </div>
   )
 }
 
 function SecTitle({ children }) {
-  return <div style={{ fontSize:10, fontWeight:700, color:'#1a7a4a', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:'1px solid #e8f5ee', fontFamily:"'Syne',sans-serif" }}>{children}</div>
+  return <div style={{ fontSize:10, fontWeight:700, color:'#0e9f6e', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:'1px solid #e3f7ec', fontFamily:"'Syne',sans-serif" }}>{children}</div>
 }
 
 function StoragePhoto({ supabase, path, bucket, small }) {
@@ -2474,8 +2474,8 @@ function StoragePhoto({ supabase, path, bucket, small }) {
       setLoading(false)
     })
   }, [path, bucket, supabase])
-  if (loading) return <div style={{ fontSize:10, color:'#6b8070', padding:'8px 0' }}>⏳ carregando...</div>
-  if (!url) return <div style={{ fontSize:10, color:'#c0392b', padding:'8px 0' }}>⚠️ Foto não encontrada</div>
+  if (loading) return <div style={{ fontSize:10, color:'#5c7568', padding:'8px 0' }}>⏳ carregando...</div>
+  if (!url) return <div style={{ fontSize:10, color:'#e5484d', padding:'8px 0' }}>⚠️ Foto não encontrada</div>
 
   async function baixar(e) {
     e.stopPropagation()
@@ -2493,9 +2493,9 @@ function StoragePhoto({ supabase, path, bucket, small }) {
       <img src={url} alt="foto" style={{ width:'100%', height:60, objectFit:'cover', borderRadius:6, display:'block' }} />
       <div style={{ display:'flex', gap:4, marginTop:4 }}>
         <a href={url} target="_blank" rel="noreferrer"
-          style={{ flex:1, background:'#e8f5ee', color:'#1a7a4a', borderRadius:5, padding:'3px', fontSize:10, textDecoration:'none', textAlign:'center', fontWeight:500 }}
+          style={{ flex:1, background:'#e3f7ec', color:'#0e9f6e', borderRadius:5, padding:'3px', fontSize:10, textDecoration:'none', textAlign:'center', fontWeight:500 }}
           onClick={e => e.stopPropagation()}>🔍</a>
-        <button style={{ flex:1, background:'#185fa5', color:'#fff', border:'none', borderRadius:5, padding:'3px', fontSize:10, cursor:'pointer', fontWeight:500 }} onClick={baixar}>⬇</button>
+        <button style={{ flex:1, background:'#2f6fed', color:'#fff', border:'none', borderRadius:5, padding:'3px', fontSize:10, cursor:'pointer', fontWeight:500 }} onClick={baixar}>⬇</button>
       </div>
     </div>
   )
@@ -2505,15 +2505,15 @@ function StoragePhoto({ supabase, path, bucket, small }) {
       <img src={url} alt="foto" style={{ width:'100%', maxHeight:130, objectFit:'cover', borderRadius:8, display:'block' }} />
       <div style={{ display:'flex', gap:6, marginTop:6 }}>
         <a href={url} target="_blank" rel="noreferrer"
-          style={{ flex:1, background:'#e8f5ee', color:'#1a7a4a', borderRadius:6, padding:'6px', fontSize:11, textDecoration:'none', textAlign:'center', fontWeight:500 }}
+          style={{ flex:1, background:'#e3f7ec', color:'#0e9f6e', borderRadius:6, padding:'6px', fontSize:11, textDecoration:'none', textAlign:'center', fontWeight:500 }}
           onClick={e => e.stopPropagation()}>
           🔍 Ver
         </a>
-        <button style={{ flex:1, background:'#185fa5', color:'#fff', border:'none', borderRadius:6, padding:'6px', fontSize:11, cursor:'pointer', fontWeight:500 }} onClick={baixar}>
+        <button style={{ flex:1, background:'#2f6fed', color:'#fff', border:'none', borderRadius:14, padding:'6px', fontSize:11, cursor:'pointer', fontWeight:500 }} onClick={baixar}>
           ⬇ Baixar
         </button>
       </div>
-      <div style={{ fontSize:10, color:'#6b8070', marginTop:4 }}>Clique na área acima para trocar</div>
+      <div style={{ fontSize:10, color:'#5c7568', marginTop:4 }}>Clique na área acima para trocar</div>
     </div>
   )
 }
@@ -2528,7 +2528,7 @@ function MapaLeaflet({ relatorios, height = 400 }) {
     if (pontos.length === 0) return
 
     const markers = pontos.map(r => {
-      const cor = r.status === 'sos' ? '#c0392b' : r.status === 'em_operacao' ? '#1a7a4a' : r.status === 'pausado' ? '#e8a020' : '#185fa5'
+      const cor = r.status === 'sos' ? '#e5484d' : r.status === 'em_operacao' ? '#0e9f6e' : r.status === 'pausado' ? '#f2960f' : '#2f6fed'
       const label = `${(r.cliente||'—').replace(/'/g,"\\'")} — ${(r.piloto_nome||'').replace(/'/g,"\\'")} — ${new Date(r.created_at).toLocaleDateString('pt-BR')}`
       return `L.circleMarker([${r.gps_lat},${r.gps_lng}],{color:'${cor}',fillColor:'${cor}',fillOpacity:0.85,radius:9,weight:2}).bindPopup('${label}').addTo(map)`
     }).join(';\n')
@@ -2566,25 +2566,25 @@ function MapaLeaflet({ relatorios, height = 400 }) {
   }, [])
 
   if (!mapUrl) return (
-    <div style={{ height, background:'#f4f8f5', borderRadius:12, border:'1px solid #d0e4d8', display:'flex', alignItems:'center', justifyContent:'center', color:'#6b8070', flexDirection:'column', gap:8 }}>
+    <div style={{ height, background:'#f1f8f4', borderRadius:12, border:'1px solid #d7e6dc', display:'flex', alignItems:'center', justifyContent:'center', color:'#5c7568', flexDirection:'column', gap:8 }}>
       <div style={{ fontSize:24 }}>🗺️</div>
       <div style={{ fontSize:13 }}>Carregando mapa...</div>
     </div>
   )
 
   return (
-    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d0e4d8', overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden', marginBottom:16 }}>
       <iframe
         src={mapUrl}
         style={{ width:'100%', height, border:'none', display:'block' }}
         title="Mapa de Voos Orofly"
         sandbox="allow-scripts"
       />
-      <div style={{ padding:'8px 14px', background:'#f4f8f5', fontSize:11, color:'#6b8070', display:'flex', gap:16, flexWrap:'wrap' }}>
-        <span><span style={{ color:'#185fa5' }}>●</span> Finalizado</span>
-        <span><span style={{ color:'#1a7a4a' }}>●</span> Em voo</span>
-        <span><span style={{ color:'#e8a020' }}>●</span> Pausado</span>
-        <span><span style={{ color:'#c0392b' }}>●</span> SOS</span>
+      <div style={{ padding:'8px 14px', background:'#f1f8f4', fontSize:11, color:'#5c7568', display:'flex', gap:16, flexWrap:'wrap' }}>
+        <span><span style={{ color:'#2f6fed' }}>●</span> Finalizado</span>
+        <span><span style={{ color:'#0e9f6e' }}>●</span> Em voo</span>
+        <span><span style={{ color:'#f2960f' }}>●</span> Pausado</span>
+        <span><span style={{ color:'#e5484d' }}>●</span> SOS</span>
         <span style={{ marginLeft:'auto' }}>{relatorios.filter(r=>r.gps_lat).length} voos plotados</span>
       </div>
     </div>
@@ -2616,7 +2616,7 @@ function MapaTrajetosKml({ voos, supabase, height = 500 }) {
   const [mapUrl, setMapUrl] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const urlRef = useRef(null)
-  const CORES = ['#e74c3c','#1a7a4a','#185fa5','#e8a020','#8e44ad','#16a085','#d35400','#2c3e50','#c0392b','#27ae60']
+  const CORES = ['#e74c3c','#0e9f6e','#2f6fed','#f2960f','#8e44ad','#16a085','#d35400','#2c3e50','#e5484d','#27ae60']
 
   useEffect(() => {
     let cancelado = false
@@ -2678,22 +2678,22 @@ function MapaTrajetosKml({ voos, supabase, height = 500 }) {
   useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }, [])
 
   if (carregando) return (
-    <div style={{ height, background:'#f4f8f5', borderRadius:12, border:'1px solid #d0e4d8', display:'flex', alignItems:'center', justifyContent:'center', color:'#6b8070', flexDirection:'column', gap:8 }}>
+    <div style={{ height, background:'#f1f8f4', borderRadius:12, border:'1px solid #d7e6dc', display:'flex', alignItems:'center', justifyContent:'center', color:'#5c7568', flexDirection:'column', gap:8 }}>
       <div style={{ fontSize:24 }}>🛰️</div>
       <div style={{ fontSize:13 }}>Carregando trajetos KML...</div>
     </div>
   )
 
   if (!mapUrl) return (
-    <div style={{ textAlign:'center', color:'#6b8070', padding:40, background:'#fff', borderRadius:12, border:'1px solid #d0e4d8' }}>
+    <div style={{ textAlign:'center', color:'#5c7568', padding:40, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
       Nenhum trajeto válido nos KMLs selecionados.
     </div>
   )
 
   return (
-    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d0e4d8', overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden', marginBottom:16 }}>
       <iframe src={mapUrl} style={{ width:'100%', height, border:'none', display:'block' }} title="Trajetos KML Orofly" sandbox="allow-scripts" />
-      <div style={{ padding:'10px 14px', background:'#f4f8f5', fontSize:11, color:'#6b8070', display:'flex', gap:12, flexWrap:'wrap' }}>
+      <div style={{ padding:'10px 14px', background:'#f1f8f4', fontSize:11, color:'#5c7568', display:'flex', gap:12, flexWrap:'wrap' }}>
         {voos.map((v, i) => (
           <span key={v.id}><span style={{ color: CORES[i % CORES.length] }}>●</span> {v.cliente||'—'} — {v.piloto_nome} ({new Date(v.created_at).toLocaleDateString('pt-BR')})</span>
         ))}
@@ -2780,26 +2780,26 @@ function KmlViewer({ rel, supabase }) {
 
   return (
     <div style={{ marginTop:8 }}>
-      <div style={{ fontSize:10, fontWeight:700, color:'#1a7a4a', letterSpacing:1, marginBottom:8, fontFamily:"'Syne',sans-serif" }}>ARQUIVOS KML</div>
+      <div style={{ fontSize:10, fontWeight:700, color:'#0e9f6e', letterSpacing:1, marginBottom:8, fontFamily:"'Syne',sans-serif" }}>ARQUIVOS KML</div>
       {nomes.map((nome, i) => (
-        <div key={i} style={{ background:'#fff', border:'1px solid #d0e4d8', borderRadius:10, overflow:'hidden', marginBottom:8 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', cursor:'pointer', background: expanded&&i===0?'#e8f5ee':'#fff' }}
+        <div key={i} style={{ background:'#fff', border:'1px solid #d7e6dc', borderRadius:10, overflow:'hidden', marginBottom:8 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', cursor:'pointer', background: expanded&&i===0?'#e3f7ec':'#fff' }}
             onClick={() => i === 0 && carregarKml()}>
             <span>📄</span>
-            <span style={{ flex:1, fontSize:13, fontWeight:500, color:'#111a14' }}>{nome}</span>
-            {loading && i===0 && <span style={{ fontSize:11, color:'#6b8070' }}>⏳ carregando...</span>}
-            {i===0 && !loading && <span style={{ fontSize:11, color:'#1a7a4a' }}>{expanded ? '▲ Fechar' : '▼ Ver trajeto'}</span>}
+            <span style={{ flex:1, fontSize:13, fontWeight:500, color:'#0b1210' }}>{nome}</span>
+            {loading && i===0 && <span style={{ fontSize:11, color:'#5c7568' }}>⏳ carregando...</span>}
+            {i===0 && !loading && <span style={{ fontSize:11, color:'#0e9f6e' }}>{expanded ? '▲ Fechar' : '▼ Ver trajeto'}</span>}
           </div>
 
           {expanded && i === 0 && kmlData && (
-            <div style={{ borderTop:'1px solid #e8f5ee' }}>
+            <div style={{ borderTop:'1px solid #e3f7ec' }}>
               {/* META */}
               {kmlData.meta && Object.values(kmlData.meta).some(Boolean) && (
-                <div style={{ display:'flex', gap:14, flexWrap:'wrap', padding:'10px 14px', background:'#f9fbfa', borderBottom:'1px solid #f0f4f1' }}>
+                <div style={{ display:'flex', gap:14, flexWrap:'wrap', padding:'10px 14px', background:'#f7fbf8', borderBottom:'1px solid #eef5f0' }}>
                   {[['✈️ Aeronave', kmlData.meta.aeronave], ['👤 Piloto', kmlData.meta.piloto], ['📐 Área', kmlData.meta.area ? parseFloat(kmlData.meta.area).toFixed(2)+' ha' : null], ['⚡', kmlData.meta.velocidade ? kmlData.meta.velocidade+' m/s' : null], ['↕️', kmlData.meta.altura ? kmlData.meta.altura+' m' : null], ['↔️', kmlData.meta.espacamento ? kmlData.meta.espacamento+' m' : null]].filter(([,v])=>v).map(([l,v])=>(
-                    <span key={l} style={{ fontSize:12 }}><span style={{ color:'#6b8070' }}>{l} </span><strong>{v}</strong></span>
+                    <span key={l} style={{ fontSize:12 }}><span style={{ color:'#5c7568' }}>{l} </span><strong>{v}</strong></span>
                   ))}
-                  <span style={{ fontSize:12, color:'#6b8070' }}>📍 {kmlData.coords.length} pontos</span>
+                  <span style={{ fontSize:12, color:'#5c7568' }}>📍 {kmlData.coords.length} pontos</span>
                 </div>
               )}
 
@@ -2807,19 +2807,19 @@ function KmlViewer({ rel, supabase }) {
               {showMap && mapUrl ? (
                 <div style={{ position:'relative' }}>
                   <iframe src={mapUrl} style={{ width:'100%', height:320, border:'none', display:'block' }} title="Trajeto KML" />
-                  <button style={{ position:'absolute', top:8, right:8, background:'rgba(0,0,0,.6)', color:'#fff', border:'none', borderRadius:6, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
+                  <button style={{ position:'absolute', top:8, right:8, background:'rgba(0,0,0,.6)', color:'#fff', border:'none', borderRadius:14, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
                     onClick={() => { setShowMap(false); URL.revokeObjectURL(mapUrl); setMapUrl(null) }}>✕ Fechar mapa</button>
                 </div>
               ) : (
                 <div style={{ padding:'10px 14px' }}>
                   {kmlData.coords.length > 0 && (
-                    <button style={{ background:'#1a7a4a', color:'#fff', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, cursor:'pointer', fontWeight:600, marginRight:8 }}
+                    <button style={{ background:'#0e9f6e', color:'#fff', border:'none', borderRadius:16, padding:'8px 16px', fontSize:13, cursor:'pointer', fontWeight:600, marginRight:8 }}
                       onClick={abrirMapaLeaflet}>
                       🗺️ Ver trajeto no mapa
                     </button>
                   )}
                   {kmlData.path && (
-                    <button style={{ background:'#185fa5', color:'#fff', border:'none', borderRadius:8, padding:'8px 16px', fontSize:13, cursor:'pointer', fontWeight:600 }}
+                    <button style={{ background:'#2f6fed', color:'#fff', border:'none', borderRadius:16, padding:'8px 16px', fontSize:13, cursor:'pointer', fontWeight:600 }}
                       onClick={baixarKml}>
                       ⬇ Baixar KML
                     </button>
@@ -2839,11 +2839,11 @@ function DetailCol({ title, items }) {
   if (!valid.length) return null
   return (
     <div style={{ minWidth:120, flex:1 }}>
-      <div style={{ fontSize:10, fontWeight:700, color:'#1a7a4a', letterSpacing:1, marginBottom:5, fontFamily:"'Syne',sans-serif" }}>{title.toUpperCase()}</div>
+      <div style={{ fontSize:10, fontWeight:700, color:'#0e9f6e', letterSpacing:1, marginBottom:5, fontFamily:"'Syne',sans-serif" }}>{title.toUpperCase()}</div>
       {valid.map(([l,v]) => (
         <div key={l} style={{ display:'flex', gap:4, marginBottom:3, fontSize:11 }}>
-          <span style={{ color:'#6b8070', minWidth:65, flexShrink:0 }}>{l}:</span>
-          <span style={{ color:'#111a14', wordBreak:'break-word' }}>{v}</span>
+          <span style={{ color:'#5c7568', minWidth:65, flexShrink:0 }}>{l}:</span>
+          <span style={{ color:'#0b1210', wordBreak:'break-word' }}>{v}</span>
         </div>
       ))}
     </div>
@@ -2851,11 +2851,11 @@ function DetailCol({ title, items }) {
 }
 
 const sG = {
-  td: { padding:'11px 14px', fontSize:13, color:'#111a14', borderBottom:'1px solid #f0f4f1', verticalAlign:'middle' },
-  iconBtn: { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'3px 4px', borderRadius:6 },
-  label: { fontSize:11, fontWeight:600, color:'#6b8070', letterSpacing:.5, marginBottom:4, fontFamily:"'Syne',sans-serif" },
-  input: { width:'100%', border:'1px solid #d0e4d8', borderRadius:8, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#111a14', background:'#f4f8f5', appearance:'none', WebkitAppearance:'none' },
-  btn: { background:'#1a7a4a', color:'#fff', border:'none', borderRadius:10, padding:'11px', fontFamily:"'Syne',sans-serif", fontSize:13, fontWeight:600, cursor:'pointer', width:'100%' },
-  fi: { border:'1px solid #d0e4d8', borderRadius:8, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#111a14', background:'#f4f8f5', minWidth:110, appearance:'none' },
-  actBtn: (bg) => ({ color:'#fff', background:bg, border:'none', borderRadius:8, padding:'6px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }),
+  td: { padding:'11px 14px', fontSize:13, color:'#0b1210', borderBottom:'1px solid #eef5f0', verticalAlign:'middle' },
+  iconBtn: { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'3px 4px', borderRadius:10 },
+  label: { fontSize:11, fontWeight:600, color:'#5c7568', letterSpacing:.5, marginBottom:4, fontFamily:"'Syne',sans-serif" },
+  input: { width:'100%', border:'1px solid #d7e6dc', borderRadius:12, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#f1f8f4', appearance:'none', WebkitAppearance:'none' },
+  btn: { background:'#0e9f6e', color:'#fff', border:'none', borderRadius:100, padding:'11px', fontFamily:"'Syne',sans-serif", fontSize:13, fontWeight:600, cursor:'pointer', width:'100%', boxShadow:'0 4px 14px rgba(14,159,110,0.3)' },
+  fi: { border:'1px solid #d7e6dc', borderRadius:12, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#f1f8f4', minWidth:110, appearance:'none' },
+  actBtn: (bg) => ({ color:'#fff', background:bg, border:'none', borderRadius:16, padding:'6px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }),
 }
