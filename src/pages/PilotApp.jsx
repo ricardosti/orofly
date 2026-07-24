@@ -454,11 +454,12 @@ export default function PilotApp({onSwitchMode}) {
       })
   }, [profile]) // eslint-disable-line
 
-  // Carrega histórico pra tela Home (resumo do dia/mês)
+  // Carrega histórico pra tela Home (resumo do dia/mês + prévias dos cards)
   useEffect(() => {
     if (!profile) return
     loadFlights()
     loadAgenda()
+    loadNotas()
   }, [profile]) // eslint-disable-line
 
   function initTrechoForm() {
@@ -1278,40 +1279,80 @@ export default function PilotApp({onSwitchMode}) {
             <span style={{marginLeft:'auto',fontSize:18,color:'#7ba38f'}}>›</span>
           </button>
 
-          {/* Agenda de voos programados */}
+          {/* Agenda de voos programados — com prévia dos próximos itens */}
           {(()=>{
             const pendentes = minhaAgenda.filter(a=>a.status==='pendente')
-            const proximo = pendentes[0]
+            const preview = pendentes.slice(0,2)
             return (
-              <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:24,padding:'18px 20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-                onClick={()=>{loadAgenda();setView('agenda')}}>
-                <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,position:'relative'}}>
-                  📅
-                  {pendentes.length>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,borderRadius:20,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{pendentes.length}</span>}
-                </span>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Minha Agenda</div>
-                  <div style={{fontSize:12,color:'#7ba38f'}}>{proximo?`Próximo: ${proximo.cliente} — ${proximo.fazenda}`:'Nenhum voo programado'}</div>
+              <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
+                <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadAgenda();setView('agenda')}}>
+                  <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,position:'relative'}}>
+                    📅
+                    {pendentes.length>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,borderRadius:20,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{pendentes.length}</span>}
+                  </span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Minha Agenda</div>
+                    <div style={{fontSize:12,color:'#7ba38f'}}>{pendentes.length>0?`${pendentes.length} voo(s) programado(s)`:'Nenhum voo programado'}</div>
+                  </div>
+                  <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
                 </div>
-                <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
-              </button>
+                {preview.length>0 && (
+                  <div style={{borderTop:'1px solid #eef5f0'}}>
+                    {preview.map(a=>(
+                      <div key={a.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadAgenda();setView('agenda')}}>
+                        <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{a.cliente} — {a.fazenda}</div>
+                        <div style={{fontSize:11,color:'#7ba38f',flexShrink:0,marginLeft:8}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )
           })()}
 
-          {/* Notas de despesa + Previsão do tempo */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px 14px',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:8,cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-              onClick={()=>{loadNotas();setView('notas')}}>
-              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center'}}>🧾</span>
-              <div style={{fontSize:13,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
-              <div style={{fontSize:11,color:'#7ba38f'}}>Almoço, gasolina, hotel...</div>
-            </button>
-            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px 14px',display:'flex',flexDirection:'column',alignItems:'flex-start',gap:8,cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-              onClick={()=>setView('tempo')}>
-              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center'}}>🌤️</span>
-              <div style={{fontSize:13,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Previsão do Tempo</div>
-              <div style={{fontSize:11,color:'#7ba38f'}}>Chuva e Delta T dos próximos dias</div>
-            </button>
+          {/* Notas de despesa — com prévia das últimas lançadas */}
+          <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
+            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadNotas();setView('notas')}}>
+              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🧾</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>Almoço, gasolina, hotel...</div>
+              </div>
+              <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
+            </div>
+            {minhasNotas.length>0 && (
+              <div style={{borderTop:'1px solid #eef5f0'}}>
+                {minhasNotas.slice(0,2).map(n=>(
+                  <div key={n.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadNotas();setView('notas')}}>
+                    <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
+                    <div style={{fontSize:12,color:'#0e9f6e',fontWeight:700,flexShrink:0,marginLeft:8}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Previsão do tempo — prévia se já consultada nesta sessão */}
+          <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
+            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>setView('tempo')}>
+              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🌤️</span>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Previsão do Tempo</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>{tempoDias?`📍 ${tempoLocal}`:'Chuva e Delta T dos próximos dias'}</div>
+              </div>
+              <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
+            </div>
+            {tempoDias && (
+              <div style={{borderTop:'1px solid #eef5f0',display:'flex'}}>
+                {tempoDias.slice(0,3).map((d,i)=>(
+                  <div key={d.data} style={{flex:1,padding:'10px 8px',textAlign:'center',borderRight:i<2?'1px solid #f6faf7':'none',cursor:'pointer'}} onClick={()=>setView('tempo')}>
+                    <div style={{fontSize:10,color:'#7ba38f',fontWeight:600,textTransform:'capitalize'}}>{i===0?'Hoje':new Date(d.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short'})}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginTop:2}}>{Math.round(d.tempMax)}°</div>
+                    <div style={{fontSize:10,color:d.chuvaProb>=50?'#2f6fed':'#7ba38f',marginTop:2}}>☔ {Math.round(d.chuvaProb)}%</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Voos compartilhados pendentes */}
