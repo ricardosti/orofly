@@ -7,6 +7,17 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 
+// Ícone de "nova missão" — trilha pontilhada até um pin de mapa
+const IconRota = ({size=22}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <circle cx="4.5" cy="5.5" r="1.5" fill="currentColor"/>
+    <circle cx="9" cy="8.5" r="1.2" fill="currentColor" opacity="0.75"/>
+    <circle cx="13" cy="12.5" r="1" fill="currentColor" opacity="0.55"/>
+    <path d="M18.5 14.5c0 3.6-4 6.5-4 6.5s-4-2.9-4-6.5a4 4 0 1 1 8 0z" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinejoin="round"/>
+    <circle cx="14.5" cy="14.5" r="1.4" fill="currentColor"/>
+  </svg>
+)
+
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
@@ -349,6 +360,7 @@ export default function PilotApp({onSwitchMode}) {
   const [clientesDB, setClientesDB] = useState([])
   const [fazendasDB, setFazendasDB] = useState([])
   const [talhoesDB, setTalhoesDB] = useState([])
+  const [veiculosDB, setVeiculosDB] = useState([])
 
   // Listas dinâmicas: banco + "Outros" no final
   const DRONES = dronesDB.length > 0
@@ -397,7 +409,7 @@ export default function PilotApp({onSwitchMode}) {
   const [kmlFiles,setKmlFiles] = useState([])
   const [flights,setFlights] = useState([])
   const [loadingFlights,setLoadingFlights] = useState(false)
-  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:''})
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_atual:''})
   const [notaFotoPreview,setNotaFotoPreview] = useState(null)
   const [notaFotoFile,setNotaFotoFile] = useState(null)
   const [notaSaving,setNotaSaving] = useState(false)
@@ -440,6 +452,8 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
+    supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,ativo').eq('ativo',true).order('placa')
+      .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
   }, [])
 
   // Carrega voos compartilhados abertos
@@ -1069,10 +1083,27 @@ export default function PilotApp({onSwitchMode}) {
         piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
         categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
         ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
+        veiculo_id:notaForm.veiculo_id||null,
       })
       if(error) throw error
+
+      // Se marcou veículo + km, registra a viagem e atualiza o km atual do carro
+      if(notaForm.veiculo_id && notaForm.km_atual){
+        const veiculo = veiculosDB.find(v=>v.id===notaForm.veiculo_id)
+        const kmFim = parseFloat(notaForm.km_atual)
+        try {
+          await supabase.from('viagens').insert({
+            veiculo_id: notaForm.veiculo_id, motorista: profile.nome||profile.email, data: notaForm.data,
+            km_inicial: veiculo?.km_atual||0, km_final: kmFim,
+            ordem_servico: osDigitada||null, relatorio_id, observacao: 'Registrado via Cadastro de Notas',
+          })
+          await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',notaForm.veiculo_id)
+          setVeiculosDB(vs=>vs.map(v=>v.id===notaForm.veiculo_id?{...v,km_atual:kmFim}:v))
+        } catch{}
+      }
+
       showToast(relatorio_id?'✅ Nota salva e vinculada ao voo!':'✅ Nota salva!')
-      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:''})
+      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_atual:''})
       setNotaFotoPreview(null); setNotaFotoFile(null)
       loadNotas()
     } catch(e){ showToast('Erro: '+e.message,'error') } finally { setNotaSaving(false) }
@@ -1208,7 +1239,7 @@ export default function PilotApp({onSwitchMode}) {
           if(ativo){ setView('form'); return }
           limpar(); setView('form')
         }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',marginTop:-26}}>
-        <span style={{width:52,height:52,borderRadius:'50%',background:'linear-gradient(135deg,#0e9f6e,#22c476)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,boxShadow:'0 8px 20px rgba(14,159,110,0.45)',border:'4px solid #fff'}}>🚁</span>
+        <span style={{width:52,height:52,borderRadius:'50%',background:'linear-gradient(135deg,#0e9f6e,#22c476)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:'0 8px 20px rgba(14,159,110,0.45)',border:'4px solid #fff'}}><IconRota size={22}/></span>
         <span style={{fontSize:10,fontWeight:700,color:'#0e9f6e'}}>Novo Voo</span>
       </div>
       <div onClick={()=>{loadFlights();setView('flights')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='flights'?'#0e9f6e':'#a9beb1',minWidth:52}}>
@@ -1293,7 +1324,7 @@ export default function PilotApp({onSwitchMode}) {
               if(draftAtivo){ if(!window.confirm('Já existe um voo em andamento. Descartar e começar um novo? (o voo atual continua salvo, você pode voltar por "Continuar voo")')) return }
               limpar(); setView('form')
             }}>
-            <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:draftAtivo?'#e3f7ec':'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🚁</span>
+            <span style={{width:48,height:48,borderRadius:14,background:draftAtivo?'#e3f7ec':'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:draftAtivo?'#0e9f6e':'#fff'}}><IconRota size={24}/></span>
             <div>
               <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Novo Voo</div>
               <div style={{fontSize:12,opacity:.85}}>Iniciar uma nova operação</div>
@@ -1508,6 +1539,24 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           </div>
 
+          {/* Veículo (opcional) */}
+          {veiculosDB.length>0 && (
+            <>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VEÍCULO (OPCIONAL)</div>
+              <select style={{...sw.fs,marginBottom:8}} value={notaForm.veiculo_id} onChange={e=>setNotaForm(f=>({...f,veiculo_id:e.target.value}))}>
+                <option value="">Não vincular a um veículo...</option>
+                {veiculosDB.map(v=><option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
+              </select>
+              {notaForm.veiculo_id && (
+                <div style={{marginBottom:14}}>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM ATUAL DO VEÍCULO</div>
+                  <input type="number" style={sw.fi} placeholder={`Ex: ${veiculosDB.find(v=>v.id===notaForm.veiculo_id)?.km_atual||0}`} value={notaForm.km_atual} onChange={e=>setNotaForm(f=>({...f,km_atual:e.target.value}))}/>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Se preencher, registra a viagem automaticamente</div>
+                </div>
+              )}
+            </>
+          )}
+
           {/* Ordem de serviço */}
           <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>ORDEM DE SERVIÇO (OPCIONAL)</div>
           <input style={{...sw.fi,marginBottom:4}} placeholder="Ex: 132134b — vincula a um voo" value={notaForm.ordem_servico} onChange={e=>setNotaForm(f=>({...f,ordem_servico:e.target.value}))}/>
@@ -1530,7 +1579,7 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
                   <div style={{fontWeight:600,fontSize:13,color:'#0b1210'}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
-                  <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(n.data).toLocaleDateString('pt-BR')}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}</div>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(n.data).toLocaleDateString('pt-BR')}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}{n.veiculo_id?` · 🚗 ${veiculosDB.find(v=>v.id===n.veiculo_id)?.placa||''}`:''}</div>
                 </div>
                 <div style={{fontWeight:700,fontSize:14,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
               </div>
