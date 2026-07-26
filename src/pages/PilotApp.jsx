@@ -1270,6 +1270,22 @@ export default function PilotApp({onSwitchMode}) {
     const areaMes = finalizadosMes.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
     const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
     const iniciais = (profile?.nome||'P').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
+    const minutosTotais = finalizados.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
+    const horasTotais = minutosTotais/60
+    const droneAlertas = dronesDB.map(d=>{
+      const minutos = voosFrotaDrone.filter(r=>r.drone===d.nome && r.dt_inicio && r.dt_fim).reduce((a,r)=>a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)),0)
+      const horas = minutos/60
+      const limite = d.horas_limite||100
+      const pct = limite>0 ? Math.min(100,(horas/limite)*100) : 0
+      return {tipo:'drone', nome:d.nome, horas, limite, pct}
+    }).filter(d=>d.pct>=70).sort((a,b)=>b.pct-a.pct)
+    const carroAlertas = veiculosDB.filter(v=>{
+      const alertaKm = v.proxima_manutencao_km && v.km_atual >= (v.proxima_manutencao_km - 500)
+      const alertaData = v.proxima_manutencao_data && new Date(v.proxima_manutencao_data) <= new Date(Date.now()+7*86400000)
+      return alertaKm || alertaData
+    }).map(v=>({tipo:'carro', nome:v.placa, km_atual:v.km_atual, proxima_km:v.proxima_manutencao_km, proxima_data:v.proxima_manutencao_data}))
+    const alertasManutencao = [...droneAlertas, ...carroAlertas]
+    const piorAlerta = alertasManutencao[0]
     return (
       <div style={s.wrap}>
         <div style={{background:'linear-gradient(135deg,#0e9f6e 0%,#0a6e4f 65%,#0b3d26 100%)',position:'relative',paddingBottom:34,overflow:'hidden'}}>
@@ -1300,6 +1316,37 @@ export default function PilotApp({onSwitchMode}) {
         </div>
 
         <div style={{padding:'6px 16px 100px',flex:1,display:'flex',flexDirection:'column',gap:14,marginTop:-6}}>
+          {/* Mapa de Operações (viz decorativa) + Horas Totais / Manutenção Próxima */}
+          <div style={{display:'grid',gridTemplateColumns:'1.1fr 1fr',gap:10}}>
+            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🗺️ Mapa de Operações</div>
+              <div style={{position:'relative',height:88,borderRadius:12,overflow:'hidden',background:'linear-gradient(135deg,#eaf4ee,#dde8e2)'}}>
+                <div style={{position:'absolute',top:-14,left:-8,width:60,height:60,borderRadius:'50%',background:'rgba(34,196,118,0.35)'}}/>
+                <div style={{position:'absolute',bottom:-18,right:4,width:56,height:56,borderRadius:'50%',background:'rgba(47,111,237,0.28)'}}/>
+                <div style={{position:'absolute',top:16,right:18,width:34,height:34,borderRadius:'50%',background:'rgba(255,176,32,0.3)'}}/>
+                <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-55%)',fontSize:20}}>📍</div>
+              </div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+                <div style={{fontSize:9,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>HORAS DE VOO TOTAIS</div>
+                <div style={{fontSize:20,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{horasTotais.toFixed(1)}</div>
+              </div>
+              {piorAlerta ? (
+                <div onClick={()=>setView('home')} style={{background:'#fff3e0',borderRadius:20,border:'1px solid #f2c98a',padding:14,flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+                  <div style={{fontSize:9,fontWeight:700,color:'#7a5200',letterSpacing:.3}}>🔧 MANUTENÇÃO PRÓXIMA</div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginTop:2}}>{piorAlerta.tipo==='drone'?'🚁':'🚗'} {piorAlerta.nome}</div>
+                  <div style={{fontSize:10,color:'#f2960f',fontWeight:600,marginTop:1}}>
+                    {piorAlerta.tipo==='drone' ? `${piorAlerta.pct.toFixed(0)}% (${piorAlerta.horas.toFixed(1)}h/${piorAlerta.limite}h)` : (piorAlerta.proxima_km?`${Math.max(0,piorAlerta.proxima_km-piorAlerta.km_atual).toFixed(0)} km restantes`:new Date(piorAlerta.proxima_data).toLocaleDateString('pt-BR'))}
+                  </div>
+                  {alertasManutencao.length>1 && <div style={{fontSize:9,color:'#7a5200',marginTop:3,opacity:.8}}>+{alertasManutencao.length-1} outro(s)</div>}
+                </div>
+              ) : (
+                <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#7ba38f',fontSize:11,fontWeight:600}}>✅ Frota em dia</div>
+              )}
+            </div>
+          </div>
+
           {/* Resumo do dia */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
@@ -1351,42 +1398,6 @@ export default function PilotApp({onSwitchMode}) {
             </div>
             <span style={{marginLeft:'auto',fontSize:18,color:'#7ba38f'}}>›</span>
           </button>
-
-          {/* Alerta de manutenção — frota de drones + veículos */}
-          {(()=>{
-            const droneAlertas = dronesDB.map(d=>{
-              const minutos = voosFrotaDrone.filter(r=>r.drone===d.nome && r.dt_inicio && r.dt_fim).reduce((a,r)=>a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)),0)
-              const horas = minutos/60
-              const limite = d.horas_limite||100
-              const pct = limite>0 ? Math.min(100,(horas/limite)*100) : 0
-              return {tipo:'drone', nome:d.nome, horas, limite, pct}
-            }).filter(d=>d.pct>=70)
-            const carroAlertas = veiculosDB.filter(v=>{
-              const alertaKm = v.proxima_manutencao_km && v.km_atual >= (v.proxima_manutencao_km - 500)
-              const alertaData = v.proxima_manutencao_data && new Date(v.proxima_manutencao_data) <= new Date(Date.now()+7*86400000)
-              return alertaKm || alertaData
-            }).map(v=>({tipo:'carro', nome:v.placa, km_atual:v.km_atual, proxima_km:v.proxima_manutencao_km, proxima_data:v.proxima_manutencao_data}))
-            const alertas = [...droneAlertas, ...carroAlertas]
-            if(alertas.length===0) return null
-            return (
-              <div style={{background:'#fff',borderRadius:24,border:'1px solid #f2c98a',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
-                <div style={{padding:'14px 18px',background:'#fff3e0',display:'flex',alignItems:'center',gap:10}}>
-                  <span style={{fontSize:18}}>🔧</span>
-                  <div style={{fontSize:13,fontWeight:700,color:'#7a5200',fontFamily:"'Syne',sans-serif"}}>Manutenção Próxima</div>
-                </div>
-                <div>
-                  {alertas.map((a,i)=>(
-                    <div key={a.tipo+a.nome} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:i<alertas.length-1?'1px solid #f6faf7':'none'}}>
-                      <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{a.tipo==='drone'?'🚁':'🚗'} {a.nome}</div>
-                      <div style={{fontSize:11,color:'#f2960f',fontWeight:600}}>
-                        {a.tipo==='drone' ? `${a.pct.toFixed(0)}% (${a.horas.toFixed(1)}h/${a.limite}h)` : (a.proxima_km?`${Math.max(0,a.proxima_km-a.km_atual).toFixed(0)} km restantes`:new Date(a.proxima_data).toLocaleDateString('pt-BR'))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
 
           {/* Agenda de voos programados — com prévia dos próximos itens */}
           {(()=>{
