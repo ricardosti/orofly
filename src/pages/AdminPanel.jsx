@@ -833,6 +833,20 @@ export default function AdminPanel({ onSwitchMode }) {
               if(r.dt_inicio&&r.dt_fim) droneStats[d].minutos+=Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
             })
 
+            // ── KPIs de topo (sempre "ao vivo" — ano/mês corrente, não seguem os filtros abaixo) ──
+            const anoAtual = hoje.getFullYear()
+            const areaEsteAno = relTodos.filter(r=>r.dt_inicio && new Date(r.dt_inicio).getFullYear()===anoAtual).reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+            const mesAtualIni = new Date(hoje.getFullYear(),hoje.getMonth(),1)
+            const minutosMes = relTodos.filter(r=>r.dt_inicio && new Date(r.dt_inicio)>=mesAtualIni).reduce((a,r)=>{
+              if(!r.dt_inicio||!r.dt_fim) return a
+              return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
+            },0)
+            const pilotosAtivosAgora = new Set(relatorios.filter(r=>r.status==='em_operacao').map(r=>r.piloto_nome)).size
+            const dronesEmManutencao = Object.entries(droneStats).filter(([drone,st])=>{
+              const limite = droneHorasLimite[drone]||100
+              return (st.minutos/60)/limite >= 0.9
+            }).length
+
             // ── Projeções ──
             const diasDecorridos = Math.max(1,Math.round((new Date()-pIni)/86400000))
             const diasNoMes = new Date(hoje.getFullYear(),hoje.getMonth()+1,0).getDate()
@@ -904,6 +918,41 @@ export default function AdminPanel({ onSwitchMode }) {
 
             return (
               <div>
+                {/* ── RESUMO EXECUTIVO (visão geral ao vivo, independente dos filtros abaixo) ── */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
+                  <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{width:44,height:44,borderRadius:12,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🌱</span>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>ÁREA PULVERIZADA ESTE ANO</div>
+                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{areaEsteAno.toFixed(1)} ha</div>
+                    </div>
+                  </div>
+                  <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{width:44,height:44,borderRadius:12,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>⏱️</span>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>TOTAL HORAS VOO MÊS</div>
+                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{fmtH(minutosMes)}</div>
+                    </div>
+                  </div>
+                  <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{width:44,height:44,borderRadius:12,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🧑‍✈️</span>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>PILOTOS ATIVOS AGORA</div>
+                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{pilotosAtivosAgora}</div>
+                    </div>
+                  </div>
+                  <div style={{background:'#fff',borderRadius:16,border:`1px solid ${dronesEmManutencao>0?'#f2960f':'#dcebe3'}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{width:44,height:44,borderRadius:12,background:dronesEmManutencao>0?'#fff3e0':'#f1f8f4',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔧</span>
+                    <div style={{minWidth:0,flex:1}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>DRONES EM MANUTENÇÃO</div>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{dronesEmManutencao}</div>
+                        {dronesEmManutencao>0&&<span style={{background:'#f2960f',color:'#fff',fontSize:9,fontWeight:700,padding:'2px 8px',borderRadius:20}}>PRIORIDADE</span>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* ── FILTROS ── */}
                 <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',marginBottom:16}}>
                   <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,marginBottom:12,color:'#0b1210'}}>🔍 Filtros</div>
