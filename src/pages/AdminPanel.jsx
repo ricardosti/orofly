@@ -88,6 +88,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invMovimentos, setInvMovimentos] = useState([])
   const [custos, setCustos] = useState([])
   const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',dataIni:'',dataFim:''})
+  const [custosSubTab, setCustosSubTab] = useState('notas')
+  const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
   const [agenda, setAgenda] = useState([])
   const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',data_prevista:'',produto:'',observacao:''})
   const [agendaSaving, setAgendaSaving] = useState(false)
@@ -2573,6 +2575,15 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{custos.length} notas registradas</div>
                 </div>
 
+                {/* Sub-abas */}
+                <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:360}}>
+                  <button style={{flex:1,background:custosSubTab==='notas'?'#fff':'transparent',color:custosSubTab==='notas'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='notas'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                    onClick={()=>setCustosSubTab('notas')}>🧾 Notas de Despesa</button>
+                  <button style={{flex:1,background:custosSubTab==='veiculos'?'#fff':'transparent',color:custosSubTab==='veiculos'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='veiculos'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                    onClick={()=>setCustosSubTab('veiculos')}>🚗 Veículos</button>
+                </div>
+
+                {custosSubTab==='notas' && (<>
                 {/* Filtros */}
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:16,border:'1px solid #dcebe3',alignItems:'center'}}>
                   <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
@@ -2665,6 +2676,138 @@ export default function AdminPanel({ onSwitchMode }) {
                     })}
                   </div>
                 )}
+                </>)}
+
+                {custosSubTab==='veiculos' && (() => {
+                  const veicById = {}
+                  veiculos.forEach(v=>{veicById[v.id]=v})
+
+                  const viagensF = viagens.filter(vg=>{
+                    if(veicFiltros.veiculo && vg.veiculo_id!==veicFiltros.veiculo) return false
+                    if(veicFiltros.dataIni && new Date(vg.data)<new Date(veicFiltros.dataIni)) return false
+                    if(veicFiltros.dataFim && new Date(vg.data)>new Date(veicFiltros.dataFim)) return false
+                    return true
+                  })
+                  const manutF = manutencoes.filter(m=>{
+                    if(veicFiltros.veiculo && m.veiculo_id!==veicFiltros.veiculo) return false
+                    if(veicFiltros.dataIni && new Date(m.data)<new Date(veicFiltros.dataIni)) return false
+                    if(veicFiltros.dataFim && new Date(m.data)>new Date(veicFiltros.dataFim)) return false
+                    return true
+                  })
+                  const despesasF = custos.filter(c=>{
+                    if(!c.veiculo_id) return false
+                    if(veicFiltros.veiculo && c.veiculo_id!==veicFiltros.veiculo) return false
+                    if(veicFiltros.dataIni && new Date(c.data)<new Date(veicFiltros.dataIni)) return false
+                    if(veicFiltros.dataFim && new Date(c.data)>new Date(veicFiltros.dataFim)) return false
+                    return true
+                  })
+
+                  const totalKm = viagensF.reduce((a,vg)=>a+Math.max(0,(vg.km_final||0)-(vg.km_inicial||0)),0)
+                  const totalManut = manutF.reduce((a,m)=>a+parseFloat(m.custo||0),0)
+                  const totalDespesas = despesasF.reduce((a,c)=>a+parseFloat(c.valor||0),0)
+                  const totalGastoFrota = totalManut+totalDespesas
+                  const custoPorKm = totalKm>0 ? totalGastoFrota/totalKm : 0
+
+                  const porVeiculo = {}
+                  veiculos.forEach(v=>{ porVeiculo[v.id] = {placa:v.placa, km:0, manut:0, despesa:0} })
+                  viagensF.forEach(vg=>{ if(porVeiculo[vg.veiculo_id]) porVeiculo[vg.veiculo_id].km += Math.max(0,(vg.km_final||0)-(vg.km_inicial||0)) })
+                  manutF.forEach(m=>{ if(porVeiculo[m.veiculo_id]) porVeiculo[m.veiculo_id].manut += parseFloat(m.custo||0) })
+                  despesasF.forEach(c=>{ if(porVeiculo[c.veiculo_id]) porVeiculo[c.veiculo_id].despesa += parseFloat(c.valor||0) })
+                  const rankingVeiculo = Object.values(porVeiculo).filter(v=>v.km>0||v.manut>0||v.despesa>0).sort((a,b)=>(b.manut+b.despesa)-(a.manut+a.despesa))
+
+                  const timeline = [
+                    ...viagensF.map(vg=>({tipo:'viagem', data:vg.data, id:'vg-'+vg.id, veiculo:veicById[vg.veiculo_id]?.placa||'—', detalhe:`🛣️ ${vg.destino||'Viagem'} · ${Math.max(0,(vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km${vg.motorista?` · ${vg.motorista}`:''}${vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}`, valor:null})),
+                    ...manutF.map(m=>({tipo:'manutencao', data:m.data, id:'mn-'+m.id, veiculo:veicById[m.veiculo_id]?.placa||'—', detalhe:`🔧 ${m.tipo}${m.km?` · ${parseFloat(m.km).toLocaleString('pt-BR')} km`:''}${m.observacao?` · ${m.observacao}`:''}`, valor:m.custo?parseFloat(m.custo):null})),
+                    ...despesasF.map(c=>({tipo:'despesa', data:c.data, id:'ds-'+c.id, veiculo:veicById[c.veiculo_id]?.placa||'—', detalhe:`${CATEGORIA_ICON[c.categoria]||'🧾'} ${c.categoria} · ${c.piloto_nome||'—'}`, valor:parseFloat(c.valor||0)})),
+                  ].sort((a,b)=>new Date(b.data)-new Date(a.data))
+
+                  const filtrosVeicAtivos = Object.values(veicFiltros).some(Boolean)
+
+                  return (
+                    <div>
+                      {/* Filtros */}
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:16,border:'1px solid #dcebe3',alignItems:'center'}}>
+                        <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                          value={veicFiltros.veiculo} onChange={e=>setVeicFiltros(f=>({...f,veiculo:e.target.value}))}>
+                          <option value="">Todos os veículos</option>
+                          {veiculos.map(v=><option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
+                        </select>
+                        <div style={{display:'flex',alignItems:'center',gap:4}}>
+                          <span style={{fontSize:11,color:'#5c7568'}}>De:</span>
+                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={veicFiltros.dataIni} onChange={e=>setVeicFiltros(f=>({...f,dataIni:e.target.value}))}/>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:4}}>
+                          <span style={{fontSize:11,color:'#5c7568'}}>Até:</span>
+                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={veicFiltros.dataFim} onChange={e=>setVeicFiltros(f=>({...f,dataFim:e.target.value}))}/>
+                        </div>
+                        {filtrosVeicAtivos && (
+                          <button style={{background:'none',border:'1px solid #f0b0a8',color:'#e5484d',borderRadius:12,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                            onClick={()=>setVeicFiltros({veiculo:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
+                        )}
+                      </div>
+
+                      {/* KPIs */}
+                      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>GASTO TOTAL (FROTA)</div>
+                          <div style={{fontSize:22,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {totalGastoFrota.toFixed(2)}</div>
+                        </div>
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>MANUTENÇÃO</div>
+                          <div style={{fontSize:22,fontWeight:700,color:'#f2960f',fontFamily:"'Syne',sans-serif"}}>R$ {totalManut.toFixed(2)}</div>
+                        </div>
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>KM RODADOS</div>
+                          <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{totalKm.toLocaleString('pt-BR')}</div>
+                        </div>
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>CUSTO / KM</div>
+                          <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>R$ {custoPorKm.toFixed(2)}</div>
+                        </div>
+                      </div>
+
+                      {/* Ranking por veículo */}
+                      {rankingVeiculo.length>0 && (
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <SecTitle>Total por Veículo</SecTitle>
+                          <div style={{overflowX:'auto'}}>
+                            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                              <thead><tr style={{background:'#f1f8f4'}}>{['Veículo','Km rodados','Manutenção','Despesas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                              <tbody>
+                                {rankingVeiculo.map(v=>(
+                                  <tr key={v.placa} style={{background:'#fff'}}>
+                                    <td style={{padding:'8px 10px',fontWeight:500}}>🚗 {v.placa}</td>
+                                    <td style={{padding:'8px 10px',color:'#5c7568'}}>{v.km.toLocaleString('pt-BR')} km</td>
+                                    <td style={{padding:'8px 10px',color:'#f2960f'}}>R$ {v.manut.toFixed(2)}</td>
+                                    <td style={{padding:'8px 10px',color:'#5c7568'}}>R$ {v.despesa.toFixed(2)}</td>
+                                    <td style={{padding:'8px 10px',fontWeight:700,color:'#0e9f6e'}}>R$ {(v.manut+v.despesa).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Linha do tempo */}
+                      {timeline.length===0 ? (
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum registro de viagem, manutenção ou despesa de veículo encontrado.</div>
+                      ) : (
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'8px 0',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          {timeline.map((ev,i)=>(
+                            <div key={ev.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 18px',borderBottom:i<timeline.length-1?'1px solid #f6faf7':'none'}}>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:600}}>{ev.detalhe}</div>
+                                <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>🚗 {ev.veiculo} · {new Date(ev.data).toLocaleDateString('pt-BR')}</div>
+                              </div>
+                              {ev.valor!=null && <div style={{fontWeight:700,fontSize:14,color:ev.tipo==='manutencao'?'#f2960f':'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {ev.valor.toFixed(2)}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })()}
