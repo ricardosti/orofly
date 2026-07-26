@@ -92,6 +92,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',data_prevista:'',produto:'',observacao:''})
   const [agendaSaving, setAgendaSaving] = useState(false)
   const [agendaFiltros, setAgendaFiltros] = useState({piloto:'',status:''})
+  const [mapaSubTab, setMapaSubTab] = useState('voos')
+  const [gpsLogins, setGpsLogins] = useState([])
   const [movForm, setMovForm] = useState({produto:'',tipo:'entrada',quantidade:'',obs:''})
   const [movSaving, setMovSaving] = useState(false)
   const [movFiltros, setMovFiltros] = useState({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})
@@ -262,16 +264,18 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: rels }, usersRes, { data: desp }, { data: agend }] = await Promise.all([
+    const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
       fetch(`${API_BASE}/api/list-users`),
       supabase.from('despesas').select('*').order('created_at', { ascending: false }),
-      supabase.from('agendamentos').select('*').order('data_prevista', { ascending: true })
+      supabase.from('agendamentos').select('*').order('data_prevista', { ascending: true }),
+      supabase.from('gps_logins').select('*').order('created_at', { ascending: false }).limit(300)
     ])
     const rs = rels || []
     setRelatorios(rs)
     setCustos(desp || [])
     setAgenda(agend || [])
+    setGpsLogins(logins || [])
     if (usersRes.ok) { const d = await usersRes.json(); setPilotos(d.users || []) }
     const counts = {}
     rs.forEach(r => { counts[r.piloto_id] = (counts[r.piloto_id] || 0) + 1 })
@@ -1316,6 +1320,23 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               </div>
 
+              <div style={{display:'flex',gap:8,marginBottom:16}}>
+                {[['voos','✈️ Voos'],['operacoes','📍 Operações']].map(([id,lbl])=>(
+                  <button key={id} style={{background:mapaSubTab===id?'#0e9f6e':'#f1f8f4',color:mapaSubTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    onClick={()=>setMapaSubTab(id)}>{lbl}</button>
+                ))}
+              </div>
+
+              {mapaSubTab==='operacoes' && (
+                <div>
+                  <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:'10px 14px',marginBottom:14,fontSize:12,color:'#5c7568'}}>
+                    Mostra onde os pilotos logaram (azul) e onde iniciaram voos (verde), com um raio de 10km em cada ponto — círculos sobrepostos indicam áreas de operação concentrada.
+                  </div>
+                  <MapaOperacoes logins={gpsLogins} voos={relatorios.filter(r=>r.gps_lat)} height={isMobile?300:520}/>
+                </div>
+              )}
+
+              {mapaSubTab==='voos' && (<>
               {sosAtivos.length > 0 && (
                 <div style={{ background:'#fdeaea', border:'2px solid #e5484d', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
                   <div style={{ fontSize:14, fontWeight:700, color:'#e5484d', marginBottom:8 }}>🆘 SOS ATIVOS</div>
@@ -1387,6 +1408,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ fontSize:13 }}>Os voos aparecerão aqui quando os pilotos capturarem o GPS durante a operação.</div>
                 </div>
               )}
+              </>)}
             </div>
           )}
 
@@ -2900,6 +2922,97 @@ function MapaLeaflet({ relatorios, height = 400 }) {
         <span><span style={{ color:'#f2960f' }}>●</span> Pausado</span>
         <span><span style={{ color:'#e5484d' }}>●</span> SOS</span>
         <span style={{ marginLeft:'auto' }}>{relatorios.filter(r=>r.gps_lat).length} voos plotados</span>
+      </div>
+    </div>
+  )
+}
+
+// Mapa de Operações: onde os pilotos logaram (azul) e onde iniciaram voos (verde),
+// cada ponto com um círculo de 10km — sobreposição indica área de operação concentrada
+function MapaOperacoes({ logins, voos, height = 400 }) {
+  const [mapUrl, setMapUrl] = useState(null)
+  const urlRef = useRef(null)
+
+  useEffect(() => {
+    const pontosLogin = (logins||[]).filter(l => l.lat && l.lng)
+    const pontosVoo = (voos||[]).filter(v => v.gps_lat && v.gps_lng)
+    const todos = [...pontosLogin.map(p=>[p.lat,p.lng]), ...pontosVoo.map(p=>[p.gps_lat,p.gps_lng])]
+    if (todos.length === 0) return
+
+    const markersLogin = pontosLogin.map(l => {
+      const label = `📍 Login — ${(l.piloto_nome||'—').replace(/'/g,"\\'")} — ${new Date(l.created_at).toLocaleString('pt-BR')}`
+      return `L.circleMarker([${l.lat},${l.lng}],{color:'#2f6fed',fillColor:'#2f6fed',fillOpacity:0.9,radius:7,weight:2}).bindPopup('${label}').addTo(map);
+              L.circle([${l.lat},${l.lng}],{radius:10000,color:'#2f6fed',weight:1,fillColor:'#2f6fed',fillOpacity:0.05}).addTo(map)`
+    }).join(';\n')
+
+    const markersVoo = pontosVoo.map(v => {
+      const label = `🚁 Voo — ${(v.cliente||'—').replace(/'/g,"\\'")} — ${(v.piloto_nome||'—').replace(/'/g,"\\'")}`
+      return `L.circleMarker([${v.gps_lat},${v.gps_lng}],{color:'#0e9f6e',fillColor:'#0e9f6e',fillOpacity:0.9,radius:7,weight:2}).bindPopup('${label}').addTo(map);
+              L.circle([${v.gps_lat},${v.gps_lng}],{radius:10000,color:'#0e9f6e',weight:1,fillColor:'#0e9f6e',fillOpacity:0.05}).addTo(map)`
+    }).join(';\n')
+
+    const center = todos[Math.floor(todos.length / 2)]
+    const allCoords = `[${todos.map(c=>`[${c[0]},${c[1]}]`).join(',')}]`
+
+    const html = `<!DOCTYPE html><html><head>
+      <meta charset="utf-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+      <style>*{margin:0;padding:0;box-sizing:border-box}html,body,#map{width:100%;height:100%}</style>
+    </head><body>
+      <div id="map"></div>
+      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+      <script>
+        var map = L.map('map',{zoomControl:true}).setView([${center[0]},${center[1]}],10);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:19}).addTo(map);
+        ${markersLogin};
+        ${markersVoo};
+        var coords = ${allCoords};
+        if(coords.length>1){map.fitBounds(L.latLngBounds(coords),{padding:[30,30]});}
+      </script>
+    </body></html>`
+
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+    const blob = new Blob([html], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    urlRef.current = url
+    setMapUrl(url)
+  }, [logins, voos])
+
+  useEffect(() => {
+    return () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }
+  }, [])
+
+  const pontosLogin = (logins||[]).filter(l => l.lat && l.lng)
+  const pontosVoo = (voos||[]).filter(v => v.gps_lat && v.gps_lng)
+
+  if (pontosLogin.length + pontosVoo.length === 0) return (
+    <div style={{ textAlign:'center', color:'#5c7568', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
+      <div style={{ fontSize:40, marginBottom:12 }}>📍</div>
+      <div style={{ fontSize:15, fontWeight:600, marginBottom:8 }}>Nenhum dado de operação ainda</div>
+      <div style={{ fontSize:13 }}>Aparece aqui assim que os pilotos fizerem login com GPS habilitado.</div>
+    </div>
+  )
+
+  if (!mapUrl) return (
+    <div style={{ height, background:'#f1f8f4', borderRadius:12, border:'1px solid #d7e6dc', display:'flex', alignItems:'center', justifyContent:'center', color:'#5c7568', flexDirection:'column', gap:8 }}>
+      <div style={{ fontSize:24 }}>🗺️</div>
+      <div style={{ fontSize:13 }}>Carregando mapa...</div>
+    </div>
+  )
+
+  return (
+    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden', marginBottom:16 }}>
+      <iframe
+        src={mapUrl}
+        style={{ width:'100%', height, border:'none', display:'block' }}
+        title="Mapa de Operações Orofly"
+        sandbox="allow-scripts"
+      />
+      <div style={{ padding:'8px 14px', background:'#f1f8f4', fontSize:11, color:'#5c7568', display:'flex', gap:16, flexWrap:'wrap' }}>
+        <span><span style={{ color:'#2f6fed' }}>●</span> Login ({pontosLogin.length})</span>
+        <span><span style={{ color:'#0e9f6e' }}>●</span> Início de voo ({pontosVoo.length})</span>
+        <span style={{ marginLeft:'auto' }}>Círculos = raio de 10km</span>
       </div>
     </div>
   )

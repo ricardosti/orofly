@@ -470,6 +470,23 @@ export default function PilotApp({onSwitchMode}) {
     loadNotas()
   }, [profile]) // eslint-disable-line
 
+  // Captura o GPS no login (pedido de permissão normal do navegador — não é
+  // escondido do piloto) e já usa pra adiantar a previsão do tempo na Home.
+  // Se o piloto negar ou o GPS falhar, não insiste — ele ainda pode buscar
+  // manualmente por GPS ou CEP na tela de Previsão do Tempo.
+  useEffect(() => {
+    if (!profile || !navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const lat = pos.coords.latitude, lng = pos.coords.longitude
+        supabase.from('gps_logins').insert({ piloto_id: profile.id, piloto_nome: profile.nome||profile.email, lat, lng }).then(()=>{})
+        buscarPrevisao(lat, lng, 'Sua localização (GPS)')
+      },
+      () => {},
+      { enableHighAccuracy:true, timeout:10000 }
+    )
+  }, [profile]) // eslint-disable-line
+
   function initTrechoForm() {
     const cond = {}
     COND_KEYS.forEach(k => { cond[k+'_i']=''; cond[k+'_f']='' })
