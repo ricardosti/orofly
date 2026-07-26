@@ -361,6 +361,7 @@ export default function PilotApp({onSwitchMode}) {
   const [fazendasDB, setFazendasDB] = useState([])
   const [talhoesDB, setTalhoesDB] = useState([])
   const [veiculosDB, setVeiculosDB] = useState([])
+  const [voosFrotaDrone, setVoosFrotaDrone] = useState([])
 
   // Listas dinâmicas: banco + "Outros" no final
   const DRONES = dronesDB.length > 0
@@ -442,8 +443,10 @@ export default function PilotApp({onSwitchMode}) {
     setFazendasDB(loadCache('orofly_cache_fazendas'))
     setTalhoesDB(loadCache('orofly_cache_talhoes'))
 
-    supabase.from('drones').select('nome,ativo').eq('ativo',true).order('nome')
+    supabase.from('drones').select('nome,horas_limite,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setDronesDB(data); saveCache('orofly_cache_drones',data) } })
+    supabase.from('relatorios').select('drone,dt_inicio,dt_fim').eq('status','finalizado')
+      .then(({data}) => { if(data) setVoosFrotaDrone(data) })
     supabase.from('produtos').select('nome,unidade,dose_padrao,dose_auto,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
@@ -452,7 +455,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
-    supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,ativo').eq('ativo',true).order('placa')
+    supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
   }, [])
 
@@ -1342,6 +1345,42 @@ export default function PilotApp({onSwitchMode}) {
             </div>
             <span style={{marginLeft:'auto',fontSize:18,color:'#7ba38f'}}>›</span>
           </button>
+
+          {/* Alerta de manutenção — frota de drones + veículos */}
+          {(()=>{
+            const droneAlertas = dronesDB.map(d=>{
+              const minutos = voosFrotaDrone.filter(r=>r.drone===d.nome && r.dt_inicio && r.dt_fim).reduce((a,r)=>a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)),0)
+              const horas = minutos/60
+              const limite = d.horas_limite||100
+              const pct = limite>0 ? Math.min(100,(horas/limite)*100) : 0
+              return {tipo:'drone', nome:d.nome, horas, limite, pct}
+            }).filter(d=>d.pct>=70)
+            const carroAlertas = veiculosDB.filter(v=>{
+              const alertaKm = v.proxima_manutencao_km && v.km_atual >= (v.proxima_manutencao_km - 500)
+              const alertaData = v.proxima_manutencao_data && new Date(v.proxima_manutencao_data) <= new Date(Date.now()+7*86400000)
+              return alertaKm || alertaData
+            }).map(v=>({tipo:'carro', nome:v.placa, km_atual:v.km_atual, proxima_km:v.proxima_manutencao_km, proxima_data:v.proxima_manutencao_data}))
+            const alertas = [...droneAlertas, ...carroAlertas]
+            if(alertas.length===0) return null
+            return (
+              <div style={{background:'#fff',borderRadius:24,border:'1px solid #f2c98a',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
+                <div style={{padding:'14px 18px',background:'#fff3e0',display:'flex',alignItems:'center',gap:10}}>
+                  <span style={{fontSize:18}}>🔧</span>
+                  <div style={{fontSize:13,fontWeight:700,color:'#7a5200',fontFamily:"'Syne',sans-serif"}}>Manutenção Próxima</div>
+                </div>
+                <div>
+                  {alertas.map((a,i)=>(
+                    <div key={a.tipo+a.nome} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:i<alertas.length-1?'1px solid #f6faf7':'none'}}>
+                      <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{a.tipo==='drone'?'🚁':'🚗'} {a.nome}</div>
+                      <div style={{fontSize:11,color:'#f2960f',fontWeight:600}}>
+                        {a.tipo==='drone' ? `${a.pct.toFixed(0)}% (${a.horas.toFixed(1)}h/${a.limite}h)` : (a.proxima_km?`${Math.max(0,a.proxima_km-a.km_atual).toFixed(0)} km restantes`:new Date(a.proxima_data).toLocaleDateString('pt-BR'))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Agenda de voos programados — com prévia dos próximos itens */}
           {(()=>{
