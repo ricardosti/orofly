@@ -470,22 +470,35 @@ export default function AdminPanel({ onSwitchMode }) {
 
       <nav style={{ padding: '4px 12px', flex: 1 }}>
         {[
-          ['relatorios', '📋', 'Relatórios', filtered.length],
-          ['dashboard', '📊', 'Dashboard', ''],
-          ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
-          ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
-          ['fazendas', '🌾', 'Fazendas', invFazendas.length],
-          ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
-          ['custos', '💰', 'Custos', custos.length],
-          ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
-          ['pilotos', '👥', 'Usuários', pilotos.length]
-        ].map(([id, icon, lbl, cnt]) => (
-          <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#0e9f6e,#0a6e4f)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':'#7ba38f', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
-            onClick={() => { setTab(id); setSidebarOpen(false) }}>
-            <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{icon}</span>
-            <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
-            <span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?'#0b1210':'#5c7568', fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>
-          </button>
+          ['RESUMO', [
+            ['dashboard', '📊', 'Início', ''],
+            ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
+            ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
+          ]],
+          ['GESTÃO', [
+            ['fazendas', '🌾', 'Fazendas', invFazendas.length],
+            ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
+          ]],
+          ['OPERAÇÕES', [
+            ['relatorios', '📋', 'Relatórios', filtered.length],
+            ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
+            ['custos', '💰', 'Financeiro', custos.length],
+          ]],
+          ['CONFIGURAÇÕES', [
+            ['pilotos', '👥', 'Usuários', pilotos.length],
+          ]],
+        ].map(([secao, itens]) => (
+          <div key={secao} style={{marginBottom:14}}>
+            <div style={{fontSize:9,fontWeight:700,color:'#4a6e56',letterSpacing:1.2,padding:'0 12px',marginBottom:6}}>{secao}</div>
+            {itens.map(([id, icon, lbl, cnt]) => (
+              <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#0e9f6e,#0a6e4f)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':'#7ba38f', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
+                onClick={() => { setTab(id); setSidebarOpen(false) }}>
+                <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{icon}</span>
+                <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
+                {cnt!==''&&<span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?'#0b1210':'#5c7568', fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
 
