@@ -5,12 +5,12 @@ import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
+import ProfileModal from '../components/ProfileModal'
 
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
-const PRODUTO_FAZENDA_OPTS = ['Inseticida','Herbicida','Fungicida']
 const CATEGORIA_DESPESA_OPTS = [['Almoço','🍽️'],['Gasolina','⛽'],['Hotel','🏨'],['Outros','🧾']]
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
@@ -275,7 +275,15 @@ async function extrairMetadadosFoto(file) {
 }
 
 export default function PilotApp({onSwitchMode}) {
-  const {profile,signOut} = useAuth()
+  const {profile,signOut,refreshProfile} = useAuth()
+  const [showPerfil,setShowPerfil] = useState(false)
+  const [avatarUrl,setAvatarUrl] = useState(null)
+  useEffect(() => {
+    if (!profile?.avatar_url) { setAvatarUrl(null); return }
+    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data})=>{
+      if (data?.signedUrl) setAvatarUrl(data.signedUrl)
+    })
+  }, [profile?.avatar_url])
   const [view,setView] = useState('home')
   const isPopRef = useRef(false)
   const isFirstViewRef = useRef(true)
@@ -1138,6 +1146,11 @@ export default function PilotApp({onSwitchMode}) {
           <button style={{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
         </div>
       </div>
+      {osAtual&&(
+        <div style={{padding:'0 18px 10px',display:'flex',alignItems:'center',gap:6}}>
+          <span style={{background:'rgba(255,255,255,0.16)',color:'#fff',fontFamily:'ui-monospace,monospace',fontSize:11,fontWeight:600,padding:'3px 10px',borderRadius:20}}>📋 OS {osAtual}</span>
+        </div>
+      )}
       {pendingSync&&(
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,background:'#5a3d0a',padding:'6px 12px',fontSize:11,color:'#ffb020'}}>
           <span>📴 Sem sincronizar — será enviado automaticamente com sinal</span>
@@ -1210,11 +1223,14 @@ export default function PilotApp({onSwitchMode}) {
               <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={{color:'#ffb020'}}>.</span></span></div>
               <div style={{display:'flex',gap:8,alignItems:'center'}}>
                 {onSwitchMode&&<button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={onSwitchMode}>⚙️</button>}
+                <button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>setShowPerfil(true)}>⚙️ Perfil</button>
                 <button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
               </div>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:12,marginTop:20}}>
-              <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,255,255,0.18)',border:'2px solid rgba(255,255,255,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,color:'#fff',fontSize:16,flexShrink:0}}>{iniciais}</div>
+              <div onClick={()=>setShowPerfil(true)} style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,255,255,0.18)',border:'2px solid rgba(255,255,255,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,color:'#fff',fontSize:16,flexShrink:0,cursor:'pointer',overflow:'hidden'}}>
+                {avatarUrl?<img src={avatarUrl} alt="avatar" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:iniciais}
+              </div>
               <div>
                 <div style={{fontSize:12,color:'rgba(255,255,255,0.75)'}}>Bem-vindo de volta</div>
                 <div style={{fontSize:19,fontWeight:700,color:'#fff',fontFamily:"'Syne',sans-serif"}}>{primeiroNome} 👋</div>
@@ -1372,6 +1388,7 @@ export default function PilotApp({onSwitchMode}) {
         </div>
         <BottomNav/>
         {toast&&<div style={s.toast}>{toast}</div>}
+        {showPerfil&&<ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
       </div>
     )
   }
@@ -1711,13 +1728,6 @@ export default function PilotApp({onSwitchMode}) {
                     </>
                   ) : (
                     <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
-                  )}
-
-                  {form.fazenda&&(
-                    <FS label="PRODUTO" val={form.produto} onChange={e=>setForm(f=>({...f,produto:e.target.value}))}>
-                      <option value="">Selecione o Produto...</option>
-                      {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
-                    </FS>
                   )}
 
                   {/* TALHÕES — lista multi-seleção; soma as áreas dos selecionados */}

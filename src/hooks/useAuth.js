@@ -60,7 +60,8 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{ user, profile, loading,
       signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-      signOut: () => supabase.auth.signOut()
+      signOut: () => supabase.auth.signOut(),
+      refreshProfile: () => user && fetchProfile(user.id)
     }}>
       {children}
     </AuthContext.Provider>

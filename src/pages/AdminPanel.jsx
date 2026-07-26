@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
+import ProfileModal from '../components/ProfileModal'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -28,7 +29,15 @@ function useIsMobile() {
 }
 
 export default function AdminPanel({ onSwitchMode }) {
-  const { profile, signOut } = useAuth()
+  const { profile, signOut, refreshProfile } = useAuth()
+  const [showPerfil, setShowPerfil] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState(null)
+  useEffect(() => {
+    if (!profile?.avatar_url) { setAvatarUrl(null); return }
+    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data})=>{
+      if (data?.signedUrl) setAvatarUrl(data.signedUrl)
+    })
+  }, [profile?.avatar_url])
   const isMobile = useIsMobile()
   const [tab, setTab] = useState('relatorios')
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -75,6 +84,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:''})
   const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
   const [fzSearch, setFzSearch] = useState('')
+  const [fzProdutoFiltro, setFzProdutoFiltro] = useState('')
   const [invMovimentos, setInvMovimentos] = useState([])
   const [custos, setCustos] = useState([])
   const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',dataIni:'',dataFim:''})
@@ -473,13 +483,16 @@ export default function AdminPanel({ onSwitchMode }) {
       </div>
 
       <div style={{ padding:'14px 20px' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-          <div style={{ width:30, height:30, borderRadius:'50%', background:'#0e9f6e', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:13 }}>{profile?.nome?.[0]?.toUpperCase()}</div>
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, cursor:'pointer' }} onClick={()=>setShowPerfil(true)}>
+          <div style={{ width:30, height:30, borderRadius:'50%', background:'#0e9f6e', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:13, overflow:'hidden', flexShrink:0 }}>
+            {avatarUrl?<img src={avatarUrl} alt="avatar" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:profile?.nome?.[0]?.toUpperCase()}
+          </div>
           <div>
             <div style={{ fontSize:12, fontWeight:500, color:'#fff' }}>{profile?.nome}</div>
             <div style={{ fontSize:10, color:'#7ba38f' }}>Admin</div>
           </div>
         </div>
+        <button style={{ width:'100%', background:'transparent', border:'1px solid #1e3828', color:'#7ba38f', borderRadius:16, padding:'7px', fontSize:12, cursor:'pointer', marginBottom:8 }} onClick={()=>setShowPerfil(true)}>⚙️ Meu Perfil</button>
         {onSwitchMode && (
           <button style={{ width:'100%', background:'#ffb020', border:'none', color:'#0b1210', borderRadius:16, padding:'8px', fontSize:12, cursor:'pointer', fontFamily:"'Syne',sans-serif", fontWeight:700, marginBottom:8 }} onClick={onSwitchMode}>
             🚁 Modo Piloto
@@ -1913,7 +1926,9 @@ export default function AdminPanel({ onSwitchMode }) {
           {/* ===== FAZENDAS & CLIENTES ===== */}
           {tab === 'fazendas' && (() => {
             const q = fzSearch.trim().toLowerCase()
-            const fazendasFiltradas = q ? invFazendas.filter(f=>f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q)) : invFazendas
+            const fazendasFiltradas = invFazendas
+              .filter(f=>!q || f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q))
+              .filter(f=>!fzProdutoFiltro || f.produto===fzProdutoFiltro)
 
             const fazendasBI = fazendasFiltradas.map(fz => {
               const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
@@ -2001,8 +2016,15 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     )}
 
-                    <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
-                      placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+                      <input style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
+                        placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                      <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'0 0 160px'}}
+                        value={fzProdutoFiltro} onChange={e=>setFzProdutoFiltro(e.target.value)}>
+                        <option value="">Todos os produtos</option>
+                        {['Inseticida','Herbicida','Fungicida'].map(p=><option key={p}>{p}</option>)}
+                      </select>
+                    </div>
 
                     {fazendasBI.length===0 ? (
                       <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
@@ -2078,8 +2100,15 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
 
                     {invFazendas.length>0 && (
-                      <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 12px',fontSize:13,outline:'none',width:'100%',marginBottom:14,boxSizing:'border-box'}}
-                        placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                      <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+                        <input style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
+                          placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                        <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'0 0 160px'}}
+                          value={fzProdutoFiltro} onChange={e=>setFzProdutoFiltro(e.target.value)}>
+                          <option value="">Todos os produtos</option>
+                          {['Inseticida','Herbicida','Fungicida'].map(p=><option key={p}>{p}</option>)}
+                        </select>
+                      </div>
                     )}
 
                     {invFazendas.length===0 ? (
@@ -2740,6 +2769,7 @@ export default function AdminPanel({ onSwitchMode }) {
       )}
 
       {toast && <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', background: toast.type==='error'?'#e5484d':'#0b1210', color:'#fff', padding:'12px 24px', borderRadius:100, fontSize:13, fontWeight:500, zIndex:400, whiteSpace:'nowrap', borderBottom:'3px solid #ffb020', boxShadow:'0 4px 20px rgba(0,0,0,.2)' }}>{toast.msg}</div>}
+      {showPerfil && <ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
     </div>
   )
 }
