@@ -94,7 +94,6 @@ export default function AdminPanel({ onSwitchMode }) {
   const [agendaFiltros, setAgendaFiltros] = useState({piloto:'',status:''})
   const [mapaSubTab, setMapaSubTab] = useState('voos')
   const [gpsLogins, setGpsLogins] = useState([])
-  const [financeiroSubTab, setFinanceiroSubTab] = useState('notas')
   const [veiculos, setVeiculos] = useState([])
   const [viagens, setViagens] = useState([])
   const [manutencoes, setManutencoes] = useState([])
@@ -1558,11 +1557,195 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
+                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['veiculos','🚗 Veículos'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
                     <button key={id} style={{background:invTab===id?'#0e9f6e':'#f1f8f4',color:invTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
                 </div>
+
+                {/* ── VEÍCULOS ── */}
+                {invTab==='veiculos' && (() => {
+                  const hoje = new Date()
+                  async function salvarVeiculo(){
+                    if(!veiculoForm.placa){showToast('Informe a placa','error');return}
+                    setVeicSaving(true)
+                    try {
+                      const payload = {
+                        placa: veiculoForm.placa.toUpperCase(), marca: veiculoForm.marca||null, modelo: veiculoForm.modelo||null,
+                        ano: veiculoForm.ano?parseInt(veiculoForm.ano):null, km_atual: parseFloat(veiculoForm.km_atual)||0,
+                        proxima_manutencao_km: veiculoForm.proxima_manutencao_km?parseFloat(veiculoForm.proxima_manutencao_km):null,
+                        proxima_manutencao_data: veiculoForm.proxima_manutencao_data||null, ativo:true,
+                      }
+                      const {error} = veiculoModal==='novo'
+                        ? await supabase.from('veiculos').insert(payload)
+                        : await supabase.from('veiculos').update(payload).eq('id',veiculoModal.id)
+                      if(error) throw error
+                      showToast('🚗 Veículo salvo!'); setVeiculoModal(null); setVeiculoForm({placa:'',marca:'',modelo:'',ano:'',km_atual:'',proxima_manutencao_km:'',proxima_manutencao_data:''}); fetchInventario()
+                    } catch(e){ showToast('Erro: '+e.message,'error') } finally { setVeicSaving(false) }
+                  }
+                  async function excluirVeiculo(v){
+                    if(!window.confirm(`Excluir o veículo ${v.placa}?`)) return
+                    await supabase.from('veiculos').delete().eq('id',v.id); fetchInventario()
+                  }
+                  async function salvarViagem(veiculo){
+                    const vf = viagemForm[veiculo.id]||{}
+                    if(!vf.data||!vf.km_final){showToast('Informe data e km final','error');return}
+                    try {
+                      let relatorio_id = null
+                      const os = (vf.ordem_servico||'').trim()
+                      if(os){
+                        const {data:relMatch} = await supabase.from('relatorios').select('id').ilike('ordem_servico',os).maybeSingle()
+                        if(relMatch) relatorio_id = relMatch.id
+                      }
+                      const kmIni = parseFloat(vf.km_inicial)||veiculo.km_atual||0
+                      const kmFim = parseFloat(vf.km_final)
+                      await supabase.from('viagens').insert({
+                        veiculo_id: veiculo.id, motorista: vf.motorista||null, data: vf.data,
+                        destino: vf.destino||null, km_inicial: kmIni, km_final: kmFim,
+                        ordem_servico: os||null, relatorio_id, observacao: vf.observacao||null,
+                      })
+                      await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',veiculo.id)
+                      showToast('🛣️ Viagem registrada!'); setViagemForm(f=>({...f,[veiculo.id]:{}})); fetchInventario()
+                    } catch(e){ showToast('Erro: '+e.message,'error') }
+                  }
+                  async function salvarManutencao(veiculo){
+                    const mf = manutForm[veiculo.id]||{}
+                    if(!mf.tipo||!mf.data){showToast('Informe tipo e data','error');return}
+                    try {
+                      await supabase.from('manutencoes_veiculo').insert({
+                        veiculo_id: veiculo.id, tipo: mf.tipo, data: mf.data,
+                        km: mf.km?parseFloat(mf.km):null, custo: mf.custo?parseFloat(mf.custo):null, observacao: mf.observacao||null,
+                      })
+                      if(mf.proximo_km||mf.proxima_data){
+                        await supabase.from('veiculos').update({
+                          proxima_manutencao_km: mf.proximo_km?parseFloat(mf.proximo_km):veiculo.proxima_manutencao_km,
+                          proxima_manutencao_data: mf.proxima_data||veiculo.proxima_manutencao_data,
+                        }).eq('id',veiculo.id)
+                      }
+                      showToast('🔧 Manutenção registrada!'); setManutForm(f=>({...f,[veiculo.id]:{}})); fetchInventario()
+                    } catch(e){ showToast('Erro: '+e.message,'error') }
+                  }
+
+                  return (
+                    <div>
+                      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:14}}>
+                        <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                          onClick={()=>{setVeiculoForm({placa:'',marca:'',modelo:'',ano:'',km_atual:'',proxima_manutencao_km:'',proxima_manutencao_data:''});setVeiculoModal('novo')}}>+ Novo Veículo</button>
+                      </div>
+
+                      {veiculos.length===0 ? (
+                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum veículo cadastrado ainda.</div>
+                      ) : (
+                        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                          {veiculos.map(v=>{
+                            const alertaKm = v.proxima_manutencao_km && v.km_atual >= (v.proxima_manutencao_km - 500)
+                            const alertaData = v.proxima_manutencao_data && new Date(v.proxima_manutencao_data) <= new Date(hoje.getTime()+7*86400000)
+                            const alerta = alertaKm || alertaData
+                            const vf = viagemForm[v.id]||{}
+                            const mf = manutForm[v.id]||{}
+                            const manutVeic = manutencoes.filter(m=>m.veiculo_id===v.id).slice(0,3)
+                            const viagensVeic = viagens.filter(vg=>vg.veiculo_id===v.id).slice(0,3)
+                            return (
+                              <div key={v.id} style={{background:'#fff',borderRadius:20,border:`1px solid ${alerta?'#f2960f':'#dcebe3'}`,padding:18,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
+                                  <div>
+                                    <div style={{fontWeight:700,fontSize:16,fontFamily:"'Syne',sans-serif"}}>🚗 {v.placa} {alerta&&<span style={{background:'#fff3e0',color:'#f2960f',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,marginLeft:6}}>⚠️ Manutenção próxima</span>}</div>
+                                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{v.marca} {v.modelo}{v.ano?` · ${v.ano}`:''} · {(v.km_atual||0).toLocaleString('pt-BR')} km</div>
+                                  </div>
+                                  <div style={{display:'flex',gap:6}}>
+                                    <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>{setVeiculoForm({placa:v.placa,marca:v.marca||'',modelo:v.modelo||'',ano:v.ano||'',km_atual:v.km_atual||'',proxima_manutencao_km:v.proxima_manutencao_km||'',proxima_manutencao_data:v.proxima_manutencao_data||''});setVeiculoModal(v)}}>✏️</button>
+                                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirVeiculo(v)}>🗑️</button>
+                                  </div>
+                                </div>
+
+                                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:14,marginTop:12}}>
+                                  {/* Nova viagem */}
+                                  <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
+                                    <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🛣️ Registrar Viagem</div>
+                                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+                                      <input type="date" style={{...sG.fi,flex:'1 1 120px'}} value={vf.data||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,data:e.target.value}}))}/>
+                                      <input style={{...sG.fi,flex:'1 1 120px'}} placeholder="Motorista" value={vf.motorista||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,motorista:e.target.value}}))}/>
+                                    </div>
+                                    <input style={{...sG.fi,width:'100%',marginBottom:6}} placeholder="Destino" value={vf.destino||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,destino:e.target.value}}))}/>
+                                    <div style={{display:'flex',gap:6,marginBottom:6}}>
+                                      <input type="number" style={{...sG.fi,flex:1}} placeholder={`Km inicial (${v.km_atual||0})`} value={vf.km_inicial||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,km_inicial:e.target.value}}))}/>
+                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Km final" value={vf.km_final||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,km_final:e.target.value}}))}/>
+                                    </div>
+                                    <input style={{...sG.fi,width:'100%',marginBottom:8}} placeholder="Ordem de serviço (opcional)" value={vf.ordem_servico||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,ordem_servico:e.target.value}}))}/>
+                                    <button style={{...sG.btn}} onClick={()=>salvarViagem(v)}>Salvar Viagem</button>
+                                    {viagensVeic.length>0 && (
+                                      <div style={{marginTop:10,borderTop:'1px solid #eef5f0',paddingTop:8}}>
+                                        {viagensVeic.map(vg=>(
+                                          <div key={vg.id} style={{fontSize:11,color:'#5c7568',padding:'3px 0'}}>{new Date(vg.data).toLocaleDateString('pt-BR')} · {vg.destino||'—'} · {((vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km{vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}</div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Nova manutenção */}
+                                  <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
+                                    <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🔧 Registrar Manutenção</div>
+                                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
+                                      <select style={{...sG.fi,flex:'1 1 120px'}} value={mf.tipo||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,tipo:e.target.value}}))}>
+                                        <option value="">Tipo...</option>
+                                        <option>Troca de óleo</option><option>Revisão</option><option>Pneus</option><option>Freios</option><option>Outro</option>
+                                      </select>
+                                      <input type="date" style={{...sG.fi,flex:'1 1 120px'}} value={mf.data||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,data:e.target.value}}))}/>
+                                    </div>
+                                    <div style={{display:'flex',gap:6,marginBottom:6}}>
+                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Km na manutenção" value={mf.km||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,km:e.target.value}}))}/>
+                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Custo R$" value={mf.custo||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,custo:e.target.value}}))}/>
+                                    </div>
+                                    <div style={{display:'flex',gap:6,marginBottom:8}}>
+                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Próxima em (km)" value={mf.proximo_km||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,proximo_km:e.target.value}}))}/>
+                                      <input type="date" style={{...sG.fi,flex:1}} placeholder="Próxima data" value={mf.proxima_data||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,proxima_data:e.target.value}}))}/>
+                                    </div>
+                                    <button style={{...sG.btn,background:'#f2960f'}} onClick={()=>salvarManutencao(v)}>Salvar Manutenção</button>
+                                    {manutVeic.length>0 && (
+                                      <div style={{marginTop:10,borderTop:'1px solid #eef5f0',paddingTop:8}}>
+                                        {manutVeic.map(m=>(
+                                          <div key={m.id} style={{fontSize:11,color:'#5c7568',padding:'3px 0'}}>{new Date(m.data).toLocaleDateString('pt-BR')} · {m.tipo}{m.custo?` · R$ ${parseFloat(m.custo).toFixed(2)}`:''}</div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {veiculoModal && (
+                        <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setVeiculoModal(null)}>
+                          <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:380,padding:22}} onClick={e=>e.stopPropagation()}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>{veiculoModal==='novo'?'🚗 Novo Veículo':'✏️ Editar Veículo'}</div>
+                            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+                              <input style={sG.fi} placeholder="Placa" value={veiculoForm.placa} onChange={e=>setVeiculoForm(f=>({...f,placa:e.target.value}))}/>
+                              <div style={{display:'flex',gap:8}}>
+                                <input style={{...sG.fi,flex:1}} placeholder="Marca" value={veiculoForm.marca} onChange={e=>setVeiculoForm(f=>({...f,marca:e.target.value}))}/>
+                                <input style={{...sG.fi,flex:1}} placeholder="Modelo" value={veiculoForm.modelo} onChange={e=>setVeiculoForm(f=>({...f,modelo:e.target.value}))}/>
+                              </div>
+                              <div style={{display:'flex',gap:8}}>
+                                <input type="number" style={{...sG.fi,flex:1}} placeholder="Ano" value={veiculoForm.ano} onChange={e=>setVeiculoForm(f=>({...f,ano:e.target.value}))}/>
+                                <input type="number" style={{...sG.fi,flex:1}} placeholder="Km atual" value={veiculoForm.km_atual} onChange={e=>setVeiculoForm(f=>({...f,km_atual:e.target.value}))}/>
+                              </div>
+                              <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginTop:4}}>PRÓXIMA MANUTENÇÃO (OPCIONAL)</div>
+                              <div style={{display:'flex',gap:8}}>
+                                <input type="number" style={{...sG.fi,flex:1}} placeholder="Km" value={veiculoForm.proxima_manutencao_km} onChange={e=>setVeiculoForm(f=>({...f,proxima_manutencao_km:e.target.value}))}/>
+                                <input type="date" style={{...sG.fi,flex:1}} value={veiculoForm.proxima_manutencao_data} onChange={e=>setVeiculoForm(f=>({...f,proxima_manutencao_data:e.target.value}))}/>
+                              </div>
+                            </div>
+                            <div style={{display:'flex',gap:8,marginTop:20}}>
+                              <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setVeiculoModal(null)}>Cancelar</button>
+                              <button style={{flex:2,...sG.btn,opacity:veicSaving?.6:1}} disabled={veicSaving} onClick={salvarVeiculo}>{veicSaving?'Salvando...':'💾 Salvar'}</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 {/* ── MOVIMENTOS DE ESTOQUE ── */}
                 {invTab==='movimentos' && (()=>{
@@ -2338,200 +2521,9 @@ export default function AdminPanel({ onSwitchMode }) {
               <div>
                 <div style={{ marginBottom:18 }}>
                   <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>💰 Financeiro</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{custos.length} notas · {veiculos.length} veículos</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{custos.length} notas registradas</div>
                 </div>
 
-                <div style={{display:'flex',gap:8,marginBottom:16}}>
-                  {[['notas','🧾 Notas de Despesa'],['veiculos','🚗 Veículos']].map(([id,lbl])=>(
-                    <button key={id} style={{background:financeiroSubTab===id?'#0e9f6e':'#f1f8f4',color:financeiroSubTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                      onClick={()=>setFinanceiroSubTab(id)}>{lbl}</button>
-                  ))}
-                </div>
-
-                {financeiroSubTab==='veiculos' && (() => {
-                  const hoje = new Date()
-                  async function salvarVeiculo(){
-                    if(!veiculoForm.placa){showToast('Informe a placa','error');return}
-                    setVeicSaving(true)
-                    try {
-                      const payload = {
-                        placa: veiculoForm.placa.toUpperCase(), marca: veiculoForm.marca||null, modelo: veiculoForm.modelo||null,
-                        ano: veiculoForm.ano?parseInt(veiculoForm.ano):null, km_atual: parseFloat(veiculoForm.km_atual)||0,
-                        proxima_manutencao_km: veiculoForm.proxima_manutencao_km?parseFloat(veiculoForm.proxima_manutencao_km):null,
-                        proxima_manutencao_data: veiculoForm.proxima_manutencao_data||null, ativo:true,
-                      }
-                      const {error} = veiculoModal==='novo'
-                        ? await supabase.from('veiculos').insert(payload)
-                        : await supabase.from('veiculos').update(payload).eq('id',veiculoModal.id)
-                      if(error) throw error
-                      showToast('🚗 Veículo salvo!'); setVeiculoModal(null); setVeiculoForm({placa:'',marca:'',modelo:'',ano:'',km_atual:'',proxima_manutencao_km:'',proxima_manutencao_data:''}); fetchInventario()
-                    } catch(e){ showToast('Erro: '+e.message,'error') } finally { setVeicSaving(false) }
-                  }
-                  async function excluirVeiculo(v){
-                    if(!window.confirm(`Excluir o veículo ${v.placa}?`)) return
-                    await supabase.from('veiculos').delete().eq('id',v.id); fetchInventario()
-                  }
-                  async function salvarViagem(veiculo){
-                    const vf = viagemForm[veiculo.id]||{}
-                    if(!vf.data||!vf.km_final){showToast('Informe data e km final','error');return}
-                    try {
-                      let relatorio_id = null
-                      const os = (vf.ordem_servico||'').trim()
-                      if(os){
-                        const {data:relMatch} = await supabase.from('relatorios').select('id').ilike('ordem_servico',os).maybeSingle()
-                        if(relMatch) relatorio_id = relMatch.id
-                      }
-                      const kmIni = parseFloat(vf.km_inicial)||veiculo.km_atual||0
-                      const kmFim = parseFloat(vf.km_final)
-                      await supabase.from('viagens').insert({
-                        veiculo_id: veiculo.id, motorista: vf.motorista||null, data: vf.data,
-                        destino: vf.destino||null, km_inicial: kmIni, km_final: kmFim,
-                        ordem_servico: os||null, relatorio_id, observacao: vf.observacao||null,
-                      })
-                      await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',veiculo.id)
-                      showToast('🛣️ Viagem registrada!'); setViagemForm(f=>({...f,[veiculo.id]:{}})); fetchInventario()
-                    } catch(e){ showToast('Erro: '+e.message,'error') }
-                  }
-                  async function salvarManutencao(veiculo){
-                    const mf = manutForm[veiculo.id]||{}
-                    if(!mf.tipo||!mf.data){showToast('Informe tipo e data','error');return}
-                    try {
-                      await supabase.from('manutencoes_veiculo').insert({
-                        veiculo_id: veiculo.id, tipo: mf.tipo, data: mf.data,
-                        km: mf.km?parseFloat(mf.km):null, custo: mf.custo?parseFloat(mf.custo):null, observacao: mf.observacao||null,
-                      })
-                      if(mf.proximo_km||mf.proxima_data){
-                        await supabase.from('veiculos').update({
-                          proxima_manutencao_km: mf.proximo_km?parseFloat(mf.proximo_km):veiculo.proxima_manutencao_km,
-                          proxima_manutencao_data: mf.proxima_data||veiculo.proxima_manutencao_data,
-                        }).eq('id',veiculo.id)
-                      }
-                      showToast('🔧 Manutenção registrada!'); setManutForm(f=>({...f,[veiculo.id]:{}})); fetchInventario()
-                    } catch(e){ showToast('Erro: '+e.message,'error') }
-                  }
-
-                  return (
-                    <div>
-                      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:14}}>
-                        <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                          onClick={()=>{setVeiculoForm({placa:'',marca:'',modelo:'',ano:'',km_atual:'',proxima_manutencao_km:'',proxima_manutencao_data:''});setVeiculoModal('novo')}}>+ Novo Veículo</button>
-                      </div>
-
-                      {veiculos.length===0 ? (
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum veículo cadastrado ainda.</div>
-                      ) : (
-                        <div style={{display:'flex',flexDirection:'column',gap:14}}>
-                          {veiculos.map(v=>{
-                            const alertaKm = v.proxima_manutencao_km && v.km_atual >= (v.proxima_manutencao_km - 500)
-                            const alertaData = v.proxima_manutencao_data && new Date(v.proxima_manutencao_data) <= new Date(hoje.getTime()+7*86400000)
-                            const alerta = alertaKm || alertaData
-                            const vf = viagemForm[v.id]||{}
-                            const mf = manutForm[v.id]||{}
-                            const manutVeic = manutencoes.filter(m=>m.veiculo_id===v.id).slice(0,3)
-                            const viagensVeic = viagens.filter(vg=>vg.veiculo_id===v.id).slice(0,3)
-                            return (
-                              <div key={v.id} style={{background:'#fff',borderRadius:20,border:`1px solid ${alerta?'#f2960f':'#dcebe3'}`,padding:18,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
-                                  <div>
-                                    <div style={{fontWeight:700,fontSize:16,fontFamily:"'Syne',sans-serif"}}>🚗 {v.placa} {alerta&&<span style={{background:'#fff3e0',color:'#f2960f',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,marginLeft:6}}>⚠️ Manutenção próxima</span>}</div>
-                                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{v.marca} {v.modelo}{v.ano?` · ${v.ano}`:''} · {(v.km_atual||0).toLocaleString('pt-BR')} km</div>
-                                  </div>
-                                  <div style={{display:'flex',gap:6}}>
-                                    <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>{setVeiculoForm({placa:v.placa,marca:v.marca||'',modelo:v.modelo||'',ano:v.ano||'',km_atual:v.km_atual||'',proxima_manutencao_km:v.proxima_manutencao_km||'',proxima_manutencao_data:v.proxima_manutencao_data||''});setVeiculoModal(v)}}>✏️</button>
-                                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirVeiculo(v)}>🗑️</button>
-                                  </div>
-                                </div>
-
-                                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:14,marginTop:12}}>
-                                  {/* Nova viagem */}
-                                  <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
-                                    <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🛣️ Registrar Viagem</div>
-                                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
-                                      <input type="date" style={{...sG.fi,flex:'1 1 120px'}} value={vf.data||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,data:e.target.value}}))}/>
-                                      <input style={{...sG.fi,flex:'1 1 120px'}} placeholder="Motorista" value={vf.motorista||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,motorista:e.target.value}}))}/>
-                                    </div>
-                                    <input style={{...sG.fi,width:'100%',marginBottom:6}} placeholder="Destino" value={vf.destino||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,destino:e.target.value}}))}/>
-                                    <div style={{display:'flex',gap:6,marginBottom:6}}>
-                                      <input type="number" style={{...sG.fi,flex:1}} placeholder={`Km inicial (${v.km_atual||0})`} value={vf.km_inicial||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,km_inicial:e.target.value}}))}/>
-                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Km final" value={vf.km_final||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,km_final:e.target.value}}))}/>
-                                    </div>
-                                    <input style={{...sG.fi,width:'100%',marginBottom:8}} placeholder="Ordem de serviço (opcional)" value={vf.ordem_servico||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,ordem_servico:e.target.value}}))}/>
-                                    <button style={{...sG.btn}} onClick={()=>salvarViagem(v)}>Salvar Viagem</button>
-                                    {viagensVeic.length>0 && (
-                                      <div style={{marginTop:10,borderTop:'1px solid #eef5f0',paddingTop:8}}>
-                                        {viagensVeic.map(vg=>(
-                                          <div key={vg.id} style={{fontSize:11,color:'#5c7568',padding:'3px 0'}}>{new Date(vg.data).toLocaleDateString('pt-BR')} · {vg.destino||'—'} · {((vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km{vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}</div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* Nova manutenção */}
-                                  <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
-                                    <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🔧 Registrar Manutenção</div>
-                                    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
-                                      <select style={{...sG.fi,flex:'1 1 120px'}} value={mf.tipo||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,tipo:e.target.value}}))}>
-                                        <option value="">Tipo...</option>
-                                        <option>Troca de óleo</option><option>Revisão</option><option>Pneus</option><option>Freios</option><option>Outro</option>
-                                      </select>
-                                      <input type="date" style={{...sG.fi,flex:'1 1 120px'}} value={mf.data||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,data:e.target.value}}))}/>
-                                    </div>
-                                    <div style={{display:'flex',gap:6,marginBottom:6}}>
-                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Km na manutenção" value={mf.km||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,km:e.target.value}}))}/>
-                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Custo R$" value={mf.custo||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,custo:e.target.value}}))}/>
-                                    </div>
-                                    <div style={{display:'flex',gap:6,marginBottom:8}}>
-                                      <input type="number" style={{...sG.fi,flex:1}} placeholder="Próxima em (km)" value={mf.proximo_km||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,proximo_km:e.target.value}}))}/>
-                                      <input type="date" style={{...sG.fi,flex:1}} placeholder="Próxima data" value={mf.proxima_data||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,proxima_data:e.target.value}}))}/>
-                                    </div>
-                                    <button style={{...sG.btn,background:'#f2960f'}} onClick={()=>salvarManutencao(v)}>Salvar Manutenção</button>
-                                    {manutVeic.length>0 && (
-                                      <div style={{marginTop:10,borderTop:'1px solid #eef5f0',paddingTop:8}}>
-                                        {manutVeic.map(m=>(
-                                          <div key={m.id} style={{fontSize:11,color:'#5c7568',padding:'3px 0'}}>{new Date(m.data).toLocaleDateString('pt-BR')} · {m.tipo}{m.custo?` · R$ ${parseFloat(m.custo).toFixed(2)}`:''}</div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-
-                      {veiculoModal && (
-                        <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setVeiculoModal(null)}>
-                          <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:380,padding:22}} onClick={e=>e.stopPropagation()}>
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>{veiculoModal==='novo'?'🚗 Novo Veículo':'✏️ Editar Veículo'}</div>
-                            <div style={{display:'flex',flexDirection:'column',gap:10}}>
-                              <input style={sG.fi} placeholder="Placa" value={veiculoForm.placa} onChange={e=>setVeiculoForm(f=>({...f,placa:e.target.value}))}/>
-                              <div style={{display:'flex',gap:8}}>
-                                <input style={{...sG.fi,flex:1}} placeholder="Marca" value={veiculoForm.marca} onChange={e=>setVeiculoForm(f=>({...f,marca:e.target.value}))}/>
-                                <input style={{...sG.fi,flex:1}} placeholder="Modelo" value={veiculoForm.modelo} onChange={e=>setVeiculoForm(f=>({...f,modelo:e.target.value}))}/>
-                              </div>
-                              <div style={{display:'flex',gap:8}}>
-                                <input type="number" style={{...sG.fi,flex:1}} placeholder="Ano" value={veiculoForm.ano} onChange={e=>setVeiculoForm(f=>({...f,ano:e.target.value}))}/>
-                                <input type="number" style={{...sG.fi,flex:1}} placeholder="Km atual" value={veiculoForm.km_atual} onChange={e=>setVeiculoForm(f=>({...f,km_atual:e.target.value}))}/>
-                              </div>
-                              <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginTop:4}}>PRÓXIMA MANUTENÇÃO (OPCIONAL)</div>
-                              <div style={{display:'flex',gap:8}}>
-                                <input type="number" style={{...sG.fi,flex:1}} placeholder="Km" value={veiculoForm.proxima_manutencao_km} onChange={e=>setVeiculoForm(f=>({...f,proxima_manutencao_km:e.target.value}))}/>
-                                <input type="date" style={{...sG.fi,flex:1}} value={veiculoForm.proxima_manutencao_data} onChange={e=>setVeiculoForm(f=>({...f,proxima_manutencao_data:e.target.value}))}/>
-                              </div>
-                            </div>
-                            <div style={{display:'flex',gap:8,marginTop:20}}>
-                              <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setVeiculoModal(null)}>Cancelar</button>
-                              <button style={{flex:2,...sG.btn,opacity:veicSaving?.6:1}} disabled={veicSaving} onClick={salvarVeiculo}>{veicSaving?'Salvando...':'💾 Salvar'}</button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })()}
-
-                {financeiroSubTab==='notas' && (<>
                 {/* Filtros */}
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:16,border:'1px solid #dcebe3',alignItems:'center'}}>
                   <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
@@ -2624,7 +2616,6 @@ export default function AdminPanel({ onSwitchMode }) {
                     })}
                   </div>
                 )}
-                </>)}
               </div>
             )
           })()}
