@@ -1066,8 +1066,11 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   async function salvarNota(){
-    if(!notaForm.categoria){showToast('Selecione a categoria','error');return}
-    if(!notaForm.valor||parseFloat(notaForm.valor)<=0){showToast('Informe o valor','error');return}
+    const temDespesa = notaForm.categoria && notaForm.valor && parseFloat(notaForm.valor)>0
+    const temViagem = notaForm.veiculo_id && notaForm.km_atual
+    if(!temDespesa && !temViagem){
+      showToast('Preencha categoria+valor, ou selecione um veículo e informe o km','error'); return
+    }
     setNotaSaving(true)
     try {
       let foto_url = null
@@ -1082,30 +1085,33 @@ export default function PilotApp({onSwitchMode}) {
         const {data:relMatch} = await supabase.from('relatorios').select('id').eq('piloto_id',profile.id).ilike('ordem_servico',osDigitada).maybeSingle()
         if(relMatch) relatorio_id = relMatch.id
       }
-      const {error} = await supabase.from('despesas').insert({
-        piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
-        categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
-        ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
-        veiculo_id:notaForm.veiculo_id||null,
-      })
-      if(error) throw error
 
-      // Se marcou veículo + km, registra a viagem e atualiza o km atual do carro
-      if(notaForm.veiculo_id && notaForm.km_atual){
-        const veiculo = veiculosDB.find(v=>v.id===notaForm.veiculo_id)
-        const kmFim = parseFloat(notaForm.km_atual)
-        try {
-          await supabase.from('viagens').insert({
-            veiculo_id: notaForm.veiculo_id, motorista: profile.nome||profile.email, data: notaForm.data,
-            km_inicial: veiculo?.km_atual||0, km_final: kmFim,
-            ordem_servico: osDigitada||null, relatorio_id, observacao: 'Registrado via Cadastro de Notas',
-          })
-          await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',notaForm.veiculo_id)
-          setVeiculosDB(vs=>vs.map(v=>v.id===notaForm.veiculo_id?{...v,km_atual:kmFim}:v))
-        } catch{}
+      // Só lança despesa se categoria+valor foram preenchidos — registrar viagem sem custo é válido
+      if(temDespesa){
+        const {error} = await supabase.from('despesas').insert({
+          piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
+          categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
+          ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
+          veiculo_id:notaForm.veiculo_id||null,
+        })
+        if(error) throw error
       }
 
-      showToast(relatorio_id?'✅ Nota salva e vinculada ao voo!':'✅ Nota salva!')
+      // Se marcou veículo + km, registra a viagem e atualiza o km atual do carro
+      if(temViagem){
+        const veiculo = veiculosDB.find(v=>v.id===notaForm.veiculo_id)
+        const kmFim = parseFloat(notaForm.km_atual)
+        const {error:vErr} = await supabase.from('viagens').insert({
+          veiculo_id: notaForm.veiculo_id, motorista: profile.nome||profile.email, data: notaForm.data,
+          km_inicial: veiculo?.km_atual||0, km_final: kmFim,
+          ordem_servico: osDigitada||null, relatorio_id, observacao: notaForm.observacao||'Registrado via Cadastro de Notas',
+        })
+        if(vErr) throw vErr
+        await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',notaForm.veiculo_id)
+        setVeiculosDB(vs=>vs.map(v=>v.id===notaForm.veiculo_id?{...v,km_atual:kmFim}:v))
+      }
+
+      showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
       setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_atual:''})
       setNotaFotoPreview(null); setNotaFotoFile(null)
       loadNotas()
@@ -1578,22 +1584,23 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           </div>
 
-          {/* Veículo (opcional) */}
+          {/* Veículo / Viagem (opcional — pode ser usado sozinho, sem despesa) */}
           {veiculosDB.length>0 && (
-            <>
-              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VEÍCULO (OPCIONAL)</div>
+            <div style={{background:'#f9fbfa',borderRadius:14,padding:12,marginBottom:14}}>
+              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',marginBottom:8}}>🚗 REGISTRAR VIAGEM (OPCIONAL)</div>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VEÍCULO</div>
               <select style={{...sw.fs,marginBottom:8}} value={notaForm.veiculo_id} onChange={e=>setNotaForm(f=>({...f,veiculo_id:e.target.value}))}>
                 <option value="">Não vincular a um veículo...</option>
                 {veiculosDB.map(v=><option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
               </select>
               {notaForm.veiculo_id && (
-                <div style={{marginBottom:14}}>
+                <div>
                   <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM ATUAL DO VEÍCULO</div>
                   <input type="number" style={sw.fi} placeholder={`Ex: ${veiculosDB.find(v=>v.id===notaForm.veiculo_id)?.km_atual||0}`} value={notaForm.km_atual} onChange={e=>setNotaForm(f=>({...f,km_atual:e.target.value}))}/>
-                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Se preencher, registra a viagem automaticamente</div>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Registra a viagem automaticamente — não precisa preencher categoria/valor se for só isso</div>
                 </div>
               )}
-            </>
+            </div>
           )}
 
           {/* Ordem de serviço */}
@@ -1605,7 +1612,9 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>OBSERVAÇÃO (OPCIONAL)</div>
           <input style={{...sw.fi,marginBottom:16}} placeholder="Ex: almoço com equipe" value={notaForm.observacao} onChange={e=>setNotaForm(f=>({...f,observacao:e.target.value}))}/>
 
-          <button style={{...sw.btnG,opacity:notaSaving?.7:1}} disabled={notaSaving} onClick={salvarNota}>{notaSaving?'Salvando...':'💾 Salvar Nota'}</button>
+          <button style={{...sw.btnG,opacity:notaSaving?.7:1}} disabled={notaSaving} onClick={salvarNota}>
+            {notaSaving?'Salvando...':(notaForm.categoria||notaForm.valor)?'💾 Salvar Nota':'💾 Salvar'}
+          </button>
         </div>
 
         {/* Notas recentes */}
