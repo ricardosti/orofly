@@ -426,7 +426,8 @@ export default function PilotApp({onSwitchMode}) {
   const [kmlFiles,setKmlFiles] = useState([])
   const [flights,setFlights] = useState([])
   const [loadingFlights,setLoadingFlights] = useState(false)
-  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_atual:''})
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:''})
+  const [osModo,setOsModo] = useState('lista')
   const [notaFotoPreview,setNotaFotoPreview] = useState(null)
   const [notaFotoFile,setNotaFotoFile] = useState(null)
   const [notaSaving,setNotaSaving] = useState(false)
@@ -1084,9 +1085,12 @@ export default function PilotApp({onSwitchMode}) {
 
   async function salvarNota(){
     const temDespesa = notaForm.categoria && notaForm.valor && parseFloat(notaForm.valor)>0
-    const temViagem = notaForm.veiculo_id && notaForm.km_atual
+    const temViagem = notaForm.veiculo_id && notaForm.km_inicial!=='' && notaForm.km_final!==''
     if(!temDespesa && !temViagem){
-      showToast('Preencha categoria+valor, ou selecione um veículo e informe o km','error'); return
+      showToast('Preencha categoria+valor, ou selecione um veículo e informe o km inicial/final','error'); return
+    }
+    if(temViagem && parseFloat(notaForm.km_final) < parseFloat(notaForm.km_inicial)){
+      showToast('O km final não pode ser menor que o km inicial','error'); return
     }
     setNotaSaving(true)
     try {
@@ -1116,11 +1120,11 @@ export default function PilotApp({onSwitchMode}) {
 
       // Se marcou veículo + km, registra a viagem e atualiza o km atual do carro
       if(temViagem){
-        const veiculo = veiculosDB.find(v=>v.id===notaForm.veiculo_id)
-        const kmFim = parseFloat(notaForm.km_atual)
+        const kmIni = parseFloat(notaForm.km_inicial)
+        const kmFim = parseFloat(notaForm.km_final)
         const {error:vErr} = await supabase.from('viagens').insert({
           veiculo_id: notaForm.veiculo_id, motorista: profile.nome||profile.email, data: notaForm.data,
-          km_inicial: veiculo?.km_atual||0, km_final: kmFim,
+          km_inicial: kmIni, km_final: kmFim,
           ordem_servico: osDigitada||null, relatorio_id, observacao: notaForm.observacao||'Registrado via Cadastro de Notas',
         })
         if(vErr) throw vErr
@@ -1129,7 +1133,8 @@ export default function PilotApp({onSwitchMode}) {
       }
 
       showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
-      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_atual:''})
+      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:''})
+      setOsModo('lista')
       setNotaFotoPreview(null); setNotaFotoFile(null)
       loadNotas()
     } catch(e){ showToast('Erro: '+e.message,'error') } finally { setNotaSaving(false) }
@@ -1477,7 +1482,7 @@ export default function PilotApp({onSwitchMode}) {
 
           {/* Notas de despesa — com prévia das últimas lançadas */}
           <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
-            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadNotas();setView('notas')}}>
+            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadNotas();loadFlights();setView('notas')}}>
               <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🧾</span>
               <div style={{flex:1}}>
                 <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
@@ -1488,7 +1493,7 @@ export default function PilotApp({onSwitchMode}) {
             {minhasNotas.length>0 && (
               <div style={{borderTop:'1px solid #eef5f0'}}>
                 {minhasNotas.slice(0,2).map(n=>(
-                  <div key={n.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadNotas();setView('notas')}}>
+                  <div key={n.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadNotas();loadFlights();setView('notas')}}>
                     <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
                     <div style={{fontSize:12,color:'#0e9f6e',fontWeight:700,flexShrink:0,marginLeft:8}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
                   </div>
@@ -1657,18 +1662,28 @@ export default function PilotApp({onSwitchMode}) {
           {notaTab==='viagem' && veiculosDB.length>0 && (
             <div style={{marginBottom:14}}>
               <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VEÍCULO</div>
-              <select style={{...sw.fs,marginBottom:8}} value={notaForm.veiculo_id} onChange={e=>setNotaForm(f=>({...f,veiculo_id:e.target.value}))}>
+              <select style={{...sw.fs,marginBottom:8}} value={notaForm.veiculo_id}
+                onChange={e=>{
+                  const v = veiculosDB.find(x=>x.id===e.target.value)
+                  setNotaForm(f=>({...f,veiculo_id:e.target.value,km_inicial:v?String(v.km_atual||0):''}))
+                }}>
                 <option value="">Selecione o veículo...</option>
                 {veiculosDB.map(v=><option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
               </select>
               {notaForm.veiculo_id && (
-                <div>
-                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM ATUAL DO VEÍCULO</div>
-                  <input type="number" style={sw.fi} placeholder={`Ex: ${veiculosDB.find(v=>v.id===notaForm.veiculo_id)?.km_atual||0}`} value={notaForm.km_atual} onChange={e=>setNotaForm(f=>({...f,km_atual:e.target.value}))}/>
-                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Registra a viagem automaticamente. Se essa viagem também teve gasto (combustível, pedágio), preencha em "Despesa" também.</div>
+                <div style={{display:'flex',gap:10,marginBottom:4}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM INICIAL</div>
+                    <input type="number" style={sw.fi} placeholder="0" value={notaForm.km_inicial} onChange={e=>setNotaForm(f=>({...f,km_inicial:e.target.value}))}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM FINAL</div>
+                    <input type="number" style={sw.fi} placeholder="0" value={notaForm.km_final} onChange={e=>setNotaForm(f=>({...f,km_final:e.target.value}))}/>
+                  </div>
                 </div>
               )}
-              <div style={{marginTop:10}}>
+              {notaForm.veiculo_id && <div style={{fontSize:11,color:'#7ba38f',marginTop:2,marginBottom:10}}>Registra a viagem automaticamente. Se também teve gasto (combustível, pedágio), preencha em "Despesa".</div>}
+              <div style={{marginTop:4}}>
                 <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
                 <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
               </div>
@@ -1677,8 +1692,25 @@ export default function PilotApp({onSwitchMode}) {
 
           {/* Ordem de serviço */}
           <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>ORDEM DE SERVIÇO (OPCIONAL)</div>
-          <input style={{...sw.fi,marginBottom:4}} placeholder="Ex: 132134b — vincula a um voo" value={notaForm.ordem_servico} onChange={e=>setNotaForm(f=>({...f,ordem_servico:e.target.value}))}/>
-          <div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>Encontre a OS na lista de "Meus Relatórios"</div>
+          {osModo==='lista' ? (
+            <select style={{...sw.fs,marginBottom:4}} value={notaForm.ordem_servico}
+              onChange={e=>{
+                if(e.target.value==='__outro__'){ setOsModo('outro'); setNotaForm(f=>({...f,ordem_servico:''})); return }
+                setNotaForm(f=>({...f,ordem_servico:e.target.value}))
+              }}>
+              <option value="">Nenhuma / não vincular a um voo</option>
+              {flights.filter(r=>r.ordem_servico).map(r=>(
+                <option key={r.id} value={r.ordem_servico}>OS {r.ordem_servico} — {r.cliente||'—'} / {r.fazenda||'—'} ({new Date(r.dt_inicio||r.created_at).toLocaleDateString('pt-BR')})</option>
+              ))}
+              <option value="__outro__">🔎 Outra OS (digitar manualmente)...</option>
+            </select>
+          ) : (
+            <div style={{display:'flex',gap:8,marginBottom:4}}>
+              <input style={{...sw.fi,flex:1}} placeholder="Ex: 132134b" value={notaForm.ordem_servico} onChange={e=>setNotaForm(f=>({...f,ordem_servico:e.target.value}))}/>
+              <button type="button" style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:14,padding:'0 14px',fontSize:12,fontWeight:600,cursor:'pointer'}} onClick={()=>{setOsModo('lista');setNotaForm(f=>({...f,ordem_servico:''}))}}>📋 Lista</button>
+            </div>
+          )}
+          <div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>Voos recentes seus aparecem na lista — ou digite a OS de outro piloto manualmente</div>
 
           {/* Observação */}
           <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>OBSERVAÇÃO (OPCIONAL)</div>
