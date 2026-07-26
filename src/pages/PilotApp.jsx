@@ -18,6 +18,20 @@ const IconRota = ({size=22}) => (
   </svg>
 )
 
+// Anel de progresso circular (usado no card de Manutenção Próxima)
+const CircularGauge = ({pct=0, size=42, color='#f2960f', track='#f7ddb0'}) => {
+  const r = (size-7)/2, c = 2*Math.PI*r
+  const clamped = Math.min(100,Math.max(0,pct))
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{flexShrink:0}}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={track} strokeWidth="5"/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
+        strokeDasharray={`${c*clamped/100} ${c}`} transform={`rotate(-90 ${size/2} ${size/2})`}/>
+      <text x="50%" y="51%" textAnchor="middle" dominantBaseline="central" fontSize={size*0.26} fontWeight="700" fill="#0b1210" fontFamily="'Syne',sans-serif">{Math.round(clamped)}%</text>
+    </svg>
+  )
+}
+
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
@@ -289,6 +303,8 @@ export default function PilotApp({onSwitchMode}) {
   const {profile,signOut,refreshProfile} = useAuth()
   const [showPerfil,setShowPerfil] = useState(false)
   const [avatarUrl,setAvatarUrl] = useState(null)
+  const [gpsPos,setGpsPos] = useState(null)
+  const [notaTab,setNotaTab] = useState('despesa')
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
     supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data})=>{
@@ -496,6 +512,7 @@ export default function PilotApp({onSwitchMode}) {
     navigator.geolocation.getCurrentPosition(
       pos => {
         const lat = pos.coords.latitude, lng = pos.coords.longitude
+        setGpsPos({lat,lng})
         supabase.from('gps_logins').insert({ piloto_id: profile.id, piloto_nome: profile.nome||profile.email, lat, lng }).then(()=>{})
         buscarPrevisao(lat, lng, 'Sua localização (GPS)')
       },
@@ -1283,7 +1300,13 @@ export default function PilotApp({onSwitchMode}) {
       const alertaKm = v.proxima_manutencao_km && v.km_atual >= (v.proxima_manutencao_km - 500)
       const alertaData = v.proxima_manutencao_data && new Date(v.proxima_manutencao_data) <= new Date(Date.now()+7*86400000)
       return alertaKm || alertaData
-    }).map(v=>({tipo:'carro', nome:v.placa, km_atual:v.km_atual, proxima_km:v.proxima_manutencao_km, proxima_data:v.proxima_manutencao_data}))
+    }).map(v=>{
+      const diasRestantes = v.proxima_manutencao_data ? Math.ceil((new Date(v.proxima_manutencao_data)-Date.now())/86400000) : null
+      const pctKm = v.proxima_manutencao_km ? (v.km_atual/v.proxima_manutencao_km)*100 : null
+      const pctData = diasRestantes!==null ? 100-(diasRestantes/30)*100 : null
+      const pct = Math.min(100,Math.max(0, pctKm ?? pctData ?? 0))
+      return {tipo:'carro', nome:v.placa, km_atual:v.km_atual, proxima_km:v.proxima_manutencao_km, proxima_data:v.proxima_manutencao_data, pct}
+    })
     const alertasManutencao = [...droneAlertas, ...carroAlertas]
     const piorAlerta = alertasManutencao[0]
     return (
@@ -1316,15 +1339,37 @@ export default function PilotApp({onSwitchMode}) {
         </div>
 
         <div style={{padding:'6px 16px 100px',flex:1,display:'flex',flexDirection:'column',gap:14,marginTop:-6}}>
-          {/* Mapa de Operações (viz decorativa) + Horas Totais / Manutenção Próxima */}
+          {/* Mapa de Operações (ponto do GPS + raio de 10km) + Horas Totais / Manutenção Próxima */}
           <div style={{display:'grid',gridTemplateColumns:'1.1fr 1fr',gap:10}}>
             <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
               <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🗺️ Mapa de Operações</div>
-              <div style={{position:'relative',height:88,borderRadius:12,overflow:'hidden',background:'linear-gradient(135deg,#eaf4ee,#dde8e2)'}}>
-                <div style={{position:'absolute',top:-14,left:-8,width:60,height:60,borderRadius:'50%',background:'rgba(34,196,118,0.35)'}}/>
-                <div style={{position:'absolute',bottom:-18,right:4,width:56,height:56,borderRadius:'50%',background:'rgba(47,111,237,0.28)'}}/>
-                <div style={{position:'absolute',top:16,right:18,width:34,height:34,borderRadius:'50%',background:'rgba(255,176,32,0.3)'}}/>
-                <div style={{position:'absolute',top:'50%',left:'50%',transform:'translate(-50%,-55%)',fontSize:20}}>📍</div>
+              <div style={{position:'relative',height:88,borderRadius:12,overflow:'hidden',background:'linear-gradient(135deg,#dfeee4,#c9ddd0)'}}>
+                {gpsPos ? (
+                  <>
+                    <svg width="100%" height="100%" viewBox="0 0 200 88" style={{position:'absolute',inset:0}} preserveAspectRatio="none">
+                      <defs>
+                        <radialGradient id="gpsGlow" cx="50%" cy="50%" r="50%">
+                          <stop offset="0%" stopColor="rgba(14,159,110,0.30)"/>
+                          <stop offset="100%" stopColor="rgba(14,159,110,0)"/>
+                        </radialGradient>
+                      </defs>
+                      <line x1="0" y1="22" x2="200" y2="14" stroke="#b7cfc0" strokeWidth="1.3"/>
+                      <line x1="0" y1="62" x2="200" y2="70" stroke="#b7cfc0" strokeWidth="1.3"/>
+                      <line x1="34" y1="0" x2="14" y2="88" stroke="#c7dccf" strokeWidth="1"/>
+                      <line x1="168" y1="0" x2="188" y2="88" stroke="#c7dccf" strokeWidth="1"/>
+                      <circle cx="100" cy="44" r="40" fill="url(#gpsGlow)"/>
+                      <circle cx="100" cy="44" r="40" fill="none" stroke="#0e9f6e" strokeWidth="1.3" strokeDasharray="3 3" opacity="0.7"/>
+                      <circle cx="100" cy="44" r="5" fill="#0e9f6e" stroke="#fff" strokeWidth="2"/>
+                    </svg>
+                    <div style={{position:'absolute',bottom:4,left:6,fontSize:8,fontWeight:700,color:'#4c6657',background:'rgba(255,255,255,0.75)',borderRadius:6,padding:'1px 5px'}}>raio 10 km</div>
+                    <div style={{position:'absolute',top:4,right:4,display:'flex',flexDirection:'column',gap:2}}>
+                      <span style={{width:16,height:16,borderRadius:4,background:'rgba(255,255,255,0.85)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'#5c7568',lineHeight:1}}>+</span>
+                      <span style={{width:16,height:16,borderRadius:4,background:'rgba(255,255,255,0.85)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'#5c7568',lineHeight:1}}>−</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'#5c7568',fontWeight:600,textAlign:'center',padding:8}}>📍 Aguardando GPS...</div>
+                )}
               </div>
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -1333,13 +1378,13 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{fontSize:20,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{horasTotais.toFixed(1)}</div>
               </div>
               {piorAlerta ? (
-                <div onClick={()=>setView('home')} style={{background:'#fff3e0',borderRadius:20,border:'1px solid #f2c98a',padding:14,flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
-                  <div style={{fontSize:9,fontWeight:700,color:'#7a5200',letterSpacing:.3}}>🔧 MANUTENÇÃO PRÓXIMA</div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginTop:2}}>{piorAlerta.tipo==='drone'?'🚁':'🚗'} {piorAlerta.nome}</div>
-                  <div style={{fontSize:10,color:'#f2960f',fontWeight:600,marginTop:1}}>
-                    {piorAlerta.tipo==='drone' ? `${piorAlerta.pct.toFixed(0)}% (${piorAlerta.horas.toFixed(1)}h/${piorAlerta.limite}h)` : (piorAlerta.proxima_km?`${Math.max(0,piorAlerta.proxima_km-piorAlerta.km_atual).toFixed(0)} km restantes`:new Date(piorAlerta.proxima_data).toLocaleDateString('pt-BR'))}
+                <div onClick={()=>setView('home')} style={{background:'#fff3e0',borderRadius:20,border:'1px solid #f2c98a',padding:'10px 12px',flex:1,display:'flex',alignItems:'center',gap:10}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:9,fontWeight:700,color:'#7a5200',letterSpacing:.3}}>🔧 MANUTENÇÃO</div>
+                    <div style={{fontSize:12,fontWeight:700,color:'#0b1210',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{piorAlerta.tipo==='drone'?'🚁':'🚗'} {piorAlerta.nome}</div>
+                    {alertasManutencao.length>1 && <div style={{fontSize:9,color:'#7a5200',marginTop:1,opacity:.8}}>+{alertasManutencao.length-1} outro(s)</div>}
                   </div>
-                  {alertasManutencao.length>1 && <div style={{fontSize:9,color:'#7a5200',marginTop:3,opacity:.8}}>+{alertasManutencao.length-1} outro(s)</div>}
+                  <CircularGauge pct={piorAlerta.pct} size={40}/>
                 </div>
               ) : (
                 <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#7ba38f',fontSize:11,fontWeight:600}}>✅ Frota em dia</div>
@@ -1554,6 +1599,15 @@ export default function PilotApp({onSwitchMode}) {
       <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
         <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
 
+        {veiculosDB.length>0 && (
+          <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4}}>
+            <button style={{flex:1,background:notaTab==='despesa'?'#fff':'transparent',color:notaTab==='despesa'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='despesa'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+              onClick={()=>setNotaTab('despesa')}>🧾 Despesa</button>
+            <button style={{flex:1,background:notaTab==='viagem'?'#fff':'transparent',color:notaTab==='viagem'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='viagem'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+              onClick={()=>setNotaTab('viagem')}>🚗 Viagem</button>
+          </div>
+        )}
+
         <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
           {/* Foto da nota */}
           <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>FOTO DA NOTA</div>
@@ -1574,43 +1628,50 @@ export default function PilotApp({onSwitchMode}) {
           <input id="nota-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
           <input id="nota-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
 
-          {/* Categoria */}
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>CATEGORIA</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
-            {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>(
-              <button key={cat} type="button" style={{background:notaForm.categoria===cat?'#0e9f6e':'#f1f8f4',color:notaForm.categoria===cat?'#fff':'#0b1210',border:'none',borderRadius:16,padding:'10px 8px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
-                onClick={()=>setNotaForm(f=>({...f,categoria:cat}))}>{ic} {cat}</button>
-            ))}
-          </div>
+          {(notaTab==='despesa' || veiculosDB.length===0) && (
+            <>
+              {/* Categoria */}
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>CATEGORIA</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
+                {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>(
+                  <button key={cat} type="button" style={{background:notaForm.categoria===cat?'#0e9f6e':'#f1f8f4',color:notaForm.categoria===cat?'#fff':'#0b1210',border:'none',borderRadius:16,padding:'10px 8px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
+                    onClick={()=>setNotaForm(f=>({...f,categoria:cat}))}>{ic} {cat}</button>
+                ))}
+              </div>
 
-          {/* Valor + data */}
-          <div style={{display:'flex',gap:10,marginBottom:14}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VALOR (R$)</div>
-              <input type="number" style={sw.fi} placeholder="0,00" value={notaForm.valor} onChange={e=>setNotaForm(f=>({...f,valor:e.target.value}))}/>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
-              <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
-            </div>
-          </div>
+              {/* Valor + data */}
+              <div style={{display:'flex',gap:10,marginBottom:14}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VALOR (R$)</div>
+                  <input type="number" style={sw.fi} placeholder="0,00" value={notaForm.valor} onChange={e=>setNotaForm(f=>({...f,valor:e.target.value}))}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
+                  <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
+                </div>
+              </div>
+            </>
+          )}
 
-          {/* Veículo / Viagem (opcional — pode ser usado sozinho, sem despesa) */}
-          {veiculosDB.length>0 && (
-            <div style={{background:'#f9fbfa',borderRadius:14,padding:12,marginBottom:14}}>
-              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',marginBottom:8}}>🚗 REGISTRAR VIAGEM (OPCIONAL)</div>
+          {/* Veículo / Viagem — aba dedicada */}
+          {notaTab==='viagem' && veiculosDB.length>0 && (
+            <div style={{marginBottom:14}}>
               <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VEÍCULO</div>
               <select style={{...sw.fs,marginBottom:8}} value={notaForm.veiculo_id} onChange={e=>setNotaForm(f=>({...f,veiculo_id:e.target.value}))}>
-                <option value="">Não vincular a um veículo...</option>
+                <option value="">Selecione o veículo...</option>
                 {veiculosDB.map(v=><option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
               </select>
               {notaForm.veiculo_id && (
                 <div>
                   <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM ATUAL DO VEÍCULO</div>
                   <input type="number" style={sw.fi} placeholder={`Ex: ${veiculosDB.find(v=>v.id===notaForm.veiculo_id)?.km_atual||0}`} value={notaForm.km_atual} onChange={e=>setNotaForm(f=>({...f,km_atual:e.target.value}))}/>
-                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Registra a viagem automaticamente — não precisa preencher categoria/valor se for só isso</div>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Registra a viagem automaticamente. Se essa viagem também teve gasto (combustível, pedágio), preencha em "Despesa" também.</div>
                 </div>
               )}
+              <div style={{marginTop:10}}>
+                <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
+                <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
+              </div>
             </div>
           )}
 
