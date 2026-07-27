@@ -633,7 +633,8 @@ export default function PilotApp({onSwitchMode}) {
   // pós-aplicação. Usa o menu nativo de compartilhar do Android dentro do app empacotado
   // (window.open/Web Share sozinhos não são confiáveis dentro do WebView).
   async function compartilharWhatsApp(){
-    const texto = buildTxt(form,clienteVal,droneVal,produtoComUnidade)
+    const formComPiloto = {...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||''}
+    const texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade)
     let file = fotoMapaFile
     console.log('[compartilharWhatsApp] fotoMapaFile=',!!fotoMapaFile,'storageFotoMapa=',storageFotoMapa)
     if (!file && storageFotoMapa) {
@@ -870,12 +871,21 @@ export default function PilotApp({onSwitchMode}) {
   },[]) // eslint-disable-line
 
   async function fetchClima() {
-    if (!form.gps_lat || !form.gps_lng) {
-      showToast('⚠️ Capture o GPS primeiro no Step 2'); return
+    let lat = form.gps_lat, lng = form.gps_lng
+    if (!lat || !lng) {
+      if (!navigator.geolocation) { showToast('⚠️ GPS não disponível neste dispositivo','error'); return }
+      showToast('📍 Capturando localização...')
+      try {
+        const pos = await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:10000}))
+        lat = pos.coords.latitude.toFixed(6); lng = pos.coords.longitude.toFixed(6)
+        setForm(f=>({...f,gps_lat:lat,gps_lng:lng}))
+      } catch(e) {
+        showToast('⚠️ Não foi possível capturar o GPS. Verifique a permissão de localização.','error'); return
+      }
     }
     showToast('🌤️ Buscando condições climáticas...')
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${form.gps_lat}&longitude=${form.gps_lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&wind_speed_unit=kmh&timezone=auto`
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&wind_speed_unit=kmh&timezone=auto`
       const res = await fetch(url)
       const data = await res.json()
       const c = data.current
@@ -2695,7 +2705,7 @@ export default function PilotApp({onSwitchMode}) {
         <div style={s.modalOverlay} onClick={()=>setModalOpen(false)}>
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>Relatório <button style={s.modalClose} onClick={()=>setModalOpen(false)}>✕</button></div>
-            <ReportView form={form} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles} prodFmt={produtoComUnidade}/>
+            <ReportView form={{...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||''}} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles} prodFmt={produtoComUnidade}/>
             <button style={{...s.shareBtn,background:'#0b1210',marginTop:12}} onClick={async()=>{
               const rel=await saveToSupabase({status:'finalizado'})
               if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')}

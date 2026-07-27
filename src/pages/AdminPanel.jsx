@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFRelatorio, gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
+import { gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
@@ -404,15 +404,18 @@ export default function AdminPanel({ onSwitchMode }) {
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
   }
 
-  async function gerarPDF(rel, localFotoMapa, localObsFotos, tipo='interno') {
-    showToast('⏳ Gerando ' + (tipo==='word'?'Word':tipo==='cliente'?'PDF Cliente':'PDF técnico') + '...')
+  async function gerarPDF(rel, localFotoMapa, localObsFotos, tipo='cliente') {
+    showToast('⏳ Gerando ' + (tipo==='word'?'Word':'PDF Cliente') + '...')
     try {
       const { data: relAtual } = await supabase.from('relatorios').select('*').eq('id', rel.id).single()
       const relFinal = relAtual || rel
       const opts = { supabase, localFotoMapa: localFotoMapa||null, localObsFotos: localObsFotos?.some(Boolean)?localObsFotos:null }
       const nomeBase = `${relFinal.cliente?.replace(/\s+/g,'-').toLowerCase()}-${new Date(relFinal.created_at).toLocaleDateString('pt-BR').replace(/\//g,'-')}`
 
-      if (tipo === 'cliente') {
+      if (tipo === 'word') {
+        const blob = await gerarWordCliente(relFinal, opts)
+        await salvarOuCompartilharBlob(blob, `relatorio-cliente-${nomeBase}.doc`)
+      } else {
         // Busca trechos se for voo compartilhado
         let trechos = []
         if (relFinal.compartilhado) {
@@ -421,14 +424,8 @@ export default function AdminPanel({ onSwitchMode }) {
         }
         const doc = await gerarPDFCliente(relFinal, { ...opts, trechos })
         await salvarOuCompartilharPdf(doc, `relatorio-cliente-${nomeBase}.pdf`)
-      } else if (tipo === 'word') {
-        const blob = await gerarWordCliente(relFinal, opts)
-        await salvarOuCompartilharBlob(blob, `relatorio-cliente-${nomeBase}.doc`)
-      } else {
-        const doc = await gerarPDFRelatorio(relFinal, opts)
-        await salvarOuCompartilharPdf(doc, `relatorio-tecnico-${nomeBase}.pdf`)
       }
-      showToast('✅ ' + (tipo==='word'?'Word':tipo==='cliente'?'PDF Cliente':'PDF técnico') + ' baixado!')
+      showToast('✅ ' + (tipo==='word'?'Word':'PDF Cliente') + ' baixado!')
     } catch (e) { console.error(e); showToast('Erro ao gerar arquivo', 'error') }
   }
 
@@ -694,7 +691,6 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:'#5c7568' }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
                                   <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
-                                  <button title="PDF Técnico" style={sG.iconBtn} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'interno') }}>📄</button>
                                   <button title="PDF Cliente" style={{...sG.iconBtn,color:'#22c476'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
                                   <button title="Word / Google Docs" style={{...sG.iconBtn,color:'#2f6fed'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝</button>
                                   {rel.gps_lat && <a title="Maps" style={{ ...sG.iconBtn, textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>🗺️</a>}
@@ -3156,7 +3152,6 @@ export default function AdminPanel({ onSwitchMode }) {
               <div style={{ display:'flex', gap:6, padding:'10px 20px 0', flexWrap:'wrap' }}>
                 <div style={{ fontSize:11, color:'#5c7568', width:'100%', marginBottom:4, fontWeight:600 }}>EXPORTAR:</div>
                 {[
-                  ['📄 PDF Técnico', '#0b1210', 'interno'],
                   ['🟢 PDF Cliente', '#22c476', 'cliente'],
                   ['📝 Word / Docs', '#2f6fed', 'word'],
                 ].map(([label, bg, tipo]) => (
