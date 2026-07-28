@@ -18,6 +18,12 @@ const COND_LABELS  = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T'
 const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const PRODUTO_FAZENDA_OPTS = ['Inseticida','Herbicida','Fungicida']
 
+function gerarOrdemServico() {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789' // sem caracteres ambíguos (0/o, 1/l/i)
+  let s=''; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)]
+  return s
+}
+
 function useIsMobile() {
   const [m, setM] = useState(() => window.innerWidth < 768)
   useEffect(() => {
@@ -155,18 +161,19 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invSaving, setInvSaving] = useState(false)
 
   function initClienteForm(c={}) {
-    return { nome:c.nome||'', ativo:c.ativo!==false, obs:c.obs||'' }
+    return { nome:c.nome||'', ativo:c.ativo!==false, obs:c.obs||'', preco_catacao:c.preco_catacao??'', preco_area_total:c.preco_area_total??'' }
   }
 
   async function salvarCliente() {
     setInvSaving(true)
     try {
+      const payload = { ...clienteForm, preco_catacao: clienteForm.preco_catacao!==''&&clienteForm.preco_catacao!=null?parseFloat(clienteForm.preco_catacao):null, preco_area_total: clienteForm.preco_area_total!==''&&clienteForm.preco_area_total!=null?parseFloat(clienteForm.preco_area_total):null }
       if (clienteModal === 'novo') {
-        const { error } = await supabase.from('clientes').insert(clienteForm)
+        const { error } = await supabase.from('clientes').insert(payload)
         if (error) throw error
         showToast('✅ Cliente cadastrado!')
       } else {
-        const { error } = await supabase.from('clientes').update(clienteForm).eq('id', clienteModal.id)
+        const { error } = await supabase.from('clientes').update(payload).eq('id', clienteModal.id)
         if (error) throw error
         showToast('✅ Cliente atualizado!')
       }
@@ -710,7 +717,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead>
                         <tr style={{ background:'#f1f8f4' }}>
-                          {['Cliente','Fazenda','Piloto','Drone','Status','Data','Tempo','Ações'].map(h => (
+                          {['Cliente','Fazenda','Piloto','Drone','Status','Data','Tempo','Custo','Ações'].map(h => (
                             <th key={h} style={{ padding:'11px 14px', textAlign:'left', fontSize:11, fontWeight:700, color:'#5c7568', letterSpacing:0.5, borderBottom:'1px solid #d7e6dc', whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>{h}</th>
                           ))}
                         </tr>
@@ -729,6 +736,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={sG.td}><span style={{ background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
                                 <td style={sG.td}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</td>
                                 <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:'#5c7568' }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
+                                <td style={sG.td}>{(() => { const t=custos.filter(c=>c.relatorio_id===rel.id).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:'#f2960f'}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
                                   <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
                                   <button title="PDF Cliente" style={{...sG.iconBtn,color:'#22c476'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
@@ -809,6 +817,17 @@ export default function AdminPanel({ onSwitchMode }) {
             },0)
             const eficiencia = totalMins>0 ? ((totalArea/(totalMins/60))||0).toFixed(1) : 0
             const receita = precoHa>0 ? (totalArea*precoHa).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : null
+
+            // ── Receita estimada por preço cadastrado no cliente (catação/área total) ──
+            const clientePorNome = {}
+            invClientes.forEach(c=>{ clientePorNome[c.nome]=c })
+            let receitaClientes = 0, voosComPreco = 0
+            rel.forEach(r=>{
+              const cli = clientePorNome[r.cliente]
+              if(!cli) return
+              const preco = r.tipo_servico==='catacao' ? cli.preco_catacao : r.tipo_servico==='area_total' ? cli.preco_area_total : null
+              if(preco>0){ receitaClientes += preco*parseFloat(r.area_ha||0); voosComPreco++ }
+            })
             const fmtH = m => { const h=Math.floor(m/60),mn=m%60; return `${h}h${String(mn).padStart(2,'0')}m` }
 
             // ── Área por dia (últimos 30 dias) ──
@@ -1030,10 +1049,11 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── KPIs ── */}
-                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(5,1fr)',gap:12,marginBottom:16}}>
                   <Card title="ÁREA APLICADA" value={totalArea.toFixed(1)+' ha'} sub={`${totalVoos} voos`} icon="📐"/>
                   <Card title="HORAS VOADAS" value={fmtH(totalMins)} sub={`${eficiencia} ha/h eficiência`} color="#2f6fed" icon="⏱️"/>
                   <Card title="PILOTOS ATIVOS" value={Object.keys(pilotoStats).length} sub="no período" color="#8e44ad" icon="👨‍✈️"/>
+                  <Card title="RECEITA (PREÇO CLIENTE)" value={receitaClientes.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} sub={voosComPreco>0?`${voosComPreco} voo(s) com preço cadastrado`:'nenhum cliente com preço cadastrado'} color="#0e9f6e" icon="💵"/>
                   <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
                     <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>💰 PREÇO / HA</div>
                     <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
@@ -1105,16 +1125,19 @@ export default function AdminPanel({ onSwitchMode }) {
                   </div>
                   <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px'}}>
                     <SecTitle>🧪 Produtos Mais Aplicados (ha)</SecTitle>
-                    {topProdutos.length===0 ? <div style={{color:'#7ba38f',fontSize:13}}>Sem dados</div> : (
-                      <ResponsiveContainer width="100%" height={200}>
-                        <PieChart>
-                          <Pie data={topProdutos} cx="50%" cy="50%" outerRadius={75} dataKey="value" nameKey="name" label={({value})=>`${value} ha`} labelLine={false} fontSize={9}>
-                            {topProdutos.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
-                          </Pie>
-                          <Tooltip formatter={(v,name,props)=>[`${(props.payload.percent*100).toFixed(0)}%`,name]}/>
-                        </PieChart>
-                      </ResponsiveContainer>
-                    )}
+                    {topProdutos.length===0 ? <div style={{color:'#7ba38f',fontSize:13}}>Sem dados</div> : (() => {
+                      const totalProdutos = topProdutos.reduce((a,p)=>a+p.value,0)
+                      return (
+                        <ResponsiveContainer width="100%" height={200}>
+                          <PieChart>
+                            <Pie data={topProdutos} cx="50%" cy="50%" outerRadius={75} dataKey="value" nameKey="name" label={({value})=>`${value} ha`} labelLine={false} fontSize={9}>
+                              {topProdutos.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                            </Pie>
+                            <Tooltip formatter={(value,name)=>[`${totalProdutos>0?((value/totalProdutos)*100).toFixed(0):0}%`,name]}/>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      )
+                    })()}
                   </div>
                 </div>
 
@@ -2332,11 +2355,11 @@ export default function AdminPanel({ onSwitchMode }) {
                     <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
                       <input style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
                         placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
-                      <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'0 0 160px'}}
-                        value={fzProdutoFiltro} onChange={e=>setFzProdutoFiltro(e.target.value)}>
-                        <option value="">Todos os produtos</option>
-                        {['Inseticida','Herbicida','Fungicida'].map(p=><option key={p}>{p}</option>)}
-                      </select>
+                      <div style={{flex:'0 0 200px'}}>
+                        <MultiSelectDropdown label="Produto" options={['Inseticida','Herbicida','Fungicida']}
+                          selected={fzProdutoFiltro?[fzProdutoFiltro]:[]}
+                          onChange={arr=>setFzProdutoFiltro(arr.length?arr[arr.length-1]:'')}/>
+                      </div>
                     </div>
 
                     {fazendasBI.length===0 ? (
@@ -2381,7 +2404,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* ── FAZENDAS & TALHÕES (cadastro) ── */}
                 {fzTab==='fazendas' && (
                   <div>
-                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,marginBottom:16}}>
+                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                       <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Nova Fazenda</div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                         <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
@@ -2416,11 +2439,11 @@ export default function AdminPanel({ onSwitchMode }) {
                       <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
                         <input style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
                           placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
-                        <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'0 0 160px'}}
-                          value={fzProdutoFiltro} onChange={e=>setFzProdutoFiltro(e.target.value)}>
-                          <option value="">Todos os produtos</option>
-                          {['Inseticida','Herbicida','Fungicida'].map(p=><option key={p}>{p}</option>)}
-                        </select>
+                        <div style={{flex:'0 0 200px'}}>
+                          <MultiSelectDropdown label="Produto" options={['Inseticida','Herbicida','Fungicida']}
+                            selected={fzProdutoFiltro?[fzProdutoFiltro]:[]}
+                            onChange={arr=>setFzProdutoFiltro(arr.length?arr[arr.length-1]:'')}/>
+                        </div>
                       </div>
                     )}
 
@@ -2435,14 +2458,14 @@ export default function AdminPanel({ onSwitchMode }) {
                         </div>
                       )
                       return [...new Set(fazendasFiltradas.map(f=>f.cliente))].map(cli=>(
-                        <div key={cli} style={{marginBottom:16}}>
-                          <div style={{fontSize:13,fontWeight:700,color:'#0e9f6e',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
+                        <div key={cli} style={{marginBottom:20}}>
+                          <div style={{display:'inline-block',fontSize:12,fontWeight:700,color:'#fff',background:'#0e9f6e',marginBottom:10,padding:'4px 12px',borderRadius:20,fontFamily:"'Syne',sans-serif"}}>🏢 {cli}</div>
                           {fazendasFiltradas.filter(f=>f.cliente===cli).map(fz=>{
                             const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
                             const tf = tlForm[fz.id]||{nome:'',area_ha:''}
                             return (
-                              <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14,marginBottom:10}}>
-                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                              <div key={fz.id} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:12,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                                   <span style={{fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8}}>
                                     🌾 {fz.nome}
                                     {fz.produto && <span style={{background:'#e6f0ea',color:'#145c38',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{fz.produto}</span>}
@@ -2453,13 +2476,16 @@ export default function AdminPanel({ onSwitchMode }) {
                                       await supabase.from('fazendas').delete().eq('id',fz.id);fetchInventario()
                                     }}>🗑️</button>
                                 </div>
-                                {talhoesFz.map(t=>(
-                                  <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f7fbf8',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
-                                    <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#0e9f6e'}}>· {t.area_ha} ha</strong>:''}</span>
-                                    <button style={{background:'none',border:'none',color:'#e5484d',cursor:'pointer',fontSize:14}}
-                                      onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
-                                  </div>
-                                ))}
+                                <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
+                                  <div style={{fontSize:10,fontWeight:700,color:'#5c7568',marginBottom:8}}>📐 TALHÕES</div>
+                                  {talhoesFz.length===0 && <div style={{fontSize:12,color:'#aaa',fontStyle:'italic',marginBottom:8}}>Nenhum talhão cadastrado ainda</div>}
+                                  {talhoesFz.map(t=>(
+                                    <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#fff',border:'1px solid #eef5f0',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
+                                      <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#0e9f6e'}}>· {t.area_ha} ha</strong>:''}</span>
+                                      <button style={{background:'none',border:'none',color:'#e5484d',cursor:'pointer',fontSize:14}}
+                                        onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
+                                    </div>
+                                  ))}
                                 <div style={{display:'flex',gap:6,marginTop:8}}>
                                   <input style={{border:'1px solid #d7e6dc',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
                                     placeholder="Novo talhão..." value={tf.nome}
@@ -2474,6 +2500,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                       if(error){alert('Erro: '+error.message);return}
                                       setTlForm(s=>({...s,[fz.id]:{nome:'',area_ha:''}}));fetchInventario()
                                     }}>+ Add</button>
+                                </div>
                                 </div>
                               </div>
                             )
@@ -2529,6 +2556,22 @@ export default function AdminPanel({ onSwitchMode }) {
                           <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
                           <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
                             value={clienteForm.obs||''} onChange={e=>setClienteForm(f=>({...f,obs:e.target.value}))} />
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:6}}>PREÇO POR TIPO DE SERVIÇO (R$/ha)</div>
+                          <div style={{display:'flex',gap:8}}>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:10,color:'#7ba38f',marginBottom:3}}>Catação</div>
+                              <input type="number" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                placeholder="0,00" value={clienteForm.preco_catacao} onChange={e=>setClienteForm(f=>({...f,preco_catacao:e.target.value}))} />
+                            </div>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:10,color:'#7ba38f',marginBottom:3}}>Área Total</div>
+                              <input type="number" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                placeholder="0,00" value={clienteForm.preco_area_total} onChange={e=>setClienteForm(f=>({...f,preco_area_total:e.target.value}))} />
+                            </div>
+                          </div>
+                          <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Usado pra calcular a receita quando o piloto marca o tipo de serviço no voo.</div>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
                           <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#0e9f6e':'#d7e6dc',position:'relative',transition:'all .2s',flexShrink:0}}>
@@ -2842,6 +2885,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   cliente: agendaForm.cliente, fazenda: agendaForm.fazenda,
                   data_prevista: agendaForm.data_prevista, produto: agendaForm.produto||null,
                   observacao: agendaForm.observacao||null, status:'pendente',
+                  ordem_servico: gerarOrdemServico(),
                 })
                 if(error) throw error
                 showToast('📅 Agendamento criado!')
@@ -2940,6 +2984,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               <span style={{fontWeight:700,fontSize:14}}>{a.piloto_nome}</span>
                               <span style={{background:badge.bg,color:badge.cor,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{badge.label}</span>
                               {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
+                              {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
                             </div>
                             <div style={{fontSize:12,color:'#5c7568',marginTop:3}}>{a.cliente} — {a.fazenda}{a.produto?` · ${a.produto}`:''}</div>
                             <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</div>

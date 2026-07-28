@@ -57,7 +57,7 @@ function initForm(data) {
     return {
       cultura:data.cultura||'',cliente:data.cliente||'',clienteOutro:'',
       fazenda:data.fazenda||'',produto:data.produto||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
-      qtd_voos:data.qtd_voos||1,
+      qtd_voos:data.qtd_voos||1,tipo_servico:data.tipo_servico||'',
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
       produtos:data.produtos?.length
         ? data.produtos.map(p=>{
@@ -79,7 +79,7 @@ function initForm(data) {
     }
   }
   return {
-    cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',qtd_voos:1,
+    cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',qtd_voos:1,tipo_servico:'',
     piloto_nome:'',drone:'',droneOutro:'',
     produtos:[''],tamanho_gota:'',velocidade_drone:'',
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
@@ -701,7 +701,7 @@ export default function PilotApp({onSwitchMode}) {
     const payload={
       piloto_id:profile.id,
       cultura:form.cultura||null,
-      cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,qtd_voos:parseInt(form.qtd_voos)||1,
+      cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,qtd_voos:parseInt(form.qtd_voos)||1,tipo_servico:form.tipo_servico||null,
       piloto_nome:profile.nome||profile.email,
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
@@ -710,7 +710,7 @@ export default function PilotApp({onSwitchMode}) {
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
-      ...(!osAtual ? {ordem_servico:gerarOrdemServico()} : {}),
+      ordem_servico: osAtual || gerarOrdemServico(),
       ...extraData
     }
     setSaveStatus('saving')
@@ -1031,6 +1031,7 @@ export default function PilotApp({onSwitchMode}) {
   function iniciarVooAgendado(a){
     limpar()
     setForm(f=>({...f,cliente:a.cliente,fazenda:a.fazenda,produto:a.produto||''}))
+    if(a.ordem_servico) setOsAtual(a.ordem_servico)
     setView('form')
   }
 
@@ -1886,6 +1887,7 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                 <span style={{background:badge.bg,color:badge.cor,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{badge.label}</span>
                 {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
+                {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
               </div>
               <div style={{fontWeight:700,fontSize:15,fontFamily:"'Syne',sans-serif"}}>{a.cliente} — {a.fazenda}</div>
               <div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}{a.produto?` · ${a.produto}`:''}</div>
@@ -2053,7 +2055,16 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
             <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>{setForm(f=>({...f,area_ha:e.target.value}));autoGPS()}} type="number"/>
-            <FI label="QTDE DE VOOS (BATERIAS)" ph="Ex: 3" val={form.qtd_voos} onChange={e=>setForm(f=>({...f,qtd_voos:e.target.value}))} type="number"/>
+
+            <div style={sw.fw}>
+              <label style={sw.fl}>TIPO DE SERVIÇO</label>
+              <div style={{display:'flex',gap:8}}>
+                {[['catacao','Catação'],['area_total','Área Total']].map(([v,lbl])=>(
+                  <button key={v} type="button" style={{flex:1,background:form.tipo_servico===v?'#0e9f6e':'#f1f8f4',color:form.tipo_servico===v?'#fff':'#0b1210',border:'none',borderRadius:10,padding:'12px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    onClick={()=>setForm(f=>({...f,tipo_servico:v}))}>{lbl}</button>
+                ))}
+              </div>
+            </div>
 
             <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Drone...</option>
@@ -2339,6 +2350,8 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{fontSize:12,opacity:.8,marginBottom:2}}>{form.cultura&&`${form.cultura} · `}{clienteVal} · {form.fazenda}</div>
               <div style={{fontSize:13,fontWeight:600}}>{form.talhao&&`Talhão: ${form.talhao} · `}{form.area_ha&&`${form.area_ha} ha`}</div>
             </div>
+
+            <FI label="QTDE DE VOOS (BATERIAS)" ph="Ex: 3" val={form.qtd_voos} onChange={e=>setForm(f=>({...f,qtd_voos:e.target.value}))} type="number"/>
 
             {/* Status */}
             <div style={{display:'flex',justifyContent:'center',marginBottom:16}}>
