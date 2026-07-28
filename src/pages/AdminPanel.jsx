@@ -125,6 +125,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invFazendas, setInvFazendas] = useState([])
   const [invTalhoes, setInvTalhoes] = useState([])
   const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:''})
+  const [fzModal, setFzModal] = useState(false)
   const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
   const [fzSearch, setFzSearch] = useState('')
   const [fzProdutoFiltro, setFzProdutoFiltro] = useState('')
@@ -2292,6 +2293,23 @@ export default function AdminPanel({ onSwitchMode }) {
               showToast('🔄 Progresso zerado!'); fetchInventario()
             }
 
+            async function salvarNovaFazenda() {
+              if(!fzForm.cliente||!fzForm.nome){ showToast('Preencha cliente e nome','error'); return }
+              const nomeNorm = fzForm.nome.trim()
+              const norm = s => s.trim().toLowerCase().replace(/\s+/g,' ')
+              const mesmoCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente===fzForm.cliente)
+              if(mesmoCliente){ showToast(`"${mesmoCliente.nome}" já está cadastrada para ${fzForm.cliente}. Use a fazenda existente na lista.`,'error'); return }
+              const outroCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente!==fzForm.cliente)
+              if(outroCliente && !window.confirm(`Já existe uma fazenda chamada "${outroCliente.nome}" cadastrada para o cliente ${outroCliente.cliente}.\n\nSe for a mesma fazenda, cancele e corrija o cliente correto. Cadastrar mesmo assim como uma fazenda separada para ${fzForm.cliente}?`)) return
+              setInvSaving(true)
+              try {
+                const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,ativo:true})
+                if(error) throw error
+                showToast('✅ Fazenda cadastrada!')
+                setFzForm({cliente:'',nome:'',produto:''}); setFzModal(false); fetchInventario()
+              } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false) }
+            }
+
             return (
               <div>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18,flexWrap:'wrap',gap:10}}>
@@ -2303,6 +2321,12 @@ export default function AdminPanel({ onSwitchMode }) {
                     <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>{setClienteForm(initClienteForm());setClienteModal('novo')}}>
                       + Novo Cliente
+                    </button>
+                  )}
+                  {fzTab==='fazendas' && (
+                    <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:''});setFzModal(true)}}>
+                      + Nova Fazenda
                     </button>
                   )}
                 </div>
@@ -2404,37 +2428,6 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* ── FAZENDAS & TALHÕES (cadastro) ── */}
                 {fzTab==='fazendas' && (
                   <div>
-                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                      <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Nova Fazenda</div>
-                      <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
-                          value={fzForm.cliente} onChange={e=>setFzForm(f=>({...f,cliente:e.target.value}))}>
-                          <option value="">Cliente...</option>
-                          {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
-                        </select>
-                        <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
-                          placeholder="Nome da fazenda" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
-                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 140px'}}
-                          value={fzForm.produto} onChange={e=>setFzForm(f=>({...f,produto:e.target.value}))}>
-                          <option value="">Produto...</option>
-                          {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
-                        </select>
-                        <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                          onClick={async()=>{
-                            if(!fzForm.cliente||!fzForm.nome){alert('Preencha cliente e nome');return}
-                            const nomeNorm = fzForm.nome.trim()
-                            const norm = s => s.trim().toLowerCase().replace(/\s+/g,' ')
-                            const mesmoCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente===fzForm.cliente)
-                            if(mesmoCliente){ alert(`"${mesmoCliente.nome}" já está cadastrada para ${fzForm.cliente}. Use a fazenda existente na lista abaixo em vez de duplicar.`); return }
-                            const outroCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente!==fzForm.cliente)
-                            if(outroCliente && !window.confirm(`Já existe uma fazenda chamada "${outroCliente.nome}" cadastrada para o cliente ${outroCliente.cliente}.\n\nSe for a mesma fazenda, cancele e corrija o cliente correto. Cadastrar mesmo assim como uma fazenda separada para ${fzForm.cliente}?`)) return
-                            const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,ativo:true})
-                            if(error){alert('Erro: '+error.message);return}
-                            setFzForm({cliente:'',nome:'',produto:''});fetchInventario()
-                          }}>Salvar</button>
-                      </div>
-                    </div>
-
                     {invFazendas.length>0 && (
                       <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
                         <input style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
@@ -2448,8 +2441,8 @@ export default function AdminPanel({ onSwitchMode }) {
                     )}
 
                     {invFazendas.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
-                        Nenhuma fazenda cadastrada.<br/>Cadastre acima ou rode o SQL das tabelas fazendas/talhoes.
+                      <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>
+                        Nenhuma fazenda cadastrada ainda.<br/>Clique em "+ Nova Fazenda" para começar.
                       </div>
                     ) : (()=>{
                       if (q && fazendasFiltradas.length===0) return (
@@ -2508,6 +2501,42 @@ export default function AdminPanel({ onSwitchMode }) {
                         </div>
                       ))
                     })()}
+
+                    {/* MODAL NOVA FAZENDA */}
+                    {fzModal && (
+                      <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setFzModal(false)}>
+                        <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:380,padding:22}} onClick={e=>e.stopPropagation()}>
+                          <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>🌾 Nova Fazenda</div>
+                          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                            <div>
+                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>CLIENTE</div>
+                              <select style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                value={fzForm.cliente} onChange={e=>setFzForm(f=>({...f,cliente:e.target.value}))}>
+                                <option value="">Selecione...</option>
+                                {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>NOME DA FAZENDA</div>
+                              <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                placeholder="Ex: Fazenda Jamaica" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
+                            </div>
+                            <div>
+                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>PRODUTO (OPCIONAL)</div>
+                              <select style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                value={fzForm.produto} onChange={e=>setFzForm(f=>({...f,produto:e.target.value}))}>
+                                <option value="">Selecione...</option>
+                                {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                          <div style={{display:'flex',gap:8,marginTop:20}}>
+                            <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setFzModal(false)}>Cancelar</button>
+                            <button style={{flex:2,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}} disabled={invSaving} onClick={salvarNovaFazenda}>{invSaving?'Salvando...':'💾 Salvar'}</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
