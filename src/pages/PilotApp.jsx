@@ -57,7 +57,7 @@ function initForm(data) {
     return {
       cultura:data.cultura||'',cliente:data.cliente||'',clienteOutro:'',
       fazenda:data.fazenda||'',produto:data.produto||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
-      qtd_voos:data.qtd_voos||1,tipo_servico:data.tipo_servico||'',
+      qtd_voos:data.qtd_voos||1,tipo_servico:data.tipo_servico||'area_total',
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
       produtos:data.produtos?.length
         ? data.produtos.map(p=>{
@@ -79,7 +79,7 @@ function initForm(data) {
     }
   }
   return {
-    cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',qtd_voos:1,tipo_servico:'',
+    cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',qtd_voos:1,tipo_servico:'area_total',
     piloto_nome:'',drone:'',droneOutro:'',
     produtos:[''],tamanho_gota:'',velocidade_drone:'',
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
@@ -2059,7 +2059,7 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.fw}>
               <label style={sw.fl}>TIPO DE SERVIÇO</label>
               <div style={{display:'flex',gap:8}}>
-                {[['catacao','Catação'],['area_total','Área Total']].map(([v,lbl])=>(
+                {[['area_total','Área Total'],['catacao','Catação']].map(([v,lbl])=>(
                   <button key={v} type="button" style={{flex:1,background:form.tipo_servico===v?'#0e9f6e':'#f1f8f4',color:form.tipo_servico===v?'#fff':'#0b1210',border:'none',borderRadius:10,padding:'12px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                     onClick={()=>setForm(f=>({...f,tipo_servico:v}))}>{lbl}</button>
                 ))}
