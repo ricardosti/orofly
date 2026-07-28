@@ -57,6 +57,7 @@ function initForm(data) {
     return {
       cultura:data.cultura||'',cliente:data.cliente||'',clienteOutro:'',
       fazenda:data.fazenda||'',produto:data.produto||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
+      qtd_voos:data.qtd_voos||1,
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
       produtos:data.produtos?.length
         ? data.produtos.map(p=>{
@@ -78,7 +79,7 @@ function initForm(data) {
     }
   }
   return {
-    cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',
+    cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',qtd_voos:1,
     piloto_nome:'',drone:'',droneOutro:'',
     produtos:[''],tamanho_gota:'',velocidade_drone:'',
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
@@ -700,7 +701,7 @@ export default function PilotApp({onSwitchMode}) {
     const payload={
       piloto_id:profile.id,
       cultura:form.cultura||null,
-      cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,
+      cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,qtd_voos:parseInt(form.qtd_voos)||1,
       piloto_nome:profile.nome||profile.email,
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
@@ -2052,6 +2053,7 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
             <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>{setForm(f=>({...f,area_ha:e.target.value}));autoGPS()}} type="number"/>
+            <FI label="QTDE DE VOOS (BATERIAS)" ph="Ex: 3" val={form.qtd_voos} onChange={e=>setForm(f=>({...f,qtd_voos:e.target.value}))} type="number"/>
 
             <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Drone...</option>
@@ -2814,6 +2816,7 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
   const fmt=p=>{const d=form[p+'_data'],hh=form[p+'_hh'],mm=form[p+'_mm'];if(!d)return'—';return`${d.split('-').reverse().join('/')} ${hh||'00'}:${mm||'00'}`}
   const rows=[
     ['Cliente',clienteVal],['Fazenda',form.fazenda],['Área',form.area_ha?form.area_ha+' ha':null],
+    ['Qtde de voos',form.qtd_voos&&parseInt(form.qtd_voos)>1?form.qtd_voos:null],
     ['Piloto',form.piloto_nome],['Drone',droneVal],
     ...form.produtos.filter(Boolean).map((p,i)=>['Produto '+(i+1),prodFmt?prodFmt(p):p]),
     ['Gota',form.tamanho_gota],['Velocidade',form.velocidade_drone],
@@ -2832,35 +2835,52 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
 }
 
 function buildTxt(form,clienteVal,droneVal,prodFmt){
-  const fmt=p=>{const d=form[p+'_data'],hh=form[p+'_hh'],mm=form[p+'_mm'];if(!d)return'—';return`${d.includes('-')?d.split('-').reverse().join('/'):d} ${hh||'00'}:${mm||'00'}`}
-  const units = {faixa:'m', vazao:'L/ha', vento:'km/h', umidade:'%', temperatura:'°C', delta_t:'°C'}
-  let t='🚁 *RELATÓRIO OROFLY*\n'+new Date().toLocaleString('pt-BR')+'\n\n'
-  t+=`📋 *Operação*\n`
-  t+=`Cliente: ${clienteVal}\nFazenda: ${form.fazenda}\nPiloto: ${form.piloto_nome}\nDrone: ${droneVal}\n`
-  if(form.area_ha) t+=`Área total: ${form.area_ha} ha\n`
+  const numBR = (n,dec=2) => n==null||isNaN(n) ? '—' : n.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})
+  const fmtHora=p=>{const hh=form[p+'_hh'],mm=form[p+'_mm'];return (hh||mm)?`${hh||'00'}:${mm||'00'}`:'—'}
+  const fmtDataCurta=p=>{const d=form[p+'_data'];if(!d)return'—';const partes=d.split('-');return partes.length===3?`${partes[2]}/${partes[1]}`:d}
+  const hoje=new Date()
+  const dataShare=`${String(hoje.getDate()).padStart(2,'0')}/${String(hoje.getMonth()+1).padStart(2,'0')}`
+  const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
+
+  const areaTotal = parseFloat(form.area_ha)||0
   const bordTotal = bordaduraAtual(form)
-  if(bordTotal>0){
-    t+=`Bordadura: ${bordTotal} ha\n`
-    t+=`Área aplicada: ${areaLiquidaAtual(form)} ha\n`
-  }
-  form.produtos.filter(Boolean).forEach((p,i)=>{t+=`Produto ${i+1}: ${prodFmt?prodFmt(p):p}\n`})
-  if(form.tamanho_gota) t+=`Gota: ${form.tamanho_gota}\n`
-  if(form.velocidade_drone) t+=`Velocidade: ${form.velocidade_drone} km/h\n`
-  if(form.faixa_i) t+=`Faixa: ${form.faixa_i} m\n`
-  if(form.vazao_i) t+=`Vazão: ${form.vazao_i} L/ha\n`
-  t+=`\n⏰ *Horários*\nInício: ${fmt('dt_inicio')}\nFim: ${fmt('dt_fim')}\n`
-  const conds = [['vento','Vento'],['umidade','Umidade'],['temperatura','Temperatura'],['delta_t','Delta T']]
-  const anyIni = conds.some(([k])=>form[k+'_i'])
-  if(anyIni){
-    t+='\n🌤️ *Condições*\n'
-    conds.forEach(([k,lbl])=>{
-      const u=units[k]||''
-      const vi=form[k+'_i']?form[k+'_i']+' '+u:'—'
-      const vf=form[k+'_f']?form[k+'_f']+' '+u:'—'
-      t+=`${lbl}: Início ${vi} | Fim ${vf}\n`
+  const areaAplicada = areaLiquidaAtual(form)
+  const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaAplicada)
+
+  let t = `🚁 *RELATÓRIO OROFLY* — ${dataShare}\n\n`
+  t += `📍 Local: ${clienteVal||'—'} / F. ${form.fazenda||'—'}${form.talhao?` (Talhão: ${form.talhao})`:''}\n`
+  t += `⏰ Período: ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} ➔ ${fmtHora('dt_fim')})\n`
+  t += `👨‍✈️ Piloto: ${form.piloto_nome||'—'} | 🛸 ${droneVal||'—'}\n`
+  t += `${linha}\n`
+  t += `📏 Áreas: Total ${numBR(areaTotal)} ha${bordTotal>0?` (Aplicada: ${numBR(areaAplicada)} ha | Bord: ${numBR(bordTotal)} ha)`:''}\n`
+
+  const gastosValidos = gastos.filter(g=>g.nome)
+  if(gastosValidos.length){
+    t += `${linha}\n🧪 Produtos:\n`
+    gastosValidos.forEach(g=>{
+      const doseTxt = g.dose!=null ? String(g.dose).replace('.',',') : '—'
+      t += `* ${g.nome}: ${doseTxt} ${g.unidade}/ha${g.total!=null?` (Total: ${numBR(g.total)} ${g.unidade})`:''}\n`
     })
   }
-  if(form.obs1) t+=`\n📝 Obs: ${form.obs1}\n`
+
+  if(form.vazao_i||form.tamanho_gota||form.velocidade_drone||form.faixa_i){
+    t += `${linha}\n⚙️ Parâmetros:\n`
+    t += `* Vazão: ${form.vazao_i||'—'} L/ha | Gota: ${form.tamanho_gota||'—'} µm\n`
+    t += `* Velocidade: ${form.velocidade_drone||'—'} km/h | Faixa: ${form.faixa_i||'—'} m\n`
+  }
+
+  const anyIni = ['vento','umidade','temperatura','delta_t'].some(k=>form[k+'_i'])
+  if(anyIni){
+    t += `${linha}\n🌤️ Clima (Início ➔ Fim):\n`
+    t += `* Vento: ${form.vento_i||'—'} ➔ ${form.vento_f||'—'} km/h | Umidade: ${form.umidade_i||'—'}% ➔ ${form.umidade_f||'—'}%\n`
+    t += `* Temp: ${form.temperatura_i||'—'}°C ➔ ${form.temperatura_f||'—'}°C | Delta T: ${form.delta_t_i||'—'}°C ➔ ${form.delta_t_f||'—'}°C\n`
+  }
+
+  if(form.obs1) t += `${linha}\n📝 Obs: ${form.obs1}\n`
+
+  if(form.gps_lat && form.gps_lng){
+    t += `----\n📍 ${form.gps_lat}, ${form.gps_lng}\nhttps://maps.google.com/?q=${form.gps_lat},${form.gps_lng}\n`
+  }
   return t
 }
 

@@ -28,6 +28,43 @@ function useIsMobile() {
   return m
 }
 
+// Dropdown flutuante com checkboxes — substitui o <select multiple> nativo (feio e exige ctrl+clique)
+function MultiSelectDropdown({ label, options, selected, onChange }) {
+  const [open, setOpen] = useState(false)
+  const toggle = (opt) => onChange(selected.includes(opt) ? selected.filter(o => o !== opt) : [...selected, opt])
+  return (
+    <div style={{ position:'relative' }}>
+      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', marginBottom:3 }}>{label.toUpperCase()}</div>
+      <div onClick={() => setOpen(o => !o)}
+        style={{ width:'100%', border:'1px solid #d7e6dc', borderRadius:8, padding:'7px 10px', fontSize:12, color:selected.length?'#0b1210':'#aaa', background:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', boxSizing:'border-box' }}>
+        <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{selected.length ? `${selected.length} selecionado(s)` : 'Todos'}</span>
+        <span style={{ color:'#aaa', fontSize:10, marginLeft:4, flexShrink:0 }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position:'fixed', inset:0, zIndex:90 }}/>
+          <div style={{ position:'absolute', top:'100%', left:0, right:0, marginTop:4, background:'#fff', border:'1px solid #d7e6dc', borderRadius:10, boxShadow:'0 10px 30px rgba(0,0,0,.18)', zIndex:91, padding:6, maxHeight:220, overflowY:'auto' }}>
+            {options.length === 0 ? (
+              <div style={{ padding:10, fontSize:12, color:'#aaa', textAlign:'center' }}>Sem opções</div>
+            ) : options.map(o => {
+              const sel = selected.includes(o)
+              return (
+                <div key={o} onClick={() => toggle(o)}
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 8px', cursor:'pointer', borderRadius:6, background:sel?'#e3f7ec':'transparent' }}>
+                  <div style={{ width:15, height:15, borderRadius:4, border:`2px solid ${sel?'#0e9f6e':'#c3d4c9'}`, background:sel?'#0e9f6e':'#fff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    {sel && <span style={{ color:'#fff', fontSize:9, fontWeight:700 }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize:12, color:'#0b1210' }}>{o}</span>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function AdminPanel({ onSwitchMode }) {
   const { profile, signOut, refreshProfile } = useAuth()
   const [showPerfil, setShowPerfil] = useState(false)
@@ -54,7 +91,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
-  const [filters, setFilters] = useState({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })
+  const [filters, setFilters] = useState({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })
   const [selectedKmlIds, setSelectedKmlIds] = useState([])
   const [newUser, setNewUser] = useState({ nome:'', email:'', senha:'', role:'piloto' })
   const [criandoUser, setCriandoUser] = useState(false)
@@ -302,6 +339,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
   const filtered = relatorios.filter(r => {
     if (filters.cliente && !r.cliente?.toLowerCase().includes(filters.cliente.toLowerCase())) return false
+    if (filters.fazenda && !r.fazenda?.toLowerCase().includes(filters.fazenda.toLowerCase())) return false
     if (filters.piloto && !r.piloto_nome?.toLowerCase().includes(filters.piloto.toLowerCase())) return false
     if (filters.drone && !r.drone?.toLowerCase().includes(filters.drone.toLowerCase())) return false
     if (filters.status && r.status !== filters.status) return false
@@ -579,7 +617,6 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>Relatórios de Voo</div>
                 <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
               </div>
-
               {sosAtivos.length > 0 && (
                 <div style={{ background:'#fdeaea', border:'2px solid #e5484d', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
                   <div style={{ fontSize:14, fontWeight:700, color:'#e5484d', marginBottom:8 }}>🆘 SOS ATIVOS — {sosAtivos.length} alerta(s)</div>
@@ -602,7 +639,7 @@ export default function AdminPanel({ onSwitchMode }) {
               )}
 
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d7e6dc', alignItems:'center' }}>
-                {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
+                {[['Cliente','cliente'],['Fazenda','fazenda'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
                 <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
@@ -623,7 +660,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -648,12 +685,15 @@ export default function AdminPanel({ onSwitchMode }) {
                           <div style={{ padding:'10px 15px', borderTop:'1px solid #eef5f0', background:'#f7fbf8' }}>
                             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: (rel.kml_arquivos?.length > 0) ? 10 : 0 }}>
                               <button style={sG.actBtn('#2f6fed')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
-                              <button style={sG.actBtn('#0b1210')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'interno') }}>📄 PDF</button>
                               <button style={sG.actBtn('#22c476')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢 Cliente</button>
                               <button style={sG.actBtn('#1a5fa5')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝 Word</button>
                               {rel.gps_lat && <a style={{ ...sG.actBtn('#0e9f6e'), textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer">🗺️</a>}
                               <button style={sG.actBtn('#e5484d')} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
                             </div>
+                            {(() => {
+                              const totalCustos = custos.filter(c=>c.relatorio_id===rel.id).reduce((a,c)=>a+parseFloat(c.valor||0),0)
+                              return totalCustos>0 && <div style={{ fontSize:12, color:'#5c7568', marginBottom:10 }}>💰 Despesas vinculadas: <strong style={{color:'#0e9f6e'}}>R$ {totalCustos.toFixed(2)}</strong></div>
+                            })()}
                             {/* KML no mobile */}
                             {rel.kml_arquivos?.length > 0 && (
                               <KmlViewer rel={rel} supabase={supabase} />
@@ -697,7 +737,10 @@ export default function AdminPanel({ onSwitchMode }) {
                                   <button title="Deletar" style={{ ...sG.iconBtn, color:'#e5484d' }} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
                                 </td>
                               </tr>
-                              {isSel && (
+                              {isSel && (() => {
+                                const custosVinculados = custos.filter(c=>c.relatorio_id===rel.id)
+                                const totalCustos = custosVinculados.reduce((a,c)=>a+parseFloat(c.valor||0),0)
+                                return (
                                 <tr>
                                   <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:'2px solid #d7e6dc', padding:0 }}>
                                     <div style={{ display:'flex', gap:20, padding:'16px 20px', flexWrap:'wrap' }}>
@@ -706,6 +749,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <DetailCol title="Cond. Fim" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_f']])} />
                                       <DetailCol title="Horários" items={[['Início',fmt(rel.dt_inicio)],['Fim',fmt(rel.dt_fim)],...(tempo?[['Total',tempo.total],...(tempo.temPausa?[['Efetivo',tempo.efetivo]]:[])]:[] )]} />
                                       <DetailCol title="Outros" items={[...((rel.produtos||[]).map((p,ii)=>['Prod.'+(ii+1),p])),['Gota',rel.tamanho_gota],['Vel.',rel.velocidade_drone],['Obs 1',rel.obs1],['Obs 2',rel.obs2]]} />
+                                      <DetailCol title="Custo do Voo" items={[['Despesas vinculadas (OS)', totalCustos>0?`R$ ${totalCustos.toFixed(2)} (${custosVinculados.length})`:'—']]} />
                                     </div>
                                     {/* KML VIEWER */}
                                     {(rel.kml_arquivos?.length > 0 || rel.kml_paths?.length > 0) && (
@@ -715,7 +759,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                     )}
                                   </td>
                                 </tr>
-                              )}
+                              )})()}
                             </React.Fragment>
                           )
                         })}
@@ -977,13 +1021,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       ['Drones',dashDrones,setDashDrones,[...new Set(relatorios.map(r=>r.drone).filter(Boolean))]],
                       ['Produtos',dashProdutos,setDashProdutos,[...new Set(relatorios.flatMap(r=>(r.produtos||[]).map(p=>p.split(' - ')[0])).filter(Boolean))].sort()],
                     ].map(([lbl,sel,setSel,opts])=>(
-                      <div key={lbl}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:3}}>{lbl.toUpperCase()}</div>
-                        <select multiple style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'6px',fontSize:12,outline:'none',height:72,color:'#0b1210',boxSizing:'border-box'}}
-                          value={sel} onChange={e=>setSel(Array.from(e.target.selectedOptions,o=>o.value))}>
-                          {opts.map(o=><option key={o} value={o}>{o}</option>)}
-                        </select>
-                      </div>
+                      <MultiSelectDropdown key={lbl} label={lbl} options={opts} selected={sel} onChange={setSel}/>
                     ))}
                   </div>
                   {(dashClientes.length||dashPilotos.length||dashDrones.length||dashFazendas.length||dashProdutos.length)>0&&(
@@ -1027,27 +1065,6 @@ export default function AdminPanel({ onSwitchMode }) {
                   <Card title="DRONES EM USO" value={Object.keys(droneStats).length} sub={`${relatorios.filter(r=>r.status==='em_operacao').length} voando agora`} color="#e5484d" icon="🚁"/>
                 </div>
 
-                {/* ── ÚLTIMOS VOOS — clique abre o relatório na aba Relatórios ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
-                  <SecTitle>🗂️ Últimos Voos</SecTitle>
-                  {rel.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem voos no período</div> : (
-                    <div style={{display:'flex',flexDirection:'column',gap:6}}>
-                      {[...rel].sort((a,b)=>new Date(b.dt_inicio||b.created_at)-new Date(a.dt_inicio||a.created_at)).slice(0,8).map(r=>(
-                        <div key={r.id} onClick={()=>{setSelected(r);setTab('relatorios')}}
-                          style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',borderRadius:10,background:'#f7fbf8',border:'1px solid #eef5f0',cursor:'pointer'}}>
-                          <div>
-                            <div style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{r.cliente||'—'} — {r.fazenda||'—'}</div>
-                            <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{r.piloto_nome} · {r.dt_inicio?new Date(r.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div>
-                          </div>
-                          <div style={{display:'flex',alignItems:'center',gap:10}}>
-                            <span style={{fontSize:12,fontWeight:600,color:'#0e9f6e'}}>{r.area_ha?`${r.area_ha} ha`:'—'}</span>
-                            <span style={{color:'#7ba38f'}}>›</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
 
                 {/* ── GRÁFICO TIMELINE ── */}
                 <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
@@ -1092,10 +1109,10 @@ export default function AdminPanel({ onSwitchMode }) {
                     {topProdutos.length===0 ? <div style={{color:'#7ba38f',fontSize:13}}>Sem dados</div> : (
                       <ResponsiveContainer width="100%" height={200}>
                         <PieChart>
-                          <Pie data={topProdutos} cx="50%" cy="50%" outerRadius={75} dataKey="value" nameKey="name" label={({name,percent})=>`${name} ${(percent*100).toFixed(0)}%`} labelLine={false} fontSize={9}>
+                          <Pie data={topProdutos} cx="50%" cy="50%" outerRadius={75} dataKey="value" nameKey="name" label={({value})=>`${value} ha`} labelLine={false} fontSize={9}>
                             {topProdutos.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
                           </Pie>
-                          <Tooltip formatter={(v)=>[v+' ha','Área']}/>
+                          <Tooltip formatter={(v,name,props)=>[`${(props.payload.percent*100).toFixed(0)}%`,name]}/>
                         </PieChart>
                       </ResponsiveContainer>
                     )}
@@ -1465,7 +1482,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -1528,7 +1545,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                   </div>
                   {Object.values(filters).some(Boolean) && (
-                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                   )}
                 </div>
 
