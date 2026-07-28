@@ -878,8 +878,7 @@ export default function AdminPanel({ onSwitchMode }) {
             // ── KPIs de topo (sempre "ao vivo" — ano/mês corrente, não seguem os filtros abaixo) ──
             const anoAtual = hoje.getFullYear()
             const areaEsteAno = relTodos.filter(r=>r.dt_inicio && new Date(r.dt_inicio).getFullYear()===anoAtual).reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
-            const mesAtualIni = new Date(hoje.getFullYear(),hoje.getMonth(),1)
-            const minutosMes = relTodos.filter(r=>r.dt_inicio && new Date(r.dt_inicio)>=mesAtualIni).reduce((a,r)=>{
+            const minutosAno = relTodos.filter(r=>r.dt_inicio && new Date(r.dt_inicio).getFullYear()===anoAtual).reduce((a,r)=>{
               if(!r.dt_inicio||!r.dt_fim) return a
               return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
             },0)
@@ -972,8 +971,8 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
                     <span style={{width:44,height:44,borderRadius:12,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>⏱️</span>
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>TOTAL HORAS VOO MÊS</div>
-                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{fmtH(minutosMes)}</div>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>TOTAL HORAS VOO ANO</div>
+                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{fmtH(minutosAno)}</div>
                     </div>
                   </div>
                   <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
