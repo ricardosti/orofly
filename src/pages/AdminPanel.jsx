@@ -118,6 +118,17 @@ export default function AdminPanel({ onSwitchMode }) {
   const [metaMensalHa, setMetaMensalHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_meta_mensal')||'0') } catch { return 0 } })
   const [pushAtivo, setPushAtivo] = useState(false)
 
+  // Sustentabilidade — premissas editáveis (persistidas localmente), com defaults de referência do setor
+  const numLS = (key,def) => { try { const v=parseFloat(localStorage.getItem(key)); return isNaN(v)?def:v } catch { return def } }
+  const [sustAviacaoLha, setSustAviacaoLha] = useState(()=>numLS('orofly_sust_aviacao_lha',3.5))
+  const [sustAviacaoFator, setSustAviacaoFator] = useState(()=>numLS('orofly_sust_aviacao_fator',2.5))
+  const [sustTerrestreLha, setSustTerrestreLha] = useState(()=>numLS('orofly_sust_terrestre_lha',1.2))
+  const [sustTerrestreFator, setSustTerrestreFator] = useState(()=>numLS('orofly_sust_terrestre_fator',2.68))
+  const [sustDroneLha, setSustDroneLha] = useState(()=>numLS('orofly_sust_drone_lha',0))
+  const [sustPeriodo, setSustPeriodo] = useState('ano')
+  const [sustDataIni, setSustDataIni] = useState('')
+  const [sustDataFim, setSustDataFim] = useState('')
+
   // Inventário
   const [invDrones, setInvDrones] = useState([])
   const [invProdutos, setInvProdutos] = useState([])
@@ -518,6 +529,7 @@ export default function AdminPanel({ onSwitchMode }) {
         {[
           ['RESUMO', [
             ['dashboard', '📊', 'Início', ''],
+            ['sustentabilidade', '🌱', 'Sustentabilidade', ''],
             ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
             ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
           ]],
@@ -1451,6 +1463,172 @@ export default function AdminPanel({ onSwitchMode }) {
           })()}
 
 
+
+          {/* ===== SUSTENTABILIDADE ===== */}
+          {tab === 'sustentabilidade' && (() => {
+            const periodoRange = () => {
+              const ini = new Date()
+              if(sustPeriodo==='mes'){ ini.setDate(1); ini.setHours(0,0,0,0); return {ini,fim:new Date()} }
+              if(sustPeriodo==='trimestre'){ ini.setMonth(ini.getMonth()-3); return {ini,fim:new Date()} }
+              if(sustPeriodo==='ano'){ ini.setMonth(0,1); ini.setHours(0,0,0,0); return {ini,fim:new Date()} }
+              if(sustPeriodo==='custom' && sustDataIni && sustDataFim) return {ini:new Date(sustDataIni), fim:new Date(sustDataFim+'T23:59:59')}
+              ini.setMonth(0,1); ini.setHours(0,0,0,0); return {ini,fim:new Date()}
+            }
+            const {ini:pIni, fim:pFim} = periodoRange()
+            const relPeriodo = relatorios.filter(r=>r.status==='finalizado'&&r.dt_inicio&&new Date(r.dt_inicio)>=pIni&&new Date(r.dt_inicio)<=pFim)
+            const areaTotalSust = relPeriodo.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+
+            const combustivelAviacao = areaTotalSust*sustAviacaoLha
+            const combustivelTerrestre = areaTotalSust*sustTerrestreLha
+            const combustivelDrone = areaTotalSust*sustDroneLha
+            const combustivelEvitado = Math.max(0,combustivelAviacao-combustivelDrone)
+            const co2EvitadoKg = combustivelEvitado*sustAviacaoFator
+            const co2EvitadoTon = co2EvitadoKg/1000
+            const co2TerrestreKg = Math.max(0,combustivelTerrestre-combustivelDrone)*sustTerrestreFator
+
+            // Equivalências ilustrativas (referências públicas aproximadas — não são medições da operação)
+            const arvoresEquivalentes = Math.round(co2EvitadoKg/21)
+            const kmCarroEquivalentes = Math.round(co2EvitadoKg/0.12)
+
+            // Série mensal pra gráfico
+            const porMes = {}
+            relPeriodo.forEach(r=>{
+              const d = new Date(r.dt_inicio)
+              const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`
+              if(!porMes[key]) porMes[key]={key,label:d.toLocaleDateString('pt-BR',{month:'short',year:'2-digit'}),area:0}
+              porMes[key].area += parseFloat(r.area_ha||0)
+            })
+            const serieMensal = Object.values(porMes).sort((a,b)=>a.key.localeCompare(b.key)).map(m=>({
+              mes:m.label,
+              co2: parseFloat((m.area*Math.max(0,sustAviacaoLha-sustDroneLha)*sustAviacaoFator).toFixed(0))
+            }))
+
+            const comparativo = [
+              {name:'Avião Agrícola', lha: sustAviacaoLha},
+              {name:'Pulverização Terrestre', lha: sustTerrestreLha},
+              {name:'Drone Orofly', lha: sustDroneLha},
+            ]
+
+            const KpiCard = ({title,value,sub,color='#0e9f6e',icon}) => (
+              <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'18px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
+                    <div style={{fontSize:isMobile?20:24,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1.1}}>{value}</div>
+                    {sub&&<div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>{sub}</div>}
+                  </div>
+                  {icon&&<div style={{width:40,height:40,borderRadius:12,background:color+'1a',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{icon}</div>}
+                </div>
+              </div>
+            )
+
+            return (
+              <div>
+                {/* HERO */}
+                <div style={{background:'linear-gradient(135deg,#0b1210,#0e9f6e)',borderRadius:20,padding:isMobile?'22px 18px':'28px 26px',marginBottom:20,color:'#fff',position:'relative',overflow:'hidden'}}>
+                  <div style={{position:'absolute',top:-40,right:-30,width:180,height:180,borderRadius:'50%',background:'rgba(255,255,255,0.07)'}}/>
+                  <div style={{position:'absolute',bottom:-30,left:-20,width:120,height:120,borderRadius:'50%',background:'rgba(255,176,32,0.12)'}}/>
+                  <div style={{position:'relative'}}>
+                    <div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,opacity:.8,marginBottom:8}}>🌱 RELATÓRIO DE SUSTENTABILIDADE</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?24:34,fontWeight:700,marginBottom:10,lineHeight:1.1}}>{co2EvitadoTon.toFixed(1)} toneladas de CO₂ evitadas</div>
+                    <div style={{fontSize:13,opacity:.85,maxWidth:600}}>Comparando a aplicação por drone com a alternativa em aviação agrícola tripulada, para a área pulverizada no período selecionado — {areaTotalSust.toFixed(0)} ha.</div>
+                  </div>
+                </div>
+
+                {/* Filtro de período */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16,marginBottom:16}}>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {[['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano'],['custom','Personalizado']].map(([v,l])=>(
+                      <button key={v} style={{background:sustPeriodo===v?'#0e9f6e':'#f1f8f4',color:sustPeriodo===v?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'6px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                        onClick={()=>setSustPeriodo(v)}>{l}</button>
+                    ))}
+                  </div>
+                  {sustPeriodo==='custom' && (
+                    <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
+                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={sustDataIni} onChange={e=>setSustDataIni(e.target.value)}/>
+                      <span style={{alignSelf:'center',color:'#7ba38f'}}>até</span>
+                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={sustDataFim} onChange={e=>setSustDataFim(e.target.value)}/>
+                    </div>
+                  )}
+                </div>
+
+                {/* KPIs */}
+                <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
+                  <KpiCard title="ÁREA PULVERIZADA" value={areaTotalSust.toFixed(1)+' ha'} sub={`${relPeriodo.length} voo(s) no período`} icon="📐"/>
+                  <KpiCard title="COMBUSTÍVEL EVITADO" value={combustivelEvitado.toFixed(0)+' L'} sub="vs. avião agrícola" color="#2f6fed" icon="⛽"/>
+                  <KpiCard title="CO₂ EVITADO" value={co2EvitadoTon.toFixed(1)+' t'} sub={`${co2EvitadoKg.toLocaleString('pt-BR',{maximumFractionDigits:0})} kg`} color="#0e9f6e" icon="🌍"/>
+                  <KpiCard title="EQUIVALE A" value={arvoresEquivalentes.toLocaleString('pt-BR')+' árvores'} sub={`ou ${kmCarroEquivalentes.toLocaleString('pt-BR')} km de carro`} color="#ffb020" icon="🌳"/>
+                </div>
+
+                {/* Comparativo de consumo por hectare */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:14}}>⛽ Consumo de Combustível por Hectare — Comparativo</div>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={comparativo} layout="vertical" margin={{top:0,right:30,left:10,bottom:0}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0" horizontal={false}/>
+                      <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}} unit=" L/ha"/>
+                      <YAxis type="category" dataKey="name" width={150} tick={{fontSize:12,fill:'#5c7568'}}/>
+                      <Tooltip formatter={v=>[v+' L/ha','Consumo']}/>
+                      <Bar dataKey="lha" radius={[0,6,6,0]}>
+                        {comparativo.map((c,i)=><Cell key={i} fill={i===0?'#e5484d':i===1?'#f2960f':'#0e9f6e'}/>)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Evolução mensal de CO2 evitado */}
+                {serieMensal.length>0 && (
+                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:14}}>📈 CO₂ Evitado ao Longo do Tempo (kg)</div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={serieMensal} margin={{top:5,right:10,left:-20,bottom:5}}>
+                        <defs>
+                          <linearGradient id="gradCo2" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0e9f6e" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#0e9f6e" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                        <XAxis dataKey="mes" tick={{fontSize:10,fill:'#7ba38f'}}/>
+                        <YAxis tick={{fontSize:10,fill:'#7ba38f'}}/>
+                        <Tooltip formatter={v=>[v+' kg','CO₂ evitado']}/>
+                        <Area type="monotone" dataKey="co2" stroke="#0e9f6e" strokeWidth={2} fill="url(#gradCo2)"/>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                {/* Comparativo secundário: pulverização terrestre */}
+                <div style={{background:'#f1f8f4',borderRadius:14,padding:16,marginBottom:16,fontSize:12,color:'#5c7568'}}>
+                  Para referência: comparado à <strong>pulverização terrestre</strong> (não à aviação), o drone evitaria aproximadamente <strong style={{color:'#0e9f6e'}}>{co2TerrestreKg.toLocaleString('pt-BR',{maximumFractionDigits:0})} kg de CO₂</strong> no mesmo período — a pulverização terrestre já é bem mais eficiente que o avião, então essa comparação tende a ser mais conservadora.
+                </div>
+
+                {/* Premissas / metodologia (editável) */}
+                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:6}}>⚙️ Premissas do Cálculo (ajustáveis)</div>
+                  <div style={{fontSize:12,color:'#5c7568',marginBottom:14}}>Valores de referência do setor — ajuste se tiver dados mais precisos da sua operação ou de um parecer técnico.</div>
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:14}}>
+                    {[
+                      ['Avião agrícola (L/ha)', sustAviacaoLha, setSustAviacaoLha, 'orofly_sust_aviacao_lha'],
+                      ['Fator CO₂ aviação (kg/L)', sustAviacaoFator, setSustAviacaoFator, 'orofly_sust_aviacao_fator'],
+                      ['Pulverização terrestre (L/ha)', sustTerrestreLha, setSustTerrestreLha, 'orofly_sust_terrestre_lha'],
+                      ['Fator CO₂ diesel (kg/L)', sustTerrestreFator, setSustTerrestreFator, 'orofly_sust_terrestre_fator'],
+                      ['Combustível drone/gerador (L/ha)', sustDroneLha, setSustDroneLha, 'orofly_sust_drone_lha'],
+                    ].map(([lbl,val,setVal,key])=>(
+                      <div key={key}>
+                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4}}>{lbl.toUpperCase()}</div>
+                        <input type="number" step="0.01" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          value={val} onChange={e=>{const v=parseFloat(e.target.value)||0;setVal(v);localStorage.setItem(key,v)}}/>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:'#aaa',marginTop:14,lineHeight:1.5}}>
+                    * Estimativas baseadas em referências públicas de consumo de combustível em aviação agrícola e pulverização terrestre, e em fatores de emissão usuais de diesel/gasolina de aviação. Recomendamos validar os valores com um parecer técnico/ambiental antes de usar em material oficial de certificação (ex: relatórios ESG, Bonsucro, RenovaBio).
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* ===== MAPA ===== */}
           {tab === 'mapa' && (
