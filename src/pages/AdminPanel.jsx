@@ -772,6 +772,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               {isSel && (() => {
                                 const custosVinculados = custos.filter(c=>c.relatorio_id===rel.id)
                                 const totalCustos = custosVinculados.reduce((a,c)=>a+parseFloat(c.valor||0),0)
+                                const CAT_ICON = {'Almoço':'🍽️','Gasolina':'⛽','Hotel':'🏨','Outros':'🧾'}
                                 return (
                                 <tr>
                                   <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:'2px solid #d7e6dc', padding:0 }}>
@@ -781,7 +782,27 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <DetailCol title="Cond. Fim" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_f']])} />
                                       <DetailCol title="Horários" items={[['Início',fmt(rel.dt_inicio)],['Fim',fmt(rel.dt_fim)],...(tempo?[['Total',tempo.total],...(tempo.temPausa?[['Efetivo',tempo.efetivo]]:[])]:[] )]} />
                                       <DetailCol title="Outros" items={[...((rel.produtos||[]).map((p,ii)=>['Prod.'+(ii+1),p])),['Tipo Serviço',rel.tipo_servico==='catacao'?'Catação':rel.tipo_servico==='area_total'?'Área Total':null],['Qtde Voos',rel.qtd_voos>1?rel.qtd_voos:null],['Gota',rel.tamanho_gota],['Vel.',rel.velocidade_drone],['Obs 1',rel.obs1],['Obs 2',rel.obs2]]} />
-                                      <DetailCol title="Custo do Voo" items={[['Despesas vinculadas (OS)', totalCustos>0?`R$ ${totalCustos.toFixed(2)} (${custosVinculados.length})`:'—']]} />
+                                      <div style={{minWidth:200,flex:1}}>
+                                        <div style={{fontSize:10,fontWeight:700,color:'#0e9f6e',letterSpacing:1,marginBottom:5,fontFamily:"'Syne',sans-serif"}}>CUSTO DO VOO</div>
+                                        {custosVinculados.length===0 ? (
+                                          <div style={{fontSize:11,color:'#5c7568'}}>—</div>
+                                        ) : (
+                                          <>
+                                            <div style={{fontSize:11,fontWeight:700,color:'#0b1210',marginBottom:6}}>Total: R$ {totalCustos.toFixed(2)} ({custosVinculados.length})</div>
+                                            {custosVinculados.map(c=>(
+                                              <div key={c.id} style={{fontSize:11,marginBottom:6,paddingBottom:6,borderBottom:'1px solid #dcebe3',cursor:'pointer'}}
+                                                onClick={()=>{setTab('custos');setCustosSubTab('notas');setCustosFiltros(f=>({...f,piloto:c.piloto_nome||''}))}}>
+                                                <div style={{display:'flex',justifyContent:'space-between'}}>
+                                                  <span style={{color:'#0b1210',fontWeight:600}}>{CAT_ICON[c.categoria]||'🧾'} {c.categoria}</span>
+                                                  <span style={{color:'#0e9f6e',fontWeight:700}}>R$ {parseFloat(c.valor||0).toFixed(2)}</span>
+                                                </div>
+                                                <div style={{color:'#7ba38f',marginTop:2}}>{c.piloto_nome||'—'} · {new Date(c.data).toLocaleDateString('pt-BR')}</div>
+                                                {c.observacao && <div style={{color:'#5c7568',marginTop:2,fontStyle:'italic'}}>{c.observacao}</div>}
+                                              </div>
+                                            ))}
+                                          </>
+                                        )}
+                                      </div>
                                     </div>
                                     {/* KML VIEWER */}
                                     {(rel.kml_arquivos?.length > 0 || rel.kml_paths?.length > 0) && (
