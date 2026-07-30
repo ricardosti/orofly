@@ -146,7 +146,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [custos, setCustos] = useState([])
   const [osSearch, setOsSearch] = useState('')
   const [fotoLightbox, setFotoLightbox] = useState(null)
-  const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',dataIni:'',dataFim:''})
+  const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',clienteFazenda:'',dataIni:'',dataFim:''})
   const [custosSubTab, setCustosSubTab] = useState('notas')
   const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
   const [agenda, setAgenda] = useState([])
@@ -2882,9 +2882,21 @@ export default function AdminPanel({ onSwitchMode }) {
             const relatorioById = {}
             relatorios.forEach(r=>{relatorioById[r.id]=r})
 
+            function relDaNota(c) {
+              return c.relatorio_id ? relatorioById[c.relatorio_id]
+                : c.ordem_servico ? relatorios.find(r=>r.ordem_servico && r.ordem_servico.toLowerCase()===c.ordem_servico.toLowerCase())
+                : null
+            }
+            function chaveClienteFazenda(c) {
+              const rel = relDaNota(c)
+              return rel ? `${rel.cliente||'—'} — ${rel.fazenda||'—'}` : 'Sem voo vinculado'
+            }
+            const clienteFazendaOpcoes = [...new Set(custos.map(chaveClienteFazenda))].sort()
+
             const custosFiltrados = custos.filter(c=>{
               if(custosFiltros.piloto && c.piloto_nome!==custosFiltros.piloto) return false
               if(custosFiltros.categoria && c.categoria!==custosFiltros.categoria) return false
+              if(custosFiltros.clienteFazenda && chaveClienteFazenda(c)!==custosFiltros.clienteFazenda) return false
               if(custosFiltros.dataIni && new Date(c.data)<new Date(custosFiltros.dataIni)) return false
               if(custosFiltros.dataFim && new Date(c.data)>new Date(custosFiltros.dataFim)) return false
               return true
@@ -2902,6 +2914,28 @@ export default function AdminPanel({ onSwitchMode }) {
               porPiloto[n].total+=parseFloat(c.valor||0); porPiloto[n].qtd++
             })
             const rankingPiloto = Object.entries(porPiloto).sort((a,b)=>b[1].total-a[1].total)
+
+            // Por Cliente/Fazenda — via o voo vinculado (relatorio_id ou OS em texto)
+            const porClienteFazenda = {}
+            custosFiltrados.forEach(c=>{
+              const chave = chaveClienteFazenda(c)
+              if(!porClienteFazenda[chave]) porClienteFazenda[chave]={total:0,qtd:0}
+              porClienteFazenda[chave].total+=parseFloat(c.valor||0); porClienteFazenda[chave].qtd++
+            })
+            const rankingClienteFazenda = Object.entries(porClienteFazenda).sort((a,b)=>b[1].total-a[1].total)
+
+            const categoriaChart = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).map(([nome,valor])=>({name:`${CATEGORIA_ICON[nome]||''} ${nome}`,value:parseFloat(valor.toFixed(2))}))
+            const CORES_CAT = ['#0e9f6e','#f2960f','#2f6fed','#8e44ad','#e5484d']
+
+            // Evolução diária no período filtrado
+            const porDia = {}
+            custosFiltrados.forEach(c=>{
+              const key = new Date(c.data).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})
+              porDia[key] = (porDia[key]||0)+parseFloat(c.valor||0)
+            })
+            const evolucaoDiaria = Object.entries(porDia)
+              .sort((a,b)=>new Date(a[0].split('/').reverse().join('-'))-new Date(b[0].split('/').reverse().join('-')))
+              .map(([dia,valor])=>({dia,valor:parseFloat(valor.toFixed(2))}))
 
             const filtrosAtivos = Object.values(custosFiltros).some(Boolean)
 
@@ -2933,6 +2967,11 @@ export default function AdminPanel({ onSwitchMode }) {
                     <option value="">Todas categorias</option>
                     {['Almoço','Gasolina','Hotel','Outros'].map(c=><option key={c} value={c}>{c}</option>)}
                   </select>
+                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 200px'}}
+                    value={custosFiltros.clienteFazenda} onChange={e=>setCustosFiltros(f=>({...f,clienteFazenda:e.target.value}))}>
+                    <option value="">Todos clientes/fazendas</option>
+                    {clienteFazendaOpcoes.map(cf=><option key={cf} value={cf}>{cf}</option>)}
+                  </select>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <span style={{fontSize:11,color:'#5c7568'}}>De:</span>
                     <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={custosFiltros.dataIni} onChange={e=>setCustosFiltros(f=>({...f,dataIni:e.target.value}))}/>
@@ -2943,7 +2982,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   </div>
                   {filtrosAtivos && (
                     <button style={{background:'none',border:'1px solid #f0b0a8',color:'#e5484d',borderRadius:12,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
-                      onClick={()=>setCustosFiltros({piloto:'',categoria:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
+                      onClick={()=>setCustosFiltros({piloto:'',categoria:'',clienteFazenda:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
                   )}
                 </div>
 
@@ -2985,6 +3024,63 @@ export default function AdminPanel({ onSwitchMode }) {
                   </div>
                 )}
 
+                {/* Ranking por Cliente/Fazenda */}
+                {rankingClienteFazenda.length>0 && (
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <SecTitle>Total por Cliente / Fazenda</SecTitle>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                        <thead><tr style={{background:'#f1f8f4'}}>{['Cliente / Fazenda','Notas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {rankingClienteFazenda.map(([nome,st],i)=>(
+                            <tr key={nome} style={{background:custosFiltros.clienteFazenda===nome?'#e3f7ec':i%2===0?'#fff':'#f9fbfa',cursor:'pointer'}}
+                              onClick={()=>setCustosFiltros(f=>({...f,clienteFazenda:f.clienteFazenda===nome?'':nome}))}>
+                              <td style={{padding:'8px 10px',fontWeight:500,color:nome==='Sem voo vinculado'?'#aaa':'#0b1210',fontStyle:nome==='Sem voo vinculado'?'italic':'normal'}}>{nome}</td>
+                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.qtd}</td>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:'#0e9f6e'}}>R$ {st.total.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Gráficos: categoria + evolução */}
+                {custosFiltrados.length>0 && (
+                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16,marginBottom:16}}>
+                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <SecTitle>Por Categoria</SecTitle>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <PieChart>
+                          <Pie data={categoriaChart} cx="50%" cy="50%" outerRadius={70} dataKey="value" nameKey="name" label={({value})=>`R$ ${value}`} labelLine={false} fontSize={9}>
+                            {categoriaChart.map((_,i)=><Cell key={i} fill={CORES_CAT[i%CORES_CAT.length]}/>)}
+                          </Pie>
+                          <Tooltip formatter={(v,name)=>[`R$ ${v.toFixed(2)}`,name]}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <SecTitle>Evolução no Período</SecTitle>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <AreaChart data={evolucaoDiaria} margin={{top:5,right:10,left:-20,bottom:5}}>
+                          <defs>
+                            <linearGradient id="gradCustos" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#f2960f" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#f2960f" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                          <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}}/>
+                          <YAxis tick={{fontSize:10,fill:'#7ba38f'}}/>
+                          <Tooltip formatter={v=>[`R$ ${v.toFixed(2)}`,'Gasto']}/>
+                          <Area type="monotone" dataKey="valor" stroke="#f2960f" strokeWidth={2} fill="url(#gradCustos)"/>
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+
                 {/* Lista de notas */}
                 {custosFiltrados.length===0 ? (
                   <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhuma nota encontrada.</div>
@@ -3001,9 +3097,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         </thead>
                         <tbody>
                           {custosFiltrados.map((c,i)=>{
-                            const rel = c.relatorio_id ? relatorioById[c.relatorio_id]
-                              : c.ordem_servico ? relatorios.find(r=>r.ordem_servico && r.ordem_servico.toLowerCase()===c.ordem_servico.toLowerCase())
-                              : null
+                            const rel = relDaNota(c)
                             return (
                               <tr key={c.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
                                 <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>

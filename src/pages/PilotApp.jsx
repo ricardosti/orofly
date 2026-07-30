@@ -428,7 +428,7 @@ export default function PilotApp({onSwitchMode}) {
   const [flights,setFlights] = useState([])
   const [osOpcoes,setOsOpcoes] = useState([])
   const [loadingFlights,setLoadingFlights] = useState(false)
-  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:''})
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',valor_abastecimento:''})
   const [osModo,setOsModo] = useState('lista')
   const [notaFotoPreview,setNotaFotoPreview] = useState(null)
   const [notaFotoFile,setNotaFotoFile] = useState(null)
@@ -901,6 +901,9 @@ export default function PilotApp({onSwitchMode}) {
         ...f,
         temperatura_i: temp, umidade_i: umid,
         vento_i: vento, delta_t_i: deltaT,
+        // Fim vem com o mesmo valor do início por padrão, só enquanto o fim ainda não foi definido
+        temperatura_f: f.temperatura_f || temp, umidade_f: f.umidade_f || umid,
+        vento_f: f.vento_f || vento, delta_t_f: f.delta_t_f || deltaT,
       }))
       showToast('✅ Clima carregado!')
     } catch(e) {
@@ -1155,10 +1158,22 @@ export default function PilotApp({onSwitchMode}) {
         if(vErr) throw vErr
         await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',notaForm.veiculo_id)
         setVeiculosDB(vs=>vs.map(v=>v.id===notaForm.veiculo_id?{...v,km_atual:kmFim}:v))
+
+        // Abastecimento durante a viagem: lança como despesa de Gasolina já vinculada ao veículo/OS
+        const valorAbastecimento = parseFloat(notaForm.valor_abastecimento)
+        if(valorAbastecimento>0){
+          const {error:aErr} = await supabase.from('despesas').insert({
+            piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
+            categoria:'Gasolina', valor:valorAbastecimento, data:notaForm.data,
+            ordem_servico:osDigitada||null, relatorio_id, observacao:'Abastecimento durante viagem',
+            veiculo_id:notaForm.veiculo_id,
+          })
+          if(aErr) throw aErr
+        }
       }
 
       showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
-      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:''})
+      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',valor_abastecimento:''})
       setOsModo('lista')
       setNotaFotoPreview(null); setNotaFotoFile(null)
       loadNotas()
@@ -1707,7 +1722,13 @@ export default function PilotApp({onSwitchMode}) {
                   </div>
                 </div>
               )}
-              {notaForm.veiculo_id && <div style={{fontSize:11,color:'#7ba38f',marginTop:2,marginBottom:10}}>Registra a viagem automaticamente. Se também teve gasto (combustível, pedágio), preencha em "Despesa".</div>}
+              {notaForm.veiculo_id && (
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>⛽ ABASTECEU NESSA VIAGEM? (OPCIONAL)</div>
+                  <input type="number" style={sw.fi} placeholder="Valor gasto (R$)" value={notaForm.valor_abastecimento} onChange={e=>setNotaForm(f=>({...f,valor_abastecimento:e.target.value}))}/>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:6}}>Lança automaticamente como Gasolina vinculada a essa viagem. Outros gastos (pedágio, etc.) preencha em "Despesa".</div>
+                </div>
+              )}
               <div style={{marginTop:4}}>
                 <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
                 <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
@@ -2247,10 +2268,16 @@ export default function PilotApp({onSwitchMode}) {
                           placeholder={`Ex: ${key==='vento'?'8':key==='umidade'?'65':key==='temperatura'?'28':'4'}`}
                           value={form[key+'_i']||''} onChange={e=>setForm(f=>{
                             const next={...f,[key+'_i']:e.target.value}
+                            // Fim vem com o mesmo valor do início por padrão (facilita preenchimento), mas só enquanto o fim ainda não foi definido
+                            if(!f[key+'_f']) next[key+'_f']=e.target.value
                             // Delta T automático (editável): recalcula ao mudar temp/umidade
                             if(key==='temperatura'||key==='umidade'){
                               const dt=calcDeltaT(next.temperatura_i,next.umidade_i)
                               if(dt!==null) next.delta_t_i=dt.toFixed(1)
+                              if(!f.delta_t_f){
+                                const dtF=calcDeltaT(next.temperatura_f,next.umidade_f)
+                                if(dtF!==null) next.delta_t_f=dtF.toFixed(1)
+                              }
                             }
                             return next
                           })}/>
