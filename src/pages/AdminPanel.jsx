@@ -90,6 +90,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [showNotifs, setShowNotifs] = useState(false)
+  const [notifVisto, setNotifVisto] = useState(() => { try { return localStorage.getItem('orofly_notif_visto_'+profile?.id) || null } catch { return null } })
   const [editModal, setEditModal] = useState(null)
   const [editFotoMapa, setEditFotoMapa] = useState(null)
   const [editFotoMapaFile, setEditFotoMapaFile] = useState(null)
@@ -375,6 +377,33 @@ export default function AdminPanel({ onSwitchMode }) {
 
   const sosAtivos = relatorios.filter(r => r.status === 'sos')
 
+  const notificacoes = [
+    ...relatorios.filter(r=>r.dt_inicio).map(r=>({
+      id:'ini-'+r.id, ts:r.dt_inicio, icone:'🚀',
+      texto:`${r.piloto_nome||'Piloto'} iniciou voo — ${r.cliente||'—'} / ${r.fazenda||'—'}`,
+      onClick:()=>{setTab('relatorios');setSelected(r)},
+    })),
+    ...relatorios.filter(r=>r.status==='finalizado'&&r.dt_fim).map(r=>({
+      id:'fim-'+r.id, ts:r.dt_fim, icone:'✅',
+      texto:`${r.piloto_nome||'Piloto'} finalizou voo — ${r.cliente||'—'} / ${r.fazenda||'—'}`,
+      onClick:()=>{setTab('relatorios');setSelected(r)},
+    })),
+    ...custos.filter(c=>c.categoria==='Gasolina').map(c=>({
+      id:'gas-'+c.id, ts:c.created_at, icone:'⛽',
+      texto:`${c.piloto_nome||'Piloto'} lançou nota de Gasolina — R$ ${parseFloat(c.valor).toFixed(2)}`,
+      onClick:()=>{setTab('custos');setCustosSubTab('notas')},
+    })),
+  ].filter(n=>n.ts).sort((a,b)=>new Date(b.ts)-new Date(a.ts)).slice(0,50)
+
+  const notifNaoVistas = notificacoes.filter(n=>!notifVisto || new Date(n.ts) > new Date(notifVisto)).length
+
+  function fecharNotificacoes() {
+    const agora = new Date().toISOString()
+    try { localStorage.setItem('orofly_notif_visto_'+profile?.id, agora) } catch {}
+    setNotifVisto(agora)
+    setShowNotifs(false)
+  }
+
   // Despesas vinculadas a um voo: por relatorio_id OU por OS em texto (cobre notas
   // salvas antes da OS resolver o relatorio_id, ou lançadas por outro piloto)
   function custosDoRel(rel) {
@@ -594,6 +623,10 @@ export default function AdminPanel({ onSwitchMode }) {
       </div>
 
       <div style={{ padding:'14px 20px' }}>
+        <button style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8, background:'transparent', border:'1px solid #1e3828', color:'#7ba38f', borderRadius:16, padding:'8px', fontSize:12, cursor:'pointer', marginBottom:10, position:'relative' }} onClick={()=>setShowNotifs(true)}>
+          🔔 Notificações
+          {notifNaoVistas>0 && <span style={{ background:'#e5484d', color:'#fff', fontSize:10, fontWeight:700, borderRadius:20, minWidth:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
+        </button>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, cursor:'pointer' }} onClick={()=>setShowPerfil(true)}>
           <div style={{ width:30, height:30, borderRadius:'50%', background:'#0e9f6e', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:13, overflow:'hidden', flexShrink:0 }}>
             {avatarUrl?<img src={avatarUrl} alt="avatar" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:profile?.nome?.[0]?.toUpperCase()}
@@ -645,6 +678,10 @@ export default function AdminPanel({ onSwitchMode }) {
                 <button key={id} style={{ background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:16, padding:'6px 10px', cursor:'pointer', fontSize:16, color: tab===id?'#fff':'#7ba38f' }} onClick={() => setTab(id)}>{ic}</button>
               ))}
               {onSwitchMode && <button style={{ background:'#ffb020', border:'none', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:700 }} onClick={onSwitchMode}>🚁</button>}
+              <button style={{ position:'relative', background:'transparent', border:'1px solid #2d4a38', color:'#7ba38f', borderRadius:16, padding:'5px 10px', fontSize:14, cursor:'pointer' }} onClick={()=>setShowNotifs(true)}>
+                🔔
+                {notifNaoVistas>0 && <span style={{ position:'absolute', top:-4, right:-4, background:'#e5484d', color:'#fff', fontSize:9, fontWeight:700, borderRadius:20, minWidth:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
+              </button>
               <button style={{ background:'transparent', border:'1px solid #2d4a38', color:'#7ba38f', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer' }} onClick={signOut}>Sair</button>
             </div>
           </div>
@@ -3763,6 +3800,33 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           </div>
         </div>
+      )}
+
+      {showNotifs && (
+        <>
+          <div style={{ position:'fixed', inset:0, zIndex:490 }} onClick={fecharNotificacoes} />
+          <div style={{ position:'fixed', top:isMobile?58:20, right:isMobile?10:20, left:isMobile?10:'auto', width:isMobile?'auto':360, maxHeight:460, overflowY:'auto', background:'#fff', borderRadius:16, boxShadow:'0 12px 40px rgba(0,0,0,.25)', zIndex:500, border:'1px solid #d7e6dc' }}>
+            <div style={{ padding:'14px 16px', borderBottom:'1px solid #eef5f0', display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, background:'#fff', borderRadius:'16px 16px 0 0' }}>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14 }}>🔔 Notificações</div>
+              <button onClick={fecharNotificacoes} style={{ background:'transparent', border:'none', fontSize:16, cursor:'pointer', color:'#7ba38f' }}>✕</button>
+            </div>
+            {notificacoes.length===0 ? (
+              <div style={{ padding:24, textAlign:'center', color:'#7ba38f', fontSize:13 }}>Nenhuma notificação ainda</div>
+            ) : notificacoes.map(n=>{
+              const naoVista = !notifVisto || new Date(n.ts) > new Date(notifVisto)
+              return (
+                <div key={n.id} onClick={()=>{n.onClick();fecharNotificacoes()}} style={{ padding:'12px 16px', borderBottom:'1px solid #f6faf7', cursor:'pointer', background:naoVista?'#f0faf5':'#fff', display:'flex', gap:10, alignItems:'flex-start' }}>
+                  <span style={{ fontSize:16, flexShrink:0 }}>{n.icone}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12.5, color:'#0b1210', fontWeight:naoVista?600:400 }}>{n.texto}</div>
+                    <div style={{ fontSize:10, color:'#7ba38f', marginTop:2 }}>{new Date(n.ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+                  </div>
+                  {naoVista && <span style={{ width:8, height:8, borderRadius:'50%', background:'#0e9f6e', flexShrink:0, marginTop:5 }}/>}
+                </div>
+              )
+            })}
+          </div>
+        </>
       )}
 
       {confirmDelete && (
