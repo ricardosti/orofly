@@ -371,6 +371,15 @@ export default function AdminPanel({ onSwitchMode }) {
 
   const sosAtivos = relatorios.filter(r => r.status === 'sos')
 
+  // Despesas vinculadas a um voo: por relatorio_id OU por OS em texto (cobre notas
+  // salvas antes da OS resolver o relatorio_id, ou lançadas por outro piloto)
+  function custosDoRel(rel) {
+    return custos.filter(c =>
+      (c.relatorio_id && c.relatorio_id === rel.id) ||
+      (c.ordem_servico && rel.ordem_servico && c.ordem_servico.toLowerCase() === rel.ordem_servico.toLowerCase())
+    )
+  }
+
   function calcTempo(ini, fim, pausas) {
     if (!ini || !fim) return null
     const t = Math.round((new Date(fim) - new Date(ini)) / 60000)
@@ -713,7 +722,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               <button style={sG.actBtn('#e5484d')} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
                             </div>
                             {(() => {
-                              const totalCustos = custos.filter(c=>c.relatorio_id===rel.id).reduce((a,c)=>a+parseFloat(c.valor||0),0)
+                              const totalCustos = custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0)
                               return totalCustos>0 && <div style={{ fontSize:12, color:'#5c7568', marginBottom:10 }}>💰 Despesas vinculadas: <strong style={{color:'#0e9f6e'}}>R$ {totalCustos.toFixed(2)}</strong></div>
                             })()}
                             {/* KML no mobile */}
@@ -760,7 +769,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={sG.td}><span style={{ background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
                                 <td style={sG.td}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</td>
                                 <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:'#5c7568' }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
-                                <td style={sG.td}>{(() => { const t=custos.filter(c=>c.relatorio_id===rel.id).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:'#f2960f'}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
+                                <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:'#f2960f'}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
                                   <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
                                   <button title="PDF Cliente" style={{...sG.iconBtn,color:'#22c476'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
@@ -770,7 +779,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </td>
                               </tr>
                               {isSel && (() => {
-                                const custosVinculados = custos.filter(c=>c.relatorio_id===rel.id)
+                                const custosVinculados = custosDoRel(rel)
                                 const totalCustos = custosVinculados.reduce((a,c)=>a+parseFloat(c.valor||0),0)
                                 const CAT_ICON = {'Almoço':'🍽️','Gasolina':'⛽','Hotel':'🏨','Outros':'🧾'}
                                 return (
@@ -2973,7 +2982,9 @@ export default function AdminPanel({ onSwitchMode }) {
                 ) : (
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(260px,1fr))',gap:12}}>
                     {custosFiltrados.map(c=>{
-                      const rel = c.relatorio_id ? relatorioById[c.relatorio_id] : null
+                      const rel = c.relatorio_id ? relatorioById[c.relatorio_id]
+                        : c.ordem_servico ? relatorios.find(r=>r.ordem_servico && r.ordem_servico.toLowerCase()===c.ordem_servico.toLowerCase())
+                        : null
                       return (
                         <div key={c.id} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
