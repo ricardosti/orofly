@@ -733,7 +733,16 @@ export default function AdminPanel({ onSwitchMode }) {
                             <React.Fragment key={rel.id}>
                               <tr style={{ background: rel.status==='sos'?'#fdeaea':isSel?'#e3f7ec':i%2===0?'#fff':'#f7fbf8', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
                                 <td style={{ ...sG.td, fontWeight:600 }}>{rel.cliente||'—'}</td>
-                                <td style={sG.td}>{rel.fazenda||'—'}</td>
+                                <td style={sG.td}>
+                                  {rel.fazenda||'—'}
+                                  {(rel.tipo_servico||(rel.qtd_voos&&rel.qtd_voos>1)) && (
+                                    <div style={{fontSize:10,color:'#7ba38f',marginTop:1}}>
+                                      {rel.tipo_servico&&(rel.tipo_servico==='catacao'?'Catação':'Área Total')}
+                                      {rel.tipo_servico&&rel.qtd_voos>1?' · ':''}
+                                      {rel.qtd_voos>1?`${rel.qtd_voos} voos`:''}
+                                    </div>
+                                  )}
+                                </td>
                                 <td style={sG.td}>{rel.piloto_nome||'—'}</td>
                                 <td style={sG.td}>{rel.drone||'—'}</td>
                                 <td style={sG.td}><span style={{ background: STATUS_BG[rel.status]||'#f1f8f4', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
@@ -759,7 +768,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <DetailCol title="Cond. Início" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_i']])} />
                                       <DetailCol title="Cond. Fim" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_f']])} />
                                       <DetailCol title="Horários" items={[['Início',fmt(rel.dt_inicio)],['Fim',fmt(rel.dt_fim)],...(tempo?[['Total',tempo.total],...(tempo.temPausa?[['Efetivo',tempo.efetivo]]:[])]:[] )]} />
-                                      <DetailCol title="Outros" items={[...((rel.produtos||[]).map((p,ii)=>['Prod.'+(ii+1),p])),['Gota',rel.tamanho_gota],['Vel.',rel.velocidade_drone],['Obs 1',rel.obs1],['Obs 2',rel.obs2]]} />
+                                      <DetailCol title="Outros" items={[...((rel.produtos||[]).map((p,ii)=>['Prod.'+(ii+1),p])),['Tipo Serviço',rel.tipo_servico==='catacao'?'Catação':rel.tipo_servico==='area_total'?'Área Total':null],['Qtde Voos',rel.qtd_voos>1?rel.qtd_voos:null],['Gota',rel.tamanho_gota],['Vel.',rel.velocidade_drone],['Obs 1',rel.obs1],['Obs 2',rel.obs2]]} />
                                       <DetailCol title="Custo do Voo" items={[['Despesas vinculadas (OS)', totalCustos>0?`R$ ${totalCustos.toFixed(2)} (${custosVinculados.length})`:'—']]} />
                                     </div>
                                     {/* KML VIEWER */}

@@ -396,6 +396,19 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   })
   y+=14
 
+  // Tipo de serviço / qtde de voos (opcional)
+  const tsLabelC = rel.tipo_servico==='catacao' ? 'Catação' : rel.tipo_servico==='area_total' ? 'Área Total' : null
+  if(tsLabelC || (rel.qtd_voos && rel.qtd_voos>1)){
+    const partsC=[]
+    if(tsLabelC) partsC.push(`Tipo de Serviço: ${tsLabelC}`)
+    if(rel.qtd_voos && rel.qtd_voos>1) partsC.push(`Qtde de Voos: ${rel.qtd_voos}`)
+    doc.setFillColor(245,251,247);doc.roundedRect(C1,y,CW,6,1.2,1.2,'F')
+    doc.setDrawColor(200,235,215);doc.roundedRect(C1,y,CW,6,1.2,1.2,'S')
+    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+    doc.text(partsC.join('    ·    '),C1+3,y+4)
+    y+=8
+  }
+
   function sec(num,title){
     doc.setFillColor(240,248,243);doc.roundedRect(C1,y,CW,7,1.5,1.5,'F')
     doc.setFillColor(...G);doc.circle(C1+4.5,y+3.5,3.5,'F')
@@ -857,6 +870,8 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
 <table>
   <tr><td>Cliente</td><td>${rel.cliente||'—'}</td></tr>
   <tr><td>Fazenda</td><td>${rel.fazenda||'—'}</td></tr>
+  ${rel.tipo_servico?`<tr><td>Tipo de Serviço</td><td>${rel.tipo_servico==='catacao'?'Catação':'Área Total'}</td></tr>`:''}
+  ${rel.qtd_voos&&rel.qtd_voos>1?`<tr><td>Qtde de Voos</td><td>${rel.qtd_voos}</td></tr>`:''}
   ${areaBrutaW?`<tr><td>Área Total (talhões)</td><td>${areaBrutaW} ha</td></tr>`:''}
   ${areaBrutaW?`<tr><td>Área Realizada</td><td>${areaNetaW} ha</td></tr>`:''}
   ${rel.bordadura?`<tr><td>Bordadura</td><td>${rel.bordadura} ha${rel.bordadura_detalhe?.length?' ('+rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(', ')+')':''}</td></tr>`:''}
