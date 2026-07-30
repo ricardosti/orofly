@@ -1115,7 +1115,7 @@ export default function PilotApp({onSwitchMode}) {
       let relatorio_id = null
       const osDigitada = notaForm.ordem_servico.trim()
       if(osDigitada){
-        const {data:relMatch} = await supabase.from('relatorios').select('id').eq('piloto_id',profile.id).ilike('ordem_servico',osDigitada).maybeSingle()
+        const {data:relMatch} = await supabase.from('relatorios').select('id').ilike('ordem_servico',osDigitada).maybeSingle()
         if(relMatch) relatorio_id = relMatch.id
       }
 
