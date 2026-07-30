@@ -756,6 +756,11 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={{ ...sG.td, fontWeight:600 }}>{rel.cliente||'—'}</td>
                                 <td style={sG.td}>
                                   {rel.fazenda||'—'}
+                                  {rel.ordem_servico && (
+                                    <div>
+                                      <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:'#5c7568',background:'#eef5f0',padding:'1px 6px',borderRadius:20}}>OS {rel.ordem_servico}</span>
+                                    </div>
+                                  )}
                                   {(rel.tipo_servico||(rel.qtd_voos&&rel.qtd_voos>1)) && (
                                     <div style={{fontSize:10,color:'#7ba38f',marginTop:1}}>
                                       {rel.tipo_servico&&(rel.tipo_servico==='catacao'?'Catação':'Área Total')}
@@ -790,7 +795,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <DetailCol title="Cond. Início" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_i']])} />
                                       <DetailCol title="Cond. Fim" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_f']])} />
                                       <DetailCol title="Horários" items={[['Início',fmt(rel.dt_inicio)],['Fim',fmt(rel.dt_fim)],...(tempo?[['Total',tempo.total],...(tempo.temPausa?[['Efetivo',tempo.efetivo]]:[])]:[] )]} />
-                                      <DetailCol title="Outros" items={[...((rel.produtos||[]).map((p,ii)=>['Prod.'+(ii+1),p])),['Tipo Serviço',rel.tipo_servico==='catacao'?'Catação':rel.tipo_servico==='area_total'?'Área Total':null],['Qtde Voos',rel.qtd_voos>1?rel.qtd_voos:null],['Gota',rel.tamanho_gota],['Vel.',rel.velocidade_drone],['Obs 1',rel.obs1],['Obs 2',rel.obs2]]} />
+                                      <DetailCol title="Outros" items={[['OS',rel.ordem_servico],...((rel.produtos||[]).map((p,ii)=>['Prod.'+(ii+1),p])),['Tipo Serviço',rel.tipo_servico==='catacao'?'Catação':rel.tipo_servico==='area_total'?'Área Total':null],['Qtde Voos',rel.qtd_voos>1?rel.qtd_voos:null],['Gota',rel.tamanho_gota],['Vel.',rel.velocidade_drone],['Obs 1',rel.obs1],['Obs 2',rel.obs2]]} />
                                       <div style={{minWidth:200,flex:1}}>
                                         <div style={{fontSize:10,fontWeight:700,color:'#0e9f6e',letterSpacing:1,marginBottom:5,fontFamily:"'Syne',sans-serif"}}>CUSTO DO VOO</div>
                                         {custosVinculados.length===0 ? (

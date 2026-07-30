@@ -426,6 +426,7 @@ export default function PilotApp({onSwitchMode}) {
   const [trechoSaving, setTrechoSaving] = useState(false)
   const [kmlFiles,setKmlFiles] = useState([])
   const [flights,setFlights] = useState([])
+  const [osOpcoes,setOsOpcoes] = useState([])
   const [loadingFlights,setLoadingFlights] = useState(false)
   const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:''})
   const [osModo,setOsModo] = useState('lista')
@@ -1012,6 +1013,18 @@ export default function PilotApp({onSwitchMode}) {
     } catch {} finally { setLoadingFlights(false) }
   }
 
+  // Opções pro seletor de OS no Cadastro de Notas — pilotos veem só os próprios voos;
+  // admin (via Modo Piloto) vê os voos de todos, já que geralmente é ele quem lança
+  // nota em nome de terceiros (motorista, etc.)
+  async function loadOsOpcoes(){
+    try {
+      let query = supabase.from('relatorios').select('id,ordem_servico,cliente,fazenda,piloto_nome,dt_inicio,created_at').not('ordem_servico','is',null).order('created_at',{ascending:false}).limit(50)
+      if(!onSwitchMode) query = query.eq('piloto_id',profile.id)
+      const {data} = await query
+      setOsOpcoes(data||[])
+    } catch {}
+  }
+
   async function loadNotas(){
     setLoadingNotas(true)
     try {
@@ -1494,7 +1507,7 @@ export default function PilotApp({onSwitchMode}) {
 
           {/* Notas de despesa — com prévia das últimas lançadas */}
           <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
-            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadNotas();loadFlights();setView('notas')}}>
+            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
               <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🧾</span>
               <div style={{flex:1}}>
                 <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
@@ -1505,7 +1518,7 @@ export default function PilotApp({onSwitchMode}) {
             {minhasNotas.length>0 && (
               <div style={{borderTop:'1px solid #eef5f0'}}>
                 {minhasNotas.slice(0,2).map(n=>(
-                  <div key={n.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadNotas();loadFlights();setView('notas')}}>
+                  <div key={n.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
                     <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
                     <div style={{fontSize:12,color:'#0e9f6e',fontWeight:700,flexShrink:0,marginLeft:8}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
                   </div>
@@ -1711,8 +1724,8 @@ export default function PilotApp({onSwitchMode}) {
                 setNotaForm(f=>({...f,ordem_servico:e.target.value}))
               }}>
               <option value="">Nenhuma / não vincular a um voo</option>
-              {flights.filter(r=>r.ordem_servico).map(r=>(
-                <option key={r.id} value={r.ordem_servico}>OS {r.ordem_servico} — {r.cliente||'—'} / {r.fazenda||'—'} ({new Date(r.dt_inicio||r.created_at).toLocaleDateString('pt-BR')})</option>
+              {osOpcoes.map(r=>(
+                <option key={r.id} value={r.ordem_servico}>OS {r.ordem_servico} — {r.cliente||'—'} / {r.fazenda||'—'}{onSwitchMode?` · ${r.piloto_nome||'—'}`:''} ({new Date(r.dt_inicio||r.created_at).toLocaleDateString('pt-BR')})</option>
               ))}
               <option value="__outro__">🔎 Outra OS (digitar manualmente)...</option>
             </select>
@@ -1722,7 +1735,7 @@ export default function PilotApp({onSwitchMode}) {
               <button type="button" style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:14,padding:'0 14px',fontSize:12,fontWeight:600,cursor:'pointer'}} onClick={()=>{setOsModo('lista');setNotaForm(f=>({...f,ordem_servico:''}))}}>📋 Lista</button>
             </div>
           )}
-          <div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>Voos recentes seus aparecem na lista — ou digite a OS de outro piloto manualmente</div>
+          <div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>{onSwitchMode?'Voos recentes de todos os pilotos aparecem na lista':'Voos recentes seus aparecem na lista'} — ou digite a OS manualmente</div>
 
           {/* Observação */}
           <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>OBSERVAÇÃO (OPCIONAL)</div>
