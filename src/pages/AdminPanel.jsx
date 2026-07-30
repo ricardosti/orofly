@@ -144,6 +144,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzExpandido, setFzExpandido] = useState({})
   const [invMovimentos, setInvMovimentos] = useState([])
   const [custos, setCustos] = useState([])
+  const [osSearch, setOsSearch] = useState('')
+  const [fotoLightbox, setFotoLightbox] = useState(null)
   const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',dataIni:'',dataFim:''})
   const [custosSubTab, setCustosSubTab] = useState('notas')
   const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
@@ -548,6 +550,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ]],
           ['OPERAÇÕES', [
             ['relatorios', '📋', 'Relatórios', filtered.length],
+            ['buscaOS', '🔍', 'Buscar OS', ''],
             ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
             ['custos', '💰', 'Financeiro', custos.length],
           ]],
@@ -2985,33 +2988,62 @@ export default function AdminPanel({ onSwitchMode }) {
                 {custosFiltrados.length===0 ? (
                   <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhuma nota encontrada.</div>
                 ) : (
-                  <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(260px,1fr))',gap:12}}>
-                    {custosFiltrados.map(c=>{
-                      const rel = c.relatorio_id ? relatorioById[c.relatorio_id]
-                        : c.ordem_servico ? relatorios.find(r=>r.ordem_servico && r.ordem_servico.toLowerCase()===c.ordem_servico.toLowerCase())
-                        : null
-                      return (
-                        <div key={c.id} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
-                            <div>
-                              <div style={{fontWeight:700,fontSize:14}}>{CATEGORIA_ICON[c.categoria]||'🧾'} {c.categoria}</div>
-                              <div style={{fontSize:11,color:'#5c7568'}}>{c.piloto_nome} · {new Date(c.data).toLocaleDateString('pt-BR')}</div>
-                            </div>
-                            <div style={{fontWeight:700,fontSize:16,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {parseFloat(c.valor).toFixed(2)}</div>
-                          </div>
-                          {c.foto_url && <StoragePhoto supabase={supabase} path={c.foto_url} bucket="relatorios" small/>}
-                          {c.ordem_servico && (
-                            <div style={{fontSize:11,marginTop:8,color: rel?'#0e9f6e':'#f2960f',fontWeight:600}}>
-                              {rel?`✅ Vinculado: ${rel.cliente} — ${rel.fazenda} (OS ${c.ordem_servico})`:`⚠️ OS ${c.ordem_servico} informada, sem voo correspondente`}
-                            </div>
-                          )}
-                          {c.observacao && <div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{c.observacao}</div>}
-                        </div>
-                      )
-                    })}
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                        <thead>
+                          <tr style={{background:'#f1f8f4'}}>
+                            {['Categoria','Piloto','Valor','Data','Voo Vinculado','Ações'].map(h=>(
+                              <th key={h} style={{padding:'11px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:'#5c7568',letterSpacing:.5,borderBottom:'1px solid #d7e6dc',whiteSpace:'nowrap',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {custosFiltrados.map((c,i)=>{
+                            const rel = c.relatorio_id ? relatorioById[c.relatorio_id]
+                              : c.ordem_servico ? relatorios.find(r=>r.ordem_servico && r.ordem_servico.toLowerCase()===c.ordem_servico.toLowerCase())
+                              : null
+                            return (
+                              <tr key={c.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
+                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>
+                                  <div style={{fontWeight:600}}>{CATEGORIA_ICON[c.categoria]||'🧾'} {c.categoria}</div>
+                                  {c.observacao && <div style={{fontSize:11,color:'#7ba38f',fontStyle:'italic',marginTop:2}}>{c.observacao}</div>}
+                                </td>
+                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>{c.piloto_nome||'—'}</td>
+                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',fontWeight:700,color:'#0e9f6e'}}>R$ {parseFloat(c.valor).toFixed(2)}</td>
+                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',whiteSpace:'nowrap'}}>{new Date(c.data).toLocaleDateString('pt-BR')}</td>
+                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>
+                                  {c.ordem_servico ? (
+                                    <span style={{fontSize:11,fontWeight:600,color: rel?'#0e9f6e':'#f2960f'}}>
+                                      {rel?`✅ ${rel.cliente} — ${rel.fazenda}`:`⚠️ OS ${c.ordem_servico} sem voo`}
+                                    </span>
+                                  ) : <span style={{color:'#c3d4c9'}}>—</span>}
+                                </td>
+                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',whiteSpace:'nowrap'}}>
+                                  {c.foto_url && <button title="Ver foto" style={sG.iconBtn} onClick={()=>setFotoLightbox(c.foto_url)}>📷</button>}
+                                  {rel && <button title="Ir para o voo" style={sG.iconBtn} onClick={()=>{setSelected(rel);setTab('relatorios')}}>➡️</button>}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
                 </>)}
+
+                {/* LIGHTBOX FOTO DA NOTA */}
+                {fotoLightbox && (
+                  <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.85)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:24}} onClick={()=>setFotoLightbox(null)}>
+                    <div style={{maxWidth:500,width:'100%'}} onClick={e=>e.stopPropagation()}>
+                      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:8}}>
+                        <button style={{background:'rgba(255,255,255,0.15)',color:'#fff',border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',fontSize:16}} onClick={()=>setFotoLightbox(null)}>✕</button>
+                      </div>
+                      <StoragePhoto supabase={supabase} path={fotoLightbox} bucket="relatorios" />
+                    </div>
+                  </div>
+                )}
 
                 {custosSubTab==='veiculos' && (() => {
                   const veicById = {}
@@ -3143,6 +3175,106 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
                   )
                 })()}
+              </div>
+            )
+          })()}
+
+          {/* ===== BUSCAR OS ===== */}
+          {tab === 'buscaOS' && (() => {
+            const q = osSearch.trim().toLowerCase()
+            const relEncontrado = q ? relatorios.find(r=>r.ordem_servico && r.ordem_servico.toLowerCase()===q) : null
+            const despesasOS = q ? custos.filter(c=>c.ordem_servico && c.ordem_servico.toLowerCase()===q) : []
+            const viagensOS = q ? viagens.filter(v=>v.ordem_servico && v.ordem_servico.toLowerCase()===q) : []
+            const manutencoesRel = [] // manutenções não são vinculadas por OS (custo de veículo não é por voo)
+            const totalDespesas = despesasOS.reduce((a,c)=>a+parseFloat(c.valor||0),0)
+            const CAT_ICON = {'Almoço':'🍽️','Gasolina':'⛽','Hotel':'🏨','Outros':'🧾'}
+            const tempo = relEncontrado ? calcTempo(relEncontrado.dt_inicio, relEncontrado.dt_fim, relEncontrado.pausas) : null
+
+            return (
+              <div>
+                <div style={{ marginBottom:18 }}>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>🔍 Buscar Ordem de Serviço</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>Digite a OS pra ver o voo, as despesas e as viagens vinculadas a ela</div>
+                </div>
+
+                <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:18,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <input autoFocus style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:12,padding:'12px 14px',fontSize:15,outline:'none',boxSizing:'border-box',fontFamily:'ui-monospace,monospace'}}
+                    placeholder="Ex: wcjvee" value={osSearch} onChange={e=>setOsSearch(e.target.value)} />
+                </div>
+
+                {!q ? (
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Digite uma OS acima pra começar.</div>
+                ) : !relEncontrado && despesasOS.length===0 && viagensOS.length===0 ? (
+                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum voo, despesa ou viagem encontrado com a OS "{osSearch}".</div>
+                ) : (
+                  <div style={{display:'flex',flexDirection:'column',gap:16}}>
+                    {!relEncontrado && (
+                      <div style={{background:'#fff3e0',color:'#7a5200',borderRadius:14,padding:'12px 16px',fontSize:13}}>
+                        ⚠️ Não encontrei nenhum voo com essa OS, mas existem notas/viagens vinculadas a ela (abaixo). Confira se digitou certo.
+                      </div>
+                    )}
+
+                    {relEncontrado && (
+                      <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:8}}>
+                          <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>{relEncontrado.cliente} — {relEncontrado.fazenda}</div>
+                          <span style={{background:STATUS_BG[relEncontrado.status]||'#f1f8f4',color:STATUS_COLOR[relEncontrado.status]||'#5c7568',fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20}}>{STATUS_LABEL[relEncontrado.status]||relEncontrado.status}</span>
+                        </div>
+                        <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:14}}>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>PILOTO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.piloto_nome||'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>DRONE</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.drone||'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>ÁREA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.area_ha?`${relEncontrado.area_ha} ha`:'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>TEMPO</div><div style={{fontSize:13,fontWeight:600}}>{tempo?.total||'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>DATA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.dt_inicio?new Date(relEncontrado.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>TIPO SERVIÇO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.tipo_servico==='catacao'?'Catação':relEncontrado.tipo_servico==='area_total'?'Área Total':'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>QTDE VOOS</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.qtd_voos||1}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>PRODUTOS</div><div style={{fontSize:13,fontWeight:600}}>{(relEncontrado.produtos||[]).join(', ')||'—'}</div></div>
+                        </div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                          <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}} onClick={()=>{setSelected(relEncontrado);setTab('relatorios')}}>Ver relatório completo</button>
+                          <button style={{background:'#22c476',color:'#fff',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}} onClick={()=>gerarPDF(relEncontrado,null,null,'cliente')}>🟢 PDF Cliente</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700}}>💰 Despesas Vinculadas</div>
+                        {despesasOS.length>0 && <div style={{fontSize:15,fontWeight:700,color:'#0e9f6e'}}>Total: R$ {totalDespesas.toFixed(2)}</div>}
+                      </div>
+                      {despesasOS.length===0 ? <div style={{fontSize:13,color:'#7ba38f'}}>Nenhuma despesa vinculada a essa OS.</div> : (
+                        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                          {despesasOS.map(c=>(
+                            <div key={c.id} style={{background:'#f7fbf8',borderRadius:12,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:600}}>{CAT_ICON[c.categoria]||'🧾'} {c.categoria} — {c.piloto_nome||'—'}</div>
+                                <div style={{fontSize:11,color:'#7ba38f'}}>{new Date(c.data).toLocaleDateString('pt-BR')}{c.observacao?` · ${c.observacao}`:''}</div>
+                              </div>
+                              <div style={{fontSize:14,fontWeight:700,color:'#0e9f6e'}}>R$ {parseFloat(c.valor).toFixed(2)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:14}}>🚗 Viagens Vinculadas</div>
+                      {viagensOS.length===0 ? <div style={{fontSize:13,color:'#7ba38f'}}>Nenhuma viagem vinculada a essa OS.</div> : (
+                        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                          {viagensOS.map(v=>(
+                            <div key={v.id} style={{background:'#f7fbf8',borderRadius:12,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:600}}>🚗 {veiculos.find(x=>x.id===v.veiculo_id)?.placa || '—'} — {v.motorista||'—'}</div>
+                                <div style={{fontSize:11,color:'#7ba38f'}}>{new Date(v.data).toLocaleDateString('pt-BR')}{v.destino?` · ${v.destino}`:''}</div>
+                              </div>
+                              <div style={{fontSize:14,fontWeight:700,color:'#2f6fed'}}>{Math.max(0,(v.km_final||0)-(v.km_inicial||0)).toFixed(0)} km</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })()}
