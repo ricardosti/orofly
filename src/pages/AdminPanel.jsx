@@ -2993,7 +2993,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
                         <thead>
                           <tr style={{background:'#f1f8f4'}}>
-                            {['Categoria','Piloto','Valor','Data','Voo Vinculado','Ações'].map(h=>(
+                            {['Foto','Categoria','Piloto','Valor','Data','Voo Vinculado','Ações'].map(h=>(
                               <th key={h} style={{padding:'11px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:'#5c7568',letterSpacing:.5,borderBottom:'1px solid #d7e6dc',whiteSpace:'nowrap',fontFamily:"'Syne',sans-serif"}}>{h}</th>
                             ))}
                           </tr>
@@ -3005,6 +3005,11 @@ export default function AdminPanel({ onSwitchMode }) {
                               : null
                             return (
                               <tr key={c.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
+                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>
+                                  {c.foto_url ? (
+                                    <FotoThumb supabase={supabase} path={c.foto_url} bucket="relatorios" onClick={()=>setFotoLightbox(c.foto_url)}/>
+                                  ) : <div style={{width:40,height:40,borderRadius:8,background:'#f7fbf8',border:'1px dashed #dcebe3',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:'#c3d4c9'}}>—</div>}
+                                </td>
                                 <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>
                                   <div style={{fontWeight:600}}>{CATEGORIA_ICON[c.categoria]||'🧾'} {c.categoria}</div>
                                   {c.observacao && <div style={{fontSize:11,color:'#7ba38f',fontStyle:'italic',marginTop:2}}>{c.observacao}</div>}
@@ -3020,7 +3025,6 @@ export default function AdminPanel({ onSwitchMode }) {
                                   ) : <span style={{color:'#c3d4c9'}}>—</span>}
                                 </td>
                                 <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',whiteSpace:'nowrap'}}>
-                                  {c.foto_url && <button title="Ver foto" style={sG.iconBtn} onClick={()=>setFotoLightbox(c.foto_url)}>📷</button>}
                                   {rel && <button title="Ir para o voo" style={sG.iconBtn} onClick={()=>{setSelected(rel);setTab('relatorios')}}>➡️</button>}
                                 </td>
                               </tr>
@@ -3686,6 +3690,18 @@ export default function AdminPanel({ onSwitchMode }) {
 
 function SecTitle({ children }) {
   return <div style={{ fontSize:10, fontWeight:700, color:'#0e9f6e', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:'1px solid #e3f7ec', fontFamily:"'Syne',sans-serif" }}>{children}</div>
+}
+
+function FotoThumb({ supabase, path, bucket, onClick }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    if (!path) return
+    supabase.storage.from(bucket).createSignedUrl(path, 3600).then(({ data }) => {
+      if (data?.signedUrl) setUrl(data.signedUrl)
+    })
+  }, [path, bucket, supabase])
+  if (!url) return <div style={{ width:40, height:40, borderRadius:8, background:'#f1f8f4', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#7ba38f' }}>⏳</div>
+  return <img src={url} alt="foto" onClick={onClick} style={{ width:40, height:40, objectFit:'cover', borderRadius:8, display:'block', cursor:'pointer', border:'1px solid #dcebe3' }} />
 }
 
 function StoragePhoto({ supabase, path, bucket, small }) {
