@@ -6,6 +6,7 @@ import { gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
+import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -95,6 +96,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [editObsFotos, setEditObsFotos] = useState([null,null,null])
   const [editObsFotoFiles, setEditObsFotoFiles] = useState([null,null,null])
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [confirmDeleteDespesa, setConfirmDeleteDespesa] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
   const [filters, setFilters] = useState({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })
@@ -423,6 +425,11 @@ export default function AdminPanel({ onSwitchMode }) {
   async function deletarRelatorio(id) {
     await supabase.from('relatorios').delete().eq('id', id)
     showToast('🗑️ Deletado'); setConfirmDelete(null); setSelected(null); fetchAll()
+  }
+
+  async function deletarDespesa(id) {
+    await supabase.from('despesas').delete().eq('id', id)
+    showToast('🗑️ Despesa deletada'); setConfirmDeleteDespesa(null); fetchAll()
   }
 
   async function resolverSOS(rel) {
@@ -790,7 +797,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               {isSel && (() => {
                                 const custosVinculados = custosDoRel(rel)
                                 const totalCustos = custosVinculados.reduce((a,c)=>a+parseFloat(c.valor||0),0)
-                                const CAT_ICON = {'Almoço':'🍽️','Gasolina':'⛽','Hotel':'🏨','Outros':'🧾'}
+                                const CAT_ICON = CATEGORIA_ICON
                                 return (
                                 <tr>
                                   <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:'2px solid #d7e6dc', padding:0 }}>
@@ -2877,7 +2884,6 @@ export default function AdminPanel({ onSwitchMode }) {
 
           {/* ===== CUSTOS (notas de despesa) ===== */}
           {tab === 'custos' && (() => {
-            const CATEGORIA_ICON = {'Almoço':'🍽️','Gasolina':'⛽','Hotel':'🏨','Outros':'🧾'}
             const pilotosDisponiveis = [...new Set(custos.map(c=>c.piloto_nome).filter(Boolean))].sort()
             const relatorioById = {}
             relatorios.forEach(r=>{relatorioById[r.id]=r})
@@ -2965,7 +2971,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 160px'}}
                     value={custosFiltros.categoria} onChange={e=>setCustosFiltros(f=>({...f,categoria:e.target.value}))}>
                     <option value="">Todas categorias</option>
-                    {['Almoço','Gasolina','Hotel','Outros'].map(c=><option key={c} value={c}>{c}</option>)}
+                    {CATEGORIA_DESPESA_OPTS.map(([c])=><option key={c} value={c}>{c}</option>)}
                   </select>
                   <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 200px'}}
                     value={custosFiltros.clienteFazenda} onChange={e=>setCustosFiltros(f=>({...f,clienteFazenda:e.target.value}))}>
@@ -3121,6 +3127,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </td>
                                 <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',whiteSpace:'nowrap'}}>
                                   {rel && <button title="Ir para o voo" style={sG.iconBtn} onClick={()=>{setSelected(rel);setTab('relatorios')}}>➡️</button>}
+                                  <button title="Deletar" style={{...sG.iconBtn,color:'#e5484d'}} onClick={()=>setConfirmDeleteDespesa(c)}>🗑️</button>
                                 </td>
                               </tr>
                             )
@@ -3279,7 +3286,7 @@ export default function AdminPanel({ onSwitchMode }) {
             const viagensOS = q ? viagens.filter(v=>v.ordem_servico && v.ordem_servico.toLowerCase()===q) : []
             const manutencoesRel = [] // manutenções não são vinculadas por OS (custo de veículo não é por voo)
             const totalDespesas = despesasOS.reduce((a,c)=>a+parseFloat(c.valor||0),0)
-            const CAT_ICON = {'Almoço':'🍽️','Gasolina':'⛽','Hotel':'🏨','Outros':'🧾'}
+            const CAT_ICON = CATEGORIA_ICON
             const tempo = relEncontrado ? calcTempo(relEncontrado.dt_inicio, relEncontrado.dt_fim, relEncontrado.pausas) : null
 
             return (
@@ -3767,6 +3774,20 @@ export default function AdminPanel({ onSwitchMode }) {
             <div style={{ display:'flex', gap:10 }}>
               <button style={{ ...sG.btn, background:'#f1f8f4', color:'#5c7568', flex:1 }} onClick={() => setConfirmDelete(null)}>Cancelar</button>
               <button style={{ ...sG.btn, background:'#e5484d', flex:1 }} onClick={() => deletarRelatorio(confirmDelete.id)}>Deletar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteDespesa && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
+            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, marginBottom:10 }}>🗑️ Confirmar exclusão</div>
+            <p style={{ fontSize:14, marginBottom:6 }}>Deletar despesa de <strong>{confirmDeleteDespesa.categoria} — R$ {parseFloat(confirmDeleteDespesa.valor).toFixed(2)}</strong>?</p>
+            <p style={{ fontSize:12, color:'#e5484d', marginBottom:18 }}>Esta ação não pode ser desfeita.</p>
+            <div style={{ display:'flex', gap:10 }}>
+              <button style={{ ...sG.btn, background:'#f1f8f4', color:'#5c7568', flex:1 }} onClick={() => setConfirmDeleteDespesa(null)}>Cancelar</button>
+              <button style={{ ...sG.btn, background:'#e5484d', flex:1 }} onClick={() => deletarDespesa(confirmDeleteDespesa.id)}>Deletar</button>
             </div>
           </div>
         </div>

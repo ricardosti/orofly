@@ -6,6 +6,7 @@ import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto } from '../l
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
+import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -36,7 +37,6 @@ const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - 
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
-const CATEGORIA_DESPESA_OPTS = [['Almoço','🍽️'],['Gasolina','⛽'],['Hotel','🏨'],['Outros','🧾']]
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
@@ -305,7 +305,7 @@ export default function PilotApp({onSwitchMode}) {
   const [showPerfil,setShowPerfil] = useState(false)
   const [avatarUrl,setAvatarUrl] = useState(null)
   const [gpsPos,setGpsPos] = useState(null)
-  const [notaTab,setNotaTab] = useState('despesa')
+  const [notaTab,setNotaTab] = useState('viagem')
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
     supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data})=>{
@@ -428,7 +428,16 @@ export default function PilotApp({onSwitchMode}) {
   const [flights,setFlights] = useState([])
   const [osOpcoes,setOsOpcoes] = useState([])
   const [loadingFlights,setLoadingFlights] = useState(false)
-  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',valor_abastecimento:''})
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
+  function addItemViagem(categoria){
+    setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
+  }
+  function updateItemViagem(id,valor){
+    setNotaForm(f=>({...f,itensViagem:f.itensViagem.map(it=>it.id===id?{...it,valor}:it)}))
+  }
+  function removeItemViagem(id){
+    setNotaForm(f=>({...f,itensViagem:f.itensViagem.filter(it=>it.id!==id)}))
+  }
   const [osModo,setOsModo] = useState('lista')
   const [notaFotoPreview,setNotaFotoPreview] = useState(null)
   const [notaFotoFile,setNotaFotoFile] = useState(null)
@@ -1159,21 +1168,22 @@ export default function PilotApp({onSwitchMode}) {
         await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',notaForm.veiculo_id)
         setVeiculosDB(vs=>vs.map(v=>v.id===notaForm.veiculo_id?{...v,km_atual:kmFim}:v))
 
-        // Abastecimento durante a viagem: lança como despesa de Gasolina já vinculada ao veículo/OS
-        const valorAbastecimento = parseFloat(notaForm.valor_abastecimento)
-        if(valorAbastecimento>0){
-          const {error:aErr} = await supabase.from('despesas').insert({
+        // Despesas lançadas durante a viagem (gasolina, pedágio, almoço etc.) — uma por item
+        for(const item of notaForm.itensViagem){
+          const valorItem = parseFloat(item.valor)
+          if(!(valorItem>0)) continue
+          const {error:iErr} = await supabase.from('despesas').insert({
             piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
-            categoria:'Gasolina', valor:valorAbastecimento, data:notaForm.data,
-            ordem_servico:osDigitada||null, relatorio_id, observacao:'Abastecimento durante viagem',
+            categoria:item.categoria, valor:valorItem, data:notaForm.data,
+            ordem_servico:osDigitada||null, relatorio_id, observacao:'Lançado durante viagem', foto_url,
             veiculo_id:notaForm.veiculo_id,
           })
-          if(aErr) throw aErr
+          if(iErr) throw iErr
         }
       }
 
       showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
-      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',valor_abastecimento:''})
+      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
       setOsModo('lista')
       setNotaFotoPreview(null); setNotaFotoFile(null)
       loadNotas()
@@ -1646,10 +1656,10 @@ export default function PilotApp({onSwitchMode}) {
 
         {veiculosDB.length>0 && (
           <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4}}>
-            <button style={{flex:1,background:notaTab==='despesa'?'#fff':'transparent',color:notaTab==='despesa'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='despesa'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
-              onClick={()=>setNotaTab('despesa')}>🧾 Despesa</button>
             <button style={{flex:1,background:notaTab==='viagem'?'#fff':'transparent',color:notaTab==='viagem'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='viagem'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
               onClick={()=>setNotaTab('viagem')}>🚗 Viagem</button>
+            <button style={{flex:1,background:notaTab==='despesa'?'#fff':'transparent',color:notaTab==='despesa'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='despesa'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+              onClick={()=>setNotaTab('despesa')}>🧾 Despesa</button>
           </div>
         )}
 
@@ -1724,9 +1734,29 @@ export default function PilotApp({onSwitchMode}) {
               )}
               {notaForm.veiculo_id && (
                 <div style={{marginBottom:10}}>
-                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>⛽ ABASTECEU NESSA VIAGEM? (OPCIONAL)</div>
-                  <input type="number" style={sw.fi} placeholder="Valor gasto (R$)" value={notaForm.valor_abastecimento} onChange={e=>setNotaForm(f=>({...f,valor_abastecimento:e.target.value}))}/>
-                  <div style={{fontSize:11,color:'#7ba38f',marginTop:6}}>Lança automaticamente como Gasolina vinculada a essa viagem. Outros gastos (pedágio, etc.) preencha em "Despesa".</div>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>GASTOS DESSA VIAGEM (OPCIONAL)</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+                    {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>(
+                      <button key={cat} type="button" style={{background:'#f1f8f4',color:'#0b1210',border:'none',borderRadius:14,padding:'8px 12px',fontSize:12,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}
+                        onClick={()=>addItemViagem(cat)}>+ {ic} {cat}</button>
+                    ))}
+                  </div>
+                  {notaForm.itensViagem.map(item=>{
+                    const ic = CATEGORIA_DESPESA_OPTS.find(([c])=>c===item.categoria)?.[1]||'🧾'
+                    return (
+                      <div key={item.id} style={{marginBottom:8}}>
+                        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                          <div style={{flex:'0 0 auto',fontSize:12,fontWeight:600,color:'#0b1210',whiteSpace:'nowrap'}}>{ic} {item.categoria}</div>
+                          <input type="number" style={{...sw.fi,flex:1}} placeholder="Valor (R$)" value={item.valor} onChange={e=>updateItemViagem(item.id,e.target.value)}/>
+                          <button type="button" style={{background:'#fdecec',color:'#e5484d',border:'none',borderRadius:12,width:34,height:34,flexShrink:0,cursor:'pointer'}} onClick={()=>removeItemViagem(item.id)}>🗑️</button>
+                        </div>
+                        {item.categoria==='Gasolina' && notaForm.km_inicial!=='' && notaForm.km_final!=='' && (
+                          <div style={{fontSize:11,color:'#7ba38f',marginTop:3}}>🔢 Km {notaForm.km_inicial} → {notaForm.km_final}</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>Cada item lançado aqui já fica vinculado a essa viagem (veículo/OS) automaticamente.</div>
                 </div>
               )}
               <div style={{marginTop:4}}>
