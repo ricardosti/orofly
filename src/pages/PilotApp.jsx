@@ -708,7 +708,11 @@ export default function PilotApp({onSwitchMode}) {
       ? talhoesSel.map(nome=>({talhao:nome,bordadura:parseFloat(form.bordaduraPorTalhao?.[nome])||0})).filter(d=>d.bordadura>0)
       : null
     const bordaduraTotal = bordaduraAtual(form)
+    // Fallback defensivo: relId deveria sempre existir (gerado em opIniciar), mas se por algum
+    // motivo ainda estiver nulo aqui, gera agora em vez de deixar o registro órfão.
+    const idAtual = relId || crypto.randomUUID()
     const payload={
+      id:idAtual,
       piloto_id:profile.id,
       cultura:form.cultura||null,
       cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,qtd_voos:parseInt(form.qtd_voos)||1,tipo_servico:form.tipo_servico||null,
@@ -725,10 +729,9 @@ export default function PilotApp({onSwitchMode}) {
     }
     setSaveStatus('saving')
     try {
-      let result
-      if(relId){result=await supabase.from('relatorios').update(payload).eq('id',relId).select().single()}
-      else{result=await supabase.from('relatorios').insert(payload).select().single();if(result.data)setRelId(result.data.id)}
+      const result = await supabase.from('relatorios').upsert(payload,{onConflict:'id'}).select().single()
       if(result.error) throw result.error
+      if(!relId) setRelId(idAtual)
       if(result.data && !osAtual) setOsAtual(result.data.ordem_servico||null)
       setSaveStatus('saved');pendingPayload.current=null
       if(pendingSync){setPendingSync(false);showToast('✅ Sincronizado com sucesso!')}
@@ -796,7 +799,12 @@ export default function PilotApp({onSwitchMode}) {
     const n=nowParts()
     const nf={...form,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}
     setForm(nf); setOpState('running')
+    // Gera o id do relatório localmente (antes de qualquer chamada de rede) — assim ele
+    // nunca fica nulo, mesmo sem sinal, e todo salvamento seguinte sabe em qual linha gravar.
+    const novoId = relId || crypto.randomUUID()
+    setRelId(novoId)
     const payload={
+      id:novoId,
       piloto_id:profile.id,
       cliente:nf.cliente==='Outros'?nf.clienteOutro:nf.cliente,
       fazenda:nf.fazenda,area_ha:nf.area_ha,
@@ -813,7 +821,7 @@ export default function PilotApp({onSwitchMode}) {
     }
     setSaveStatus('saving')
     try {
-      const {data,error}=await supabase.from('relatorios').insert(payload).select().single()
+      const {data,error}=await supabase.from('relatorios').upsert(payload,{onConflict:'id'}).select().single()
       if(error) throw error
       setRelId(data.id); setSaveStatus('saved')
 
@@ -828,7 +836,13 @@ export default function PilotApp({onSwitchMode}) {
       })
 
       showToast('✅ Operação iniciada!')
-    } catch { setSaveStatus('error'); showToast('⚠️ Salvo localmente') }
+    } catch {
+      // Sem sinal: o id já foi gerado acima, então o voo não fica órfão — o
+      // useEffect de pendingSync (linha ~610) reenvia via saveToSupabase assim que reconectar,
+      // que reconstrói o payload a partir do form atual (já igual a `nf` aqui).
+      setSaveStatus('error'); lastExtraData.current={status:'em_operacao'}; setPendingSync(true)
+      showToast('📴 Sem sinal — voo salvo no aparelho, sincroniza sozinho quando reconectar')
+    }
     setSaving(false)
   }
 
@@ -904,8 +918,8 @@ export default function PilotApp({onSwitchMode}) {
       const temp = c.temperature_2m?.toFixed(1)
       const umid = c.relative_humidity_2m?.toFixed(0)
       const vento = c.wind_speed_10m?.toFixed(1)
-      // Delta T aproximado: Temp - (100 - Umidade) / 5
-      const deltaT = (parseFloat(temp) - (100 - parseFloat(umid)) / 5).toFixed(1)
+      const deltaTCalc = calcDeltaT(temp, umid)
+      const deltaT = deltaTCalc!=null ? deltaTCalc.toFixed(1) : null
       setForm(f => ({
         ...f,
         temperatura_i: temp, umidade_i: umid,
@@ -972,8 +986,13 @@ export default function PilotApp({onSwitchMode}) {
     setSaving(true)
     showToast('⏳ Gerando relatório...')
     try {
-      const {data:rel}=await supabase.from('relatorios').select('*').eq('id',relId).single()
-      if(!rel) throw new Error('Relatório não encontrado')
+      let {data:rel}=await supabase.from('relatorios').select('*').eq('id',relId).maybeSingle()
+      if(!rel){
+        // Ainda não sincronizou com o servidor (ficou sem sinal na hora de salvar) — tenta agora
+        // em vez de só falhar; se der certo, segue o fluxo normalmente.
+        rel = await saveToSupabase({status:'finalizado'},false)
+        if(!rel){ setSaving(false); showToast('📴 Ainda sem sinal — o voo está salvo no aparelho, tente gerar o relatório de novo quando reconectar','error'); return }
+      }
       // Upload fotos
       const [obsUrls,mapaUrl]=await Promise.all([uploadFotos(rel.id),uploadFotoMapa(rel.id)])
       if(obsUrls.some(Boolean)||mapaUrl) await supabase.from('relatorios').update({obs_fotos_urls:obsUrls,foto_mapa_url:mapaUrl}).eq('id',rel.id)
