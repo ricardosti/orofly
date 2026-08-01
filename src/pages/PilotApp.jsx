@@ -1369,11 +1369,13 @@ export default function PilotApp({onSwitchMode}) {
     const voosHoje = finalizados.filter(r=>mesmoDia(r.dt_inicio||r.created_at))
     const areaHoje = voosHoje.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
     const finalizadosMes = finalizados.filter(r=>mesmoMes(r.dt_inicio||r.created_at))
-    const areaMes = finalizadosMes.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+    const clientesMes = new Set(finalizadosMes.map(r=>r.cliente).filter(Boolean)).size
     const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
     const iniciais = (profile?.nome||'P').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
     const minutosTotais = finalizados.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
     const horasTotais = minutosTotais/60
+    const minutosHoje = voosHoje.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
+    const horasHoje = minutosHoje/60
     const droneAlertas = dronesDB.map(d=>{
       const minutos = voosFrotaDrone.filter(r=>r.drone===d.nome && r.dt_inicio && r.dt_fim).reduce((a,r)=>a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)),0)
       const horas = minutos/60
@@ -1477,38 +1479,22 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           </div>
 
-          {/* Resumo do dia */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-              <div style={{width:32,height:32,borderRadius:10,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,marginBottom:8}}>✈️</div>
-              <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.4}}>VOOS HOJE</div>
-              <div style={{fontSize:26,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{voosHoje.length}</div>
-              <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{areaHoje.toFixed(1)} ha aplicados</div>
-            </div>
-            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-              <div style={{width:32,height:32,borderRadius:10,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,marginBottom:8}}>📊</div>
-              <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.4}}>ESTE MÊS</div>
-              <div style={{fontSize:26,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{areaMes.toFixed(0)}<span style={{fontSize:13,fontWeight:600}}> ha</span></div>
-              <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{finalizadosMes.length} voos finalizados</div>
-            </div>
-          </div>
-
           {/* Voo em andamento */}
           {draftAtivo && (opState==='paused_day' ? (()=>{
             const {total,feita,pct} = progressoParcial(form)
             return (
-              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',borderLeft:'4px solid #ffb020',padding:'14px 16px',cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}} onClick={()=>setView('form')}>
+              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',borderLeft:'4px solid #0e9f6e',padding:'14px 16px',cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}} onClick={()=>setView('form')}>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
-                  <span style={{width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🕐</span>
+                  <span style={{width:40,height:40,borderRadius:12,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🕐</span>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif",color:'#0b1210'}}>Operação em Andamento</div>
                     <div style={{fontSize:12,color:'#7ba38f',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{form.fazenda||'—'}{total>0?` · ${feita.toFixed(2)} ha de ${total.toFixed(2)} ha`:''}</div>
                   </div>
-                  <span style={{background:'#ffb020',color:'#3a2a00',fontSize:10,fontWeight:700,borderRadius:20,padding:'4px 10px',flexShrink:0,fontFamily:"'Syne',sans-serif"}}>PARCIAL</span>
+                  <span style={{background:'#e3f7ec',color:'#0e9f6e',fontSize:10,fontWeight:700,borderRadius:20,padding:'4px 10px',flexShrink:0,fontFamily:"'Syne',sans-serif"}}>PARCIAL</span>
                 </div>
                 {total>0&&(
-                  <div style={{height:8,background:'#f1ede0',borderRadius:20,overflow:'hidden',marginTop:12}}>
-                    <div style={{height:'100%',width:`${pct}%`,background:'#ffb020',borderRadius:20,transition:'width .3s'}}/>
+                  <div style={{height:8,background:'#eef5f0',borderRadius:20,overflow:'hidden',marginTop:12}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:'#0e9f6e',borderRadius:20,transition:'width .3s'}}/>
                   </div>
                 )}
               </div>
@@ -1536,6 +1522,22 @@ export default function PilotApp({onSwitchMode}) {
             </div>
             <span style={{marginLeft:'auto',fontSize:18}}>›</span>
           </button>
+
+          {/* Estatísticas do dia */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+            {[
+              ['🚁',voosHoje.length,'Voos'],
+              ['🕐',horasHoje.toFixed(1)+'h','Horas de Voo'],
+              ['🗺️',areaHoje.toFixed(0)+' ha','Área Pulverizada'],
+              ['👥',clientesMes,'Clientes'],
+            ].map(([icon,value,label])=>(
+              <div key={label} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',padding:'14px 6px',textAlign:'center',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                <div style={{fontSize:20,marginBottom:6}}>{icon}</div>
+                <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{value}</div>
+                <div style={{fontSize:10,color:'#7ba38f',marginTop:2}}>{label}</div>
+              </div>
+            ))}
+          </div>
 
           {/* Meus relatórios */}
           <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
