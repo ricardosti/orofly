@@ -7,7 +7,7 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
-import { Clock, Map, Users, FileBarChart2, CalendarDays, Receipt, CloudSun } from 'lucide-react'
+import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun } from 'lucide-react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -53,7 +53,7 @@ const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodã
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
-const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', finalizado:'✅ Finalizado' }
+const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'✅ Finalizado' }
 const LS_KEY = 'orofly_draft'
 
 function initForm(data) {
@@ -90,6 +90,7 @@ function initForm(data) {
       bordaduraPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       evid_meta:data.evidencia_meta||{},
       area_feita:data.area_feita!=null?String(data.area_feita):'',
+      area_deduzida:data.area_deduzida!=null?String(data.area_deduzida):'',
     }
   }
   return {
@@ -100,7 +101,7 @@ function initForm(data) {
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
     pausas:[],obs1:'',obs2:'',bordadura:'',bordaduraPorTalhao:{},evid_meta:{},
-    area_feita:'',
+    area_feita:'',area_deduzida:'',
   }
 }
 
@@ -177,11 +178,11 @@ function DtRow({prefix,form,setForm,label}) {
 }
 
 // Componentes de campo — fora do PilotApp para não perder foco a cada render
-function FI({label,ph,val,onChange,type='text',styles}) {
+function FI({label,ph,val,onChange,type='text',styles,disabled}) {
   return (
     <div style={{marginBottom:14}}>
       <label style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
-      <input type={type} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}} placeholder={ph||''} value={val||''} onChange={onChange}/>
+      <input type={type} disabled={disabled} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:disabled?'#f1f8f4':'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",opacity:disabled?.6:1}} placeholder={ph||''} value={val||''} onChange={onChange}/>
     </div>
   )
 }
@@ -740,6 +741,7 @@ export default function PilotApp({onSwitchMode}) {
       cultura:form.cultura||null,
       cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,qtd_voos:parseInt(form.qtd_voos)||1,tipo_servico:form.tipo_servico||null,
       area_feita:form.area_feita?parseFloat(form.area_feita):null,
+      area_deduzida:form.area_deduzida?parseFloat(form.area_deduzida):null,
       piloto_nome:profile.nome||profile.email,
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
@@ -964,19 +966,20 @@ export default function PilotApp({onSwitchMode}) {
     await executarFinalizacao()
   }
 
-  // Dá baixa no estoque dos produtos usados (área líquida x dose). Best-effort: não bloqueia a finalização se falhar
+  // Dá baixa no estoque dos produtos usados (área x dose). Best-effort: não bloqueia a finalização se falhar
   // (ex: função registrar_movimento_estoque ainda não criada no banco, ou produto não cadastrado no inventário).
-  async function darBaixaEstoque(relIdAlvo) {
+  // `area` é a quantidade de hectares a considerar NESSA baixa — no Finalizado Parcial é só o incremento
+  // desde a última baixa (evita descontar o produto duas vezes quando o voo é retomado e finalizado depois).
+  async function darBaixaEstoque(relIdAlvo, area) {
     try {
-      const areaLiq = areaLiquidaAtual(form)
-      if (!relIdAlvo || areaLiq<=0) return
+      if (!relIdAlvo || !(area>0)) return
       const produtosFinal = form.produtos.filter(Boolean).map(produtoComUnidade)
       for (const p of produtosFinal) {
         const { nome, dose, unidade } = parseDoseProduto(p)
         if (dose==null || !nome) continue
         const existe = produtosDB.find(pd=>pd.nome===nome)
         if (!existe) continue // produto "Outros" digitado à mão não está no inventário — nada a baixar
-        const consumo = +(dose*areaLiq).toFixed(2)
+        const consumo = +(dose*area).toFixed(2)
         if (consumo<=0) continue
         await supabase.rpc('registrar_movimento_estoque', {
           p_produto_nome: nome, p_quantidade: -consumo, p_tipo: 'baixa_relatorio',
@@ -991,10 +994,14 @@ export default function PilotApp({onSwitchMode}) {
     const n=nowParts()
     setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
     setOpState('finished')
+    // Baixa só o que falta: se já teve Finalizado Parcial antes, area_deduzida guarda quanto
+    // já foi descontado do estoque — aqui desconta só a diferença até a área total.
+    const areaTotal = areaLiquidaAtual(form)
+    const deltaBaixa = Math.max(0, areaTotal-(parseFloat(form.area_deduzida)||0))
     // Só salva o voo — PDF gerado separadamente no Step 5
-    const relSalvo = await saveToSupabase({status:'finalizado',dt_fim:n.iso})
+    const relSalvo = await saveToSupabase({status:'finalizado',dt_fim:n.iso,area_deduzida:areaTotal})
     if (relSalvo) {
-      await darBaixaEstoque(relSalvo.id)
+      await darBaixaEstoque(relSalvo.id, deltaBaixa)
       try{localStorage.removeItem(LS_KEY)}catch{}
       setSaving(false)
       showToast('✅ Voo salvo! Adicione fotos e gere o relatório.')
@@ -1009,25 +1016,31 @@ export default function PilotApp({onSwitchMode}) {
   async function gerarRelatorioFinal() {
     setSaving(true)
     showToast('⏳ Gerando relatório...')
+    // Busca no servidor primeiro — mas se estiver offline, .select() pode LANÇAR (falha de rede),
+    // não só retornar vazio. Por isso cada tentativa fica isolada no seu próprio try, pra uma
+    // falha de rede aqui não virar um "Erro: Failed to fetch" genérico lá embaixo.
+    let rel = null
     try {
-      let {data:rel}=await supabase.from('relatorios').select('*').eq('id',relId).maybeSingle()
-      if(!rel){
-        // Ainda não sincronizou com o servidor (ficou sem sinal na hora de salvar) — tenta agora
-        // em vez de só falhar; se der certo, segue o fluxo normalmente.
-        rel = await saveToSupabase({status:statusAtual()},false)
-        if(!rel){ setSaving(false); showToast('📴 Ainda sem sinal — o voo está salvo no aparelho, tente gerar o relatório de novo quando reconectar','error'); return }
-      }
-      // Upload fotos
+      const {data} = await supabase.from('relatorios').select('*').eq('id',relId).maybeSingle()
+      rel = data
+    } catch {}
+    if(!rel){
+      try { rel = await saveToSupabase({status:statusAtual()},false) } catch {}
+    }
+    if(!rel){
+      // Ainda sem sinal: o relatório já existe no aparelho (form local) — mostra assim mesmo.
+      // Fotos e a sincronização final ficam pendentes até reconectar.
+      setSaving(false)
+      showToast('📴 Sem sinal — mostrando com os dados salvos no aparelho')
+      setModalOpen(true)
+      return
+    }
+    try {
       const [obsUrls,mapaUrl]=await Promise.all([uploadFotos(rel.id),uploadFotoMapa(rel.id)])
       if(obsUrls.some(Boolean)||mapaUrl) await supabase.from('relatorios').update({obs_fotos_urls:obsUrls,foto_mapa_url:mapaUrl}).eq('id',rel.id)
-      // Abre modal de relatório
-      setSaving(false)
-      setModalOpen(true)
-    } catch(e) {
-      console.error(e)
-      setSaving(false)
-      showToast('Erro: ' + e.message, 'error')
-    }
+    } catch(e) { console.error(e) }
+    setSaving(false)
+    setModalOpen(true)
   }
 
   async function uploadFotos(rid) {
@@ -1251,14 +1264,14 @@ export default function PilotApp({onSwitchMode}) {
     else signOut()
   }
 
-  function limpar(){
+  function limpar(silent=false){
     try{localStorage.removeItem(LS_KEY)}catch{}
     setForm(initForm());setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
     setObsFotos([null,null,null]);setObsFotoFiles([null,null,null])
     setFotoMapa(null);setFotoMapaFile(null)
     setStorageFotoMapa(null);setStorageObsFotos([null,null,null])
     setKmlFiles([])
-    showToast('🗑️ Formulário limpo')
+    if(!silent) showToast('🗑️ Formulário limpo')
   }
 
   const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',paused_day:'🌙 Finalizado Parcial',finished:'🔴 Finalizado'}[opState]
@@ -1298,8 +1311,8 @@ export default function PilotApp({onSwitchMode}) {
     fl:{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"},
     fi:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"},
     fs:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'},
-    btnBar:{padding:'12px 18px 24px',background:'#fff',borderTop:'1px solid #f0f0f0',boxSizing:'border-box'},
-    btnG:{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:'16px',fontSize:15,fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 6px 18px rgba(14,159,110,0.35)'},
+    btnBar:{padding:'10px 18px 20px',background:'#fff',borderTop:'1px solid #f0f0f0',boxSizing:'border-box'},
+    btnG:{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:'11px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 6px 18px rgba(14,159,110,0.35)'},
     timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
     statusBadge:(st)=>({display:'inline-flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:600,background:st==='running'?'#e3f7ec':st==='paused'?'#fff3e0':'#f5f5f5',color:st==='running'?'#0e9f6e':st==='paused'?'#f2960f':'#888'}),
   }
@@ -1377,12 +1390,9 @@ export default function PilotApp({onSwitchMode}) {
     const draftAtivo = opState!=='idle' && opState!=='finished'
     const hoje = new Date()
     const mesmoDia = d => d && new Date(d).toDateString()===hoje.toDateString()
-    const mesmoMes = d => d && new Date(d).getMonth()===hoje.getMonth() && new Date(d).getFullYear()===hoje.getFullYear()
     const finalizados = flights.filter(r=>r.status==='finalizado')
     const voosHoje = finalizados.filter(r=>mesmoDia(r.dt_inicio||r.created_at))
     const areaHoje = voosHoje.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
-    const finalizadosMes = finalizados.filter(r=>mesmoMes(r.dt_inicio||r.created_at))
-    const clientesMes = new Set(finalizadosMes.map(r=>r.cliente).filter(Boolean)).size
     const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
     const iniciais = (profile?.nome||'P').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
     const minutosHoje = voosHoje.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
@@ -1462,12 +1472,11 @@ export default function PilotApp({onSwitchMode}) {
           </button>
 
           {/* Estatísticas do dia */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
             {[
               [IconDrone,'#0e9f6e',voosHoje.length,'Voos'],
               [Clock,'#2f6fed',horasHoje.toFixed(1)+'h','Horas de Voo'],
               [Map,'#f2960f',areaHoje.toFixed(0)+' ha','Área Pulverizada'],
-              [Users,'#8e44ad',clientesMes,'Clientes'],
             ].map(([Icon,color,value,label])=>(
               <div key={label} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px 6px',textAlign:'center',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                 <Icon size={26} color={color} style={{marginBottom:8}}/>
@@ -2364,16 +2373,40 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageTitle}>Ação</div>
             <div style={sw.pageSub}>Passo 4 de 5: Controle do voo</div>
 
-            {/* Resumo */}
-            <div style={{background:'#0e9f6e',borderRadius:14,padding:'12px 16px',color:'#fff',marginBottom:16}}>
-              <div style={{fontSize:12,opacity:.8,marginBottom:2}}>{form.cultura&&`${form.cultura} · `}{clienteVal} · {form.fazenda}</div>
-              <div style={{fontSize:13,fontWeight:600}}>{form.talhao&&`Talhão: ${form.talhao} · `}{form.area_ha&&`${form.area_ha} ha`}</div>
+            {/* Botões — Iniciar, Pausar, Finalizar (compactos, no topo) */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:10}}>
+              <button style={{background:'#e3f7ec',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
+                disabled={opState!=='idle'||saving}
+                onClick={()=>{
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
+                  setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
+                  setChecklistOpen(true)
+                }}>
+                <span style={{fontSize:18}}>▶️</span>
+                <span style={{fontSize:11,fontWeight:700,color:'#0e9f6e'}}>Iniciar</span>
+              </button>
+              <button style={{background:'#fff3e0',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
+                <span style={{fontSize:18}}>{opState==='paused'?'▶️':'⏸️'}</span>
+                <span style={{fontSize:11,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
+              </button>
+              <button style={{background:'#fdeaea',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                disabled={opState!=='running'&&opState!=='paused'}
+                onClick={()=>{
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                  opFinalizar()
+                  setWizardStep(3)
+                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+                }}>
+                <span style={{fontSize:18}}>⏹️</span>
+                <span style={{fontSize:11,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
+              </button>
             </div>
 
-            <FI label="QTDE DE VOOS (BATERIAS)" ph="Ex: 3" val={form.qtd_voos} onChange={e=>setForm(f=>({...f,qtd_voos:e.target.value}))} type="number"/>
-
             {/* Status */}
-            <div style={{display:'flex',justifyContent:'center',marginBottom:16}}>
+            <div style={{display:'flex',justifyContent:'center',marginBottom:14}}>
               <span style={sw.statusBadge(opState)}>
                 <span style={{width:7,height:7,borderRadius:'50%',background:opState==='running'?'#0e9f6e':opState==='paused'?'#f2960f':'#aaa',display:'inline-block',marginRight:6}}/>
                 {opLabel}
@@ -2402,36 +2435,45 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
 
-            {/* Botões — Iniciar, Pausar, Finalizar */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-              <button style={{background:'#e3f7ec',border:'none',borderRadius:20,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
-                disabled={opState!=='idle'||saving}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
-                  setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
-                  setChecklistOpen(true)
-                }}>
-                <span style={{fontSize:26}}>▶️</span>
-                <span style={{fontSize:12,fontWeight:700,color:'#0e9f6e'}}>Iniciar</span>
-              </button>
-              <button style={{background:'#fff3e0',border:'none',borderRadius:20,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
-                <span style={{fontSize:26}}>{opState==='paused'?'▶️':'⏸️'}</span>
-                <span style={{fontSize:12,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
-              </button>
-              <button style={{background:'#fdeaea',border:'none',borderRadius:20,padding:'16px 6px',display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                disabled={opState!=='running'&&opState!=='paused'}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                  opFinalizar()
-                  setWizardStep(3)
-                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
-                }}>
-                <span style={{fontSize:26}}>⏹️</span>
-                <span style={{fontSize:12,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
-              </button>
+            {/* Resumo da Operação — 4 quadrantes */}
+            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>RESUMO DA OPERAÇÃO</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+              <div style={{gridColumn:'1 / -1',background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',display:'flex',alignItems:'center',gap:12}}>
+                <span style={{width:36,height:36,borderRadius:10,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>🌱</span>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:'#0b1210',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{form.cultura&&`${form.cultura} – `}{clienteVal} – {form.fazenda}</div>
+                  <div style={{fontSize:11,color:'#7ba38f',marginTop:1}}>{form.talhao&&`Talhão ${form.talhao} · `}{form.area_ha&&`${form.area_ha} ha`}</div>
+                </div>
+              </div>
+              <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                  <span style={{width:28,height:28,borderRadius:8,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>🔋</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>QTDE DE VOOS<br/>(BATERIAS)</span>
+                </div>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                  <button type="button" style={{width:28,height:28,borderRadius:8,border:'1px solid #dcebe3',background:'#f7fbf8',color:'#0e9f6e',fontSize:16,fontWeight:700,cursor:'pointer',lineHeight:1}}
+                    onClick={()=>setForm(f=>({...f,qtd_voos:Math.max(1,(parseInt(f.qtd_voos)||1)-1)}))}>−</button>
+                  <span style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{form.qtd_voos||1}</span>
+                  <button type="button" style={{width:28,height:28,borderRadius:8,border:'1px solid #dcebe3',background:'#f7fbf8',color:'#0e9f6e',fontSize:16,fontWeight:700,cursor:'pointer',lineHeight:1}}
+                    onClick={()=>setForm(f=>({...f,qtd_voos:(parseInt(f.qtd_voos)||1)+1}))}>+</button>
+                </div>
+              </div>
+              <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                  <span style={{width:28,height:28,borderRadius:8,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>📅</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>INÍCIO</span>
+                </div>
+                <div style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{form.dt_inicio_data?form.dt_inicio_data.split('-').reverse().join('/'):'—'}</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>{form.dt_inicio_hh?`${form.dt_inicio_hh}:${form.dt_inicio_mm}`:'--:--'}</div>
+              </div>
+              <div style={{gridColumn:'2 / 3',background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                  <span style={{width:28,height:28,borderRadius:8,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>📅</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>FIM</span>
+                </div>
+                <div style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{form.dt_fim_data?form.dt_fim_data.split('-').reverse().join('/'):'dd/mm/aaaa'}</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>{form.dt_fim_hh?`${form.dt_fim_hh}:${form.dt_fim_mm}`:'--:--'}</div>
+              </div>
             </div>
 
             {/* Horários editáveis — preenchidos pelo sistema, ajustáveis */}
@@ -2592,6 +2634,7 @@ export default function PilotApp({onSwitchMode}) {
                 Com mais de um talhão selecionado, permite uma bordadura por talhão. */}
             {(()=>{
               const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+              const bordaduraTravada = opState==='paused_day'
               if (talhoesSel.length > 1) {
                 const total = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
                 return (
@@ -2600,26 +2643,28 @@ export default function PilotApp({onSwitchMode}) {
                     {talhoesSel.map(nome=>(
                       <div key={nome} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                         <span style={{fontSize:13,color:'#0b1210',flex:1}}>{nome}</span>
-                        <input type="number" style={{...sw.fi,width:90}} placeholder="0" value={form.bordaduraPorTalhao?.[nome]||''}
+                        <input type="number" style={{...sw.fi,width:90,...(bordaduraTravada?{opacity:.6,background:'#f1f8f4'}:{})}} placeholder="0" value={form.bordaduraPorTalhao?.[nome]||''} disabled={bordaduraTravada}
                           onChange={e=>setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:e.target.value}}))}/>
                       </div>
                     ))}
                     {total>0&&form.area_ha&&(
-                      <div style={{fontSize:12,color:'#0e9f6e',fontWeight:600,marginTop:4,marginBottom:14}}>
+                      <div style={{fontSize:12,color:'#0e9f6e',fontWeight:600,marginTop:4,marginBottom:4}}>
                         Bordadura total: {total} ha · Área aplicada: {Math.max(0,parseFloat(form.area_ha)-total).toFixed(2)} ha
                       </div>
                     )}
+                    {bordaduraTravada&&<div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>🔒 Trava após Finalizado Parcial, pra não bagunçar o progresso já registrado</div>}
                   </div>
                 )
               }
               return (
                 <>
-                  <FI label="BORDADURA (Ha)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
+                  <FI label="BORDADURA (Ha)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number" disabled={bordaduraTravada}/>
                   {form.bordadura&&form.area_ha&&(
-                    <div style={{fontSize:12,color:'#0e9f6e',fontWeight:600,marginTop:-8,marginBottom:14}}>
+                    <div style={{fontSize:12,color:'#0e9f6e',fontWeight:600,marginTop:-8,marginBottom:bordaduraTravada?4:14}}>
                       Área aplicada (descontando bordadura): {areaLiquidaAtual(form)} ha
                     </div>
                   )}
+                  {bordaduraTravada&&<div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>🔒 Trava após Finalizado Parcial, pra não bagunçar o progresso já registrado</div>}
                 </>
               )
             })()}
@@ -2661,14 +2706,6 @@ export default function PilotApp({onSwitchMode}) {
                 </div>
               )
             })()}
-
-            {/* Botão Iniciar Novo Voo — sempre visível */}
-            <button style={{...sw.btnG,background:'#f1f8f4',color:'#0e9f6e',border:'1.5px solid #0e9f6e',marginBottom:10,width:'100%'}} onClick={()=>{
-              const aviso = pendingSync
-                ? '⚠️ Este voo ainda NÃO foi sincronizado (sem sinal)! Se iniciar um novo agora, esse relatório será perdido. Tem certeza?'
-                : 'Iniciar novo voo? O voo atual será encerrado.'
-              if(window.confirm(aviso)) limpar()
-            }}>✈️ Iniciar Novo Voo</button>
 
             {/* E-mail sugerido */}
             {opState==='finished'&&(
@@ -2796,8 +2833,17 @@ export default function PilotApp({onSwitchMode}) {
             <button style={{...s.shareBtn,background:'#1a1a2e'}} onClick={async()=>{
               setParcialModalOpen(false)
               setOpState('paused_day')
-              await saveToSupabase({status:'pausado_dia'})
-              showToast('🌙 Finalizado Parcial. Pode fechar o app!')
+              // Desconta do estoque só o incremento desde a última baixa (parcial ou início) —
+              // ex: já tinha baixado 20ha, agora tá em 32ha → desconta só os 12ha novos.
+              const jaDeduzido = parseFloat(form.area_deduzida)||0
+              const deltaBaixa = Math.max(0, feita-jaDeduzido)
+              const relSalvo = await saveToSupabase({status:'pausado_dia',area_deduzida:feita})
+              if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
+              // Já está salvo no servidor — libera o piloto pra iniciar outro voo agora mesmo.
+              // Esse voo parcial continua disponível em "Meus Relatórios" pra retomar depois.
+              limpar(true)
+              setView('home')
+              showToast('🌙 Finalizado Parcial salvo! Pode iniciar outro voo — esse continua em "Meus Relatórios"')
             }}>🌙 Confirmar Finalizado Parcial</button>
           </div>
         </div>
