@@ -7,7 +7,7 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
-import { Clock, Map, Users } from 'lucide-react'
+import { Clock, Map, Users, FileBarChart2, CalendarDays, Receipt, CloudSun } from 'lucide-react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -1385,30 +1385,8 @@ export default function PilotApp({onSwitchMode}) {
     const clientesMes = new Set(finalizadosMes.map(r=>r.cliente).filter(Boolean)).size
     const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
     const iniciais = (profile?.nome||'P').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
-    const minutosTotais = finalizados.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
-    const horasTotais = minutosTotais/60
     const minutosHoje = voosHoje.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
     const horasHoje = minutosHoje/60
-    const droneAlertas = dronesDB.map(d=>{
-      const minutos = voosFrotaDrone.filter(r=>r.drone===d.nome && r.dt_inicio && r.dt_fim).reduce((a,r)=>a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)),0)
-      const horas = minutos/60
-      const limite = d.horas_limite||100
-      const pct = limite>0 ? Math.min(100,(horas/limite)*100) : 0
-      return {tipo:'drone', nome:d.nome, horas, limite, pct}
-    }).filter(d=>d.pct>=70).sort((a,b)=>b.pct-a.pct)
-    const carroAlertas = veiculosDB.filter(v=>{
-      const alertaKm = v.proxima_manutencao_km && v.km_atual >= (v.proxima_manutencao_km - 500)
-      const alertaData = v.proxima_manutencao_data && new Date(v.proxima_manutencao_data) <= new Date(Date.now()+7*86400000)
-      return alertaKm || alertaData
-    }).map(v=>{
-      const diasRestantes = v.proxima_manutencao_data ? Math.ceil((new Date(v.proxima_manutencao_data)-Date.now())/86400000) : null
-      const pctKm = v.proxima_manutencao_km ? (v.km_atual/v.proxima_manutencao_km)*100 : null
-      const pctData = diasRestantes!==null ? 100-(diasRestantes/30)*100 : null
-      const pct = Math.min(100,Math.max(0, pctKm ?? pctData ?? 0))
-      return {tipo:'carro', nome:v.placa, km_atual:v.km_atual, proxima_km:v.proxima_manutencao_km, proxima_data:v.proxima_manutencao_data, pct}
-    })
-    const alertasManutencao = [...droneAlertas, ...carroAlertas]
-    const piorAlerta = alertasManutencao[0]
     const horaAtual = hoje.getHours()
     const saudacao = horaAtual<12 ? 'Bom dia' : horaAtual<18 ? 'Boa tarde' : 'Boa noite'
     const condDia = tempoDias?.[0]
@@ -1439,59 +1417,6 @@ export default function PilotApp({onSwitchMode}) {
         </div>
 
         <div style={{padding:'14px 16px 100px',flex:1,display:'flex',flexDirection:'column',gap:14}}>
-          {/* Mapa de Operações (ponto do GPS + raio de 10km) + Horas Totais / Manutenção Próxima */}
-          <div style={{display:'grid',gridTemplateColumns:'1.1fr 1fr',gap:10}}>
-            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🗺️ Mapa de Operações</div>
-              <div style={{position:'relative',height:88,borderRadius:12,overflow:'hidden',background:'linear-gradient(135deg,#dfeee4,#c9ddd0)'}}>
-                {gpsPos ? (
-                  <>
-                    <svg width="100%" height="100%" viewBox="0 0 200 88" style={{position:'absolute',inset:0}} preserveAspectRatio="none">
-                      <defs>
-                        <radialGradient id="gpsGlow" cx="50%" cy="50%" r="50%">
-                          <stop offset="0%" stopColor="rgba(14,159,110,0.30)"/>
-                          <stop offset="100%" stopColor="rgba(14,159,110,0)"/>
-                        </radialGradient>
-                      </defs>
-                      <line x1="0" y1="22" x2="200" y2="14" stroke="#b7cfc0" strokeWidth="1.3"/>
-                      <line x1="0" y1="62" x2="200" y2="70" stroke="#b7cfc0" strokeWidth="1.3"/>
-                      <line x1="34" y1="0" x2="14" y2="88" stroke="#c7dccf" strokeWidth="1"/>
-                      <line x1="168" y1="0" x2="188" y2="88" stroke="#c7dccf" strokeWidth="1"/>
-                      <circle cx="100" cy="44" r="40" fill="url(#gpsGlow)"/>
-                      <circle cx="100" cy="44" r="40" fill="none" stroke="#0e9f6e" strokeWidth="1.3" strokeDasharray="3 3" opacity="0.7"/>
-                      <circle cx="100" cy="44" r="5" fill="#0e9f6e" stroke="#fff" strokeWidth="2"/>
-                    </svg>
-                    <div style={{position:'absolute',bottom:4,left:6,fontSize:8,fontWeight:700,color:'#4c6657',background:'rgba(255,255,255,0.75)',borderRadius:6,padding:'1px 5px'}}>raio 10 km</div>
-                    <div style={{position:'absolute',top:4,right:4,display:'flex',flexDirection:'column',gap:2}}>
-                      <span style={{width:16,height:16,borderRadius:4,background:'rgba(255,255,255,0.85)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'#5c7568',lineHeight:1}}>+</span>
-                      <span style={{width:16,height:16,borderRadius:4,background:'rgba(255,255,255,0.85)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'#5c7568',lineHeight:1}}>−</span>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,color:'#5c7568',fontWeight:600,textAlign:'center',padding:8}}>📍 Aguardando GPS...</div>
-                )}
-              </div>
-            </div>
-            <div style={{display:'flex',flexDirection:'column',gap:10}}>
-              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
-                <div style={{fontSize:9,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>HORAS DE VOO TOTAIS</div>
-                <div style={{fontSize:20,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{horasTotais.toFixed(1)}</div>
-              </div>
-              {piorAlerta ? (
-                <div onClick={()=>setView('home')} style={{background:'#fff3e0',borderRadius:20,border:'1px solid #f2c98a',padding:'10px 12px',flex:1,display:'flex',alignItems:'center',gap:10}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:9,fontWeight:700,color:'#7a5200',letterSpacing:.3}}>🔧 MANUTENÇÃO</div>
-                    <div style={{fontSize:12,fontWeight:700,color:'#0b1210',marginTop:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{piorAlerta.tipo==='drone'?'🚁':'🚗'} {piorAlerta.nome}</div>
-                    {alertasManutencao.length>1 && <div style={{fontSize:9,color:'#7a5200',marginTop:1,opacity:.8}}>+{alertasManutencao.length-1} outro(s)</div>}
-                  </div>
-                  <CircularGauge pct={piorAlerta.pct} size={40}/>
-                </div>
-              ) : (
-                <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,flex:1,display:'flex',alignItems:'center',justifyContent:'center',color:'#7ba38f',fontSize:11,fontWeight:600}}>✅ Frota em dia</div>
-              )}
-            </div>
-          </div>
-
           {/* Voo em andamento */}
           {draftAtivo && (opState==='paused_day' ? (()=>{
             const {total,feita,pct} = progressoParcial(form)
@@ -1552,91 +1477,51 @@ export default function PilotApp({onSwitchMode}) {
             ))}
           </div>
 
-          {/* Meus relatórios */}
-          <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-            onClick={()=>{loadFlights();setView('flights')}}>
-            <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:'#eef5f0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>📋</span>
-            <div>
-              <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
-              <div style={{fontSize:12,color:'#7ba38f'}}>Ver histórico de voos</div>
-            </div>
-            <span style={{marginLeft:'auto',fontSize:18,color:'#7ba38f'}}>›</span>
-          </button>
+          {/* Menu — grid 2x2 */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+              onClick={()=>{loadFlights();setView('flights')}}>
+              <span style={{width:44,height:44,borderRadius:14,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><FileBarChart2 size={20} color="#0e9f6e"/></span>
+              <div>
+                <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>Ver histórico</div>
+              </div>
+            </button>
 
-          {/* Agenda de voos programados — com prévia dos próximos itens */}
-          {(()=>{
-            const pendentes = minhaAgenda.filter(a=>a.status==='pendente')
-            const preview = pendentes.slice(0,2)
-            return (
-              <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
-                <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadAgenda();setView('agenda')}}>
-                  <span style={{fontSize:22,width:48,height:48,borderRadius:14,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,position:'relative'}}>
-                    📅
+            {(()=>{
+              const pendentes = minhaAgenda.filter(a=>a.status==='pendente')
+              return (
+                <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+                  onClick={()=>{loadAgenda();setView('agenda')}}>
+                  <span style={{width:44,height:44,borderRadius:14,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,position:'relative'}}>
+                    <CalendarDays size={20} color="#2f6fed"/>
                     {pendentes.length>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,borderRadius:20,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{pendentes.length}</span>}
                   </span>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Minha Agenda</div>
-                    <div style={{fontSize:12,color:'#7ba38f'}}>{pendentes.length>0?`${pendentes.length} voo(s) programado(s)`:'Nenhum voo programado'}</div>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Minha Agenda</div>
+                    <div style={{fontSize:11,color:'#7ba38f'}}>{pendentes.length>0?`${pendentes.length} programado(s)`:'Nenhum voo'}</div>
                   </div>
-                  <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
-                </div>
-                {preview.length>0 && (
-                  <div style={{borderTop:'1px solid #eef5f0'}}>
-                    {preview.map(a=>(
-                      <div key={a.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadAgenda();setView('agenda')}}>
-                        <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{a.cliente} — {a.fazenda}</div>
-                        <div style={{fontSize:11,color:'#7ba38f',flexShrink:0,marginLeft:8}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })()}
+                </button>
+              )
+            })()}
 
-          {/* Notas de despesa — com prévia das últimas lançadas */}
-          <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
-            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
-              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🧾</span>
-              <div style={{flex:1}}>
+            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+              onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
+              <span style={{width:44,height:44,borderRadius:14,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Receipt size={20} color="#f2960f"/></span>
+              <div>
                 <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>Almoço, gasolina, hotel...</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>Almoço, gasolina...</div>
               </div>
-              <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
-            </div>
-            {minhasNotas.length>0 && (
-              <div style={{borderTop:'1px solid #eef5f0'}}>
-                {minhasNotas.slice(0,2).map(n=>(
-                  <div key={n.id} style={{padding:'10px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #f6faf7',cursor:'pointer'}} onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
-                    <div style={{fontSize:12,color:'#0b1210',fontWeight:500}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
-                    <div style={{fontSize:12,color:'#0e9f6e',fontWeight:700,flexShrink:0,marginLeft:8}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            </button>
 
-          {/* Previsão do tempo — prévia se já consultada nesta sessão */}
-          <div style={{background:'#fff',borderRadius:24,border:'1px solid #dcebe3',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',overflow:'hidden'}}>
-            <div style={{padding:'16px 18px',display:'flex',alignItems:'center',gap:14,cursor:'pointer'}} onClick={()=>setView('tempo')}>
-              <span style={{fontSize:20,width:40,height:40,borderRadius:12,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>🌤️</span>
-              <div style={{flex:1}}>
+            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+              onClick={()=>setView('tempo')}>
+              <span style={{width:44,height:44,borderRadius:14,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><CloudSun size={20} color="#8e44ad"/></span>
+              <div>
                 <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Previsão do Tempo</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>{tempoDias?`📍 ${tempoLocal}`:'Chuva e Delta T dos próximos dias'}</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>{tempoDias?`${Math.round(tempoDias[0].tempMax)}°C hoje`:'Chuva e Delta T'}</div>
               </div>
-              <span style={{fontSize:18,color:'#7ba38f'}}>›</span>
-            </div>
-            {tempoDias && (
-              <div style={{borderTop:'1px solid #eef5f0',display:'flex'}}>
-                {tempoDias.slice(0,3).map((d,i)=>(
-                  <div key={d.data} style={{flex:1,padding:'10px 8px',textAlign:'center',borderRight:i<2?'1px solid #f6faf7':'none',cursor:'pointer'}} onClick={()=>setView('tempo')}>
-                    <div style={{fontSize:10,color:'#7ba38f',fontWeight:600,textTransform:'capitalize'}}>{i===0?'Hoje':new Date(d.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short'})}</div>
-                    <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginTop:2}}>{Math.round(d.tempMax)}°</div>
-                    <div style={{fontSize:10,color:d.chuvaProb>=50?'#2f6fed':'#7ba38f',marginTop:2}}>☔ {Math.round(d.chuvaProb)}%</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            </button>
           </div>
 
           {/* Voos compartilhados pendentes */}
