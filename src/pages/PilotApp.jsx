@@ -7,6 +7,7 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
+import { Clock, Map, Users } from 'lucide-react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -16,6 +17,18 @@ const IconRota = ({size=22}) => (
     <circle cx="13" cy="12.5" r="1" fill="currentColor" opacity="0.55"/>
     <path d="M18.5 14.5c0 3.6-4 6.5-4 6.5s-4-2.9-4-6.5a4 4 0 1 1 8 0z" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinejoin="round"/>
     <circle cx="14.5" cy="14.5" r="1.4" fill="currentColor"/>
+  </svg>
+)
+
+// Ícone de drone (traço, no mesmo estilo do lucide-react) — não existe pronto na lib
+const IconDrone = ({size=24,color='currentColor'}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="2.5"/>
+    <path d="M9.5 9.5 5 5M14.5 9.5 19 5M9.5 14.5 5 19M14.5 14.5 19 19"/>
+    <circle cx="4.5" cy="4.5" r="2"/>
+    <circle cx="19.5" cy="4.5" r="2"/>
+    <circle cx="4.5" cy="19.5" r="2"/>
+    <circle cx="19.5" cy="19.5" r="2"/>
   </svg>
 )
 
@@ -1526,15 +1539,15 @@ export default function PilotApp({onSwitchMode}) {
           {/* Estatísticas do dia */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
             {[
-              ['🚁',voosHoje.length,'Voos'],
-              ['🕐',horasHoje.toFixed(1)+'h','Horas de Voo'],
-              ['🗺️',areaHoje.toFixed(0)+' ha','Área Pulverizada'],
-              ['👥',clientesMes,'Clientes'],
-            ].map(([icon,value,label])=>(
-              <div key={label} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',padding:'14px 6px',textAlign:'center',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                <div style={{fontSize:20,marginBottom:6}}>{icon}</div>
-                <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{value}</div>
-                <div style={{fontSize:10,color:'#7ba38f',marginTop:2}}>{label}</div>
+              [IconDrone,'#0e9f6e',voosHoje.length,'Voos'],
+              [Clock,'#2f6fed',horasHoje.toFixed(1)+'h','Horas de Voo'],
+              [Map,'#f2960f',areaHoje.toFixed(0)+' ha','Área Pulverizada'],
+              [Users,'#8e44ad',clientesMes,'Clientes'],
+            ].map(([Icon,color,value,label])=>(
+              <div key={label} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px 6px',textAlign:'center',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                <Icon size={26} color={color} style={{marginBottom:8}}/>
+                <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{value}</div>
+                <div style={{fontSize:11,color:'#7ba38f',marginTop:3}}>{label}</div>
               </div>
             ))}
           </div>
