@@ -1409,36 +1409,36 @@ export default function PilotApp({onSwitchMode}) {
     })
     const alertasManutencao = [...droneAlertas, ...carroAlertas]
     const piorAlerta = alertasManutencao[0]
+    const horaAtual = hoje.getHours()
+    const saudacao = horaAtual<12 ? 'Bom dia' : horaAtual<18 ? 'Boa tarde' : 'Boa noite'
+    const condDia = tempoDias?.[0]
+    const condicoesOk = condDia ? (condDia.deltaTClass?.status==='apta' && condDia.chuvaProb<50) : null
     return (
       <div style={s.wrap}>
-        <div style={{background:'linear-gradient(135deg,#0e9f6e 0%,#0a6e4f 65%,#0b3d26 100%)',position:'relative',paddingBottom:34,overflow:'hidden'}}>
-          <div style={{position:'absolute',top:-60,right:-40,width:180,height:180,borderRadius:'50%',background:'rgba(255,255,255,0.08)'}}/>
-          <div style={{position:'absolute',bottom:10,left:-30,width:110,height:110,borderRadius:'50%',background:'rgba(255,176,32,0.15)'}}/>
-          <div style={{position:'relative',padding:'calc(env(safe-area-inset-top,0px) + 18px) 18px 0'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={{color:'#ffb020'}}>.</span></span></div>
-              <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                {onSwitchMode&&<button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={onSwitchMode}>⚙️</button>}
-                <button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={()=>setShowPerfil(true)}>⚙️ Perfil</button>
-                <button style={{background:'rgba(255,255,255,0.16)',border:'none',color:'#fff',borderRadius:20,padding:'6px 10px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
-              </div>
+        <div style={{background:'#fff',borderBottom:'1px solid #eef5f0',padding:'calc(env(safe-area-inset-top,0px) + 16px) 18px 20px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0e9f6e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              <span style={{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#0b1210'}}>Orofly<span style={{color:'#0e9f6e'}}>.</span></span>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:12,marginTop:20}}>
-              <div onClick={()=>setShowPerfil(true)} style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,255,255,0.18)',border:'2px solid rgba(255,255,255,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,color:'#fff',fontSize:16,flexShrink:0,cursor:'pointer',overflow:'hidden'}}>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              {onSwitchMode&&<button style={{background:'#f1f8f4',border:'none',color:'#5c7568',borderRadius:20,padding:'6px 9px',fontSize:12,cursor:'pointer'}} onClick={onSwitchMode}>⚙️</button>}
+              <button style={{background:'#f1f8f4',border:'none',color:'#5c7568',borderRadius:20,padding:'6px 9px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
+              <div onClick={()=>setShowPerfil(true)} style={{width:44,height:44,borderRadius:'50%',background:'#e3f7ec',border:'2px solid #0e9f6e',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,color:'#0e9f6e',fontSize:15,flexShrink:0,cursor:'pointer',overflow:'hidden'}}>
                 {avatarUrl?<img src={avatarUrl} alt="avatar" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:iniciais}
-              </div>
-              <div>
-                <div style={{fontSize:12,color:'rgba(255,255,255,0.75)'}}>Bem-vindo de volta</div>
-                <div style={{fontSize:19,fontWeight:700,color:'#fff',fontFamily:"'Syne',sans-serif"}}>{primeiroNome} 👋</div>
               </div>
             </div>
           </div>
-          <svg viewBox="0 0 400 40" preserveAspectRatio="none" style={{position:'absolute',bottom:-1,left:0,width:'100%',height:34,display:'block'}}>
-            <path d="M0,40 C100,0 300,0 400,40 Z" fill="#f1f8f4"/>
-          </svg>
+          <div style={{marginTop:22}}>
+            <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{saudacao}, {primeiroNome}</div>
+            <div style={{fontSize:14,color:'#7ba38f',marginTop:4,display:'flex',alignItems:'center',gap:6}}>
+              Hoje: {voosHoje.length} voos · {areaHoje.toFixed(areaHoje<10?1:0)} ha
+              {condicoesOk!==null && <>· Condições {condicoesOk?'✅':'⚠️'}</>}
+            </div>
+          </div>
         </div>
 
-        <div style={{padding:'6px 16px 100px',flex:1,display:'flex',flexDirection:'column',gap:14,marginTop:-6}}>
+        <div style={{padding:'14px 16px 100px',flex:1,display:'flex',flexDirection:'column',gap:14}}>
           {/* Mapa de Operações (ponto do GPS + raio de 10km) + Horas Totais / Manutenção Próxima */}
           <div style={{display:'grid',gridTemplateColumns:'1.1fr 1fr',gap:10}}>
             <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
