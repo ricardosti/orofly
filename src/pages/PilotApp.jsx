@@ -1420,8 +1420,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{marginTop:22}}>
             <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{saudacao}, {primeiroNome}</div>
             <div style={{fontSize:14,color:'#7ba38f',marginTop:4,display:'flex',alignItems:'center',gap:6}}>
-              Hoje: {voosHoje.length} voos · {areaHoje.toFixed(areaHoje<10?1:0)} ha
-              {condicoesOk!==null && <>· Condições {condicoesOk?'✅':'⚠️'}</>}
+              Hoje: {voosHoje.length} voos · {areaHoje.toFixed(areaHoje<10?1:0)} ha{condicoesOk!==null && <> · Condições {condicoesOk?'✅':'⚠️'}</>}
             </div>
           </div>
         </div>
