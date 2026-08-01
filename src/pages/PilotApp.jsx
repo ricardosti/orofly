@@ -1371,14 +1371,15 @@ export default function PilotApp({onSwitchMode}) {
         <span style={{fontSize:20}}>🏠</span>
         <span style={{fontSize:10,fontWeight:700}}>Início</span>
       </div>
-      <div onClick={()=>{
-          const ativo = opState!=='idle' && opState!=='finished'
-          if(ativo){ setView('form'); return }
-          limpar(); setView('form')
-        }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:'pointer',marginTop:-26}}>
-        <span style={{width:52,height:52,borderRadius:'50%',background:'linear-gradient(135deg,#0e9f6e,#22c476)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:'0 8px 20px rgba(14,159,110,0.45)',border:'4px solid #fff'}}><IconRota size={22}/></span>
-        <span style={{fontSize:10,fontWeight:700,color:'#0e9f6e'}}>Novo Voo</span>
-      </div>
+      {(()=>{
+        const temVooAberto = opState!=='idle' && opState!=='finished'
+        return (
+          <div onClick={()=>{ if(temVooAberto) setView('form') }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:temVooAberto?'pointer':'default',marginTop:-26}}>
+            <span style={{width:52,height:52,borderRadius:'50%',background:temVooAberto?'linear-gradient(135deg,#0e9f6e,#22c476)':'#c3d4c9',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:temVooAberto?'0 8px 20px rgba(14,159,110,0.45)':'none',border:'4px solid #fff'}}><IconRota size={22}/></span>
+            <span style={{fontSize:10,fontWeight:700,color:temVooAberto?'#0e9f6e':'#a9beb1'}}>Continuar voo</span>
+          </div>
+        )
+      })()}
       <div onClick={()=>{loadFlights();setView('flights')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='flights'?'#0e9f6e':'#a9beb1',minWidth:52}}>
         <span style={{fontSize:20}}>📋</span>
         <span style={{fontSize:10,fontWeight:700}}>Relatórios</span>
