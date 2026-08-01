@@ -76,6 +76,7 @@ function initForm(data) {
       pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',bordadura:data.bordadura||'',
       bordaduraPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       evid_meta:data.evidencia_meta||{},
+      area_feita:data.area_feita!=null?String(data.area_feita):'',
     }
   }
   return {
@@ -86,6 +87,7 @@ function initForm(data) {
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
     pausas:[],obs1:'',obs2:'',bordadura:'',bordaduraPorTalhao:{},evid_meta:{},
+    area_feita:'',
   }
 }
 
@@ -106,6 +108,13 @@ function bordaduraAtual(form) {
 }
 function areaLiquidaAtual(form) {
   return Math.max(0, +(((parseFloat(form.area_ha)||0)-bordaduraAtual(form))).toFixed(2))
+}
+// Progresso do Finalizado Parcial: quanto já foi feito (líquido) vs a meta líquida (área total menos bordadura)
+function progressoParcial(form) {
+  const total = areaLiquidaAtual(form)
+  const feita = Math.max(0, parseFloat(form.area_feita)||0)
+  const pct = total>0 ? Math.min(100, Math.round((feita/total)*100)) : 0
+  return {total, feita, pct}
 }
 
 function nowParts() {
@@ -394,6 +403,7 @@ export default function PilotApp({onSwitchMode}) {
     : CLIENTES_DEFAULT
   const [sosConfirm,setSosConfirm] = useState(false)
   const [modalOpen,setModalOpen] = useState(false)
+  const [parcialModalOpen,setParcialModalOpen] = useState(false)
   const [exitConfirm,setExitConfirm] = useState(false)
   const [finalizeConfirm,setFinalizeConfirm] = useState(false)
   const [obsFotos,setObsFotos] = useState([null,null,null])
@@ -645,7 +655,7 @@ export default function PilotApp({onSwitchMode}) {
   // (window.open/Web Share sozinhos não são confiáveis dentro do WebView).
   async function compartilharWhatsApp(){
     const formComPiloto = {...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||''}
-    const texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade)
+    const texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade,opState==='paused_day')
     let file = fotoMapaFile
     console.log('[compartilharWhatsApp] fotoMapaFile=',!!fotoMapaFile,'storageFotoMapa=',storageFotoMapa)
     if (!file && storageFotoMapa) {
@@ -716,6 +726,7 @@ export default function PilotApp({onSwitchMode}) {
       piloto_id:profile.id,
       cultura:form.cultura||null,
       cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,qtd_voos:parseInt(form.qtd_voos)||1,tipo_servico:form.tipo_servico||null,
+      area_feita:form.area_feita?parseFloat(form.area_feita):null,
       piloto_nome:profile.nome||profile.email,
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
@@ -990,7 +1001,7 @@ export default function PilotApp({onSwitchMode}) {
       if(!rel){
         // Ainda não sincronizou com o servidor (ficou sem sinal na hora de salvar) — tenta agora
         // em vez de só falhar; se der certo, segue o fluxo normalmente.
-        rel = await saveToSupabase({status:'finalizado'},false)
+        rel = await saveToSupabase({status:statusAtual()},false)
         if(!rel){ setSaving(false); showToast('📴 Ainda sem sinal — o voo está salvo no aparelho, tente gerar o relatório de novo quando reconectar','error'); return }
       }
       // Upload fotos
@@ -2514,27 +2525,41 @@ export default function PilotApp({onSwitchMode}) {
             {/* Finalizado Parcial */}
             {(opState==='running'||opState==='paused')&&(
               <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:20,padding:'12px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
-                onClick={async()=>{
-                  setOpState('paused_day')
-                  await saveToSupabase({status:'pausado_dia'})
-                  showToast('🌙 Finalizado Parcial. Pode fechar o app!')
-                }}>
+                onClick={()=>setParcialModalOpen(true)}>
                 🌙 Finalizado Parcial (continua amanhã)
               </button>
             )}
 
             {/* Retomar de finalizado parcial */}
-            {opState==='paused_day'&&(
-              <div style={{background:'#1a1a2e',borderRadius:12,padding:'14px',marginBottom:12,color:'#fff',textAlign:'center'}}>
-                <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>🌙 Finalizado Parcial</div>
-                <button style={{background:'#ffb020',color:'#0b1210',border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
-                  onClick={async()=>{
-                    setOpState('running');setTimerSecs(0)
-                    await saveToSupabase({status:'em_operacao'})
-                    showToast('▶️ Operação retomada!')
-                  }}>▶️ Retomar operação</button>
+            {opState==='paused_day'&&(()=>{
+              const {total,feita,pct}=progressoParcial(form)
+              return (
+              <div style={{background:'#1a1a2e',borderRadius:12,padding:'14px',marginBottom:12,color:'#fff'}}>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:10,textAlign:'center'}}>🌙 Finalizado Parcial</div>
+                {total>0&&(
+                  <div style={{marginBottom:12}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#cddbd2',marginBottom:5}}>
+                      <span>{feita.toFixed(1)} de {total.toFixed(1)} ha aplicados</span>
+                      <span style={{fontWeight:700,color:'#ffb020'}}>{pct}%</span>
+                    </div>
+                    <div style={{height:8,background:'rgba(255,255,255,.15)',borderRadius:20,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${pct}%`,background:'#ffb020',borderRadius:20,transition:'width .3s'}}/>
+                    </div>
+                  </div>
+                )}
+                <div style={{display:'flex',gap:8,justifyContent:'center'}}>
+                  <button style={{background:'transparent',color:'#fff',border:'1px solid rgba(255,255,255,.3)',borderRadius:18,padding:'10px 16px',fontWeight:600,fontSize:13,cursor:'pointer'}}
+                    onClick={()=>setParcialModalOpen(true)}>✏️ Editar progresso</button>
+                  <button style={{background:'#ffb020',color:'#0b1210',border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
+                    onClick={async()=>{
+                      setOpState('running');setTimerSecs(0)
+                      await saveToSupabase({status:'em_operacao'})
+                      showToast('▶️ Operação retomada!')
+                    }}>▶️ Retomar operação</button>
+                </div>
               </div>
-            )}
+              )
+            })()}
 
             {/* SOS */}
             {(opState==='running'||opState==='paused')&&(
@@ -2754,8 +2779,8 @@ export default function PilotApp({onSwitchMode}) {
               <button style={{...sw.btnG,background:'#fff',color:'#0e9f6e',border:'1.5px solid #0e9f6e',flex:'0 0 110px'}} disabled={saveStatus==='saving'} onClick={async()=>{await saveToSupabase();showToast('💾 Progresso salvo!')}}>
                 {saveStatus==='saving'?'...':'💾 Salvar'}
               </button>
-              <button style={{...sw.btnG,flex:1,opacity:opState==='finished'?1:.5,cursor:opState==='finished'?'pointer':'default'}} disabled={opState!=='finished'||saving} onClick={gerarRelatorioFinal}>
-                {saving?'Aguarde...':'📋 Gerar Relatório'}
+              <button style={{...sw.btnG,flex:1,opacity:(opState==='finished'||opState==='paused_day')?1:.5,cursor:(opState==='finished'||opState==='paused_day')?'pointer':'default'}} disabled={(opState!=='finished'&&opState!=='paused_day')||saving} onClick={gerarRelatorioFinal}>
+                {saving?'Aguarde...':opState==='paused_day'?'📋 Gerar Relatório Parcial':'📋 Gerar Relatório'}
               </button>
             </div>
           </div>
@@ -2808,16 +2833,57 @@ export default function PilotApp({onSwitchMode}) {
       {modalOpen&&(
         <div style={s.modalOverlay} onClick={()=>setModalOpen(false)}>
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
-            <div style={s.modalTitle}>Relatório <button style={s.modalClose} onClick={()=>setModalOpen(false)}>✕</button></div>
+            <div style={s.modalTitle}>Relatório{opState==='paused_day'?' Parcial':''} <button style={s.modalClose} onClick={()=>setModalOpen(false)}>✕</button></div>
+            {opState==='paused_day'&&(()=>{
+              const {total,feita,pct}=progressoParcial(form)
+              return total>0 ? (
+                <div style={{background:'#f1f8f4',border:'1px solid #d7e6dc',borderRadius:10,padding:'10px 12px',marginBottom:14,fontSize:12,color:'#5c7568'}}>
+                  🌙 Progresso parcial: <strong style={{color:'#0e9f6e'}}>{feita.toFixed(1)} de {total.toFixed(1)} ha ({pct}%)</strong>
+                </div>
+              ) : null
+            })()}
             <ReportView form={{...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||''}} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles} prodFmt={produtoComUnidade}/>
-            <button style={{...s.shareBtn,background:'#0b1210',marginTop:12}} onClick={async()=>{
-              const rel=await saveToSupabase({status:'finalizado'})
-              if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')}
-            }}>📄 Baixar PDF</button>
+            {opState==='finished'&&(
+              <button style={{...s.shareBtn,background:'#0b1210',marginTop:12}} onClick={async()=>{
+                const rel=await saveToSupabase({status:'finalizado'})
+                if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')}
+              }}>📄 Baixar PDF</button>
+            )}
             <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={compartilharWhatsApp}>💬 WhatsApp{(fotoMapaFile||storageFotoMapa)?' (com foto do mapa)':''}</button>
           </div>
         </div>
       )}
+
+      {/* FINALIZADO PARCIAL — marcar progresso */}
+      {parcialModalOpen&&(()=>{
+        const {total,feita,pct}=progressoParcial(form)
+        return (
+        <div style={s.modalOverlay} onClick={()=>setParcialModalOpen(false)}>
+          <div style={s.modal} onClick={e=>e.stopPropagation()}>
+            <div style={s.modalTitle}>🌙 Finalizado Parcial <button style={s.modalClose} onClick={()=>setParcialModalOpen(false)}>✕</button></div>
+            <p style={{fontSize:13,color:'#5c7568',marginBottom:14,lineHeight:1.5}}>Registra quanto já foi aplicado. Amanhã é só retomar e continuar de onde parou.</p>
+            <FI label="ÁREA FEITA ATÉ AGORA (HA)" ph="Ex: 32" val={form.area_feita} onChange={e=>setForm(f=>({...f,area_feita:e.target.value}))} type="number"/>
+            {total>0&&(
+              <div style={{marginTop:2,marginBottom:18}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:'#5c7568',marginBottom:6}}>
+                  <span>{feita.toFixed(1)} de {total.toFixed(1)} ha</span>
+                  <span style={{fontWeight:700,color:'#0e9f6e'}}>{pct}%</span>
+                </div>
+                <div style={{height:10,background:'#eef5f0',borderRadius:20,overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${pct}%`,background:'#0e9f6e',borderRadius:20,transition:'width .3s'}}/>
+                </div>
+              </div>
+            )}
+            <button style={{...s.shareBtn,background:'#1a1a2e'}} onClick={async()=>{
+              setParcialModalOpen(false)
+              setOpState('paused_day')
+              await saveToSupabase({status:'pausado_dia'})
+              showToast('🌙 Finalizado Parcial. Pode fechar o app!')
+            }}>🌙 Confirmar Finalizado Parcial</button>
+          </div>
+        </div>
+        )
+      })()}
 
       {/* CONFIRM SOS */}
       {sosConfirm&&(
@@ -2936,7 +3002,7 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
   ))}</div>
 }
 
-function buildTxt(form,clienteVal,droneVal,prodFmt){
+function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
   const numBR = (n,dec=2) => n==null||isNaN(n) ? '—' : n.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})
   const fmtHora=p=>{const hh=form[p+'_hh'],mm=form[p+'_mm'];return (hh||mm)?`${hh||'00'}:${mm||'00'}`:'—'}
   const fmtDataCurta=p=>{const d=form[p+'_data'];if(!d)return'—';const partes=d.split('-');return partes.length===3?`${partes[2]}/${partes[1]}`:d}
@@ -2947,14 +3013,20 @@ function buildTxt(form,clienteVal,droneVal,prodFmt){
   const areaTotal = parseFloat(form.area_ha)||0
   const bordTotal = bordaduraAtual(form)
   const areaAplicada = areaLiquidaAtual(form)
+  const {feita:areaFeita,pct:pctFeito} = progressoParcial(form)
   const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaAplicada)
 
-  let t = `🚁 *RELATÓRIO OROFLY* — ${dataShare}\n\n`
+  let t = `🚁 *RELATÓRIO OROFLY${parcial?' — PARCIAL 🌙':''}* — ${dataShare}\n\n`
   t += `📍 Local: ${clienteVal||'—'} / F. ${form.fazenda||'—'}${form.talhao?` (Talhão: ${form.talhao})`:''}\n`
   t += `⏰ Período: ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} ➔ ${fmtHora('dt_fim')})\n`
   t += `👨‍✈️ Piloto: ${form.piloto_nome||'—'} | 🛸 ${droneVal||'—'}\n`
   t += `${linha}\n`
-  t += `📏 Áreas: Total ${numBR(areaTotal)} ha${bordTotal>0?` (Aplicada: ${numBR(areaAplicada)} ha | Bord: ${numBR(bordTotal)} ha)`:''}\n`
+  if(parcial) {
+    t += `🌙 *Progresso até agora:* ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)\n`
+    t += `⏳ Operação continua — este é um relatório parcial, não o voo finalizado.\n`
+  } else {
+    t += `📏 Áreas: Total ${numBR(areaTotal)} ha${bordTotal>0?` (Aplicada: ${numBR(areaAplicada)} ha | Bord: ${numBR(bordTotal)} ha)`:''}\n`
+  }
 
   const gastosValidos = gastos.filter(g=>g.nome)
   if(gastosValidos.length){
