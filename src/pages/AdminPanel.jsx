@@ -1085,31 +1085,35 @@ export default function AdminPanel({ onSwitchMode }) {
 
             return (
               <div>
+                {/* ── Breadcrumb + título ── */}
+                <div style={{fontSize:11,color:'#7ba38f',fontWeight:600,marginBottom:4}}>Início / Dashboard</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#0b1210',marginBottom:16}}>Visão Geral</div>
+
                 {/* ── RESUMO EXECUTIVO (visão geral ao vivo, independente dos filtros abaixo) ── */}
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
                   <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
-                    <span style={{width:44,height:44,borderRadius:12,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🌱</span>
+                    <span style={{width:44,height:44,borderRadius:12,background:'#0e9f6e',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🌱</span>
                     <div style={{minWidth:0}}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>ÁREA PULVERIZADA ESTE ANO</div>
                       <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{areaEsteAno.toFixed(1)} ha</div>
                     </div>
                   </div>
                   <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
-                    <span style={{width:44,height:44,borderRadius:12,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>⏱️</span>
+                    <span style={{width:44,height:44,borderRadius:12,background:'#2f6fed',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>⏱️</span>
                     <div style={{minWidth:0}}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>TOTAL HORAS VOO ANO</div>
                       <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{fmtH(minutosAno)}</div>
                     </div>
                   </div>
                   <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
-                    <span style={{width:44,height:44,borderRadius:12,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🧑‍✈️</span>
+                    <span style={{width:44,height:44,borderRadius:12,background:'#8e44ad',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🧑‍✈️</span>
                     <div style={{minWidth:0}}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>PILOTOS ATIVOS AGORA</div>
                       <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{pilotosAtivosAgora}</div>
                     </div>
                   </div>
                   <div style={{background:'#fff',borderRadius:16,border:`1px solid ${dronesEmManutencao>0?'#f2960f':'#dcebe3'}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
-                    <span style={{width:44,height:44,borderRadius:12,background:dronesEmManutencao>0?'#fff3e0':'#f1f8f4',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔧</span>
+                    <span style={{width:44,height:44,borderRadius:12,background:dronesEmManutencao>0?'#f2960f':'#5c7568',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔧</span>
                     <div style={{minWidth:0,flex:1}}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>DRONES EM MANUTENÇÃO</div>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>

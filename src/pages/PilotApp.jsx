@@ -1494,15 +1494,34 @@ export default function PilotApp({onSwitchMode}) {
           </div>
 
           {/* Voo em andamento */}
-          {draftAtivo && (
+          {draftAtivo && (opState==='paused_day' ? (()=>{
+            const {total,feita,pct} = progressoParcial(form)
+            return (
+              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',borderLeft:'4px solid #ffb020',padding:'14px 16px',cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}} onClick={()=>setView('form')}>
+                <div style={{display:'flex',alignItems:'center',gap:12}}>
+                  <span style={{width:40,height:40,borderRadius:12,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🕐</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif",color:'#0b1210'}}>Operação em Andamento</div>
+                    <div style={{fontSize:12,color:'#7ba38f',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{form.fazenda||'—'}{total>0?` · ${feita.toFixed(2)} ha de ${total.toFixed(2)} ha`:''}</div>
+                  </div>
+                  <span style={{background:'#ffb020',color:'#3a2a00',fontSize:10,fontWeight:700,borderRadius:20,padding:'4px 10px',flexShrink:0,fontFamily:"'Syne',sans-serif"}}>PARCIAL</span>
+                </div>
+                {total>0&&(
+                  <div style={{height:8,background:'#f1ede0',borderRadius:20,overflow:'hidden',marginTop:12}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:'#ffb020',borderRadius:20,transition:'width .3s'}}/>
+                  </div>
+                )}
+              </div>
+            )
+          })() : (
             <div style={{background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',borderRadius:22,padding:18,color:'#fff',cursor:'pointer',boxShadow:'0 10px 26px rgba(14,159,110,0.35)',position:'relative',overflow:'hidden'}} onClick={()=>setView('form')}>
               <span style={{position:'absolute',right:-10,bottom:-14,fontSize:64,opacity:.15}}>🚁</span>
-              <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':opState==='paused_day'?'🌙 FINALIZADO PARCIAL':'🟢 VOO EM ANDAMENTO'}</div>
+              <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':'🟢 VOO EM ANDAMENTO'}</div>
               <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Syne',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
               {osAtual&&<div style={{fontSize:10,fontFamily:'ui-monospace,monospace',opacity:.8,marginTop:2}}>OS {osAtual}</div>}
               <div style={{fontSize:12,opacity:.9,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
             </div>
-          )}
+          ))}
 
           {/* Ação principal */}
           <button style={{background:draftAtivo?'#fff':'linear-gradient(135deg,#0e9f6e,#22c476)',color:draftAtivo?'#0e9f6e':'#fff',border:draftAtivo?'2px solid #0e9f6e':'none',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:draftAtivo?'none':'0 10px 24px rgba(14,159,110,0.3)'}}
