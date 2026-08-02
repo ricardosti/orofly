@@ -418,6 +418,7 @@ export default function PilotApp({onSwitchMode}) {
   const [sosConfirm,setSosConfirm] = useState(false)
   const [modalOpen,setModalOpen] = useState(false)
   const [parcialModalOpen,setParcialModalOpen] = useState(false)
+  const [horarioModalOpen,setHorarioModalOpen] = useState(false)
   const [exitConfirm,setExitConfirm] = useState(false)
   const [finalizeConfirm,setFinalizeConfirm] = useState(false)
   const [obsFotos,setObsFotos] = useState([null,null,null])
@@ -2406,59 +2407,103 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageTitle}>Ação</div>
             <div style={sw.pageSub}>Passo 4 de 5: Controle do voo</div>
 
-            {/* Botões — Pausar, Finalizar (Iniciar vira um botão grande mais abaixo, já que antes de começar
-                é a única ação possível — não faz sentido dividir espaço com botões ainda inativos) */}
-            {opState!=='idle'&&(
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
-                <button style={{background:'#fff3e0',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                  disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
-                  <span style={{fontSize:18}}>{opState==='paused'?'▶️':'⏸️'}</span>
-                  <span style={{fontSize:11,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
-                </button>
-                <button style={{background:'#fdeaea',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                  disabled={opState!=='running'&&opState!=='paused'}
-                  onClick={()=>{
-                    const n=nowParts()
-                    setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                    opFinalizar()
-                    setWizardStep(3)
-                    showToast('🌤️ Preencha as condições climáticas do FIM da operação')
-                  }}>
-                  <span style={{fontSize:18}}>⏹️</span>
-                  <span style={{fontSize:11,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
-                </button>
-              </div>
-            )}
+            {/* Botões — Iniciar, Pausar, Finalizar (compactos, no topo) */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:10}}>
+              <button style={{background:'#e3f7ec',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
+                disabled={opState!=='idle'||saving}
+                onClick={()=>{
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
+                  setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
+                  setChecklistOpen(true)
+                }}>
+                <span style={{fontSize:18}}>▶️</span>
+                <span style={{fontSize:11,fontWeight:700,color:'#0e9f6e'}}>Iniciar</span>
+              </button>
+              <button style={{background:'#fff3e0',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
+                <span style={{fontSize:18}}>{opState==='paused'?'▶️':'⏸️'}</span>
+                <span style={{fontSize:11,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
+              </button>
+              <button style={{background:'#fdeaea',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                disabled={opState!=='running'&&opState!=='paused'}
+                onClick={()=>{
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                  opFinalizar()
+                  setWizardStep(3)
+                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+                }}>
+                <span style={{fontSize:18}}>⏹️</span>
+                <span style={{fontSize:11,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
+              </button>
+            </div>
 
             {/* Status */}
-            <div style={{display:'flex',justifyContent:'center',marginBottom:14}}>
+            <div style={{display:'flex',justifyContent:'center',marginBottom:10}}>
               <span style={sw.statusBadge(opState)}>
                 <span style={{width:7,height:7,borderRadius:'50%',background:opState==='running'?'#0e9f6e':opState==='paused'?'#f2960f':'#aaa',display:'inline-block',marginRight:6}}/>
                 {opLabel}
               </span>
             </div>
 
-            {/* Timer circular */}
+            {/* Timer — digital, discreto */}
             {(opState==='running'||opState==='paused')&&(()=>{
               const h=Math.floor(timerSecs/3600),m=Math.floor((timerSecs%3600)/60),sec=timerSecs%60
               const pad=n=>String(n).padStart(2,'0')
-              const circ=289, pct=(timerSecs%3600)/3600, offset=circ-(circ*pct)
               return (
-                <div style={sw.timerWrap}>
-                  <svg width="130" height="130" viewBox="0 0 130 130">
-                    <circle cx="65" cy="65" r="46" fill="none" stroke="#e3f7ec" strokeWidth="7"/>
-                    <circle cx="65" cy="65" r="46" fill="none" stroke={opState==='paused'?'#f2960f':'#0e9f6e'} strokeWidth="7"
-                      strokeDasharray="289" strokeDashoffset={offset}
-                      strokeLinecap="round" transform="rotate(-90 65 65)"
-                      style={{transition:'stroke-dashoffset 1s linear'}}/>
-                    <text x="65" y="70" textAnchor="middle" fontSize="19" fontWeight="700" fill="#0b1210" fontFamily="DM Sans,sans-serif">
-                      {pad(h)}:{pad(m)}:{pad(sec)}
-                    </text>
-                  </svg>
-                  <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>{opState==='paused'?'⏸ PAUSADO':'tempo de operação'}</div>
+                <div style={{display:'flex',justifyContent:'center',marginBottom:14}}>
+                  <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'#f7fbf8',border:'1px solid #e8eee8',borderRadius:20,padding:'5px 14px'}}>
+                    <span style={{fontSize:12}}>⏱️</span>
+                    <span style={{fontSize:14,fontWeight:700,color:opState==='paused'?'#f2960f':'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{pad(h)}:{pad(m)}:{pad(sec)}</span>
+                    {opState==='paused'&&<span style={{fontSize:11,color:'#f2960f',fontWeight:600}}>pausado</span>}
+                  </div>
                 </div>
               )
             })()}
+
+            {/* Pausas */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <span style={{fontSize:11,fontWeight:600,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>PAUSAS</span>
+              <button style={{background:'#f1f8f4',border:'1px solid #d7e6dc',color:'#0e9f6e',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                onClick={()=>setForm(f=>({...f,pausas:[...(f.pausas||[]),{inicio:new Date().toISOString(),fim:null,motivo:''}]}))}>+ Pausa</button>
+            </div>
+            {(form.pausas||[]).map((pausa,i)=>(
+              <div key={i} style={{background:'#f7fbf8',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #e8eee8'}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
+                  <span style={{fontSize:12,fontWeight:600,color:'#5c7568'}}>Pausa {i+1}</span>
+                  <button style={{background:'none',border:'none',color:'#e5484d',cursor:'pointer',fontSize:16}} onClick={()=>setForm(f=>({...f,pausas:f.pausas.filter((_,j)=>j!==i)}))}>×</button>
+                </div>
+                {(()=>{
+                  const MOTIVOS_PAUSA = ['Vento fora dos padrões','Delta T fora dos padrões','Manutenção','Alimentação','Abastecimento','Troca de bateria']
+                  const isOutro = pausa.outro || (pausa.motivo && !MOTIVOS_PAUSA.includes(pausa.motivo))
+                  const motivoSel = isOutro ? 'Outro' : (pausa.motivo || '')
+                  return (
+                    <>
+                      <div style={{position:'relative',marginBottom:4}}>
+                        <select style={{...sw.fs,fontSize:13,padding:'10px 12px'}} value={motivoSel}
+                          onChange={e=>{
+                            const arr=[...form.pausas]
+                            if(e.target.value==='Outro') arr[i]={...arr[i],motivo:'',outro:true}
+                            else arr[i]={...arr[i],motivo:e.target.value,outro:false}
+                            setForm(f=>({...f,pausas:arr}))
+                          }}>
+                          <option value="">Selecione o motivo...</option>
+                          {MOTIVOS_PAUSA.map(m=><option key={m}>{m}</option>)}
+                          <option>Outro</option>
+                        </select>
+                        <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
+                      </div>
+                      {isOutro&&(
+                        <input style={{...sw.fi,marginBottom:4,fontSize:13}} placeholder="Descreva o motivo..." value={pausa.motivo||''}
+                          onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value,outro:true};setForm(f=>({...f,pausas:arr}))}}/>
+                      )}
+                    </>
+                  )
+                })()}
+                <div style={{fontSize:11,color:'#7ba38f'}}>{new Date(pausa.inicio).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} → {pausa.fim?new Date(pausa.fim).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em andamento'}</div>
+              </div>
+            ))}
 
             {/* Resumo da Operação — 4 quadrantes */}
             <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>RESUMO DA OPERAÇÃO</div>
@@ -2501,26 +2546,11 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
 
-            {/* Iniciar — botão grande, só aparece antes de começar */}
-            {opState==='idle'&&(
-              <button style={{...sw.btnG,background:'linear-gradient(135deg,#0e9f6e,#22c476)',padding:'16px',fontSize:15,marginBottom:16}}
-                disabled={saving}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
-                  setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
-                  setChecklistOpen(true)
-                }}>
-                ▶️ Iniciar Voo
-              </button>
-            )}
-
-            {/* Horários editáveis — preenchidos pelo sistema, ajustáveis */}
-            <div style={{background:'#f7fbf8',borderRadius:12,padding:'12px 14px',marginBottom:12,border:'1px solid #e8eee8'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>🕐 HORÁRIOS <span style={{fontWeight:400,color:'#7ba38f'}}>(sistema preenche, você pode editar)</span></div>
-              <DtRow prefix="dt_inicio" form={form} setForm={setForm} label="INÍCIO" />
-              <DtRow prefix="dt_fim" form={form} setForm={setForm} label="FIM" />
-            </div>
+            {/* Editar Horário — abre popup em vez de ficar sempre visível */}
+            <button style={{background:'#fff',border:'1px solid #dcebe3',borderRadius:16,padding:'12px',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',marginBottom:16,color:'#0b1210',fontWeight:600,fontSize:13,fontFamily:"'Syne',sans-serif"}}
+              onClick={()=>setHorarioModalOpen(true)}>
+              🕐 Editar Horário
+            </button>
 
             {/* Finalizado Parcial */}
             {(opState==='running'||opState==='paused')&&(
@@ -2577,48 +2607,6 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             )}
 
-            {/* Pausas */}
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-              <span style={{fontSize:11,fontWeight:600,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>PAUSAS</span>
-              <button style={{background:'#f1f8f4',border:'1px solid #d7e6dc',color:'#0e9f6e',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
-                onClick={()=>setForm(f=>({...f,pausas:[...(f.pausas||[]),{inicio:new Date().toISOString(),fim:null,motivo:''}]}))}>+ Pausa</button>
-            </div>
-            {(form.pausas||[]).map((pausa,i)=>(
-              <div key={i} style={{background:'#f7fbf8',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #e8eee8'}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                  <span style={{fontSize:12,fontWeight:600,color:'#5c7568'}}>Pausa {i+1}</span>
-                  <button style={{background:'none',border:'none',color:'#e5484d',cursor:'pointer',fontSize:16}} onClick={()=>setForm(f=>({...f,pausas:f.pausas.filter((_,j)=>j!==i)}))}>×</button>
-                </div>
-                {(()=>{
-                  const MOTIVOS_PAUSA = ['Vento fora dos padrões','Delta T fora dos padrões','Manutenção','Alimentação','Abastecimento','Troca de bateria']
-                  const isOutro = pausa.outro || (pausa.motivo && !MOTIVOS_PAUSA.includes(pausa.motivo))
-                  const motivoSel = isOutro ? 'Outro' : (pausa.motivo || '')
-                  return (
-                    <>
-                      <div style={{position:'relative',marginBottom:4}}>
-                        <select style={{...sw.fs,fontSize:13,padding:'10px 12px'}} value={motivoSel}
-                          onChange={e=>{
-                            const arr=[...form.pausas]
-                            if(e.target.value==='Outro') arr[i]={...arr[i],motivo:'',outro:true}
-                            else arr[i]={...arr[i],motivo:e.target.value,outro:false}
-                            setForm(f=>({...f,pausas:arr}))
-                          }}>
-                          <option value="">Selecione o motivo...</option>
-                          {MOTIVOS_PAUSA.map(m=><option key={m}>{m}</option>)}
-                          <option>Outro</option>
-                        </select>
-                        <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
-                      </div>
-                      {isOutro&&(
-                        <input style={{...sw.fi,marginBottom:4,fontSize:13}} placeholder="Descreva o motivo..." value={pausa.motivo||''}
-                          onChange={e=>{const arr=[...form.pausas];arr[i]={...arr[i],motivo:e.target.value,outro:true};setForm(f=>({...f,pausas:arr}))}}/>
-                      )}
-                    </>
-                  )
-                })()}
-                <div style={{fontSize:11,color:'#7ba38f'}}>{new Date(pausa.inicio).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})} → {pausa.fim?new Date(pausa.fim).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'em andamento'}</div>
-              </div>
-            ))}
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
@@ -2849,6 +2837,19 @@ export default function PilotApp({onSwitchMode}) {
         </div>
       )}
 
+      {/* EDITAR HORÁRIO */}
+      {horarioModalOpen&&(
+        <div style={s.modalOverlay} onClick={()=>setHorarioModalOpen(false)}>
+          <div style={s.modal} onClick={e=>e.stopPropagation()}>
+            <div style={s.modalTitle}>🕐 Editar Horário <button style={s.modalClose} onClick={()=>setHorarioModalOpen(false)}>✕</button></div>
+            <p style={{fontSize:12,color:'#7ba38f',marginBottom:14}}>O sistema preenche sozinho — edite só se precisar ajustar.</p>
+            <DtRow prefix="dt_inicio" form={form} setForm={setForm} label="INÍCIO" />
+            <DtRow prefix="dt_fim" form={form} setForm={setForm} label="FIM" />
+            <button style={{...s.shareBtn,background:'#0e9f6e',marginTop:8}} onClick={()=>setHorarioModalOpen(false)}>Pronto</button>
+          </div>
+        </div>
+      )}
+
       {/* CONTINUAR VOO — escolher qual, quando há mais de um em aberto */}
       {continuarModalOpen&&(
         <div style={s.modalOverlay} onClick={()=>setContinuarModalOpen(false)}>
@@ -2896,13 +2897,14 @@ export default function PilotApp({onSwitchMode}) {
               // ex: já tinha baixado 20ha, agora tá em 32ha → desconta só os 12ha novos.
               const jaDeduzido = parseFloat(form.area_deduzida)||0
               const deltaBaixa = Math.max(0, feita-jaDeduzido)
-              const relSalvo = await saveToSupabase({status:'pausado_dia',area_deduzida:feita})
+              const n=nowParts()
+              setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+              const relSalvo = await saveToSupabase({status:'pausado_dia',area_deduzida:feita,dt_fim:n.iso})
               if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
-              // Já está salvo no servidor — libera o piloto pra iniciar outro voo agora mesmo.
-              // Esse voo parcial continua disponível em "Meus Relatórios" pra retomar depois.
-              limpar(true)
-              setView('home')
-              showToast('🌙 Finalizado Parcial salvo! Pode iniciar outro voo — esse continua em "Meus Relatórios"')
+              // O voo já está salvo no servidor — pode ser retomado depois por "Continuar voo" ou
+              // "Meus Relatórios". Antes de sair, registra as condições climáticas do fim do dia.
+              setWizardStep(3)
+              showToast('🌙 Finalizado Parcial salvo! Preencha as condições climáticas do fim do dia')
             }}>🌙 Confirmar Finalizado Parcial</button>
           </div>
         </div>
