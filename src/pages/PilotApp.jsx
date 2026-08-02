@@ -1284,10 +1284,16 @@ export default function PilotApp({onSwitchMode}) {
     } catch(e){ showToast('Erro ao abrir voo: '+e.message,'error') }
   }
 
-  function handleContinuarVoo(){
-    if(flightsAbertos.length===0) return
-    if(flightsAbertos.length===1) abrirVooAberto(flightsAbertos[0].id)
-    else setContinuarModalOpen(true)
+  async function handleContinuarVoo(){
+    // Reconsulta na hora do clique (não confia só no que carregou antes) — evita ficar
+    // "sem fazer nada" se a lista ainda não tinha atualizado quando o botão apareceu habilitado.
+    await carregarFlightsAbertos()
+    const {data} = await supabase.from('relatorios').select('id,cliente,fazenda,localizacao,status,dt_inicio,created_at')
+      .eq('piloto_id',profile.id).in('status',['em_operacao','pausado','pausado_dia']).order('created_at',{ascending:false})
+    const abertos = data||[]
+    if(abertos.length===0){ showToast('Nenhum voo em aberto pra continuar','error'); return }
+    if(abertos.length===1) abrirVooAberto(abertos[0].id)
+    else { setFlightsAbertos(abertos); setContinuarModalOpen(true) }
   }
 
   function tentarSair(){
@@ -1302,6 +1308,7 @@ export default function PilotApp({onSwitchMode}) {
     setFotoMapa(null);setFotoMapaFile(null)
     setStorageFotoMapa(null);setStorageObsFotos([null,null,null])
     setKmlFiles([])
+    setWizardStep(1)
     if(!silent) showToast('🗑️ Formulário limpo')
   }
 
@@ -1494,8 +1501,9 @@ export default function PilotApp({onSwitchMode}) {
           {/* Ação principal */}
           <button style={{background:draftAtivo?'#fff':'linear-gradient(135deg,#0e9f6e,#22c476)',color:draftAtivo?'#0e9f6e':'#fff',border:draftAtivo?'2px solid #0e9f6e':'none',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:draftAtivo?'none':'0 10px 24px rgba(14,159,110,0.3)'}}
             onClick={()=>{
-              if(draftAtivo){ if(!window.confirm('Já existe um voo em andamento. Descartar e começar um novo? (o voo atual continua salvo, você pode voltar por "Continuar voo")')) return }
-              limpar(); setView('form')
+              // Novo Voo sempre começa do zero, sem perguntar nada — o voo anterior (se houver)
+              // já está salvo no servidor e continua acessível por "Continuar voo".
+              limpar(true); setView('form')
             }}>
             <span style={{width:48,height:48,borderRadius:14,background:draftAtivo?'#e3f7ec':'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:draftAtivo?'#0e9f6e':'#fff'}}><IconRota size={24}/></span>
             <div>
@@ -2407,60 +2415,44 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageTitle}>Ação</div>
             <div style={sw.pageSub}>Passo 4 de 5: Controle do voo</div>
 
-            {/* Botões — Iniciar, Pausar, Finalizar (compactos, no topo) */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:10}}>
-              <button style={{background:'#e3f7ec',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
-                disabled={opState!=='idle'||saving}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
-                  setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
-                  setChecklistOpen(true)
-                }}>
-                <span style={{fontSize:18}}>▶️</span>
-                <span style={{fontSize:11,fontWeight:700,color:'#0e9f6e'}}>Iniciar</span>
-              </button>
-              <button style={{background:'#fff3e0',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
-                <span style={{fontSize:18}}>{opState==='paused'?'▶️':'⏸️'}</span>
-                <span style={{fontSize:11,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
-              </button>
-              <button style={{background:'#fdeaea',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                disabled={opState!=='running'&&opState!=='paused'}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                  opFinalizar()
-                  setWizardStep(3)
-                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
-                }}>
-                <span style={{fontSize:18}}>⏹️</span>
-                <span style={{fontSize:11,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
-              </button>
-            </div>
-
-            {/* Status */}
-            <div style={{display:'flex',justifyContent:'center',marginBottom:10}}>
-              <span style={sw.statusBadge(opState)}>
-                <span style={{width:7,height:7,borderRadius:'50%',background:opState==='running'?'#0e9f6e':opState==='paused'?'#f2960f':'#aaa',display:'inline-block',marginRight:6}}/>
-                {opLabel}
-              </span>
-            </div>
-
-            {/* Timer — digital, discreto */}
-            {(opState==='running'||opState==='paused')&&(()=>{
-              const h=Math.floor(timerSecs/3600),m=Math.floor((timerSecs%3600)/60),sec=timerSecs%60
-              const pad=n=>String(n).padStart(2,'0')
-              return (
-                <div style={{display:'flex',justifyContent:'center',marginBottom:14}}>
-                  <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'#f7fbf8',border:'1px solid #e8eee8',borderRadius:20,padding:'5px 14px'}}>
-                    <span style={{fontSize:12}}>⏱️</span>
-                    <span style={{fontSize:14,fontWeight:700,color:opState==='paused'?'#f2960f':'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{pad(h)}:{pad(m)}:{pad(sec)}</span>
-                    {opState==='paused'&&<span style={{fontSize:11,color:'#f2960f',fontWeight:600}}>pausado</span>}
-                  </div>
-                </div>
-              )
-            })()}
+            {/* Botão principal — Iniciar / Pausar-Retomar com o cronômetro embutido — + Finalizar ao lado */}
+            {opState!=='paused_day'&&opState!=='finished'&&(
+              <div style={{display:'flex',gap:8,marginBottom:10}}>
+                <button style={{flex:2,background:opState==='idle'?'linear-gradient(135deg,#0e9f6e,#22c476)':opState==='paused'?'#fff3e0':'#0e9f6e',
+                    color:opState==='paused'?'#f2960f':'#fff',border:opState==='paused'?'1.5px solid #f2960f':'none',
+                    borderRadius:16,padding:'14px 10px',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',
+                    fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,boxShadow:opState==='idle'?'0 6px 16px rgba(14,159,110,0.3)':'none'}}
+                  disabled={saving}
+                  onClick={()=>{
+                    if(opState==='idle'){
+                      const n=nowParts()
+                      setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
+                      setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
+                      setChecklistOpen(true)
+                    } else {
+                      opPausar()
+                    }
+                  }}>
+                  {opState==='idle' ? <>▶️ Iniciar Voo</> : (()=>{
+                    const h=Math.floor(timerSecs/3600),m=Math.floor((timerSecs%3600)/60),sec=timerSecs%60
+                    const pad=n=>String(n).padStart(2,'0')
+                    return <>{opState==='paused'?'▶️ Retomar':'⏸️ Pausar'} · {pad(h)}:{pad(m)}:{pad(sec)}</>
+                  })()}
+                </button>
+                <button style={{flex:1,background:'#fdeaea',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                  disabled={opState!=='running'&&opState!=='paused'}
+                  onClick={()=>{
+                    const n=nowParts()
+                    setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                    opFinalizar()
+                    setWizardStep(3)
+                    showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+                  }}>
+                  <span style={{fontSize:18}}>⏹️</span>
+                  <span style={{fontSize:11,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
+                </button>
+              </div>
+            )}
 
             {/* Pausas */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
@@ -2505,7 +2497,7 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             ))}
 
-            {/* Resumo da Operação — 4 quadrantes */}
+            {/* Resumo da Operação */}
             <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>RESUMO DA OPERAÇÃO</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
               <div style={{gridColumn:'1 / -1',background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',display:'flex',alignItems:'center',gap:12}}>
@@ -2515,34 +2507,18 @@ export default function PilotApp({onSwitchMode}) {
                   <div style={{fontSize:11,color:'#7ba38f',marginTop:1}}>{form.talhao&&`Talhão ${form.talhao} · `}{form.area_ha&&`${form.area_ha} ha`}</div>
                 </div>
               </div>
-              <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px'}}>
+              <div style={{gridColumn:'1 / -1',background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px'}}>
                 <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
                   <span style={{width:28,height:28,borderRadius:8,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>🔋</span>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>QTDE DE VOOS<br/>(BATERIAS)</span>
+                  <span style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>QTDE DE VOOS (BATERIAS)</span>
                 </div>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div style={{display:'flex',alignItems:'center',gap:14}}>
                   <button type="button" style={{width:28,height:28,borderRadius:8,border:'1px solid #dcebe3',background:'#f7fbf8',color:'#0e9f6e',fontSize:16,fontWeight:700,cursor:'pointer',lineHeight:1}}
                     onClick={()=>setForm(f=>({...f,qtd_voos:Math.max(1,(parseInt(f.qtd_voos)||1)-1)}))}>−</button>
                   <span style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{form.qtd_voos||1}</span>
                   <button type="button" style={{width:28,height:28,borderRadius:8,border:'1px solid #dcebe3',background:'#f7fbf8',color:'#0e9f6e',fontSize:16,fontWeight:700,cursor:'pointer',lineHeight:1}}
                     onClick={()=>setForm(f=>({...f,qtd_voos:(parseInt(f.qtd_voos)||1)+1}))}>+</button>
                 </div>
-              </div>
-              <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px'}}>
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                  <span style={{width:28,height:28,borderRadius:8,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>📅</span>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>INÍCIO</span>
-                </div>
-                <div style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{form.dt_inicio_data?form.dt_inicio_data.split('-').reverse().join('/'):'—'}</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>{form.dt_inicio_hh?`${form.dt_inicio_hh}:${form.dt_inicio_mm}`:'--:--'}</div>
-              </div>
-              <div style={{gridColumn:'2 / 3',background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px'}}>
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-                  <span style={{width:28,height:28,borderRadius:8,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>📅</span>
-                  <span style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>FIM</span>
-                </div>
-                <div style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{form.dt_fim_data?form.dt_fim_data.split('-').reverse().join('/'):'dd/mm/aaaa'}</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>{form.dt_fim_hh?`${form.dt_fim_hh}:${form.dt_fim_mm}`:'--:--'}</div>
               </div>
             </div>
 
