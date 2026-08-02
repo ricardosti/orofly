@@ -1267,10 +1267,11 @@ export default function PilotApp({onSwitchMode}) {
   async function carregarFlightsAbertos(){
     if(!profile?.id) return
     try {
-      const {data} = await supabase.from('relatorios').select('id,cliente,fazenda,talhao,status,dt_inicio,created_at')
+      const {data,error} = await supabase.from('relatorios').select('id,cliente,fazenda,localizacao,status,dt_inicio,created_at')
         .eq('piloto_id',profile.id).in('status',['em_operacao','pausado','pausado_dia']).order('created_at',{ascending:false})
+      if(error) throw error
       setFlightsAbertos(data||[])
-    } catch {}
+    } catch(e) { console.error('Erro ao carregar voos abertos:',e) }
   }
   useEffect(()=>{ carregarFlightsAbertos() },[profile?.id,opState]) // eslint-disable-line
 
@@ -2860,7 +2861,7 @@ export default function PilotApp({onSwitchMode}) {
                   <div style={{fontSize:14,fontWeight:700,color:'#0b1210'}}>{rel.cliente||'—'} — {rel.fazenda||'—'}</div>
                   <span style={{fontSize:10,fontWeight:700,color:'#0e9f6e',background:'#e3f7ec',borderRadius:20,padding:'3px 9px',whiteSpace:'nowrap',marginLeft:8}}>{STATUS_LABEL[rel.status]||rel.status}</span>
                 </div>
-                {rel.talhao&&<div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>Talhão {rel.talhao}</div>}
+                {rel.localizacao&&<div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>Talhão {rel.localizacao}</div>}
                 <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(rel.dt_inicio||rel.created_at).toLocaleDateString('pt-BR')}</div>
               </div>
             ))}
