@@ -455,6 +455,8 @@ export default function PilotApp({onSwitchMode}) {
   const [loadingFlights,setLoadingFlights] = useState(false)
   const [flightsAbertos,setFlightsAbertos] = useState([])
   const [continuarModalOpen,setContinuarModalOpen] = useState(false)
+  const [continuarLoading,setContinuarLoading] = useState(false)
+  const [rascunhoParaExcluir,setRascunhoParaExcluir] = useState(null)
   const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
   function addItemViagem(categoria){
     setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
@@ -1284,16 +1286,26 @@ export default function PilotApp({onSwitchMode}) {
     } catch(e){ showToast('Erro ao abrir voo: '+e.message,'error') }
   }
 
+  async function deletarRascunho(rel) {
+    try {
+      const { error } = await supabase.from('relatorios').delete().eq('id', rel.id)
+      if (error) throw error
+      setFlights(fs=>fs.filter(f=>f.id!==rel.id))
+      if (relId===rel.id) limpar(true)
+      setRascunhoParaExcluir(null)
+      showToast('🗑️ Rascunho excluído')
+    } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
+  }
+
   async function handleContinuarVoo(){
-    // Reconsulta na hora do clique (não confia só no que carregou antes) — evita ficar
-    // "sem fazer nada" se a lista ainda não tinha atualizado quando o botão apareceu habilitado.
-    await carregarFlightsAbertos()
+    // Sempre abre a lista na hora, mesmo com 1 voo só ou nenhum — nada de auto-navegar
+    // por trás, pra ficar previsível: clicou, aparece a pergunta "qual voo?".
+    setContinuarLoading(true)
+    setContinuarModalOpen(true)
     const {data} = await supabase.from('relatorios').select('id,cliente,fazenda,localizacao,status,dt_inicio,created_at')
       .eq('piloto_id',profile.id).in('status',['em_operacao','pausado','pausado_dia']).order('created_at',{ascending:false})
-    const abertos = data||[]
-    if(abertos.length===0){ showToast('Nenhum voo em aberto pra continuar','error'); return }
-    if(abertos.length===1) abrirVooAberto(abertos[0].id)
-    else { setFlightsAbertos(abertos); setContinuarModalOpen(true) }
+    setFlightsAbertos(data||[])
+    setContinuarLoading(false)
   }
 
   function tentarSair(){
@@ -1621,9 +1633,15 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{fontWeight:600,fontSize:14,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{rel.cliente||'—'}</div>
                 <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{rel.fazenda}{rel.area_ha?` · ${rel.area_ha}ha`:''} · {rel.drone}</div>
               </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontSize:12,fontWeight:600,color:{em_operacao:'#0e9f6e',pausado:'#f2960f',finalizado:'#2f6fed',sos:'#e5484d'}[rel.status]||'#5c7568'}}>{STATUS_LABEL[rel.status]||rel.status}</div>
-                <div style={{fontSize:11,color:'#5c7568',marginTop:2}}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
+              <div style={{textAlign:'right',display:'flex',alignItems:'flex-start',gap:8}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:600,color:{em_operacao:'#0e9f6e',pausado:'#f2960f',finalizado:'#2f6fed',sos:'#e5484d'}[rel.status]||'#5c7568'}}>{STATUS_LABEL[rel.status]||rel.status}</div>
+                  <div style={{fontSize:11,color:'#5c7568',marginTop:2}}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
+                </div>
+                {rel.status==='rascunho'&&(
+                  <button title="Excluir rascunho" style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:10,width:26,height:26,fontSize:13,cursor:'pointer',flexShrink:0}}
+                    onClick={e=>{e.stopPropagation();setRascunhoParaExcluir(rel)}}>🗑️</button>
+                )}
               </div>
             </div>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:6}}>
@@ -2826,22 +2844,45 @@ export default function PilotApp({onSwitchMode}) {
         </div>
       )}
 
-      {/* CONTINUAR VOO — escolher qual, quando há mais de um em aberto */}
+      {/* EXCLUIR RASCUNHO */}
+      {rascunhoParaExcluir&&(
+        <div style={s.modalOverlay} onClick={()=>setRascunhoParaExcluir(null)}>
+          <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
+            <div style={{...s.modalTitle,color:'#e5484d'}}>🗑️ Excluir rascunho</div>
+            <p style={{fontSize:14,color:'#0b1210',marginBottom:8,lineHeight:1.6}}>Excluir o rascunho de <strong>{rascunhoParaExcluir.cliente||'—'} — {rascunhoParaExcluir.fazenda||'—'}</strong>?</p>
+            <p style={{fontSize:13,color:'#e74c3c',marginBottom:24}}>Essa ação não pode ser desfeita.</p>
+            <div style={{display:'flex',gap:10}}>
+              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setRascunhoParaExcluir(null)}>Cancelar</button>
+              <button style={{...s.shareBtn,background:'#e5484d',flex:1}} onClick={()=>deletarRascunho(rascunhoParaExcluir)}>Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTINUAR VOO — sempre pergunta qual, mesmo com 1 só */}
       {continuarModalOpen&&(
         <div style={s.modalOverlay} onClick={()=>setContinuarModalOpen(false)}>
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>Qual voo continuar? <button style={s.modalClose} onClick={()=>setContinuarModalOpen(false)}>✕</button></div>
-            <p style={{fontSize:13,color:'#5c7568',marginBottom:14,lineHeight:1.5}}>Você tem {flightsAbertos.length} voos em aberto.</p>
-            {flightsAbertos.map(rel=>(
-              <div key={rel.id} onClick={()=>abrirVooAberto(rel.id)} style={{background:'#f7fbf8',borderRadius:14,padding:'12px 14px',marginBottom:8,cursor:'pointer',border:'1px solid #e8eee8'}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <div style={{fontSize:14,fontWeight:700,color:'#0b1210'}}>{rel.cliente||'—'} — {rel.fazenda||'—'}</div>
-                  <span style={{fontSize:10,fontWeight:700,color:'#0e9f6e',background:'#e3f7ec',borderRadius:20,padding:'3px 9px',whiteSpace:'nowrap',marginLeft:8}}>{STATUS_LABEL[rel.status]||rel.status}</span>
-                </div>
-                {rel.localizacao&&<div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>Talhão {rel.localizacao}</div>}
-                <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(rel.dt_inicio||rel.created_at).toLocaleDateString('pt-BR')}</div>
-              </div>
-            ))}
+            {continuarLoading ? (
+              <p style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:'20px 0'}}>⏳ Buscando voos em aberto...</p>
+            ) : flightsAbertos.length===0 ? (
+              <p style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:'20px 0'}}>Nenhum voo em aberto no momento.</p>
+            ) : (
+              <>
+                <p style={{fontSize:13,color:'#5c7568',marginBottom:14,lineHeight:1.5}}>Você tem {flightsAbertos.length} voo{flightsAbertos.length>1?'s':''} em aberto.</p>
+                {flightsAbertos.map(rel=>(
+                  <div key={rel.id} onClick={()=>abrirVooAberto(rel.id)} style={{background:'#f7fbf8',borderRadius:14,padding:'12px 14px',marginBottom:8,cursor:'pointer',border:'1px solid #e8eee8'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <div style={{fontSize:14,fontWeight:700,color:'#0b1210'}}>{rel.cliente||'—'} — {rel.fazenda||'—'}</div>
+                      <span style={{fontSize:10,fontWeight:700,color:'#0e9f6e',background:'#e3f7ec',borderRadius:20,padding:'3px 9px',whiteSpace:'nowrap',marginLeft:8}}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                    </div>
+                    {rel.localizacao&&<div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>Talhão {rel.localizacao}</div>}
+                    <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(rel.dt_inicio||rel.created_at).toLocaleDateString('pt-BR')}</div>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       )}
