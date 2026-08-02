@@ -452,6 +452,8 @@ export default function PilotApp({onSwitchMode}) {
   const [flights,setFlights] = useState([])
   const [osOpcoes,setOsOpcoes] = useState([])
   const [loadingFlights,setLoadingFlights] = useState(false)
+  const [flightsAbertos,setFlightsAbertos] = useState([])
+  const [continuarModalOpen,setContinuarModalOpen] = useState(false)
   const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
   function addItemViagem(categoria){
     setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
@@ -1255,8 +1257,35 @@ export default function PilotApp({onSwitchMode}) {
     setStorageFotoMapa(rel.foto_mapa_url||null)
     setStorageObsFotos(rel.obs_fotos_urls||[null,null,null])
     setView('form')
-    if(st==='paused_day') { setWizardStep(4); showToast('🌙 Voo retomado do dia anterior!') }
+    if(st==='paused_day'||st==='running'||st==='paused') { setWizardStep(4); showToast(st==='paused_day'?'🌙 Voo retomado do dia anterior!':'✏️ Voo carregado') }
     else showToast('✏️ Voo carregado')
+  }
+
+  // Todos os voos desse piloto ainda em aberto (rodando, pausado ou parcial) — consultado direto
+  // no servidor porque pode ter mais de um (ex: um parcial esquecido de outro dia + um rodando agora),
+  // e o estado local só sabe do último que passou por esse aparelho.
+  async function carregarFlightsAbertos(){
+    if(!profile?.id) return
+    try {
+      const {data} = await supabase.from('relatorios').select('id,cliente,fazenda,talhao,status,dt_inicio,created_at')
+        .eq('piloto_id',profile.id).in('status',['em_operacao','pausado','pausado_dia']).order('created_at',{ascending:false})
+      setFlightsAbertos(data||[])
+    } catch {}
+  }
+  useEffect(()=>{ carregarFlightsAbertos() },[profile?.id,opState]) // eslint-disable-line
+
+  async function abrirVooAberto(id){
+    if(id===relId){ setContinuarModalOpen(false); setView('form'); setWizardStep(4); return }
+    try {
+      const {data} = await supabase.from('relatorios').select('*').eq('id',id).single()
+      if(data){ setContinuarModalOpen(false); openFlight(data) }
+    } catch(e){ showToast('Erro ao abrir voo: '+e.message,'error') }
+  }
+
+  function handleContinuarVoo(){
+    if(flightsAbertos.length===0) return
+    if(flightsAbertos.length===1) abrirVooAberto(flightsAbertos[0].id)
+    else setContinuarModalOpen(true)
   }
 
   function tentarSair(){
@@ -1372,10 +1401,13 @@ export default function PilotApp({onSwitchMode}) {
         <span style={{fontSize:10,fontWeight:700}}>Início</span>
       </div>
       {(()=>{
-        const temVooAberto = opState!=='idle' && opState!=='finished'
+        const temVooAberto = flightsAbertos.length>0
         return (
-          <div onClick={()=>{ if(temVooAberto) setView('form') }} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:temVooAberto?'pointer':'default',marginTop:-26}}>
-            <span style={{width:52,height:52,borderRadius:'50%',background:temVooAberto?'linear-gradient(135deg,#0e9f6e,#22c476)':'#c3d4c9',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:temVooAberto?'0 8px 20px rgba(14,159,110,0.45)':'none',border:'4px solid #fff'}}><IconRota size={22}/></span>
+          <div onClick={handleContinuarVoo} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:temVooAberto?'pointer':'default',marginTop:-26,position:'relative'}}>
+            <span style={{width:52,height:52,borderRadius:'50%',background:temVooAberto?'linear-gradient(135deg,#0e9f6e,#22c476)':'#c3d4c9',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:temVooAberto?'0 8px 20px rgba(14,159,110,0.45)':'none',border:'4px solid #fff'}}>
+              <IconRota size={22}/>
+              {flightsAbertos.length>1&&<span style={{position:'absolute',top:-2,right:-2,background:'#ffb020',color:'#3a2a00',fontSize:10,fontWeight:700,borderRadius:20,minWidth:17,height:17,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',border:'2px solid #fff'}}>{flightsAbertos.length}</span>}
+            </span>
             <span style={{fontSize:10,fontWeight:700,color:temVooAberto?'#0e9f6e':'#a9beb1'}}>Continuar voo</span>
           </div>
         )
@@ -2373,37 +2405,29 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageTitle}>Ação</div>
             <div style={sw.pageSub}>Passo 4 de 5: Controle do voo</div>
 
-            {/* Botões — Iniciar, Pausar, Finalizar (compactos, no topo) */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:10}}>
-              <button style={{background:'#e3f7ec',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:opState!=='idle'?.4:1}}
-                disabled={opState!=='idle'||saving}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
-                  setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
-                  setChecklistOpen(true)
-                }}>
-                <span style={{fontSize:18}}>▶️</span>
-                <span style={{fontSize:11,fontWeight:700,color:'#0e9f6e'}}>Iniciar</span>
-              </button>
-              <button style={{background:'#fff3e0',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
-                <span style={{fontSize:18}}>{opState==='paused'?'▶️':'⏸️'}</span>
-                <span style={{fontSize:11,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
-              </button>
-              <button style={{background:'#fdeaea',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                disabled={opState!=='running'&&opState!=='paused'}
-                onClick={()=>{
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                  opFinalizar()
-                  setWizardStep(3)
-                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
-                }}>
-                <span style={{fontSize:18}}>⏹️</span>
-                <span style={{fontSize:11,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
-              </button>
-            </div>
+            {/* Botões — Pausar, Finalizar (Iniciar vira um botão grande mais abaixo, já que antes de começar
+                é a única ação possível — não faz sentido dividir espaço com botões ainda inativos) */}
+            {opState!=='idle'&&(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:10}}>
+                <button style={{background:'#fff3e0',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                  disabled={opState!=='running'&&opState!=='paused'} onClick={opPausar}>
+                  <span style={{fontSize:18}}>{opState==='paused'?'▶️':'⏸️'}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:'#f2960f'}}>{opState==='paused'?'Retomar':'Pausar'}</span>
+                </button>
+                <button style={{background:'#fdeaea',border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                  disabled={opState!=='running'&&opState!=='paused'}
+                  onClick={()=>{
+                    const n=nowParts()
+                    setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                    opFinalizar()
+                    setWizardStep(3)
+                    showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+                  }}>
+                  <span style={{fontSize:18}}>⏹️</span>
+                  <span style={{fontSize:11,fontWeight:700,color:'#e5484d'}}>Finalizar</span>
+                </button>
+              </div>
+            )}
 
             {/* Status */}
             <div style={{display:'flex',justifyContent:'center',marginBottom:14}}>
@@ -2475,6 +2499,20 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{fontSize:11,color:'#7ba38f'}}>{form.dt_fim_hh?`${form.dt_fim_hh}:${form.dt_fim_mm}`:'--:--'}</div>
               </div>
             </div>
+
+            {/* Iniciar — botão grande, só aparece antes de começar */}
+            {opState==='idle'&&(
+              <button style={{...sw.btnG,background:'linear-gradient(135deg,#0e9f6e,#22c476)',padding:'16px',fontSize:15,marginBottom:16}}
+                disabled={saving}
+                onClick={()=>{
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
+                  setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
+                  setChecklistOpen(true)
+                }}>
+                ▶️ Iniciar Voo
+              </button>
+            )}
 
             {/* Horários editáveis — preenchidos pelo sistema, ajustáveis */}
             <div style={{background:'#f7fbf8',borderRadius:12,padding:'12px 14px',marginBottom:12,border:'1px solid #e8eee8'}}>
@@ -2598,25 +2636,6 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.pageSub}>Passo 5 de 5: Fotos, KML e geração do relatório</div>
 
 
-            {/* Foto de observação — apenas uma */}
-            <div style={{marginBottom:16}}>
-              <label style={sw.fl}>FOTO DE OBSERVAÇÃO</label>
-              <div style={{display:'flex',flexDirection:'column',gap:4,maxWidth:160}}>
-                <div style={{border:'1.5px dashed #e0ece5',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#f8fbf9',...((obsFotos[0]||storageObsFotos[0])?{border:'none',padding:0}:{})}}
-                  onClick={()=>setFotoPickerOpen({tipo:'obs',idx:0})}>
-                  {obsFotos[0]?<img src={obsFotos[0]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:10}}/>
-                    :storageObsFotos[0]?<StorageFotoSlot supabase={supabase} path={storageObsFotos[0]}/>
-                    :<><div style={{fontSize:22}}>📷</div><div style={{fontSize:10,color:'#aaa',marginTop:2}}>Adicionar foto</div></>}
-                </div>
-                {(obsFotos[0]||storageObsFotos[0])&&(
-                  <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'3px',fontSize:10,cursor:'pointer'}}
-                    onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[0]=null;setObsFotos(a);const b=[...obsFotoFiles];b[0]=null;setObsFotoFiles(b)}}>🗑️</button>
-                )}
-                <input id="obs-galeria-0" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
-                <input id="obs-camera-0" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
-              </div>
-            </div>
-
             {/* Foto mapa */}
             <div style={sw.fw}>
               <label style={sw.fl}>MAPA DE PÓS APLICAÇÃO</label>
@@ -2687,6 +2706,25 @@ export default function PilotApp({onSwitchMode}) {
             <div style={sw.fw}>
               <label style={sw.fl}>OBSERVAÇÃO</label>
               <textarea style={{...sw.fi,resize:'none',height:80}} value={form.obs1} onChange={e=>setForm(f=>({...f,obs1:e.target.value}))}/>
+            </div>
+
+            {/* Foto de observação — apenas uma */}
+            <div style={{marginBottom:16}}>
+              <label style={sw.fl}>FOTO DE OBSERVAÇÃO</label>
+              <div style={{display:'flex',flexDirection:'column',gap:4,maxWidth:160}}>
+                <div style={{border:'1.5px dashed #e0ece5',borderRadius:12,padding:'10px 4px',textAlign:'center',cursor:'pointer',minHeight:66,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',overflow:'hidden',background:'#f8fbf9',...((obsFotos[0]||storageObsFotos[0])?{border:'none',padding:0}:{})}}
+                  onClick={()=>setFotoPickerOpen({tipo:'obs',idx:0})}>
+                  {obsFotos[0]?<img src={obsFotos[0]} alt="" style={{width:'100%',height:60,objectFit:'cover',borderRadius:10}}/>
+                    :storageObsFotos[0]?<StorageFotoSlot supabase={supabase} path={storageObsFotos[0]}/>
+                    :<><div style={{fontSize:22}}>📷</div><div style={{fontSize:10,color:'#aaa',marginTop:2}}>Adicionar foto</div></>}
+                </div>
+                {(obsFotos[0]||storageObsFotos[0])&&(
+                  <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'3px',fontSize:10,cursor:'pointer'}}
+                    onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[0]=null;setObsFotos(a);const b=[...obsFotoFiles];b[0]=null;setObsFotoFiles(b)}}>🗑️</button>
+                )}
+                <input id="obs-galeria-0" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
+                <input id="obs-camera-0" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
+              </div>
             </div>
 
             {/* Expectativa de gasto por produto — dose x área aplicada (já descontando bordadura) */}
@@ -2806,6 +2844,26 @@ export default function PilotApp({onSwitchMode}) {
               }}>📄 Baixar PDF</button>
             )}
             <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={compartilharWhatsApp}>💬 WhatsApp{(fotoMapaFile||storageFotoMapa)?' (com foto do mapa)':''}</button>
+          </div>
+        </div>
+      )}
+
+      {/* CONTINUAR VOO — escolher qual, quando há mais de um em aberto */}
+      {continuarModalOpen&&(
+        <div style={s.modalOverlay} onClick={()=>setContinuarModalOpen(false)}>
+          <div style={s.modal} onClick={e=>e.stopPropagation()}>
+            <div style={s.modalTitle}>Qual voo continuar? <button style={s.modalClose} onClick={()=>setContinuarModalOpen(false)}>✕</button></div>
+            <p style={{fontSize:13,color:'#5c7568',marginBottom:14,lineHeight:1.5}}>Você tem {flightsAbertos.length} voos em aberto.</p>
+            {flightsAbertos.map(rel=>(
+              <div key={rel.id} onClick={()=>abrirVooAberto(rel.id)} style={{background:'#f7fbf8',borderRadius:14,padding:'12px 14px',marginBottom:8,cursor:'pointer',border:'1px solid #e8eee8'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <div style={{fontSize:14,fontWeight:700,color:'#0b1210'}}>{rel.cliente||'—'} — {rel.fazenda||'—'}</div>
+                  <span style={{fontSize:10,fontWeight:700,color:'#0e9f6e',background:'#e3f7ec',borderRadius:20,padding:'3px 9px',whiteSpace:'nowrap',marginLeft:8}}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                </div>
+                {rel.talhao&&<div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>Talhão {rel.talhao}</div>}
+                <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(rel.dt_inicio||rel.created_at).toLocaleDateString('pt-BR')}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}
