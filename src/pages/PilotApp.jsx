@@ -1313,6 +1313,22 @@ export default function PilotApp({onSwitchMode}) {
     else signOut()
   }
 
+  // Precisa ficar disponível em toda tela que tem botão "Sair" (não só no wizard) — antes só
+  // existia lá, então clicar Sair na Home/Relatórios/Notas/Tempo/Agenda com voo em andamento
+  // não fazia nada visível (o aviso simplesmente não tinha onde renderizar).
+  const ExitConfirmModal = () => !exitConfirm ? null : (
+    <div style={s.modalOverlay} onClick={()=>setExitConfirm(false)}>
+      <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
+        <div style={s.modalTitle}>⚠️ Operação em andamento</div>
+        <p style={{fontSize:14,color:'#5c7568',marginBottom:20,lineHeight:1.6}}>Você tem uma operação em andamento. Os dados estão salvos. Deseja sair?</p>
+        <div style={{display:'flex',gap:10}}>
+          <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setExitConfirm(false)}>Cancelar</button>
+          <button style={{...s.shareBtn,background:'#e5484d',flex:1}} onClick={()=>{setExitConfirm(false);signOut()}}>Sair</button>
+        </div>
+      </div>
+    </div>
+  )
+
   function limpar(silent=false){
     try{localStorage.removeItem(LS_KEY)}catch{}
     setForm(initForm());setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
@@ -1605,6 +1621,7 @@ export default function PilotApp({onSwitchMode}) {
         <BottomNav/>
         {toast&&<div style={s.toast}>{toast}</div>}
         {showPerfil&&<ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
+        <ExitConfirmModal/>
       </div>
     )
   }
@@ -1653,6 +1670,7 @@ export default function PilotApp({onSwitchMode}) {
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
+      <ExitConfirmModal/>
     </div>
   )
 
@@ -1836,6 +1854,7 @@ export default function PilotApp({onSwitchMode}) {
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
+      <ExitConfirmModal/>
     </div>
   )
 
@@ -1938,6 +1957,7 @@ export default function PilotApp({onSwitchMode}) {
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
+      <ExitConfirmModal/>
     </div>
   )
 
@@ -1983,6 +2003,7 @@ export default function PilotApp({onSwitchMode}) {
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
+      <ExitConfirmModal/>
     </div>
   )
 
@@ -2944,18 +2965,7 @@ export default function PilotApp({onSwitchMode}) {
       )}
 
       {/* CONFIRM SAIR */}
-      {exitConfirm&&(
-        <div style={s.modalOverlay} onClick={()=>setExitConfirm(false)}>
-          <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
-            <div style={s.modalTitle}>⚠️ Operação em andamento</div>
-            <p style={{fontSize:14,color:'#5c7568',marginBottom:20,lineHeight:1.6}}>Você tem uma operação em andamento. Os dados estão salvos. Deseja sair?</p>
-            <div style={{display:'flex',gap:10}}>
-              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setExitConfirm(false)}>Cancelar</button>
-              <button style={{...s.shareBtn,background:'#e5484d',flex:1}} onClick={()=>{setExitConfirm(false);signOut()}}>Sair</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ExitConfirmModal/>
 
       {/* CONFIRM FINALIZAR */}
       {finalizeConfirm&&(
