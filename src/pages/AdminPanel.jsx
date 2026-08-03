@@ -2553,7 +2553,13 @@ export default function AdminPanel({ onSwitchMode }) {
               )
               const areaRealizada = relatoriosFz.reduce((a,r)=>a+areaLiquida(r),0)
               const pct = areaTotal>0 ? Math.min(100,(areaRealizada/areaTotal)*100) : null
-              return { ...fz, areaTotal, areaRealizada, pct, numTalhoes: talhoesFz.length, numVoos: relatoriosFz.length }
+              const porPiloto = {}
+              relatoriosFz.forEach(r=>{
+                const n = r.piloto_nome||'—'
+                porPiloto[n] = (porPiloto[n]||0) + areaLiquida(r)
+              })
+              const rankingPilotos = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1])
+              return { ...fz, areaTotal, areaRealizada, pct, numTalhoes: talhoesFz.length, numVoos: relatoriosFz.length, rankingPilotos }
             })
 
             const somaTotal = fazendasBI.reduce((a,f)=>a+f.areaTotal,0)
@@ -2693,6 +2699,17 @@ export default function AdminPanel({ onSwitchMode }) {
                                   <span style={{fontWeight:700,color:'#0e9f6e'}}>{fz.pct.toFixed(0)}%</span>
                                 </div>
                                 {fz.campanha_inicio && <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Ciclo desde {new Date(fz.campanha_inicio).toLocaleDateString('pt-BR')}</div>}
+                                {fz.rankingPilotos.length>0 && (
+                                  <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #f1f8f4'}}>
+                                    <div style={{fontSize:9,fontWeight:700,color:'#7ba38f',letterSpacing:.3,marginBottom:4}}>QUEM FEZ</div>
+                                    {fz.rankingPilotos.map(([nome,area])=>(
+                                      <div key={nome} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#5c7568',padding:'2px 0'}}>
+                                        <span>{nome}</span>
+                                        <span style={{fontWeight:600,color:'#0b1210'}}>{area.toFixed(1)} ha</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </>
                             )}
                           </div>

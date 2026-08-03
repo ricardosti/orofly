@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto } from '../lib/pdf'
+import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
@@ -399,6 +399,7 @@ export default function PilotApp({onSwitchMode}) {
   const [produtosDB, setProdutosDB] = useState([])
   const [clientesDB, setClientesDB] = useState([])
   const [fazendasDB, setFazendasDB] = useState([])
+  const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState([])
   const [talhoesDB, setTalhoesDB] = useState([])
   const [veiculosDB, setVeiculosDB] = useState([])
   const [voosFrotaDrone, setVoosFrotaDrone] = useState([])
@@ -508,10 +509,14 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,ativo').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
+    // Leve, só o necessário pra calcular quanto já foi feito em cada fazenda (de todos os pilotos,
+    // não só o logado) — usado pra tirar fazenda 100% concluída da lista e mostrar o que falta.
+    supabase.from('relatorios').select('cliente,fazenda,area_ha,bordadura,created_at').eq('status','finalizado')
+      .then(({data}) => { if(data) setRelatoriosFinalizadosOrg(data) })
     supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
   }, [])
@@ -2042,9 +2047,23 @@ export default function PilotApp({onSwitchMode}) {
               const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
               const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente)
               const temCadastro = fazendasCliente.length>0
+              // Progresso de cada fazenda (todos os pilotos) desde o último "zerar" do admin — usado
+              // pra tirar da lista quem já terminou (100%) e mostrar quanto falta em quem tá parcial.
+              const progressoFz = (fz) => {
+                const talhoesFz = talhoesDB.filter(t=>t.fazenda_id===fz.id)
+                const areaTotal = talhoesFz.reduce((a,t)=>a+parseFloat(t.area_ha||0),0)
+                if(areaTotal<=0) return null
+                const areaRealizada = relatoriosFinalizadosOrg
+                  .filter(r=>r.fazenda===fz.nome && r.cliente===fz.cliente && (!fz.campanha_inicio || new Date(r.created_at)>=new Date(fz.campanha_inicio)))
+                  .reduce((a,r)=>a+areaLiquida(r),0)
+                const pct = Math.min(100,(areaRealizada/areaTotal)*100)
+                return { areaTotal, areaRealizada, pct, restante: Math.max(0, areaTotal-areaRealizada) }
+              }
               // Comparação tolerante a maiúsculas/espaços — cadastro pode ter "Fazenda X " vs "FAZENDA X"
               const fazendaSel = fazendasCliente.find(fz=>norm(fz.nome)===norm(form.fazenda))
               const selectVal = fazendaSel ? fazendaSel.nome : (form.fazenda ? 'Outros' : '')
+              // Some da lista quem já bateu 100% — pra reaparecer, o admin usa "🔄 Zerar" na fazenda
+              const fazendasVisiveis = fazendasCliente.filter(fz=>fz.id===fazendaSel?.id || (progressoFz(fz)?.pct??0) < 100)
               return (
                 <>
                   {temCadastro ? (
@@ -2055,7 +2074,11 @@ export default function PilotApp({onSwitchMode}) {
                         setForm(f=>({...f,fazenda:v,produto:fzEscolhida?.produto||'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
                       }}>
                         <option value="">Selecione a Fazenda...</option>
-                        {fazendasCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
+                        {fazendasVisiveis.map(fz=>{
+                          const prog = progressoFz(fz)
+                          const label = prog && prog.pct>0 ? `${fz.nome} — ${prog.restante.toFixed(1)} ha restantes` : fz.nome
+                          return <option key={fz.id} value={fz.nome}>{label}</option>
+                        })}
                         <option>Outros</option>
                       </FS>
                       {(selectVal==='Outros')&&<FI label="NOME DA FAZENDA" ph="Digite o nome..." val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>}
