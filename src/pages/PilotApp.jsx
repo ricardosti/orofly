@@ -458,6 +458,7 @@ export default function PilotApp({onSwitchMode}) {
   const [continuarModalOpen,setContinuarModalOpen] = useState(false)
   const [continuarLoading,setContinuarLoading] = useState(false)
   const [rascunhoParaExcluir,setRascunhoParaExcluir] = useState(null)
+  const [confirmDialog,setConfirmDialog] = useState(null) // {message, onConfirm}
   const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
   function addItemViagem(categoria){
     setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
@@ -515,7 +516,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
     // Leve, só o necessário pra calcular quanto já foi feito em cada fazenda (de todos os pilotos,
     // não só o logado) — usado pra tirar fazenda 100% concluída da lista e mostrar o que falta.
-    supabase.from('relatorios').select('cliente,fazenda,area_ha,bordadura,created_at').eq('status','finalizado')
+    supabase.from('relatorios').select('cliente,fazenda,area_ha,bordadura,created_at,localizacao').eq('status','finalizado')
       .then(({data}) => { if(data) setRelatoriosFinalizadosOrg(data) })
     supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
@@ -1334,6 +1335,35 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
+  // Substitui window.confirm — dentro do preview embutido (iframe) o confirm() nativo é
+  // bloqueado silenciosamente e retorna false sem o usuário ver nada, fazendo o botão
+  // parecer quebrado. Esse modal funciona em qualquer contexto (preview, app, navegador).
+  const ConfirmDialogModal = () => !confirmDialog ? null : (
+    <div style={s.modalOverlay} onClick={()=>setConfirmDialog(null)}>
+      <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
+        <div style={s.modalTitle}>⚠️ Confirmar</div>
+        <p style={{fontSize:14,color:'#5c7568',marginBottom:20,lineHeight:1.6}}>{confirmDialog.message}</p>
+        <div style={{display:'flex',gap:10}}>
+          <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setConfirmDialog(null)}>Cancelar</button>
+          <button style={{...s.shareBtn,background:'#e5484d',flex:1}} onClick={()=>{const fn=confirmDialog.onConfirm;setConfirmDialog(null);fn()}}>Confirmar</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Sai do fluxo de voo pra Home — salva o progresso primeiro se já tem algo preenchido,
+  // pra não perder dados do piloto (diferente de "Limpar"/"Novo Voo", que descartam).
+  async function sairDoFluxoVoo(){
+    if(form.cliente || form.fazenda || opState!=='idle') await saveToSupabase({status:statusAtual()})
+    setView('home')
+  }
+
+  // Botão de saída rápida do fluxo, disponível nos 5 passos ao lado dos demais — salva o
+  // progresso (sairDoFluxoVoo) antes de voltar pra Home, então nunca perde dado preenchido.
+  const HomeExitBtn = () => (
+    <button type="button" style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 42px',padding:'11px 4px',fontSize:16}} onClick={sairDoFluxoVoo}>🏠</button>
+  )
+
   function limpar(silent=false){
     try{localStorage.removeItem(LS_KEY)}catch{}
     setForm(initForm());setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
@@ -2045,25 +2075,38 @@ export default function PilotApp({onSwitchMode}) {
             {/* FAZENDA — dropdown filtrado pelo cliente, com Outros */}
             {(()=>{
               const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
-              const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente)
-              const temCadastro = fazendasCliente.length>0
-              // Progresso de cada fazenda (todos os pilotos) desde o último "zerar" do admin — usado
-              // pra tirar da lista quem já terminou (100%) e mostrar quanto falta em quem tá parcial.
-              const progressoFz = (fz) => {
-                const talhoesFz = talhoesDB.filter(t=>t.fazenda_id===fz.id)
-                const areaTotal = talhoesFz.reduce((a,t)=>a+parseFloat(t.area_ha||0),0)
+              // Progresso de um talhão específico (todos os pilotos) desde o último "zerar" da
+              // fazenda no Admin — quando um voo abrange vários talhões, divide a área proporcional
+              // ao tamanho cadastrado de cada um (não dá pra saber a área exata por talhão nesse caso).
+              const progressoTalhao = (fz, t, talhoesDaFazenda) => {
+                const areaTotal = parseFloat(t.area_ha)||0
                 if(areaTotal<=0) return null
-                const areaRealizada = relatoriosFinalizadosOrg
-                  .filter(r=>r.fazenda===fz.nome && r.cliente===fz.cliente && (!fz.campanha_inicio || new Date(r.created_at)>=new Date(fz.campanha_inicio)))
-                  .reduce((a,r)=>a+areaLiquida(r),0)
-                const pct = Math.min(100,(areaRealizada/areaTotal)*100)
-                return { areaTotal, areaRealizada, pct, restante: Math.max(0, areaTotal-areaRealizada) }
+                let areaRealizada = 0
+                relatoriosFinalizadosOrg.forEach(r=>{
+                  if(r.cliente!==fz.cliente || r.fazenda!==fz.nome) return
+                  if(fz.campanha_inicio && new Date(r.created_at) < new Date(fz.campanha_inicio)) return
+                  const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+                  if(!nomesVoo.includes(t.nome)) return
+                  const somaRegistrada = nomesVoo.reduce((a,n)=>{
+                    const tt = talhoesDaFazenda.find(x=>x.nome===n)
+                    return a + (tt?parseFloat(tt.area_ha)||0:0)
+                  },0)
+                  const fracao = somaRegistrada>0 ? areaTotal/somaRegistrada : 1/nomesVoo.length
+                  areaRealizada += areaLiquida(r) * fracao
+                })
+                return { areaTotal, areaRealizada, pct: Math.min(100,(areaRealizada/areaTotal)*100) }
               }
+              // Fazenda some da lista só quando TODOS os talhões dela estiverem concluídos
+              const fazendaCompleta = (fz) => {
+                const talhoesDaFazenda = talhoesDB.filter(t=>t.fazenda_id===fz.id)
+                if(talhoesDaFazenda.length===0) return false
+                return talhoesDaFazenda.every(t=>(progressoTalhao(fz,t,talhoesDaFazenda)?.pct??0) >= 100)
+              }
+              const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente && (norm(fz.nome)===norm(form.fazenda) || !fazendaCompleta(fz)))
+              const temCadastro = fazendasCliente.length>0
               // Comparação tolerante a maiúsculas/espaços — cadastro pode ter "Fazenda X " vs "FAZENDA X"
               const fazendaSel = fazendasCliente.find(fz=>norm(fz.nome)===norm(form.fazenda))
               const selectVal = fazendaSel ? fazendaSel.nome : (form.fazenda ? 'Outros' : '')
-              // Some da lista quem já bateu 100% — pra reaparecer, o admin usa "🔄 Zerar" na fazenda
-              const fazendasVisiveis = fazendasCliente.filter(fz=>fz.id===fazendaSel?.id || (progressoFz(fz)?.pct??0) < 100)
               return (
                 <>
                   {temCadastro ? (
@@ -2074,11 +2117,7 @@ export default function PilotApp({onSwitchMode}) {
                         setForm(f=>({...f,fazenda:v,produto:fzEscolhida?.produto||'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
                       }}>
                         <option value="">Selecione a Fazenda...</option>
-                        {fazendasVisiveis.map(fz=>{
-                          const prog = progressoFz(fz)
-                          const label = prog && prog.pct>0 ? `${fz.nome} — ${prog.restante.toFixed(1)} ha restantes` : fz.nome
-                          return <option key={fz.id} value={fz.nome}>{label}</option>
-                        })}
+                        {fazendasCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
                         <option>Outros</option>
                       </FS>
                       {(selectVal==='Outros')&&<FI label="NOME DA FAZENDA" ph="Digite o nome..." val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>}
@@ -2104,9 +2143,8 @@ export default function PilotApp({onSwitchMode}) {
                     }
                     const todosSelecionados = temTalhoes && talhoesFaz.every(t=>selecionados.includes(t.nome))
                     const toggleTodos = () => aplicarSelecao(todosSelecionados ? [] : talhoesFaz.map(t=>t.nome))
-                    const talhoesVisiveis = talhaoSearch.trim()
-                      ? talhoesFaz.filter(t=>t.nome.toLowerCase().includes(talhaoSearch.trim().toLowerCase()))
-                      : talhoesFaz
+                    const talhoesVisiveis = talhoesFaz
+                      .filter(t=>!talhaoSearch.trim() || t.nome.toLowerCase().includes(talhaoSearch.trim().toLowerCase()))
                     if (temTalhoes) return (
                       <div style={{...sw.fw,position:'relative'}}>
                         <label style={sw.fl}>TALHÕES <span style={{fontWeight:400,color:'#aaa'}}>(selecione um ou mais)</span></label>
@@ -2138,13 +2176,22 @@ export default function PilotApp({onSwitchMode}) {
                                   <div style={{padding:'14px',fontSize:13,color:'#aaa',textAlign:'center'}}>Nenhum talhão encontrado</div>
                                 ) : talhoesVisiveis.map(t=>{
                                   const sel = selecionados.includes(t.nome)
+                                  const prog = fazendaSel ? progressoTalhao(fazendaSel, t, talhoesFaz) : null
+                                  const finalizado = prog && prog.pct>=100
+                                  const parcial = prog && prog.pct>0 && prog.pct<100
+                                  const falta = prog ? Math.max(0, prog.areaTotal-prog.areaRealizada) : 0
+                                  const bg = sel ? '#e3f7ec' : finalizado ? '#eafaf0' : parcial ? '#fff8e6' : '#fff'
                                   return (
                                     <div key={t.id} onClick={()=>toggleTalhao(t)}
-                                      style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',background:sel?'#e3f7ec':'#fff',borderBottom:'1px solid #f0f5f2'}}>
+                                      style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',cursor:'pointer',background:bg,borderBottom:'1px solid #f0f5f2',borderLeft:finalizado?'3px solid #0e9f6e':parcial?'3px solid #f2960f':'3px solid transparent'}}>
                                       <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${sel?'#0e9f6e':'#c3d4c9'}`,background:sel?'#0e9f6e':'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                                         {sel&&<span style={{color:'#fff',fontSize:11,fontWeight:700}}>✓</span>}
                                       </div>
-                                      <span style={{fontSize:14,color:'#0b1210',flex:1}}>{t.nome}</span>
+                                      <span style={{fontSize:14,color:'#0b1210',flex:1}}>
+                                        {t.nome}
+                                        {finalizado&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:'#fff',background:'#0e9f6e',padding:'2px 7px',borderRadius:20}}>✓ Concluído</span>}
+                                        {parcial&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:'#a3690a',background:'#ffe9b8',padding:'2px 7px',borderRadius:20}}>faltam {falta.toFixed(1)} ha</span>}
+                                      </span>
                                       {t.area_ha&&<span style={{fontSize:12,color:'#0e9f6e',fontWeight:600}}>{t.area_ha} ha</span>}
                                     </div>
                                   )
@@ -2223,8 +2270,9 @@ export default function PilotApp({onSwitchMode}) {
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
+              <HomeExitBtn/>
               <button style={{...sw.btnG,background:'#fdeaea',color:'#e5484d',flex:'0 0 90px'}} onClick={()=>{
-                if(window.confirm('Limpar TODO o formulário? Isso apaga todos os dados preenchidos.')) limpar()
+                setConfirmDialog({message:'Limpar TODO o formulário? Isso apaga todos os dados preenchidos.',onConfirm:()=>limpar()})
               }}>🗑️ Limpar</button>
               <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(2) }}>Próximo →</button>
             </div>
@@ -2303,6 +2351,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
+              <HomeExitBtn/>
               <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(1)}>← Voltar</button>
               <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(3) }}>Próximo →</button>
             </div>
@@ -2460,6 +2509,7 @@ export default function PilotApp({onSwitchMode}) {
             </div>
             <div style={sw.btnBar}>
               <div style={{display:'flex',gap:8}}>
+                <HomeExitBtn/>
                 <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
                 <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(opState==='finished'?5:4) }}>
                   {opState==='finished'?'Ir para Relatório →':'Próximo →'}
@@ -2648,6 +2698,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:8}}>
+              <HomeExitBtn/>
               <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(3)}>← Voltar</button>
               <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(5) }}>Próximo →</button>
             </div>
@@ -2795,14 +2846,21 @@ export default function PilotApp({onSwitchMode}) {
             )}
           </div>
           <div style={sw.btnBar}>
-            <div style={{display:'flex',gap:8}}>
-              <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 80px'}} onClick={()=>setWizardStep(4)}>← Voltar</button>
-              <button style={{...sw.btnG,background:'#fff',color:'#0e9f6e',border:'1.5px solid #0e9f6e',flex:'0 0 110px'}} disabled={saveStatus==='saving'} onClick={async()=>{await saveToSupabase();showToast('💾 Progresso salvo!')}}>
-                {saveStatus==='saving'?'...':'💾 Salvar'}
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              <HomeExitBtn/>
+              <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 42px',padding:'11px 4px',fontSize:16}} onClick={()=>setWizardStep(4)}>←</button>
+              <button style={{...sw.btnG,background:'#fff',color:'#0e9f6e',border:'1.5px solid #0e9f6e',flex:'0 0 42px',padding:'11px 4px',fontSize:16}} disabled={saveStatus==='saving'} onClick={async()=>{await saveToSupabase();showToast('💾 Progresso salvo!')}}>
+                {saveStatus==='saving'?'…':'💾'}
               </button>
-              <button style={{...sw.btnG,flex:1,opacity:(opState==='finished'||opState==='paused_day')?1:.5,cursor:(opState==='finished'||opState==='paused_day')?'pointer':'default'}} disabled={(opState!=='finished'&&opState!=='paused_day')||saving} onClick={gerarRelatorioFinal}>
-                {saving?'Aguarde...':opState==='paused_day'?'📋 Gerar Relatório Parcial':'📋 Gerar Relatório'}
+              <button style={{...sw.btnG,flex:'1 1 130px',opacity:(opState==='finished'||opState==='paused_day')?1:.5,cursor:(opState==='finished'||opState==='paused_day')?'pointer':'default'}} disabled={(opState!=='finished'&&opState!=='paused_day')||saving} onClick={gerarRelatorioFinal}>
+                {saving?'Aguarde...':opState==='paused_day'?'📋 Relatório Parcial':'📋 Gerar Relatório'}
               </button>
+              <button style={{...sw.btnG,flex:'0 0 118px',background:'linear-gradient(135deg,#0e9f6e,#22c476)',color:'#fff'}} onClick={()=>{
+                const msg = (opState==='finished'||opState==='paused_day')
+                  ? 'Iniciar um novo voo? Este relatório já está salvo.'
+                  : 'Este voo ainda não foi finalizado. Iniciar um novo voo mesmo assim? Os dados já preenchidos serão apagados.'
+                setConfirmDialog({message:msg,onConfirm:()=>{limpar(true);setView('form')}})
+              }}>✈️ Novo Voo</button>
             </div>
           </div>
         </>
@@ -2989,6 +3047,7 @@ export default function PilotApp({onSwitchMode}) {
 
       {/* CONFIRM SAIR */}
       <ExitConfirmModal/>
+      <ConfirmDialogModal/>
 
       {/* CONFIRM FINALIZAR */}
       {finalizeConfirm&&(
