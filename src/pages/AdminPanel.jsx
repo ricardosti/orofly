@@ -141,7 +141,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invClientes, setInvClientes] = useState([])
   const [invFazendas, setInvFazendas] = useState([])
   const [invTalhoes, setInvTalhoes] = useState([])
-  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:''})
+  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:''})
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
@@ -2652,13 +2652,13 @@ export default function AdminPanel({ onSwitchMode }) {
                   if(r){ lat = r.lat; lng = r.lng }
                 }
                 const payload = {cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,
-                  cep:fzForm.cep||null,lat:lat?parseFloat(lat):null,lng:lng?parseFloat(lng):null}
+                  cep:fzForm.cep||null,lat:lat?parseFloat(lat):null,lng:lng?parseFloat(lng):null,id_fazenda:fzForm.id_fazenda||null}
                 const {error} = fzEditId
                   ? await supabase.from('fazendas').update(payload).eq('id',fzEditId)
                   : await supabase.from('fazendas').insert({...payload,ativo:true})
                 if(error) throw error
                 showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
-                setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:''}); setFzEditId(null); setFzModal(false); fetchInventario()
+                setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:''}); setFzEditId(null); setFzModal(false); fetchInventario()
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false) }
             }
 
@@ -2677,7 +2677,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   )}
                   {fzTab==='fazendas' && (
                     <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:''});setFzEditId(null);setFzModal(true)}}>
+                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:''});setFzEditId(null);setFzModal(true)}}>
                       + Nova Fazenda
                     </button>
                   )}
@@ -2846,7 +2846,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                     <button style={{background:'#f1f8f4',color:'#0e9f6e',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={(e)=>{
                                         e.stopPropagation()
-                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??''})
+                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||''})
                                         setFzEditId(fz.id); setFzModal(true)
                                       }}>✏️</button>
                                     <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
@@ -2914,6 +2914,11 @@ export default function AdminPanel({ onSwitchMode }) {
                               <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>NOME DA FAZENDA</div>
                               <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 placeholder="Ex: Fazenda Jamaica" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
+                            </div>
+                            <div>
+                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>ID DA FAZENDA (OPCIONAL)</div>
+                              <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                placeholder="Preenchimento manual" value={fzForm.id_fazenda} onChange={e=>setFzForm(f=>({...f,id_fazenda:e.target.value}))}/>
                             </div>
                             <div>
                               <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>PRODUTO (OPCIONAL)</div>
