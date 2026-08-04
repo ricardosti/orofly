@@ -2846,21 +2846,15 @@ export default function PilotApp({onSwitchMode}) {
             )}
           </div>
           <div style={sw.btnBar}>
-            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:6}}>
               <HomeExitBtn/>
               <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 42px',padding:'11px 4px',fontSize:16}} onClick={()=>setWizardStep(4)}>←</button>
               <button style={{...sw.btnG,background:'#fff',color:'#0e9f6e',border:'1.5px solid #0e9f6e',flex:'0 0 42px',padding:'11px 4px',fontSize:16}} disabled={saveStatus==='saving'} onClick={async()=>{await saveToSupabase();showToast('💾 Progresso salvo!')}}>
                 {saveStatus==='saving'?'…':'💾'}
               </button>
-              <button style={{...sw.btnG,flex:'1 1 130px',opacity:(opState==='finished'||opState==='paused_day')?1:.5,cursor:(opState==='finished'||opState==='paused_day')?'pointer':'default'}} disabled={(opState!=='finished'&&opState!=='paused_day')||saving} onClick={gerarRelatorioFinal}>
-                {saving?'Aguarde...':opState==='paused_day'?'📋 Relatório Parcial':'📋 Gerar Relatório'}
+              <button style={{...sw.btnG,flex:1,opacity:(opState==='finished'||opState==='paused_day')?1:.5,cursor:(opState==='finished'||opState==='paused_day')?'pointer':'default'}} disabled={(opState!=='finished'&&opState!=='paused_day')||saving} onClick={gerarRelatorioFinal}>
+                {saving?'Aguarde...':opState==='paused_day'?'📋 Gerar Relatório Parcial':'📋 Gerar Relatório'}
               </button>
-              <button style={{...sw.btnG,flex:'0 0 118px',background:'linear-gradient(135deg,#0e9f6e,#22c476)',color:'#fff'}} onClick={()=>{
-                const msg = (opState==='finished'||opState==='paused_day')
-                  ? 'Iniciar um novo voo? Este relatório já está salvo.'
-                  : 'Este voo ainda não foi finalizado. Iniciar um novo voo mesmo assim? Os dados já preenchidos serão apagados.'
-                setConfirmDialog({message:msg,onConfirm:()=>{limpar(true);setView('form')}})
-              }}>✈️ Novo Voo</button>
             </div>
           </div>
         </>

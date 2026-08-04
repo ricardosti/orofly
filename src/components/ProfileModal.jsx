@@ -36,7 +36,8 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
       if (avatarFile) {
         const path = `avatars/${profile.id}/${Date.now()}.jpg`
         const { error: upErr } = await supabase.storage.from('relatorios').upload(path, avatarFile, { upsert: true })
-        if (!upErr) avatar_url = path
+        if (upErr) throw upErr
+        avatar_url = path
       }
       const { error: profErr } = await supabase.from('profiles').update({ nome, telefone: telefone || null, avatar_url }).eq('id', profile.id)
       if (profErr) throw profErr
