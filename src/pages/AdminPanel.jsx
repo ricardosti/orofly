@@ -78,7 +78,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [avatarUrl, setAvatarUrl] = useState(null)
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
-    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data})=>{
+    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data,error})=>{
+      if (error) console.error('Erro ao gerar URL do avatar:', error)
       if (data?.signedUrl) setAvatarUrl(data.signedUrl)
     })
   }, [profile?.avatar_url])
@@ -139,8 +140,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invClientes, setInvClientes] = useState([])
   const [invFazendas, setInvFazendas] = useState([])
   const [invTalhoes, setInvTalhoes] = useState([])
-  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:''})
+  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:''})
   const [fzModal, setFzModal] = useState(false)
+  const [fzEditId, setFzEditId] = useState(null)
+  const [fzGeoLoading, setFzGeoLoading] = useState(false)
   const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
   const [fzSearch, setFzSearch] = useState('')
   const [fzProdutoFiltro, setFzProdutoFiltro] = useState('')
@@ -156,6 +159,31 @@ export default function AdminPanel({ onSwitchMode }) {
   const [agenda, setAgenda] = useState([])
   const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',data_prevista:'',produto:'',observacao:''})
   const [agendaSaving, setAgendaSaving] = useState(false)
+  const [agendaClima, setAgendaClima] = useState(null)
+  const [agendaClimaLoading, setAgendaClimaLoading] = useState(false)
+
+  // Previsão do tempo da fazenda selecionada, pro dia agendado — só funciona se a fazenda
+  // tiver lat/lng cadastrados (Fazendas & Clientes > editar fazenda).
+  useEffect(() => {
+    if(!agendaForm.fazenda || !agendaForm.cliente || !agendaForm.data_prevista){ setAgendaClima(null); return }
+    const fz = invFazendas.find(f=>f.cliente===agendaForm.cliente && f.nome===agendaForm.fazenda)
+    if(!fz?.lat || !fz?.lng){ setAgendaClima(null); return }
+    let cancelled = false
+    setAgendaClimaLoading(true)
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${fz.lat}&longitude=${fz.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&timezone=auto&forecast_days=16`)
+      .then(r=>r.json())
+      .then(data=>{
+        if(cancelled) return
+        const idx = (data.daily?.time||[]).indexOf(agendaForm.data_prevista)
+        setAgendaClima(idx<0 ? {foraDoAlcance:true} : {
+          tempMax:data.daily.temperature_2m_max[idx], tempMin:data.daily.temperature_2m_min[idx],
+          chuvaProb:data.daily.precipitation_probability_max[idx], ventoMax:data.daily.windspeed_10m_max[idx],
+        })
+      })
+      .catch(()=>{ if(!cancelled) setAgendaClima(null) })
+      .finally(()=>{ if(!cancelled) setAgendaClimaLoading(false) })
+    return () => { cancelled = true }
+  }, [agendaForm.fazenda, agendaForm.cliente, agendaForm.data_prevista, invFazendas])
   const [agendaFiltros, setAgendaFiltros] = useState({piloto:'',status:''})
   const [mapaSubTab, setMapaSubTab] = useState('voos')
   const [gpsLogins, setGpsLogins] = useState([])
@@ -2576,20 +2604,54 @@ export default function AdminPanel({ onSwitchMode }) {
               showToast('🔄 Progresso zerado!'); fetchInventario()
             }
 
+            async function geocodificarCep(cepBruto) {
+              const cep = (cepBruto||'').replace(/\D/g,'')
+              if(cep.length!==8) return null
+              const viaCep = await fetch(`https://viacep.com.br/ws/${cep}/json/`).then(r=>r.json())
+              if(viaCep.erro) return null
+              const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(viaCep.localidade)}&count=5&language=pt&format=json`).then(r=>r.json())
+              const match = (geo.results||[]).find(r=>r.admin1?.toLowerCase().includes((viaCep.uf||'').toLowerCase())) || geo.results?.[0]
+              if(!match) return null
+              return { lat: match.latitude, lng: match.longitude, cidade: viaCep.localidade, uf: viaCep.uf }
+            }
+
+            async function buscarCoordenadasPorCep() {
+              setFzGeoLoading(true)
+              try {
+                const r = await geocodificarCep(fzForm.cep)
+                if(!r) throw new Error('CEP não encontrado ou sem coordenada pra essa cidade')
+                setFzForm(f=>({...f,lat:String(r.lat),lng:String(r.lng)}))
+                showToast(`📍 Coordenadas de ${r.cidade}/${r.uf} preenchidas — ajuste se souber a posição exata da fazenda`)
+              } catch(e){ showToast('Erro: '+e.message,'error') } finally { setFzGeoLoading(false) }
+            }
+
             async function salvarNovaFazenda() {
               if(!fzForm.cliente||!fzForm.nome){ showToast('Preencha cliente e nome','error'); return }
               const nomeNorm = fzForm.nome.trim()
               const norm = s => s.trim().toLowerCase().replace(/\s+/g,' ')
-              const mesmoCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente===fzForm.cliente)
-              if(mesmoCliente){ showToast(`"${mesmoCliente.nome}" já está cadastrada para ${fzForm.cliente}. Use a fazenda existente na lista.`,'error'); return }
-              const outroCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente!==fzForm.cliente)
-              if(outroCliente && !window.confirm(`Já existe uma fazenda chamada "${outroCliente.nome}" cadastrada para o cliente ${outroCliente.cliente}.\n\nSe for a mesma fazenda, cancele e corrija o cliente correto. Cadastrar mesmo assim como uma fazenda separada para ${fzForm.cliente}?`)) return
+              if(!fzEditId){
+                const mesmoCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente===fzForm.cliente)
+                if(mesmoCliente){ showToast(`"${mesmoCliente.nome}" já está cadastrada para ${fzForm.cliente}. Use a fazenda existente na lista.`,'error'); return }
+                const outroCliente = invFazendas.find(fz=>norm(fz.nome)===norm(nomeNorm) && fz.cliente!==fzForm.cliente)
+                if(outroCliente && !window.confirm(`Já existe uma fazenda chamada "${outroCliente.nome}" cadastrada para o cliente ${outroCliente.cliente}.\n\nSe for a mesma fazenda, cancele e corrija o cliente correto. Cadastrar mesmo assim como uma fazenda separada para ${fzForm.cliente}?`)) return
+              }
               setInvSaving(true)
               try {
-                const {error}=await supabase.from('fazendas').insert({cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,ativo:true})
+                let lat = fzForm.lat, lng = fzForm.lng
+                // Tem CEP mas não ajustou lat/long manualmente ainda — geocodifica automático
+                // pra não depender do admin lembrar de clicar em "Buscar coord." antes de salvar.
+                if(fzForm.cep && !lat && !lng){
+                  const r = await geocodificarCep(fzForm.cep)
+                  if(r){ lat = r.lat; lng = r.lng }
+                }
+                const payload = {cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,
+                  cep:fzForm.cep||null,lat:lat?parseFloat(lat):null,lng:lng?parseFloat(lng):null}
+                const {error} = fzEditId
+                  ? await supabase.from('fazendas').update(payload).eq('id',fzEditId)
+                  : await supabase.from('fazendas').insert({...payload,ativo:true})
                 if(error) throw error
-                showToast('✅ Fazenda cadastrada!')
-                setFzForm({cliente:'',nome:'',produto:''}); setFzModal(false); fetchInventario()
+                showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
+                setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:''}); setFzEditId(null); setFzModal(false); fetchInventario()
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false) }
             }
 
@@ -2608,7 +2670,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   )}
                   {fzTab==='fazendas' && (
                     <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:''});setFzModal(true)}}>
+                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:''});setFzEditId(null);setFzModal(true)}}>
                       + Nova Fazenda
                     </button>
                   )}
@@ -2774,6 +2836,12 @@ export default function AdminPanel({ onSwitchMode }) {
                                     <span style={{fontSize:11,color:'#7ba38f',fontWeight:500,flexShrink:0}}>{talhoesFz.length} talhão(ões){areaFz>0?` · ${areaFz.toFixed(1)} ha`:''}</span>
                                   </span>
                                   <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+                                    <button style={{background:'#f1f8f4',color:'#0e9f6e',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                      onClick={(e)=>{
+                                        e.stopPropagation()
+                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??''})
+                                        setFzEditId(fz.id); setFzModal(true)
+                                      }}>✏️</button>
                                     <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={async(e)=>{
                                         e.stopPropagation()
@@ -2785,6 +2853,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </div>
                                 {aberto && (
                                   <div style={{padding:'0 16px 16px'}}>
+                                    {(fz.lat&&fz.lng)&&<div style={{fontSize:11,color:'#7ba38f',marginBottom:8}}>📍 {fz.lat}, {fz.lng}{fz.cep?` · CEP ${fz.cep}`:''}</div>}
                                     <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
                                       <div style={{fontSize:10,fontWeight:700,color:'#5c7568',marginBottom:8}}>📐 TALHÕES</div>
                                       {talhoesFz.length===0 && <div style={{fontSize:12,color:'#aaa',fontStyle:'italic',marginBottom:8}}>Nenhum talhão cadastrado ainda</div>}
@@ -2823,8 +2892,8 @@ export default function AdminPanel({ onSwitchMode }) {
                     {/* MODAL NOVA FAZENDA */}
                     {fzModal && (
                       <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setFzModal(false)}>
-                        <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:380,padding:22}} onClick={e=>e.stopPropagation()}>
-                          <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>🌾 Nova Fazenda</div>
+                        <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:380,padding:22,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+                          <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>{fzEditId?'🌾 Editar Fazenda':'🌾 Nova Fazenda'}</div>
                           <div style={{display:'flex',flexDirection:'column',gap:12}}>
                             <div>
                               <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>CLIENTE</div>
@@ -2846,6 +2915,28 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <option value="">Selecione...</option>
                                 {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
                               </select>
+                            </div>
+                            <div style={{borderTop:'1px solid #eef5f0',paddingTop:12}}>
+                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>CEP (OPCIONAL)</div>
+                              <div style={{display:'flex',gap:6}}>
+                                <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                  placeholder="00000-000" value={fzForm.cep} onChange={e=>setFzForm(f=>({...f,cep:e.target.value}))}/>
+                                <button style={{background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:8,padding:'0 12px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}
+                                  disabled={fzGeoLoading} onClick={buscarCoordenadasPorCep}>{fzGeoLoading?'...':'🔍 Buscar coord.'}</button>
+                              </div>
+                              <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Usado pra puxar a previsão do tempo da fazenda na Agenda</div>
+                            </div>
+                            <div style={{display:'flex',gap:8}}>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>LATITUDE</div>
+                                <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                  type="number" placeholder="Ex: -22.9068" value={fzForm.lat} onChange={e=>setFzForm(f=>({...f,lat:e.target.value}))}/>
+                              </div>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>LONGITUDE</div>
+                                <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                  type="number" placeholder="Ex: -43.1729" value={fzForm.lng} onChange={e=>setFzForm(f=>({...f,lng:e.target.value}))}/>
+                              </div>
                             </div>
                           </div>
                           <div style={{display:'flex',gap:8,marginTop:20}}>
@@ -3520,6 +3611,24 @@ export default function AdminPanel({ onSwitchMode }) {
                       {['Inseticida','Herbicida','Fungicida'].map(p=><option key={p}>{p}</option>)}
                     </select>
                   </div>
+
+                  {agendaForm.fazenda && agendaForm.data_prevista && (
+                    agendaClimaLoading ? (
+                      <div style={{fontSize:12,color:'#7ba38f',marginBottom:12}}>🌦️ Buscando previsão do tempo da fazenda...</div>
+                    ) : agendaClima?.foraDoAlcance ? (
+                      <div style={{fontSize:12,color:'#aaa',marginBottom:12,fontStyle:'italic'}}>Data fora do alcance da previsão (máx. 16 dias)</div>
+                    ) : agendaClima ? (
+                      <div style={{background:'#f1f8f4',borderRadius:12,padding:'10px 14px',marginBottom:12,display:'flex',gap:16,flexWrap:'wrap',fontSize:12,color:'#0b1210'}}>
+                        <span>🌦️ <strong>Previsão em {agendaForm.fazenda}:</strong></span>
+                        <span>🌡️ {agendaClima.tempMin?.toFixed(0)}° - {agendaClima.tempMax?.toFixed(0)}°C</span>
+                        <span>💧 {agendaClima.chuvaProb}% chuva</span>
+                        <span>💨 {agendaClima.ventoMax?.toFixed(0)} km/h</span>
+                      </div>
+                    ) : (
+                      <div style={{fontSize:11,color:'#aaa',marginBottom:12,fontStyle:'italic'}}>Essa fazenda não tem coordenadas cadastradas — edite em "Fazendas & Clientes" pra ver a previsão aqui.</div>
+                    )
+                  )}
+
                   <input style={{...sG.fi,marginBottom:12}} placeholder="Observação (opcional)" value={agendaForm.observacao} onChange={e=>setAgendaForm(f=>({...f,observacao:e.target.value}))}/>
                   <button style={{...sG.btn,opacity:agendaSaving?.6:1}} disabled={agendaSaving} onClick={salvarAgendamento}>{agendaSaving?'Salvando...':'📅 Agendar'}</button>
                 </div>

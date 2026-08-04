@@ -13,7 +13,8 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
 
   useEffect(() => {
     if (!profile?.avatar_url) return
-    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({ data }) => {
+    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({ data, error }) => {
+      if (error) console.error('Erro ao gerar URL do avatar:', error)
       if (data?.signedUrl) setAvatarPreview(data.signedUrl)
     })
   }, [profile?.avatar_url])
@@ -39,7 +40,10 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
         if (upErr) throw upErr
         avatar_url = path
       }
-      const { error: profErr } = await supabase.from('profiles').update({ nome, telefone: telefone || null, avatar_url }).eq('id', profile.id)
+      // .select().single() é de propósito — se a política de segurança (RLS) bloquear a
+      // atualização, o Supabase por padrão retorna "sucesso" com 0 linhas afetadas (sem erro
+      // nenhum). Forçando o single(), 0 linhas vira um erro de verdade em vez de falhar em silêncio.
+      const { error: profErr } = await supabase.from('profiles').update({ nome, telefone: telefone || null, avatar_url }).eq('id', profile.id).select().single()
       if (profErr) throw profErr
       if (novaSenha) {
         const { error: passErr } = await supabase.auth.updateUser({ password: novaSenha })

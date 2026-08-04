@@ -331,7 +331,8 @@ export default function PilotApp({onSwitchMode}) {
   const [notaTab,setNotaTab] = useState('viagem')
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
-    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data})=>{
+    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data,error})=>{
+      if (error) console.error('Erro ao gerar URL do avatar:', error)
       if (data?.signedUrl) setAvatarUrl(data.signedUrl)
     })
   }, [profile?.avatar_url])
@@ -510,7 +511,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
@@ -1996,6 +1997,38 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
+  // Previsão do tempo do voo agendado — busca sempre que o card é exibido, usando a
+  // fazenda vinculada (precisa ter lat/lng cadastrados pelo admin em Fazendas & Clientes).
+  const AgendaClimaBadge = ({fz, data}) => {
+    const [clima,setClima] = useState(null)
+    const [loading,setLoading] = useState(false)
+    useEffect(()=>{
+      if(!fz?.lat||!fz?.lng||!data){ setClima(null); return }
+      let cancelled = false
+      setLoading(true)
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${fz.lat}&longitude=${fz.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&timezone=auto&forecast_days=16`)
+        .then(r=>r.json())
+        .then(d=>{
+          if(cancelled) return
+          const idx=(d.daily?.time||[]).indexOf(data)
+          setClima(idx<0?null:{tempMax:d.daily.temperature_2m_max[idx],tempMin:d.daily.temperature_2m_min[idx],chuvaProb:d.daily.precipitation_probability_max[idx],ventoMax:d.daily.windspeed_10m_max[idx]})
+        })
+        .catch(()=>{ if(!cancelled) setClima(null) })
+        .finally(()=>{ if(!cancelled) setLoading(false) })
+      return ()=>{ cancelled=true }
+    },[fz?.lat,fz?.lng,data])
+    if(!fz?.lat||!fz?.lng) return null
+    if(loading) return <div style={{fontSize:11,color:'#7ba38f',marginTop:8}}>🌦️ Buscando previsão...</div>
+    if(!clima) return null
+    return (
+      <div style={{background:'#f1f8f4',borderRadius:10,padding:'8px 10px',marginTop:8,display:'flex',gap:12,flexWrap:'wrap',fontSize:11,color:'#0b1210'}}>
+        <span>🌡️ {clima.tempMin?.toFixed(0)}°-{clima.tempMax?.toFixed(0)}°C</span>
+        <span>💧 {clima.chuvaProb}% chuva</span>
+        <span>💨 {clima.ventoMax?.toFixed(0)} km/h</span>
+      </div>
+    )
+  }
+
   if(view==='agenda') return (
     <div style={{...s.wrap,paddingBottom:90}}>
       <div style={s.header}>
@@ -2029,6 +2062,7 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{fontWeight:700,fontSize:15,fontFamily:"'Syne',sans-serif"}}>{a.cliente} — {a.fazenda}</div>
               <div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}{a.produto?` · ${a.produto}`:''}</div>
               {a.observacao&&<div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{a.observacao}</div>}
+              <AgendaClimaBadge fz={fazendasDB.find(fz=>fz.cliente===a.cliente&&fz.nome===a.fazenda)} data={a.data_prevista}/>
               {a.status==='pendente'&&(
                 <button style={{...sw.btnG,marginTop:12,padding:'12px'}} onClick={()=>iniciarVooAgendado(a)}>🚁 Iniciar este voo</button>
               )}
