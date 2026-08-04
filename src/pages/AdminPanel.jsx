@@ -7,6 +7,7 @@ import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
+import { calcDeltaT, classificarClimaParam } from '../lib/clima'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -157,7 +158,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [custosSubTab, setCustosSubTab] = useState('notas')
   const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
   const [agenda, setAgenda] = useState([])
-  const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',data_prevista:'',produto:'',observacao:''})
+  const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',observacao:''})
   const [agendaSaving, setAgendaSaving] = useState(false)
   const [agendaClima, setAgendaClima] = useState(null)
   const [agendaClimaLoading, setAgendaClimaLoading] = useState(false)
@@ -170,14 +171,20 @@ export default function AdminPanel({ onSwitchMode }) {
     if(!fz?.lat || !fz?.lng){ setAgendaClima(null); return }
     let cancelled = false
     setAgendaClimaLoading(true)
-    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${fz.lat}&longitude=${fz.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&timezone=auto&forecast_days=16`)
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=${fz.lat}&longitude=${fz.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&hourly=temperature_2m,relativehumidity_2m&timezone=auto&forecast_days=16`)
       .then(r=>r.json())
       .then(data=>{
         if(cancelled) return
         const idx = (data.daily?.time||[]).indexOf(agendaForm.data_prevista)
-        setAgendaClima(idx<0 ? {foraDoAlcance:true} : {
+        if(idx<0){ setAgendaClima({foraDoAlcance:true}); return }
+        const idxHora = (data.hourly?.time||[]).findIndex(t=>t.startsWith(agendaForm.data_prevista)&&t.endsWith('T13:00'))
+        const tempMeioDia = idxHora>=0 ? data.hourly.temperature_2m[idxHora] : data.daily.temperature_2m_max[idx]
+        const umidMeioDia = idxHora>=0 ? data.hourly.relativehumidity_2m[idxHora] : null
+        const deltaT = umidMeioDia!=null ? calcDeltaT(tempMeioDia,umidMeioDia) : null
+        setAgendaClima({
           tempMax:data.daily.temperature_2m_max[idx], tempMin:data.daily.temperature_2m_min[idx],
           chuvaProb:data.daily.precipitation_probability_max[idx], ventoMax:data.daily.windspeed_10m_max[idx],
+          deltaT, deltaTClass: deltaT!=null?classificarClimaParam('delta_t',deltaT.toFixed(1)):null,
         })
       })
       .catch(()=>{ if(!cancelled) setAgendaClima(null) })
@@ -3533,6 +3540,50 @@ export default function AdminPanel({ onSwitchMode }) {
             const fazendasDoCliente = invFazendas.filter(f=>f.cliente===agendaForm.cliente)
             const hoje = new Date(); hoje.setHours(0,0,0,0)
 
+            const fzSelecionada = invFazendas.find(f=>f.cliente===agendaForm.cliente && f.nome===agendaForm.fazenda)
+            const talhoesDaFazendaAgenda = fzSelecionada ? invTalhoes.filter(t=>t.fazenda_id===fzSelecionada.id) : []
+            const talhoesSelecionadosAgenda = (agendaForm.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+
+            // Mesmo cálculo de progresso usado no wizard do piloto — olha os relatórios
+            // finalizados dessa fazenda desde o último "zerar" e mostra quanto já foi feito
+            // em cada talhão, como se o admin estivesse montando um voo novo.
+            function progressoTalhaoAgenda(t) {
+              const areaTotal = parseFloat(t.area_ha)||0
+              if(areaTotal<=0 || !fzSelecionada) return null
+              let areaRealizada = 0
+              relatorios.forEach(r=>{
+                if(r.status!=='finalizado') return
+                if(r.cliente!==fzSelecionada.cliente || r.fazenda!==fzSelecionada.nome) return
+                if(fzSelecionada.campanha_inicio && new Date(r.created_at) < new Date(fzSelecionada.campanha_inicio)) return
+                const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+                if(!nomesVoo.includes(t.nome)) return
+                const somaRegistrada = nomesVoo.reduce((a,n)=>{
+                  const tt = talhoesDaFazendaAgenda.find(x=>x.nome===n)
+                  return a + (tt?parseFloat(tt.area_ha)||0:0)
+                },0)
+                const fracao = somaRegistrada>0 ? areaTotal/somaRegistrada : 1/nomesVoo.length
+                areaRealizada += areaLiquida(r) * fracao
+              })
+              return { areaTotal, areaRealizada, pct: Math.min(100,(areaRealizada/areaTotal)*100) }
+            }
+
+            function toggleTalhaoAgenda(nome){
+              const novos = talhoesSelecionadosAgenda.includes(nome)
+                ? talhoesSelecionadosAgenda.filter(n=>n!==nome)
+                : [...talhoesSelecionadosAgenda, nome]
+              setAgendaForm(f=>({...f,talhao:novos.join(', ')}))
+            }
+
+            // Warning de conflito: outro agendamento pendente pra mesma fazenda/talhão
+            const conflitosAgenda = agendaForm.cliente && agendaForm.fazenda ? agenda.filter(a=>{
+              if(a.status!=='pendente') return false
+              if(a.cliente!==agendaForm.cliente || a.fazenda!==agendaForm.fazenda) return false
+              if(talhoesSelecionadosAgenda.length===0) return true
+              const talhoesA = (a.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+              if(talhoesA.length===0) return true
+              return talhoesA.some(t=>talhoesSelecionadosAgenda.includes(t))
+            }) : []
+
             async function salvarAgendamento(){
               if(!agendaForm.piloto_id||!agendaForm.cliente||!agendaForm.fazenda||!agendaForm.data_prevista){
                 showToast('Preencha piloto, cliente, fazenda e data','error'); return
@@ -3542,14 +3593,15 @@ export default function AdminPanel({ onSwitchMode }) {
                 const piloto = pilotos.find(p=>p.id===agendaForm.piloto_id)
                 const { error } = await supabase.from('agendamentos').insert({
                   piloto_id: agendaForm.piloto_id, piloto_nome: piloto?.nome||piloto?.email,
-                  cliente: agendaForm.cliente, fazenda: agendaForm.fazenda,
+                  cliente: agendaForm.cliente, fazenda: agendaForm.fazenda, talhao: agendaForm.talhao||null,
                   data_prevista: agendaForm.data_prevista, produto: agendaForm.produto||null,
+                  dose: agendaForm.dose||null,
                   observacao: agendaForm.observacao||null, status:'pendente',
                   ordem_servico: gerarOrdemServico(),
                 })
                 if(error) throw error
                 showToast('📅 Agendamento criado!')
-                setAgendaForm({piloto_id:'',cliente:'',fazenda:'',data_prevista:'',produto:'',observacao:''})
+                setAgendaForm({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',observacao:''})
                 fetchAll()
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setAgendaSaving(false) }
             }
@@ -3574,6 +3626,7 @@ export default function AdminPanel({ onSwitchMode }) {
               pendente:{ label:'Pendente', bg:'#fff3e0', cor:'#f2960f' },
               concluido:{ label:'Concluído', bg:'#e3f7ec', cor:'#0e9f6e' },
               cancelado:{ label:'Cancelado', bg:'#fdeaea', cor:'#e5484d' },
+              recusado:{ label:'Recusado pelo piloto', bg:'#fdeaea', cor:'#e5484d' },
             }
 
             return (
@@ -3591,14 +3644,14 @@ export default function AdminPanel({ onSwitchMode }) {
                       <option value="">Piloto...</option>
                       {pilotosAtivos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
                     </select>
-                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.cliente} onChange={e=>setAgendaForm(f=>({...f,cliente:e.target.value,fazenda:''}))}>
+                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.cliente} onChange={e=>setAgendaForm(f=>({...f,cliente:e.target.value,fazenda:'',talhao:''}))}>
                       <option value="">Cliente...</option>
                       {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
                     </select>
                   </div>
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
                     {fazendasDoCliente.length>0 ? (
-                      <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.fazenda} onChange={e=>setAgendaForm(f=>({...f,fazenda:e.target.value}))}>
+                      <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.fazenda} onChange={e=>setAgendaForm(f=>({...f,fazenda:e.target.value,talhao:''}))}>
                         <option value="">Fazenda...</option>
                         {fazendasDoCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
                       </select>
@@ -3606,10 +3659,48 @@ export default function AdminPanel({ onSwitchMode }) {
                       <input style={{...sG.fi,flex:'1 1 160px'}} placeholder="Nome da fazenda" value={agendaForm.fazenda} onChange={e=>setAgendaForm(f=>({...f,fazenda:e.target.value}))}/>
                     )}
                     <input type="date" style={{...sG.fi,flex:'1 1 140px'}} value={agendaForm.data_prevista} onChange={e=>setAgendaForm(f=>({...f,data_prevista:e.target.value}))}/>
-                    <select style={{...sG.fi,flex:'1 1 140px'}} value={agendaForm.produto} onChange={e=>setAgendaForm(f=>({...f,produto:e.target.value}))}>
+                  </div>
+
+                  {talhoesDaFazendaAgenda.length>0 && (
+                    <div style={{marginBottom:8}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>TALHÕES (OPCIONAL)</div>
+                      <div style={{border:'1px solid #d7e6dc',borderRadius:10,overflow:'hidden',maxHeight:160,overflowY:'auto'}}>
+                        {talhoesDaFazendaAgenda.map(t=>{
+                          const sel = talhoesSelecionadosAgenda.includes(t.nome)
+                          const prog = progressoTalhaoAgenda(t)
+                          const finalizado = prog && prog.pct>=100
+                          const parcial = prog && prog.pct>0 && prog.pct<100
+                          return (
+                            <div key={t.id} onClick={()=>toggleTalhaoAgenda(t.nome)}
+                              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',cursor:'pointer',fontSize:12,background:sel?'#e3f7ec':finalizado?'#eafaf0':parcial?'#fff8e6':'#fff',borderBottom:'1px solid #f0f5f2'}}>
+                              <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${sel?'#0e9f6e':'#c3d4c9'}`,background:sel?'#0e9f6e':'#fff',flexShrink:0}}/>
+                              <span style={{flex:1}}>{t.nome}
+                                {finalizado&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:'#fff',background:'#0e9f6e',padding:'1px 6px',borderRadius:20}}>✓ Concluído</span>}
+                                {parcial&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:'#a3690a',background:'#ffe9b8',padding:'1px 6px',borderRadius:20}}>{prog.pct.toFixed(0)}%</span>}
+                              </span>
+                              {t.area_ha&&<span style={{color:'#0e9f6e',fontWeight:600}}>{t.area_ha} ha</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {conflitosAgenda.length>0 && (
+                    <div style={{background:'#fff3e0',border:'1px solid #f2960f',borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:'#a3690a'}}>
+                      ⚠️ Já existe agendamento pendente pra essa fazenda/talhão: {conflitosAgenda.map(c=>`${c.piloto_nome} (${new Date(c.data_prevista+'T12:00:00').toLocaleDateString('pt-BR')})`).join(', ')}
+                    </div>
+                  )}
+
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.produto} onChange={e=>{
+                      const p = invProdutos.find(x=>x.nome===e.target.value)
+                      setAgendaForm(f=>({...f,produto:e.target.value,dose:p?.dose_padrao?String(p.dose_padrao):f.dose}))
+                    }}>
                       <option value="">Produto (opcional)...</option>
-                      {['Inseticida','Herbicida','Fungicida'].map(p=><option key={p}>{p}</option>)}
+                      {invProdutos.filter(p=>p.ativo).map(p=><option key={p.id}>{p.nome}</option>)}
                     </select>
+                    <input style={{...sG.fi,flex:'1 1 140px'}} placeholder="Dose (ex: 2 L/ha)" value={agendaForm.dose} onChange={e=>setAgendaForm(f=>({...f,dose:e.target.value}))}/>
                   </div>
 
                   {agendaForm.fazenda && agendaForm.data_prevista && (
@@ -3618,11 +3709,18 @@ export default function AdminPanel({ onSwitchMode }) {
                     ) : agendaClima?.foraDoAlcance ? (
                       <div style={{fontSize:12,color:'#aaa',marginBottom:12,fontStyle:'italic'}}>Data fora do alcance da previsão (máx. 16 dias)</div>
                     ) : agendaClima ? (
-                      <div style={{background:'#f1f8f4',borderRadius:12,padding:'10px 14px',marginBottom:12,display:'flex',gap:16,flexWrap:'wrap',fontSize:12,color:'#0b1210'}}>
-                        <span>🌦️ <strong>Previsão em {agendaForm.fazenda}:</strong></span>
-                        <span>🌡️ {agendaClima.tempMin?.toFixed(0)}° - {agendaClima.tempMax?.toFixed(0)}°C</span>
-                        <span>💧 {agendaClima.chuvaProb}% chuva</span>
-                        <span>💨 {agendaClima.ventoMax?.toFixed(0)} km/h</span>
+                      <div style={{background:'#f1f8f4',borderRadius:12,padding:'10px 14px',marginBottom:12,display:'flex',flexDirection:'column',gap:8,fontSize:12,color:'#0b1210'}}>
+                        <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+                          <span>🌦️ <strong>Previsão em {agendaForm.fazenda}:</strong></span>
+                          <span>🌡️ {agendaClima.tempMin?.toFixed(0)}° - {agendaClima.tempMax?.toFixed(0)}°C</span>
+                          <span>💧 {agendaClima.chuvaProb}% chuva</span>
+                          <span>💨 {agendaClima.ventoMax?.toFixed(0)} km/h</span>
+                        </div>
+                        {agendaClima.deltaTClass && (
+                          <div style={{display:'inline-flex',alignItems:'center',gap:5,alignSelf:'flex-start',background:agendaClima.deltaTClass.bg,color:agendaClima.deltaTClass.cor,fontWeight:700,padding:'3px 9px',borderRadius:20}}>
+                            {agendaClima.deltaTClass.icon} Delta T {agendaClima.deltaT.toFixed(1)}°C — {agendaClima.deltaTClass.label}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div style={{fontSize:11,color:'#aaa',marginBottom:12,fontStyle:'italic'}}>Essa fazenda não tem coordenadas cadastradas — edite em "Fazendas & Clientes" pra ver a previsão aqui.</div>
@@ -3644,6 +3742,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <option value="pendente">Pendente</option>
                     <option value="concluido">Concluído</option>
                     <option value="cancelado">Cancelado</option>
+                    <option value="recusado">Recusado pelo piloto</option>
                   </select>
                 </div>
 
@@ -3664,9 +3763,10 @@ export default function AdminPanel({ onSwitchMode }) {
                               {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
                               {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
                             </div>
-                            <div style={{fontSize:12,color:'#5c7568',marginTop:3}}>{a.cliente} — {a.fazenda}{a.produto?` · ${a.produto}`:''}</div>
+                            <div style={{fontSize:12,color:'#5c7568',marginTop:3}}>{a.cliente} — {a.fazenda}{a.talhao?` (${a.talhao})`:''}{a.produto?` · ${a.produto}${a.dose?` ${a.dose}`:''}`:''}</div>
                             <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</div>
                             {a.observacao&&<div style={{fontSize:11,color:'#5c7568',marginTop:4,fontStyle:'italic'}}>{a.observacao}</div>}
+                            {a.status==='recusado'&&a.motivo_recusa&&<div style={{fontSize:11,color:'#e5484d',marginTop:4}}>Motivo: {a.motivo_recusa}</div>}
                           </div>
                           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                             {a.status==='pendente'&&(

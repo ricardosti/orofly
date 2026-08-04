@@ -7,6 +7,7 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
+import { calcDeltaT, classificarClimaParam } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun } from 'lucide-react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
@@ -196,48 +197,6 @@ function FS({label,val,onChange,children}) {
       </div>
     </div>
   )
-}
-
-// Calcula Delta T real (uso agronômico): diferença entre temperatura seca (bulbo seco)
-// e temperatura de bulbo úmido — não confundir com ponto de orvalho, que é outra grandeza.
-// Bulbo úmido aproximado pela fórmula de Stull (2011), válida para RH entre 5% e 99% e T entre -20°C e 50°C.
-function calcDeltaT(tempC, umidadePercent) {
-  const t = parseFloat(tempC)
-  const rh = parseFloat(umidadePercent)
-  if (isNaN(t) || isNaN(rh) || rh <= 0) return null
-  const tw = t * Math.atan(0.151977 * Math.sqrt(rh + 8.313659))
-    + Math.atan(t + rh) - Math.atan(rh - 1.676331)
-    + 0.00391838 * Math.pow(rh, 1.5) * Math.atan(0.023101 * rh)
-    - 4.686035
-  return Math.max(0, t - tw)
-}
-
-// Classifica cada parâmetro climático
-function classificarClimaParam(key, valor) {
-  const v = parseFloat(valor)
-  if (isNaN(v)) return null
-  if (key === 'vento') {
-    if (v < 3) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Calmaria: risco de inversão térmica' }
-    if (v <= 15) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Condição ideal para aplicação' }
-    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Vento forte: deriva severa' }
-  }
-  if (key === 'umidade') {
-    if (v < 50) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Ar muito seco: evaporação severa' }
-    if (v <= 90) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Faixa segura para aplicação' }
-    return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Saturação: risco de lavagem' }
-  }
-  if (key === 'temperatura') {
-    if (v < 10) return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Frio: absorção reduzida pelas plantas' }
-    if (v <= 30) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Temperatura ideal para aplicação' }
-    return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Estresse térmico: fechamento estomático' }
-  }
-  if (key === 'delta_t') {
-    if (v < 2) return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: 'Cerração/neblina: escorrimento e inversão térmica. Não aplicar.' }
-    if (v <= 7) return { status: 'apta', label: 'Ideal', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
-    if (v < 8) return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
-    return { status: 'nao_conforme', label: 'Não Pode Voar', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: 'Delta T ≥ 8: evaporação excessiva. Interromper a aplicação.' }
-  }
-  return null
 }
 
 function classificarCondicaoGeral(form, sufixo) {
@@ -478,6 +437,22 @@ export default function PilotApp({onSwitchMode}) {
   const [loadingNotas,setLoadingNotas] = useState(false)
   const [minhaAgenda,setMinhaAgenda] = useState([])
   const [loadingAgenda,setLoadingAgenda] = useState(false)
+  const [agendaDetalhe,setAgendaDetalhe] = useState(null)
+  const [recusaModal,setRecusaModal] = useState(null)
+  const [recusaMotivo,setRecusaMotivo] = useState('')
+  const [recusaSaving,setRecusaSaving] = useState(false)
+  async function confirmarRecusa(){
+    if(!recusaMotivo.trim()){ showToast('Digite o motivo da recusa','error'); return }
+    setRecusaSaving(true)
+    try {
+      const { error } = await supabase.from('agendamentos').update({status:'recusado',motivo_recusa:recusaMotivo.trim()}).eq('id',recusaModal.id)
+      if(error) throw error
+      showToast('Agendamento recusado')
+      setRecusaModal(null); setRecusaMotivo(''); setAgendaDetalhe(null)
+      const {data}=await supabase.from('agendamentos').select('*').eq('piloto_id',profile.id).order('data_prevista',{ascending:true})
+      setMinhaAgenda(data||[])
+    } catch(e){ showToast('Erro: '+e.message,'error') } finally { setRecusaSaving(false) }
+  }
   const [tempoDias,setTempoDias] = useState(null)
   const [tempoLoading,setTempoLoading] = useState(false)
   const [tempoErro,setTempoErro] = useState('')
@@ -511,7 +486,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng,cep').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
@@ -2006,12 +1981,22 @@ export default function PilotApp({onSwitchMode}) {
       if(!fz?.lat||!fz?.lng||!data){ setClima(null); return }
       let cancelled = false
       setLoading(true)
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${fz.lat}&longitude=${fz.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&timezone=auto&forecast_days=16`)
+      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${fz.lat}&longitude=${fz.lng}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,windspeed_10m_max&hourly=temperature_2m,relativehumidity_2m&timezone=auto&forecast_days=16`)
         .then(r=>r.json())
         .then(d=>{
           if(cancelled) return
           const idx=(d.daily?.time||[]).indexOf(data)
-          setClima(idx<0?null:{tempMax:d.daily.temperature_2m_max[idx],tempMin:d.daily.temperature_2m_min[idx],chuvaProb:d.daily.precipitation_probability_max[idx],ventoMax:d.daily.windspeed_10m_max[idx]})
+          if(idx<0){ setClima(null); return }
+          // Temperatura/umidade por volta das 13h (janela típica de aplicação) pra estimar o Delta T do dia
+          const idxHora = (d.hourly?.time||[]).findIndex(t=>t.startsWith(data)&&t.endsWith('T13:00'))
+          const tempMeioDia = idxHora>=0 ? d.hourly.temperature_2m[idxHora] : d.daily.temperature_2m_max[idx]
+          const umidMeioDia = idxHora>=0 ? d.hourly.relativehumidity_2m[idxHora] : null
+          const deltaT = umidMeioDia!=null ? calcDeltaT(tempMeioDia,umidMeioDia) : null
+          setClima({
+            tempMax:d.daily.temperature_2m_max[idx],tempMin:d.daily.temperature_2m_min[idx],
+            chuvaProb:d.daily.precipitation_probability_max[idx],ventoMax:d.daily.windspeed_10m_max[idx],
+            deltaT, deltaTClass: deltaT!=null?classificarClimaParam('delta_t',deltaT.toFixed(1)):null,
+          })
         })
         .catch(()=>{ if(!cancelled) setClima(null) })
         .finally(()=>{ if(!cancelled) setLoading(false) })
@@ -2021,12 +2006,43 @@ export default function PilotApp({onSwitchMode}) {
     if(loading) return <div style={{fontSize:11,color:'#7ba38f',marginTop:8}}>🌦️ Buscando previsão...</div>
     if(!clima) return null
     return (
-      <div style={{background:'#f1f8f4',borderRadius:10,padding:'8px 10px',marginTop:8,display:'flex',gap:12,flexWrap:'wrap',fontSize:11,color:'#0b1210'}}>
-        <span>🌡️ {clima.tempMin?.toFixed(0)}°-{clima.tempMax?.toFixed(0)}°C</span>
-        <span>💧 {clima.chuvaProb}% chuva</span>
-        <span>💨 {clima.ventoMax?.toFixed(0)} km/h</span>
+      <div style={{background:'#f1f8f4',borderRadius:10,padding:'8px 10px',marginTop:8,display:'flex',flexDirection:'column',gap:6,fontSize:11,color:'#0b1210'}}>
+        <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+          <span>🌡️ {clima.tempMin?.toFixed(0)}°-{clima.tempMax?.toFixed(0)}°C</span>
+          <span>💧 {clima.chuvaProb}% chuva</span>
+          <span>💨 {clima.ventoMax?.toFixed(0)} km/h</span>
+        </div>
+        {clima.deltaTClass && (
+          <div style={{display:'inline-flex',alignItems:'center',gap:5,alignSelf:'flex-start',background:clima.deltaTClass.bg,color:clima.deltaTClass.cor,fontWeight:700,padding:'3px 9px',borderRadius:20}}>
+            {clima.deltaTClass.icon} Delta T {clima.deltaT.toFixed(1)}°C — {clima.deltaTClass.label}
+          </div>
+        )}
       </div>
     )
+  }
+
+  // Distância em linha reta (Haversine) — não é distância de estrada real, é só uma
+  // referência rápida de "quão longe" a fazenda está da posição atual do piloto.
+  function distanciaKm(lat1,lng1,lat2,lng2){
+    const R = 6371
+    const dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2
+    return R * 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))
+  }
+  const DistanciaBadge = ({fz}) => {
+    // Se o GPS do login não pegou (permissão negada na hora, sem sinal etc.), tenta de novo
+    // aqui — é um resumo de viagem, então vale a pena insistir em vez de só sumir a linha.
+    useEffect(()=>{
+      if(gpsPos || !navigator.geolocation) return
+      navigator.geolocation.getCurrentPosition(
+        pos=>setGpsPos({lat:pos.coords.latitude,lng:pos.coords.longitude}),
+        ()=>{}, {enableHighAccuracy:true,timeout:10000}
+      )
+    },[])
+    if(!fz?.lat || !fz?.lng) return null
+    if(!gpsPos) return <span style={{fontSize:11,color:'#aaa',fontStyle:'italic'}}>📏 Ative o GPS pra ver a distância</span>
+    const km = distanciaKm(gpsPos.lat,gpsPos.lng,fz.lat,fz.lng)
+    return <span style={{fontSize:11,color:'#7ba38f'}}>📏 ≈{km.toFixed(0)} km em linha reta da sua posição</span>
   }
 
   if(view==='agenda') return (
@@ -2050,7 +2066,7 @@ export default function PilotApp({onSwitchMode}) {
         :minhaAgenda.map(a=>{
           const hoje = new Date(); hoje.setHours(0,0,0,0)
           const atrasado = a.status==='pendente' && new Date(a.data_prevista)<hoje
-          const STATUS_BADGE = {pendente:{label:'Pendente',bg:'#fff3e0',cor:'#f2960f'},concluido:{label:'Concluído',bg:'#e3f7ec',cor:'#0e9f6e'},cancelado:{label:'Cancelado',bg:'#fdeaea',cor:'#e5484d'}}
+          const STATUS_BADGE = {pendente:{label:'Pendente',bg:'#fff3e0',cor:'#f2960f'},concluido:{label:'Concluído',bg:'#e3f7ec',cor:'#0e9f6e'},cancelado:{label:'Cancelado',bg:'#fdeaea',cor:'#e5484d'},recusado:{label:'Recusado',bg:'#fdeaea',cor:'#e5484d'}}
           const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
           return (
             <div key={a.id} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
@@ -2059,13 +2075,23 @@ export default function PilotApp({onSwitchMode}) {
                 {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
                 {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
               </div>
-              <div style={{fontWeight:700,fontSize:15,fontFamily:"'Syne',sans-serif"}}>{a.cliente} — {a.fazenda}</div>
+              <div style={{fontWeight:700,fontSize:15,fontFamily:"'Syne',sans-serif"}}>{a.cliente} — {a.fazenda}{a.talhao?<span style={{fontWeight:400,fontSize:12,color:'#7ba38f'}}> ({a.talhao})</span>:''}</div>
               <div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}{a.produto?` · ${a.produto}`:''}</div>
               {a.observacao&&<div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{a.observacao}</div>}
               <AgendaClimaBadge fz={fazendasDB.find(fz=>fz.cliente===a.cliente&&fz.nome===a.fazenda)} data={a.data_prevista}/>
-              {a.status==='pendente'&&(
-                <button style={{...sw.btnG,marginTop:12,padding:'12px'}} onClick={()=>iniciarVooAgendado(a)}>🚁 Iniciar este voo</button>
+              <div style={{marginTop:4}}><DistanciaBadge fz={fazendasDB.find(fz=>fz.cliente===a.cliente&&fz.nome===a.fazenda)}/></div>
+              {a.status==='recusado'&&a.motivo_recusa&&(
+                <div style={{background:'#fdeaea',color:'#a3221e',borderRadius:10,padding:'8px 10px',marginTop:8,fontSize:12}}>Motivo: {a.motivo_recusa}</div>
               )}
+              <div style={{display:'flex',gap:8,marginTop:12}}>
+                <button style={{...sw.btnG,background:'#f1f8f4',color:'#5c7568',flex:'0 0 110px',padding:'12px 8px'}} onClick={()=>setAgendaDetalhe(a)}>📋 Detalhes</button>
+                {a.status==='pendente'&&(
+                  <>
+                    <button style={{...sw.btnG,background:'#fdeaea',color:'#e5484d',flex:'0 0 46px',padding:'12px 4px'}} onClick={()=>{setRecusaModal(a);setRecusaMotivo('')}}>❌</button>
+                    <button style={{...sw.btnG,flex:1,padding:'12px'}} onClick={()=>iniciarVooAgendado(a)}>🚁 Iniciar este voo</button>
+                  </>
+                )}
+              </div>
             </div>
           )
         })}
@@ -2073,6 +2099,61 @@ export default function PilotApp({onSwitchMode}) {
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
+      {agendaDetalhe && (()=>{
+        const fz = fazendasDB.find(fz=>fz.cliente===agendaDetalhe.cliente&&fz.nome===agendaDetalhe.fazenda)
+        return (
+          <div style={s.modalOverlay} onClick={()=>setAgendaDetalhe(null)}>
+            <div style={{...s.modal,paddingBottom:24,textAlign:'left'}} onClick={e=>e.stopPropagation()}>
+              <div style={s.modalTitle}>📋 {agendaDetalhe.cliente} — {agendaDetalhe.fazenda}</div>
+              <div style={{fontSize:13,color:'#5c7568',marginBottom:14}}>
+                {new Date(agendaDetalhe.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}
+                {agendaDetalhe.talhao&&` · Talhão ${agendaDetalhe.talhao}`}
+                {agendaDetalhe.ordem_servico&&` · OS ${agendaDetalhe.ordem_servico}`}
+              </div>
+              {agendaDetalhe.produto && (
+                <div style={{background:'#f1f8f4',borderRadius:10,padding:'10px 12px',marginBottom:10,fontSize:13}}>
+                  <strong>🧪 {agendaDetalhe.produto}</strong>{agendaDetalhe.dose&&<span style={{color:'#5c7568'}}> · Dose: {agendaDetalhe.dose}</span>}
+                </div>
+              )}
+              {agendaDetalhe.observacao && (
+                <div style={{fontSize:13,color:'#5c7568',marginBottom:10,fontStyle:'italic'}}>{agendaDetalhe.observacao}</div>
+              )}
+              <div style={{marginBottom:10}}>
+                <AgendaClimaBadge fz={fz} data={agendaDetalhe.data_prevista}/>
+              </div>
+              {fz?.lat && fz?.lng ? (
+                <div style={{background:'#eef5f0',borderRadius:10,padding:'10px 12px',marginBottom:14,fontSize:12,color:'#5c7568'}}>
+                  📍 {fz.lat}, {fz.lng}{fz.cep?` · CEP ${fz.cep}`:''}
+                  <div style={{marginTop:4}}><DistanciaBadge fz={fz}/></div>
+                  <a href={`https://maps.google.com/?q=${fz.lat},${fz.lng}`} target="_blank" rel="noreferrer" style={{display:'block',marginTop:6,color:'#0e9f6e',fontWeight:600,textDecoration:'none'}}>🗺️ Abrir rota no Maps</a>
+                </div>
+              ) : (
+                <div style={{fontSize:11,color:'#aaa',marginBottom:14,fontStyle:'italic'}}>Essa fazenda ainda não tem localização cadastrada.</div>
+              )}
+              <div style={{display:'flex',gap:8}}>
+                {agendaDetalhe.status==='pendente'&&(
+                  <button style={{...s.shareBtn,background:'#fdeaea',color:'#e5484d',flex:1}} onClick={()=>{setRecusaModal(agendaDetalhe);setRecusaMotivo('')}}>❌ Recusar</button>
+                )}
+                <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setAgendaDetalhe(null)}>Fechar</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+      {recusaModal && (
+        <div style={s.modalOverlay} onClick={()=>setRecusaModal(null)}>
+          <div style={{...s.modal,paddingBottom:24}} onClick={e=>e.stopPropagation()}>
+            <div style={s.modalTitle}>❌ Recusar agendamento</div>
+            <p style={{fontSize:13,color:'#5c7568',marginBottom:12,lineHeight:1.5}}>{recusaModal.cliente} — {recusaModal.fazenda}. O admin vai ver o motivo que você digitar aqui.</p>
+            <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:10,padding:'10px 12px',fontSize:13,outline:'none',boxSizing:'border-box',minHeight:80,fontFamily:"'DM Sans',sans-serif",resize:'vertical'}}
+              placeholder="Ex: sem condição climática, drone em manutenção, muito longe..." value={recusaMotivo} onChange={e=>setRecusaMotivo(e.target.value)}/>
+            <div style={{display:'flex',gap:10,marginTop:14}}>
+              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setRecusaModal(null)}>Cancelar</button>
+              <button style={{...s.shareBtn,background:'#e5484d',flex:1,opacity:recusaSaving?.6:1}} disabled={recusaSaving} onClick={confirmarRecusa}>{recusaSaving?'Enviando...':'Confirmar recusa'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 
