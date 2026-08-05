@@ -486,7 +486,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng,cep').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng,cep,id_fazenda').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
@@ -655,7 +655,8 @@ export default function PilotApp({onSwitchMode}) {
   // pós-aplicação. Usa o menu nativo de compartilhar do Android dentro do app empacotado
   // (window.open/Web Share sozinhos não são confiáveis dentro do WebView).
   async function compartilharWhatsApp(){
-    const formComPiloto = {...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||''}
+    const fzMatch = fazendasDB.find(fz=>fz.cliente===form.cliente && fz.nome===form.fazenda)
+    const formComPiloto = {...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||'', id_fazenda: fzMatch?.id_fazenda||''}
     const texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade,opState==='paused_day')
     let file = fotoMapaFile
     console.log('[compartilharWhatsApp] fotoMapaFile=',!!fotoMapaFile,'storageFotoMapa=',storageFotoMapa)
@@ -3261,7 +3262,7 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
   const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaAplicada)
 
   let t = `🚁 *RELATÓRIO OROFLY${parcial?' — PARCIAL 🌙':''}* — ${dataShare}\n\n`
-  t += `📍 Local: ${clienteVal||'—'} / F. ${form.fazenda||'—'}${form.talhao?` (Talhão: ${form.talhao})`:''}\n`
+  t += `📍 Local: ${clienteVal||'—'} / F. ${form.fazenda||'—'}${form.id_fazenda?` [ID ${form.id_fazenda}]`:''}${form.talhao?` (Talhão: ${form.talhao})`:''}\n`
   t += `⏰ Período: ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} ➔ ${fmtHora('dt_fim')})\n`
   t += `👨‍✈️ Piloto: ${form.piloto_nome||'—'} | 🛸 ${droneVal||'—'}\n`
   t += `${linha}\n`
