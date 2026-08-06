@@ -13,7 +13,10 @@ function AppRouter() {
   if (!profile.ativo) return <Bloqueado />
 
   const isAdmin = profile.role === 'admin'
-  const currentMode = mode || profile.role
+  const isSupervisor = profile.role === 'supervisor'
+  // Supervisor sempre cai no AdminPanel (que se restringe sozinho a Agenda + Equipes) —
+  // não tem alternância de modo, já que não é piloto.
+  const currentMode = mode || (isAdmin || isSupervisor ? 'admin' : 'piloto')
 
   return currentMode === 'admin'
     ? <AdminPanel onSwitchMode={isAdmin ? () => setMode('piloto') : null} />

@@ -3379,10 +3379,11 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
   const {feita:areaFeita,pct:pctFeito} = progressoParcial(form)
   const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaAplicada)
 
-  const localPartes = [clienteVal||null, form.id_fazenda?`ID ${form.id_fazenda}`:null, form.fazenda||null, form.talhao?`Talhão: ${form.talhao}`:null].filter(Boolean)
+  const localTxt = `${form.id_fazenda?`[${form.id_fazenda}] `:''}${form.fazenda||'—'}${form.talhao?` | Talhão: ${form.talhao}`:''}`
 
   let t = `🚁 *RELATÓRIO OROFLY${parcial?' — PARCIAL 🌙':''}*\n`
-  t += `📍 *Local:* ${localPartes.join(' - ')||'—'}\n`
+  t += `👤 *Cliente:* ${clienteVal||'—'}\n`
+  t += `📍 *Local:* ${localTxt}\n`
   t += `⏰ *Período:* ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} ➔ ${fmtHora('dt_fim')})\n`
   t += `👨‍✈️ *Piloto:* ${nomeCurto(form.piloto_nome)} | 🛸 *Drone:* ${droneVal||'—'}\n`
   t += `${linha}\n`

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
-import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
+import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
@@ -85,10 +85,15 @@ export default function AdminPanel({ onSwitchMode }) {
     })
   }, [profile?.avatar_url])
   const isMobile = useIsMobile()
-  const [tab, setTab] = useState('relatorios')
+  const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : 'relatorios')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [relatorios, setRelatorios] = useState([])
   const [pilotos, setPilotos] = useState([])
+  const [times, setTimes] = useState([])
+  const [fazendaTimes, setFazendaTimes] = useState([])
+  const [usuariosSubTab, setUsuariosSubTab] = useState('usuarios')
+  const [novoTimeNome, setNovoTimeNome] = useState('')
+  const isSupervisor = profile?.role === 'supervisor'
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
@@ -381,18 +386,22 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }] = await Promise.all([
+    const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }, { data: tms }, { data: fzTimes }] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
       fetch(`${API_BASE}/api/list-users`),
       supabase.from('despesas').select('*').order('created_at', { ascending: false }),
       supabase.from('agendamentos').select('*').order('data_prevista', { ascending: true }),
-      supabase.from('gps_logins').select('*').order('created_at', { ascending: false }).limit(300)
+      supabase.from('gps_logins').select('*').order('created_at', { ascending: false }).limit(300),
+      supabase.from('times').select('*').order('nome'),
+      supabase.from('fazenda_times').select('*'),
     ])
     const rs = rels || []
     setRelatorios(rs)
     setCustos(desp || [])
     setAgenda(agend || [])
     setGpsLogins(logins || [])
+    setTimes(tms || [])
+    setFazendaTimes(fzTimes || [])
     if (usersRes.ok) { const d = await usersRes.json(); setPilotos(d.users || []) }
     const counts = {}
     rs.forEach(r => { counts[r.piloto_id] = (counts[r.piloto_id] || 0) + 1 })
@@ -515,9 +524,10 @@ export default function AdminPanel({ onSwitchMode }) {
     const nomeCurto = n => { if(!n) return '—'; const p=n.trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
     const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
     const fz = invFazendas.find(f=>f.cliente===rel.cliente && f.nome===rel.fazenda)
-    const localPartes = [rel.cliente||null, fz?.id_fazenda?`ID ${fz.id_fazenda}`:null, rel.fazenda||null, rel.localizacao?`Talhão: ${rel.localizacao}`:null].filter(Boolean)
+    const localTxt = `${fz?.id_fazenda?`[${fz.id_fazenda}] `:''}${rel.fazenda||'—'}${rel.localizacao?` | Talhão: ${rel.localizacao}`:''}`
     let t = `🚁 *RELATÓRIO OROFLY*\n`
-    t += `📍 *Local:* ${localPartes.join(' - ')||'—'}\n`
+    t += `👤 *Cliente:* ${rel.cliente||'—'}\n`
+    t += `📍 *Local:* ${localTxt}\n`
     t += `⏰ *Período:* ${fmtData(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} ➔ ${fmtHora(rel.dt_fim)})\n`
     t += `👨‍✈️ *Piloto:* ${nomeCurto(rel.piloto_nome)} | 🛸 *Drone:* ${rel.drone||'—'}\n`
     t += `${linha}\n`
@@ -529,6 +539,25 @@ export default function AdminPanel({ onSwitchMode }) {
     if(rel.obs1) t += `${linha}\n📝 *Obs:* ${rel.obs1}\n`
     if(rel.gps_lat && rel.gps_lng) t += `${linha}\n📍 ${rel.gps_lat}, ${rel.gps_lng}\nhttps://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}\n`
     return t
+  }
+
+  // Tenta anexar a foto do mapa de pós-aplicação junto do texto. Só funciona de verdade no
+  // app Android empacotado ou em navegador mobile com Web Share API de arquivos — desktop
+  // não tem como anexar arquivo num link wa.me, cai só no texto (limitação do WhatsApp Web).
+  async function enviarWhatsApp(rel) {
+    const texto = buildTxtAdmin(rel)
+    let file = null
+    if (rel.foto_mapa_url) {
+      try {
+        const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(rel.foto_mapa_url, 60)
+        if (signed?.signedUrl) {
+          const res = await fetch(signed.signedUrl)
+          const blob = await res.blob()
+          file = new File([blob], 'mapa.jpg', { type: blob.type || 'image/jpeg' })
+        }
+      } catch (e) { console.error('Erro ao buscar foto do mapa:', e) }
+    }
+    await compartilharNativo({ text: texto, file, filename: 'mapa.jpg', webFallbackUrl: 'https://wa.me/?text=' + encodeURIComponent(texto) })
   }
 
   async function excluirTodosRascunhos() {
@@ -557,15 +586,47 @@ export default function AdminPanel({ onSwitchMode }) {
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
   }
 
-  async function toggleRole(piloto) {
+  async function toggleRoleTo(piloto, novoRole) {
     if (piloto.id === profile?.id) { showToast('Você não pode alterar o próprio perfil de acesso — peça a outro admin', 'error'); return }
-    const novoRole = piloto.role === 'admin' ? 'piloto' : 'admin'
     try {
       const res = await fetch(`${API_BASE}/api/toggle-role`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, role: novoRole }) })
       const d = await res.json(); if (d.error) throw new Error(d.error)
-      showToast(novoRole === 'admin' ? '⚙️ Virou Admin' : '🚁 Virou Piloto')
+      showToast(novoRole === 'admin' ? '⚙️ Virou Admin' : novoRole==='supervisor' ? '🧑‍🤝‍🧑 Virou Supervisor' : '🚁 Virou Piloto')
       fetchAll()
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
+  }
+
+  async function setUserTime(piloto, time_id) {
+    try {
+      const res = await fetch(`${API_BASE}/api/set-time`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, time_id }) })
+      const d = await res.json(); if (d.error) throw new Error(d.error)
+      showToast('✅ Time atualizado'); fetchAll()
+    } catch (e) { showToast('Erro: ' + e.message, 'error') }
+  }
+
+  async function criarTime() {
+    if(!novoTimeNome.trim()){ showToast('Digite o nome do time','error'); return }
+    const { error } = await supabase.from('times').insert({ nome: novoTimeNome.trim() })
+    if(error){ showToast('Erro: '+error.message,'error'); return }
+    setNovoTimeNome(''); showToast('✅ Time criado'); fetchAll()
+  }
+
+  async function excluirTime(time) {
+    if(!window.confirm(`Excluir o time "${time.nome}"? Os pilotos dele ficam sem time, e as permissões de fazenda desse time são removidas.`)) return
+    await supabase.from('fazenda_times').delete().eq('time_id', time.id)
+    const { error } = await supabase.from('times').delete().eq('id', time.id)
+    if(error){ showToast('Erro: '+error.message,'error'); return }
+    showToast('🗑️ Time excluído'); fetchAll()
+  }
+
+  async function toggleFazendaTime(fazendaId, timeId) {
+    const existente = fazendaTimes.find(ft=>ft.fazenda_id===fazendaId && ft.time_id===timeId)
+    if(existente){
+      await supabase.from('fazenda_times').delete().eq('id', existente.id)
+    } else {
+      await supabase.from('fazenda_times').insert({ fazenda_id: fazendaId, time_id: timeId })
+    }
+    fetchAll()
   }
 
   async function resetarSenha(piloto) {
@@ -652,7 +713,14 @@ export default function AdminPanel({ onSwitchMode }) {
       )}
 
       <nav style={{ padding: '4px 12px', flex: 1 }}>
-        {[
+        {(isSupervisor ? [
+          ['OPERAÇÕES', [
+            ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
+          ]],
+          ['CONFIGURAÇÕES', [
+            ['pilotos', '👥', 'Equipes', pilotos.length],
+          ]],
+        ] : [
           ['RESUMO', [
             ['dashboard', '📊', 'Início', ''],
             ['sustentabilidade', '🌱', 'Sustentabilidade', ''],
@@ -672,7 +740,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['CONFIGURAÇÕES', [
             ['pilotos', '👥', 'Usuários', pilotos.length],
           ]],
-        ].map(([secao, itens]) => (
+        ]).map(([secao, itens]) => (
           <div key={secao} style={{marginBottom:14}}>
             <div style={{fontSize:9,fontWeight:700,color:'#4a6e56',letterSpacing:1.2,padding:'0 12px',marginBottom:6}}>{secao}</div>
             {itens.map(([id, icon, lbl, cnt]) => (
@@ -752,7 +820,7 @@ export default function AdminPanel({ onSwitchMode }) {
               {sosAtivos.length > 0 && <span style={{ background:'#e5484d', color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20 }}>🆘 {sosAtivos.length}</span>}
             </div>
             <div style={{ display:'flex', gap:6 }}>
-              {[['relatorios','📋'],['dashboard','📊'],['mapa','🗺️'],['inventario','📦'],['pilotos','👥']].map(([id,ic]) => (
+              {(isSupervisor ? [['agenda','📅'],['pilotos','👥']] : [['relatorios','📋'],['dashboard','📊'],['mapa','🗺️'],['inventario','📦'],['pilotos','👥']]).map(([id,ic]) => (
                 <button key={id} style={{ background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:16, padding:'6px 10px', cursor:'pointer', fontSize:16, color: tab===id?'#fff':'#7ba38f' }} onClick={() => setTab(id)}>{ic}</button>
               ))}
               {onSwitchMode && <button style={{ background:'#ffb020', border:'none', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:700 }} onClick={onSwitchMode}>🚁</button>}
@@ -924,7 +992,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:'#f2960f'}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
                                   <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
-                                  <button title="Enviar relatório no WhatsApp" style={{...sG.iconBtn,color:'#25D366'}} onClick={e => { e.stopPropagation(); window.open('https://wa.me/?text='+encodeURIComponent(buildTxtAdmin(rel)),'_blank') }}>💬</button>
+                                  <button title="Enviar relatório no WhatsApp" style={{...sG.iconBtn,color:'#25D366'}} onClick={e => { e.stopPropagation(); enviarWhatsApp(rel) }}>💬</button>
                                   <button title="PDF Cliente" style={{...sG.iconBtn,color:'#22c476'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
                                   <button title="Word / Google Docs" style={{...sG.iconBtn,color:'#2f6fed'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝</button>
                                   {rel.gps_lat && <a title="Maps" style={{ ...sG.iconBtn, textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>🗺️</a>}
@@ -3648,11 +3716,15 @@ export default function AdminPanel({ onSwitchMode }) {
 
           {/* ===== AGENDA (voos programados) ===== */}
           {tab === 'agenda' && (() => {
-            const pilotosAtivos = pilotos.filter(p=>p.ativo!==false)
             const fazendasDoCliente = invFazendas.filter(f=>f.cliente===agendaForm.cliente)
             const hoje = new Date(); hoje.setHours(0,0,0,0)
 
             const fzSelecionada = invFazendas.find(f=>f.cliente===agendaForm.cliente && f.nome===agendaForm.fazenda)
+            // Trava de permissão: se a fazenda tiver algum time autorizado configurado (em
+            // Usuários > Equipes), só deixa escalar pilotos desse(s) time(s). Sem nenhum time
+            // configurado pra fazenda, não restringe — evita travar quem ainda não configurou nada.
+            const timesPermitidosFazenda = fzSelecionada ? fazendaTimes.filter(ft=>ft.fazenda_id===fzSelecionada.id).map(ft=>ft.time_id) : []
+            const pilotosAtivos = pilotos.filter(p=>p.ativo!==false && (timesPermitidosFazenda.length===0 || timesPermitidosFazenda.includes(p.time_id)))
             const talhoesDaFazendaAgenda = fzSelecionada ? invTalhoes.filter(t=>t.fazenda_id===fzSelecionada.id) : []
             const talhoesSelecionadosAgenda = (agendaForm.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
 
@@ -3707,7 +3779,7 @@ export default function AdminPanel({ onSwitchMode }) {
               try {
                 const piloto = pilotos.find(p=>p.id===agendaForm.piloto_id)
                 const { error } = await supabase.from('agendamentos').insert({
-                  piloto_id: agendaForm.piloto_id, piloto_nome: piloto?.nome||piloto?.email,
+                  piloto_id: agendaForm.piloto_id, piloto_nome: piloto?.nome||piloto?.email, time_id: piloto?.time_id||null,
                   cliente: agendaForm.cliente, fazenda: agendaForm.fazenda, talhao: agendaForm.talhao||null,
                   data_prevista: agendaForm.data_prevista, produto: agendaForm.produto||null,
                   dose: agendaForm.dose||null,
@@ -3905,9 +3977,60 @@ export default function AdminPanel({ onSwitchMode }) {
           {tab === 'pilotos' && (
             <div>
               <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>Gestão de Usuários</div>
-                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{pilotos.length} usuários</div>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>{isSupervisor?'Equipes':'Gestão de Usuários'}</div>
+                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{pilotos.length} usuários · {times.length} time(s)</div>
               </div>
+
+              <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4,marginBottom:18,maxWidth:320}}>
+                <button style={{flex:1,background:usuariosSubTab==='usuarios'?'#fff':'transparent',color:usuariosSubTab==='usuarios'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='usuarios'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                  onClick={()=>setUsuariosSubTab('usuarios')}>👥 Usuários</button>
+                <button style={{flex:1,background:usuariosSubTab==='equipes'?'#fff':'transparent',color:usuariosSubTab==='equipes'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='equipes'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                  onClick={()=>setUsuariosSubTab('equipes')}>🧑‍🤝‍🧑 Equipes</button>
+              </div>
+
+              {usuariosSubTab==='equipes' && (
+                <div>
+                  <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,marginBottom:16,display:'flex',gap:8,maxWidth:420}}>
+                    <input style={{...sG.input,flex:1}} placeholder="Nome do novo time (ex: Time Norte)" value={novoTimeNome} onChange={e=>setNovoTimeNome(e.target.value)}/>
+                    <button style={{...sG.btn,width:'auto',padding:'0 18px'}} onClick={criarTime}>+ Criar</button>
+                  </div>
+                  {times.length===0 ? (
+                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:30,textAlign:'center',color:'#5c7568',fontSize:13}}>Nenhum time cadastrado ainda.</div>
+                  ) : (
+                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                      {times.map(t=>{
+                        const membros = pilotos.filter(p=>p.time_id===t.id)
+                        const fazendasDoTime = fazendaTimes.filter(ft=>ft.time_id===t.id).map(ft=>ft.fazenda_id)
+                        return (
+                          <div key={t.id} style={{background:'#fff',borderRadius:16,border:'1px solid #d7e6dc',padding:16}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700}}>🧑‍🤝‍🧑 {t.nome}</div>
+                              <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirTime(t)}>🗑️ Excluir</button>
+                            </div>
+                            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>PILOTOS ({membros.length})</div>
+                            <div style={{fontSize:12,color:'#5c7568',marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na aba Usuários.'}</div>
+                            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
+                            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                              {invFazendas.map(fz=>{
+                                const ativo = fazendasDoTime.includes(fz.id)
+                                return (
+                                  <button key={fz.id} onClick={()=>toggleFazendaTime(fz.id,t.id)}
+                                    style={{background:ativo?'#0e9f6e':'#f1f8f4',color:ativo?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                                    {ativo?'✓ ':''}{fz.nome}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                            <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento mostra qualquer piloto).</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {usuariosSubTab==='usuarios' && (
               <div style={{ display:'flex', gap:20, flexDirection: isMobile?'column':'row', alignItems:'flex-start' }}>
                 <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', padding:20, width: isMobile?'100%':280, flexShrink:0 }}>
                   <div style={{ fontFamily:"'Syne',sans-serif", fontSize:14, fontWeight:700, marginBottom:16 }}>+ Novo usuário</div>
@@ -3922,6 +4045,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       <div style={sG.label}>PERFIL</div>
                       <select style={sG.input} value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}>
                         <option value="piloto">🚁 Piloto</option>
+                        <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
                         <option value="admin">⚙️ Administrador</option>
                       </select>
                     </div>
@@ -3930,21 +4054,32 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
                 <div style={{ flex:1, overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse', background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden' }}>
-                    <thead><tr style={{ background:'#f1f8f4' }}>{['Usuário','E-mail','Perfil','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'10px 13px', textAlign:'left', fontSize:11, fontWeight:700, color:'#5c7568', borderBottom:'1px solid #d7e6dc', fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
+                    <thead><tr style={{ background:'#f1f8f4' }}>{['Usuário','E-mail','Perfil','Time','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'10px 13px', textAlign:'left', fontSize:11, fontWeight:700, color:'#5c7568', borderBottom:'1px solid #d7e6dc', fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {pilotos.map((p, i) => (
                         <tr key={p.id} style={{ background: i%2===0?'#fff':'#f7fbf8', opacity: p.ativo?1:.5 }}>
-                          <td style={sG.td}><div style={{ display:'flex', alignItems:'center', gap:8 }}><div style={{ width:30, height:30, borderRadius:'50%', background: p.role==='admin'?'#faeeda':'#e3f7ec', color: p.role==='admin'?'#854f0b':'#0e9f6e', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div><span style={{ fontWeight:500 }}>{p.nome}</span></div></td>
+                          <td style={sG.td}><div style={{ display:'flex', alignItems:'center', gap:8 }}><div style={{ width:30, height:30, borderRadius:'50%', background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':'#e3f7ec', color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#0e9f6e', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div><span style={{ fontWeight:500 }}>{p.nome}</span></div></td>
                           <td style={{ ...sG.td, color:'#5c7568', fontSize:12 }}>{p.email}</td>
-                          <td style={sG.td}><span style={{ background: p.role==='admin'?'#faeeda':'#e3f7ec', color: p.role==='admin'?'#854f0b':'#0a6e4f', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.role==='admin'?'⚙️ Admin':'🚁 Piloto'}</span></td>
+                          <td style={sG.td}>
+                            {p.id === profile?.id ? (
+                              <span style={{ background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':'#e3f7ec', color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#0a6e4f', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.role==='admin'?'⚙️ Admin':p.role==='supervisor'?'🧑‍🤝‍🧑 Supervisor':'🚁 Piloto'}</span>
+                            ) : (
+                              <select style={{...sG.input,padding:'4px 8px',fontSize:11,width:'auto'}} value={p.role||'piloto'} onChange={e=>toggleRoleTo(p,e.target.value)}>
+                                <option value="piloto">🚁 Piloto</option>
+                                <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
+                                <option value="admin">⚙️ Admin</option>
+                              </select>
+                            )}
+                          </td>
+                          <td style={sG.td}>
+                            <select style={{...sG.input,padding:'4px 8px',fontSize:11,width:'auto'}} value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}>
+                              <option value="">— Sem time —</option>
+                              {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
+                            </select>
+                          </td>
                           <td style={{ ...sG.td, fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#0e9f6e', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
                           <td style={{ ...sG.td }}><span style={{ background: p.ativo?'#e3f7ec':'#fee', color: p.ativo?'#0e9f6e':'#e5484d', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.ativo?'Ativo':'Inativo'}</span></td>
                           <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
-                            {p.id !== profile?.id && (
-                              <button style={{ background: p.role==='admin'?'#faeeda':'#e3f7ec', color: p.role==='admin'?'#854f0b':'#0a6e4f', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleRole(p)}>
-                                {p.role==='admin'?'→ Piloto':'→ Admin'}
-                              </button>
-                            )}
                             <button style={{ background: p.ativo?'#fee':'#e3f7ec', color: p.ativo?'#e5484d':'#0e9f6e', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
                             <button style={{ background:'#eef2fb', color:'#2952a3', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => resetarSenha(p)}>🔑 Senha</button>
                             {p.id !== profile?.id && (
@@ -3957,6 +4092,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   </table>
                 </div>
               </div>
+              )}
             </div>
           )}
         </main>
