@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
+import { pedirPermissaoNotificacaoLocal, notificarLocal } from '../lib/localNotify'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
@@ -75,6 +76,8 @@ function MultiSelectDropdown({ label, options, selected, onChange }) {
 
 export default function AdminPanel({ onSwitchMode }) {
   const { profile, signOut, refreshProfile } = useAuth()
+  const [confirmSair, setConfirmSair] = useState(false)
+  const sairComConfirmacao = () => setConfirmSair(true)
   const [showPerfil, setShowPerfil] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState(null)
   useEffect(() => {
@@ -365,6 +368,30 @@ export default function AdminPanel({ onSwitchMode }) {
   }, [])
 
   useEffect(() => { fetchAll(); fetchInventario(); ativarPush() }, [])
+
+  // Notificação local (Android) quando um piloto inicia um voo — só pro admin de verdade
+  // (não o supervisor, que também cai nesse painel). Funciona enquanto o app estiver aberto
+  // (foreground ou segundo plano); é o caminho sem depender de servidor de push, já que o
+  // Web Push comum não roda de forma confiável dentro do WebView do Capacitor.
+  const vooNotificadoRef = useRef(new Set())
+  useEffect(() => {
+    if (profile?.role !== 'admin') return
+    pedirPermissaoNotificacaoLocal()
+    const channel = supabase.channel('voos-iniciados-admin')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'relatorios' }, (payload) => {
+        const rel = payload.new
+        if (!rel || rel.status !== 'em_operacao') return
+        if (rel.piloto_id === profile.id) return
+        if (vooNotificadoRef.current.has(rel.id)) return
+        vooNotificadoRef.current.add(rel.id)
+        notificarLocal({
+          titulo: '🚁 Voo iniciado — ' + (rel.piloto_nome || 'Piloto'),
+          corpo: `${rel.cliente || '—'} · ${rel.fazenda || '—'}`,
+        })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [profile?.id, profile?.role])
 
   // Auto-atualiza os relatórios a cada 30s enquanto o Mapa de Voos estiver aberto
   useEffect(() => {
@@ -868,7 +895,7 @@ export default function AdminPanel({ onSwitchMode }) {
             🚁 Modo Piloto
           </button>
         )}
-        <button style={{ width:'100%', background:'transparent', border:'1px solid #1e3828', color:'#4a6e56', borderRadius:16, padding:'7px', fontSize:12, cursor:'pointer' }} onClick={signOut}>Sair</button>
+        <button style={{ width:'100%', background:'transparent', border:'1px solid #1e3828', color:'#4a6e56', borderRadius:16, padding:'7px', fontSize:12, cursor:'pointer' }} onClick={sairComConfirmacao}>Sair</button>
         <div style={{ textAlign:'center', fontSize:10, color:'#2d4a38', marginTop:8, letterSpacing:1 }}>v3.8</div>
       </div>
     </>
@@ -908,7 +935,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 🔔
                 {notifNaoVistas>0 && <span style={{ position:'absolute', top:-4, right:-4, background:'#e5484d', color:'#fff', fontSize:9, fontWeight:700, borderRadius:20, minWidth:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
               </button>
-              <button style={{ background:'transparent', border:'1px solid #2d4a38', color:'#7ba38f', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer' }} onClick={signOut}>Sair</button>
+              <button style={{ background:'transparent', border:'1px solid #2d4a38', color:'#7ba38f', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer' }} onClick={sairComConfirmacao}>Sair</button>
             </div>
           </div>
         )}
@@ -4575,6 +4602,19 @@ export default function AdminPanel({ onSwitchMode }) {
             })}
           </div>
         </>
+      )}
+
+      {confirmSair && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
+            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, marginBottom:10 }}>Sair da conta?</div>
+            <p style={{ fontSize:14, marginBottom:18, color:'#5c7568' }}>Você vai precisar entrar de novo com seu e-mail e senha.</p>
+            <div style={{ display:'flex', gap:10 }}>
+              <button style={{ ...sG.btn, background:'#f1f8f4', color:'#5c7568', flex:1 }} onClick={() => setConfirmSair(false)}>Cancelar</button>
+              <button style={{ ...sG.btn, background:'#e5484d', flex:1 }} onClick={signOut}>Sair</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmDelete && (

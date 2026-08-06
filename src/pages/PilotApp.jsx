@@ -539,6 +539,8 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoErro,setTempoErro] = useState('')
   const [tempoLocal,setTempoLocal] = useState('')
   const [tempoCep,setTempoCep] = useState('')
+  const [tempoLat,setTempoLat] = useState('')
+  const [tempoLng,setTempoLng] = useState('')
   const [tempoHorario,setTempoHorario] = useState(null)
   const [graficoHora,setGraficoHora] = useState(null)
   const toastTimer=useRef(null)
@@ -1262,6 +1264,14 @@ export default function PilotApp({onSwitchMode}) {
     } catch(e){ setTempoLoading(false); setTempoErro('Não encontramos esse CEP. Confira e tente de novo.') }
   }
 
+  function buscarPorLatLng(){
+    const lat = parseFloat(tempoLat.replace(',','.'))
+    const lng = parseFloat(tempoLng.replace(',','.'))
+    if(isNaN(lat)||lat<-90||lat>90){ setTempoErro('Latitude inválida (-90 a 90).'); return }
+    if(isNaN(lng)||lng<-180||lng>180){ setTempoErro('Longitude inválida (-180 a 180).'); return }
+    buscarPrevisao(lat,lng,`${lat.toFixed(4)}, ${lng.toFixed(4)}`)
+  }
+
   async function salvarNota(){
     const temDespesa = notaForm.categoria && notaForm.valor && parseFloat(notaForm.valor)>0
     const temViagem = notaForm.veiculo_id && notaForm.km_inicial!=='' && notaForm.km_final!==''
@@ -1417,7 +1427,7 @@ export default function PilotApp({onSwitchMode}) {
 
   function tentarSair(){
     if(opState==='running'||opState==='paused') setExitConfirm(true)
-    else signOut()
+    else setConfirmDialog({message:'Sair da sua conta?', onConfirm:signOut})
   }
 
   // Precisa ficar disponível em toda tela que tem botão "Sair" (não só no wizard) — antes só
@@ -1777,6 +1787,7 @@ export default function PilotApp({onSwitchMode}) {
         {toast&&<div style={s.toast}>{toast}</div>}
         {showPerfil&&<ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
         <ExitConfirmModal/>
+        <ConfirmDialogModal/>
       </div>
     )
   }
@@ -2028,6 +2039,7 @@ export default function PilotApp({onSwitchMode}) {
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
+      <ConfirmDialogModal/>
     </div>
   )
 
@@ -2113,6 +2125,7 @@ export default function PilotApp({onSwitchMode}) {
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
+      <ConfirmDialogModal/>
     </div>
   )
 
@@ -2144,6 +2157,12 @@ export default function PilotApp({onSwitchMode}) {
                   setTempoCep(v)
                 }}/>
               <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'0 20px',fontSize:14,fontWeight:600,cursor:'pointer',opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorCep}>Buscar</button>
+            </div>
+            <div style={{textAlign:'center',fontSize:11,color:'#7ba38f',margin:'14px 0'}}>ou digite latitude/longitude</div>
+            <div style={{display:'flex',gap:8}}>
+              <input style={{...sw.fi,flex:1}} placeholder="Latitude" inputMode="decimal" value={tempoLat} onChange={e=>setTempoLat(e.target.value)}/>
+              <input style={{...sw.fi,flex:1}} placeholder="Longitude" inputMode="decimal" value={tempoLng} onChange={e=>setTempoLng(e.target.value)}/>
+              <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'0 20px',fontSize:14,fontWeight:600,cursor:'pointer',opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorLatLng}>Buscar</button>
             </div>
             {tempoErro&&<div style={{marginTop:12,background:'#fdeaea',color:'#e5484d',borderRadius:12,padding:'10px 14px',fontSize:13}}>{tempoErro}</div>}
             {fazendasDB.some(fz=>fz.lat&&fz.lng) && (
@@ -2270,6 +2289,7 @@ export default function PilotApp({onSwitchMode}) {
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
+      <ConfirmDialogModal/>
     </div>
   )
 
@@ -2400,6 +2420,7 @@ export default function PilotApp({onSwitchMode}) {
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
+      <ConfirmDialogModal/>
       {agendaDetalhe && (()=>{
         const fz = fazendasDB.find(fz=>fz.cliente===agendaDetalhe.cliente&&fz.nome===agendaDetalhe.fazenda)
         return (

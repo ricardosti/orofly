@@ -14,13 +14,14 @@ function AppRouter() {
 
   const isAdmin = profile.role === 'admin'
   const isSupervisor = profile.role === 'supervisor'
-  // Supervisor sempre cai no AdminPanel (que se restringe sozinho a Agenda + Equipes) —
-  // não tem alternância de modo, já que não é piloto.
+  // Supervisor cai no AdminPanel por padrão (que se restringe sozinho a Agenda + Equipes),
+  // mas continua sendo piloto — precisa poder alternar pro app de voo igual o admin.
+  const canSwitchMode = isAdmin || isSupervisor
   const currentMode = mode || (isAdmin || isSupervisor ? 'admin' : 'piloto')
 
   return currentMode === 'admin'
-    ? <AdminPanel onSwitchMode={isAdmin ? () => setMode('piloto') : null} />
-    : <PilotApp   onSwitchMode={isAdmin ? () => setMode('admin')  : null} />
+    ? <AdminPanel onSwitchMode={canSwitchMode ? () => setMode('piloto') : null} />
+    : <PilotApp   onSwitchMode={canSwitchMode ? () => setMode('admin')  : null} />
 }
 
 function Splash() {

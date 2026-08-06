@@ -43,6 +43,9 @@
     <!-- Armazenamento: upload de KML/KMZ e anexos (só necessário até Android 12) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
+    <!-- Notificação local: avisa o admin quando um piloto inicia um voo (Android 13+ exige essa permissão em runtime) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 </manifest>
