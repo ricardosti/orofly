@@ -92,6 +92,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [mapaResumo, setMapaResumo] = useState(null)
   const [showNotifs, setShowNotifs] = useState(false)
   const [notifVisto, setNotifVisto] = useState(() => { try { return localStorage.getItem('orofly_notif_visto_'+profile?.id) || null } catch { return null } })
   const [editModal, setEditModal] = useState(null)
@@ -506,6 +507,24 @@ export default function AdminPanel({ onSwitchMode }) {
     fetchAll()
   }
 
+  async function excluirTodosRascunhos() {
+    const ids = relatorios.filter(r=>r.status==='rascunho').map(r=>r.id)
+    if(ids.length===0) return
+    if(!window.confirm(`Excluir TODOS os ${ids.length} rascunhos (de todos os pilotos)? Essa ação não pode ser desfeita.`)) return
+    const { error } = await supabase.from('relatorios').delete().in('id', ids)
+    if(error){ showToast('Erro: '+error.message,'error'); return }
+    showToast(`🗑️ ${ids.length} rascunho(s) excluído(s)`); fetchAll()
+  }
+
+  async function excluirTodosTestes() {
+    const ids = relatorios.filter(r=>r.teste).map(r=>r.id)
+    if(ids.length===0) return
+    if(!window.confirm(`Excluir TODOS os ${ids.length} voos marcados como teste (qualquer status, de todos os pilotos)? Essa ação não pode ser desfeita.`)) return
+    const { error } = await supabase.from('relatorios').delete().in('id', ids)
+    if(error){ showToast('Erro: '+error.message,'error'); return }
+    showToast(`🧪 ${ids.length} voo(s) de teste excluído(s)`); fetchAll()
+  }
+
   async function toggleAtivo(piloto) {
     try {
       const res = await fetch(`${API_BASE}/api/toggle-user`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: piloto.id, ativo: !piloto.ativo }) })
@@ -727,9 +746,30 @@ export default function AdminPanel({ onSwitchMode }) {
           {/* ===== RELATÓRIOS ===== */}
           {tab === 'relatorios' && (
             <div>
-              <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>Relatórios de Voo</div>
-                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
+              <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-end', flexWrap:'wrap', gap:10 }}>
+                <div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>Relatórios de Voo</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
+                </div>
+                <div style={{ display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end' }}>
+                  {relatorios.some(r=>r.status==='rascunho') && (
+                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                      onClick={excluirTodosRascunhos}>🗑️ Excluir todos os rascunhos</button>
+                  )}
+                  {relatorios.some(r=>r.teste) && (()=>{
+                    const testes = relatorios.filter(r=>r.teste)
+                    const porStatus = {}
+                    testes.forEach(r=>{ porStatus[r.status]=(porStatus[r.status]||0)+1 })
+                    const resumo = Object.entries(porStatus).map(([st,n])=>`${STATUS_LABEL[st]||st}: ${n}`).join(' · ')
+                    return (
+                      <div style={{textAlign:'right'}}>
+                        <button style={{background:'#fff3e0',color:'#a3690a',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                          onClick={excluirTodosTestes}>🧪 Excluir todos os testes ({testes.length})</button>
+                        <div style={{fontSize:10,color:'#a3690a',marginTop:3}}>{resumo}</div>
+                      </div>
+                    )
+                  })()}
+                </div>
               </div>
               {sosAtivos.length > 0 && (
                 <div style={{ background:'#fdeaea', border:'2px solid #e5484d', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
@@ -1823,12 +1863,13 @@ export default function AdminPanel({ onSwitchMode }) {
               {filtered.filter(r=>r.gps_lat).length > 0 ? (
                 <>
                   {/* MAPA LEAFLET com todos os pontos (respeita os filtros acima) */}
-                  <MapaLeaflet relatorios={filtered} height={isMobile?300:500} />
+                  <MapaLeaflet relatorios={filtered} height={isMobile?300:500}
+                    onPontoClick={id=>{const rel=filtered.find(r=>r.id===id); if(rel) setMapaResumo(rel)}}/>
 
                   {/* Lista de voos com GPS */}
                   <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:16 }}>
                     {filtered.filter(r => r.gps_lat).map(rel => (
-                      <div key={rel.id} onClick={()=>{setSelected(rel);setTab('relatorios')}}
+                      <div key={rel.id} onClick={()=>setMapaResumo(rel)}
                         style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#e5484d':'#d7e6dc'}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}>
                         <div>
                           <div style={{ fontWeight:600, fontSize:13, color:'#0b1210' }}>{rel.cliente||'—'} — {rel.piloto_nome}</div>
@@ -1851,6 +1892,36 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
               </>)}
+            </div>
+          )}
+
+          {/* RESUMO RÁPIDO — clicou num ponto do mapa */}
+          {mapaResumo && (
+            <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setMapaResumo(null)}>
+              <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:420,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>{mapaResumo.cliente||'—'} — {mapaResumo.fazenda||'—'}</div>
+                  <button style={{background:'none',border:'none',fontSize:18,color:'#7ba38f',cursor:'pointer'}} onClick={()=>setMapaResumo(null)}>✕</button>
+                </div>
+                <span style={{background:STATUS_BG[mapaResumo.status]||'#f1f8f4',color:STATUS_COLOR[mapaResumo.status]||'#5c7568',fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20,display:'inline-block',marginBottom:14}}>{STATUS_LABEL[mapaResumo.status]||mapaResumo.status}</span>
+                {[
+                  ['Talhão', mapaResumo.localizacao],
+                  ['Área', mapaResumo.area_ha ? `${mapaResumo.area_ha} ha${mapaResumo.bordadura?` (bordadura ${mapaResumo.bordadura} ha)`:''}` : null],
+                  ['Piloto', mapaResumo.piloto_nome],
+                  ['Drone', mapaResumo.drone],
+                  ['Produtos', (mapaResumo.produtos||[]).join(', ')],
+                  ['Data', mapaResumo.dt_inicio ? new Date(mapaResumo.dt_inicio).toLocaleDateString('pt-BR') : new Date(mapaResumo.created_at).toLocaleDateString('pt-BR')],
+                  ['OS', mapaResumo.ordem_servico],
+                  ['Observação', mapaResumo.obs1||mapaResumo.obs2],
+                ].filter(([,v])=>v).map(([l,v])=>(
+                  <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid #eef5f0',fontSize:13}}>
+                    <span style={{color:'#5c7568',fontWeight:500,minWidth:90}}>{l}</span>
+                    <span style={{color:'#0b1210',textAlign:'right',flex:1,wordBreak:'break-word'}}>{v}</span>
+                  </div>
+                ))}
+                <button style={{width:'100%',marginTop:16,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:700,cursor:'pointer'}}
+                  onClick={()=>{setSelected(mapaResumo);setTab('relatorios');setMapaResumo(null)}}>Ver relatório completo →</button>
+              </div>
             </div>
           )}
 
@@ -2587,7 +2658,10 @@ export default function AdminPanel({ onSwitchMode }) {
                 (!fz.campanha_inicio || new Date(r.created_at) >= new Date(fz.campanha_inicio))
               )
               const areaRealizada = relatoriosFz.reduce((a,r)=>a+areaLiquida(r),0)
-              const pct = areaTotal>0 ? Math.min(100,(areaRealizada/areaTotal)*100) : null
+              // Bordadura conta como "feito" — é faixa de segurança deliberadamente não
+              // pulverizada, não trabalho pendente (senão a fazenda nunca fecha 100%).
+              const bordaduraRealizada = relatoriosFz.reduce((a,r)=>a+(parseFloat(r.bordadura)||0),0)
+              const pct = areaTotal>0 ? Math.min(100,((areaRealizada+bordaduraRealizada)/areaTotal)*100) : null
               const porPiloto = {}
               relatoriosFz.forEach(r=>{
                 const n = r.piloto_nome||'—'
@@ -3556,6 +3630,7 @@ export default function AdminPanel({ onSwitchMode }) {
               const areaTotal = parseFloat(t.area_ha)||0
               if(areaTotal<=0 || !fzSelecionada) return null
               let areaRealizada = 0
+              let bordaduraRealizada = 0
               relatorios.forEach(r=>{
                 if(r.status!=='finalizado') return
                 if(r.cliente!==fzSelecionada.cliente || r.fazenda!==fzSelecionada.nome) return
@@ -3568,8 +3643,10 @@ export default function AdminPanel({ onSwitchMode }) {
                 },0)
                 const fracao = somaRegistrada>0 ? areaTotal/somaRegistrada : 1/nomesVoo.length
                 areaRealizada += areaLiquida(r) * fracao
+                bordaduraRealizada += (parseFloat(r.bordadura)||0) * fracao
               })
-              return { areaTotal, areaRealizada, pct: Math.min(100,(areaRealizada/areaTotal)*100) }
+              const feito = areaRealizada + bordaduraRealizada
+              return { areaTotal, areaRealizada, bordaduraRealizada, pct: Math.min(100,(feito/areaTotal)*100) }
             }
 
             function toggleTalhaoAgenda(nome){
@@ -4217,9 +4294,18 @@ function StoragePhoto({ supabase, path, bucket, small }) {
 }
 
 // Mapa Leaflet com todos os pontos GPS dos voos
-function MapaLeaflet({ relatorios, height = 400 }) {
+function MapaLeaflet({ relatorios, height = 400, onPontoClick }) {
   const [mapUrl, setMapUrl] = useState(null)
   const urlRef = useRef(null)
+
+  // Iframe é sandboxed (allow-scripts, sem same-origin), então a única forma de avisar o
+  // React de um clique num ponto do mapa é via postMessage — não dá pra chamar callback direto.
+  useEffect(() => {
+    if (!onPontoClick) return
+    const handler = (e) => { if (e.data?.oroflyMapClick) onPontoClick(e.data.oroflyMapClick) }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [onPontoClick])
 
   useEffect(() => {
     const pontos = relatorios.filter(r => r.gps_lat && r.gps_lng)
@@ -4228,7 +4314,7 @@ function MapaLeaflet({ relatorios, height = 400 }) {
     const markers = pontos.map(r => {
       const cor = r.status === 'sos' ? '#e5484d' : r.status === 'em_operacao' ? '#0e9f6e' : r.status === 'pausado' ? '#f2960f' : '#2f6fed'
       const label = `${(r.cliente||'—').replace(/'/g,"\\'")} — ${(r.piloto_nome||'').replace(/'/g,"\\'")} — ${new Date(r.created_at).toLocaleDateString('pt-BR')}`
-      return `L.circleMarker([${r.gps_lat},${r.gps_lng}],{color:'${cor}',fillColor:'${cor}',fillOpacity:0.85,radius:9,weight:2}).bindPopup('${label}').addTo(map)`
+      return `L.circleMarker([${r.gps_lat},${r.gps_lng}],{color:'${cor}',fillColor:'${cor}',fillOpacity:0.85,radius:9,weight:2}).bindPopup('${label}').on('click',function(){window.parent.postMessage({oroflyMapClick:'${r.id}'},'*')}).addTo(map)`
     }).join(';\n')
 
     const center = pontos[Math.floor(pontos.length / 2)]

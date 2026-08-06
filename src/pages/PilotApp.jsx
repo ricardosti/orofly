@@ -92,6 +92,7 @@ function initForm(data) {
       evid_meta:data.evidencia_meta||{},
       area_feita:data.area_feita!=null?String(data.area_feita):'',
       area_deduzida:data.area_deduzida!=null?String(data.area_deduzida):'',
+      teste:!!data.teste,
     }
   }
   return {
@@ -102,7 +103,7 @@ function initForm(data) {
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
     pausas:[],obs1:'',obs2:'',bordadura:'',bordaduraPorTalhao:{},evid_meta:{},
-    area_feita:'',area_deduzida:'',
+    area_feita:'',area_deduzida:'',teste:false,
   }
 }
 
@@ -393,15 +394,37 @@ export default function PilotApp({onSwitchMode}) {
   const [talhaoSearch, setTalhaoSearch] = useState('')
   const [talhaoDropdownOpen, setTalhaoDropdownOpen] = useState(false)
   const [timerSecs, setTimerSecs] = useState(0)
+  const [timerTotalSecs, setTimerTotalSecs] = useState(0)
 
-  // Timer em tempo real durante o voo
+  // Timer em tempo real durante o voo — calcula sempre a partir do horário real de início
+  // (dt_inicio) menos as pausas fechadas, em vez de só incrementar a cada tick. Assim o valor
+  // mostrado bate com o relógio de verdade mesmo se o navegador suspender o setInterval com o
+  // app em background/tela bloqueada — não importa se ficou offline, ao voltar já corrige sozinho.
   useEffect(() => {
     if (opState !== 'running') return
-    const ini = new Date(Date.now() - timerSecs * 1000)
-    const tick = () => setTimerSecs(s => s + 1)
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [opState]) // eslint-disable-line
+    const startIso = fmtDt(form,'dt_inicio')
+    const start = startIso ? new Date(startIso).getTime() : Date.now()
+    const pausadoMs = (form.pausas||[]).reduce((a,p)=> p.fim ? a + (new Date(p.fim).getTime()-new Date(p.inicio).getTime()) : a, 0)
+    const compute = () => setTimerSecs(Math.max(0, Math.floor((Date.now()-start-pausadoMs)/1000)))
+    compute()
+    const id = setInterval(compute, 1000)
+    document.addEventListener('visibilitychange', compute)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', compute) }
+  }, [opState, form.dt_inicio_data, form.dt_inicio_hh, form.dt_inicio_mm, form.pausas]) // eslint-disable-line
+
+  // Tempo total (relógio) — do horário que apertou Iniciar até agora, incluindo pausas.
+  // Roda enquanto o voo estiver aberto (rodando ou pausado), não só enquanto "running".
+  useEffect(() => {
+    if (opState !== 'running' && opState !== 'paused') return
+    const startIso = fmtDt(form,'dt_inicio')
+    if (!startIso) { setTimerTotalSecs(0); return }
+    const start = new Date(startIso).getTime()
+    const compute = () => setTimerTotalSecs(Math.max(0, Math.floor((Date.now()-start)/1000)))
+    compute()
+    const id = setInterval(compute, 1000)
+    document.addEventListener('visibilitychange', compute)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', compute) }
+  }, [opState, form.dt_inicio_data, form.dt_inicio_hh, form.dt_inicio_mm]) // eslint-disable-line
 
   // Voos compartilhados
   const [voosCompartilhados, setVoosCompartilhados] = useState([])
@@ -417,7 +440,6 @@ export default function PilotApp({onSwitchMode}) {
   const [flightsAbertos,setFlightsAbertos] = useState([])
   const [continuarModalOpen,setContinuarModalOpen] = useState(false)
   const [continuarLoading,setContinuarLoading] = useState(false)
-  const [rascunhoParaExcluir,setRascunhoParaExcluir] = useState(null)
   const [confirmDialog,setConfirmDialog] = useState(null) // {message, onConfirm}
   const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
   function addItemViagem(categoria){
@@ -739,6 +761,7 @@ export default function PilotApp({onSwitchMode}) {
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
       ordem_servico: osAtual || gerarOrdemServico(),
+      teste: !!form.teste,
       ...extraData
     }
     setSaveStatus('saving')
@@ -1280,6 +1303,32 @@ export default function PilotApp({onSwitchMode}) {
     } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
   }
 
+  async function deletarTodosRascunhos() {
+    const ids = flights.filter(f=>f.status==='rascunho').map(f=>f.id)
+    if(ids.length===0) return
+    try {
+      const { error } = await supabase.from('relatorios').delete().in('id', ids)
+      if (error) throw error
+      setFlights(fs=>fs.filter(f=>!ids.includes(f.id)))
+      if (ids.includes(relId)) limpar(true)
+      showToast(`🗑️ ${ids.length} rascunho(s) excluído(s)`)
+    } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
+  }
+
+  // Voos marcados como teste, em qualquer status (rascunho/parcial/finalizado) — não conta
+  // pra produção, então dá pra limpar tudo de uma vez sem afetar dados reais.
+  async function deletarTodosTestes() {
+    const ids = flights.filter(f=>f.teste).map(f=>f.id)
+    if(ids.length===0) return
+    try {
+      const { error } = await supabase.from('relatorios').delete().in('id', ids)
+      if (error) throw error
+      setFlights(fs=>fs.filter(f=>!ids.includes(f.id)))
+      if (ids.includes(relId)) limpar(true)
+      showToast(`🧪 ${ids.length} voo(s) de teste excluído(s)`)
+    } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
+  }
+
   async function handleContinuarVoo(){
     // Sempre abre a lista na hora, mesmo com 1 voo só ou nenhum — nada de auto-navegar
     // por trás, pra ficar previsível: clicou, aparece a pergunta "qual voo?".
@@ -1652,14 +1701,31 @@ export default function PilotApp({onSwitchMode}) {
       </div>
       <div style={s.statusBar}><span>📋 Histórico de voos</span></div>
       <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:10}}>
-        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('home')}>← Voltar</button>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('home')}>← Voltar</button>
+          {flights.some(f=>f.status==='rascunho')&&(
+            <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,background:'#fdeaea',color:'#e5484d'}}
+              onClick={()=>setConfirmDialog({message:'Excluir TODOS os rascunhos? Essa ação não pode ser desfeita.',onConfirm:deletarTodosRascunhos})}>
+              🗑️ Excluir todos os rascunhos
+            </button>
+          )}
+          {flights.some(f=>f.teste)&&(
+            <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,background:'#fff3e0',color:'#a3690a'}}
+              onClick={()=>setConfirmDialog({message:'Excluir TODOS os voos marcados como teste (qualquer status)? Essa ação não pode ser desfeita.',onConfirm:deletarTodosTestes})}>
+              🧪 Excluir todos os testes
+            </button>
+          )}
+        </div>
         {loadingFlights?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Carregando...</div>
         :flights.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Nenhum voo registrado</div>
         :flights.map(rel=>(
           <div key={rel.id} style={{background:'#fff',borderRadius:18,border:'1px solid #d7e6dc',padding:'14px 16px',cursor:'pointer',boxShadow:'0 4px 14px rgba(11,18,16,0.05)'}} onClick={()=>openFlight(rel)}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
               <div>
-                <div style={{fontWeight:600,fontSize:14,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{rel.cliente||'—'}</div>
+                <div style={{fontWeight:600,fontSize:14,color:'#0b1210',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',gap:6}}>
+                  {rel.cliente||'—'}
+                  {rel.teste&&<span style={{fontSize:9,fontWeight:700,color:'#a3690a',background:'#fff3e0',padding:'2px 7px',borderRadius:20}}>🧪 TESTE</span>}
+                </div>
                 <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{rel.fazenda}{rel.area_ha?` · ${rel.area_ha}ha`:''} · {rel.drone}</div>
               </div>
               <div style={{textAlign:'right',display:'flex',alignItems:'flex-start',gap:8}}>
@@ -1669,7 +1735,7 @@ export default function PilotApp({onSwitchMode}) {
                 </div>
                 {rel.status==='rascunho'&&(
                   <button title="Excluir rascunho" style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:10,width:26,height:26,fontSize:13,cursor:'pointer',flexShrink:0}}
-                    onClick={e=>{e.stopPropagation();setRascunhoParaExcluir(rel)}}>🗑️</button>
+                    onClick={e=>{e.stopPropagation();setConfirmDialog({message:`Excluir o rascunho de ${rel.cliente||'—'} — ${rel.fazenda||'—'}?`,onConfirm:()=>deletarRascunho(rel)})}}>🗑️</button>
                 )}
               </div>
             </div>
@@ -1683,6 +1749,7 @@ export default function PilotApp({onSwitchMode}) {
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
+      <ConfirmDialogModal/>
     </div>
   )
 
@@ -1900,6 +1967,21 @@ export default function PilotApp({onSwitchMode}) {
               <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'0 20px',fontSize:14,fontWeight:600,cursor:'pointer',opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorCep}>Buscar</button>
             </div>
             {tempoErro&&<div style={{marginTop:12,background:'#fdeaea',color:'#e5484d',borderRadius:12,padding:'10px 14px',fontSize:13}}>{tempoErro}</div>}
+            {fazendasDB.some(fz=>fz.lat&&fz.lng) && (
+              <>
+                <div style={{textAlign:'center',fontSize:11,color:'#7ba38f',margin:'14px 0'}}>ou escolha uma fazenda cadastrada</div>
+                <select style={{...sw.fi,width:'100%'}} defaultValue="" disabled={tempoLoading}
+                  onChange={e=>{
+                    const fz = fazendasDB.find(f=>f.id===e.target.value)
+                    if(fz) buscarPrevisao(fz.lat,fz.lng,`${fz.nome} (${fz.cliente})`)
+                  }}>
+                  <option value="" disabled>Selecione a fazenda...</option>
+                  {fazendasDB.filter(fz=>fz.lat&&fz.lng).map(fz=>(
+                    <option key={fz.id} value={fz.id}>{fz.nome} — {fz.cliente}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
         )}
 
@@ -2198,6 +2280,7 @@ export default function PilotApp({onSwitchMode}) {
                 const areaTotal = parseFloat(t.area_ha)||0
                 if(areaTotal<=0) return null
                 let areaRealizada = 0
+                let bordaduraRealizada = 0
                 relatoriosFinalizadosOrg.forEach(r=>{
                   if(r.cliente!==fz.cliente || r.fazenda!==fz.nome) return
                   if(fz.campanha_inicio && new Date(r.created_at) < new Date(fz.campanha_inicio)) return
@@ -2209,8 +2292,12 @@ export default function PilotApp({onSwitchMode}) {
                   },0)
                   const fracao = somaRegistrada>0 ? areaTotal/somaRegistrada : 1/nomesVoo.length
                   areaRealizada += areaLiquida(r) * fracao
+                  bordaduraRealizada += (parseFloat(r.bordadura)||0) * fracao
                 })
-                return { areaTotal, areaRealizada, pct: Math.min(100,(areaRealizada/areaTotal)*100) }
+                // Bordadura conta como "feito" pro fim de fechamento — ela é área deliberadamente
+                // não pulverizada (faixa de segurança), não trabalho pendente.
+                const feito = areaRealizada + bordaduraRealizada
+                return { areaTotal, areaRealizada, bordaduraRealizada, pct: Math.min(100,(feito/areaTotal)*100) }
               }
               // Fazenda some da lista só quando TODOS os talhões dela estiverem concluídos
               const fazendaCompleta = (fz) => {
@@ -2295,7 +2382,7 @@ export default function PilotApp({onSwitchMode}) {
                                   const prog = fazendaSel ? progressoTalhao(fazendaSel, t, talhoesFaz) : null
                                   const finalizado = prog && prog.pct>=100
                                   const parcial = prog && prog.pct>0 && prog.pct<100
-                                  const falta = prog ? Math.max(0, prog.areaTotal-prog.areaRealizada) : 0
+                                  const falta = prog ? Math.max(0, prog.areaTotal-prog.areaRealizada-prog.bordaduraRealizada) : 0
                                   const bg = sel ? '#e3f7ec' : finalizado ? '#eafaf0' : parcial ? '#fff8e6' : '#fff'
                                   return (
                                     <div key={t.id} onClick={()=>toggleTalhao(t)}
@@ -2354,6 +2441,11 @@ export default function PilotApp({onSwitchMode}) {
                 ))}
               </div>
             </div>
+
+            <label style={{display:'flex',alignItems:'center',gap:8,background:form.teste?'#fff3e0':'#f9fbfa',border:`1px solid ${form.teste?'#f2960f':'#eef5f0'}`,borderRadius:10,padding:'10px 14px',cursor:'pointer'}}>
+              <input type="checkbox" checked={!!form.teste} onChange={e=>setForm(f=>({...f,teste:e.target.checked}))} style={{width:16,height:16,accentColor:'#f2960f'}}/>
+              <span style={{fontSize:12,color:form.teste?'#a3690a':'#5c7568',fontWeight:600}}>🧪 Voo teste?</span>
+            </label>
 
             <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Drone...</option>
@@ -2682,6 +2774,16 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             )}
 
+            {(opState==='running'||opState==='paused')&&(()=>{
+              const fmtHMS=secs=>{const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;const pad=n=>String(n).padStart(2,'0');return `${pad(h)}:${pad(m)}:${pad(s)}`}
+              return (
+                <div style={{display:'flex',justifyContent:'center',gap:16,marginBottom:14,fontSize:11,color:'#7ba38f',fontFamily:'ui-monospace,monospace'}}>
+                  <span>▶️ Ativo: {fmtHMS(timerSecs)}</span>
+                  <span>🕐 Total: {fmtHMS(timerTotalSecs)}</span>
+                </div>
+              )
+            })()}
+
             {/* Pausas */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
               <span style={{fontSize:11,fontWeight:600,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>PAUSAS</span>
@@ -2939,27 +3041,6 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
 
-            {/* E-mail sugerido */}
-            {opState==='finished'&&(
-              <div style={{background:'#f1f8f4',borderRadius:12,padding:14,marginBottom:10,border:'1px solid #d7e6dc'}}>
-                <div style={{fontSize:12,fontWeight:700,color:'#5c7568',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>📧 ENVIAR POR E-MAIL</div>
-                <div style={{fontSize:12,color:'#5c7568',marginBottom:10,lineHeight:1.5,background:'#fff',borderRadius:8,padding:10,border:'1px solid #dcebe3'}}>
-                  <strong>De:</strong> datafly@orofly.com.br<br/>
-                  <strong>Assunto:</strong> Relatório de Aplicação — {form.cultura||'Cultura'} · {clienteVal} · {form.fazenda}<br/><br/>
-                  Boa tarde,<br/><br/>
-                  Segue em anexo o relatório de aplicação aérea realizada na <strong>{form.fazenda}</strong>{form.talhao?`, Talhão ${form.talhao}`:''}.<br/><br/>
-                  <strong>Cultura:</strong> {form.cultura||'—'}<br/>
-                  <strong>Área aplicada:</strong> {form.area_ha?`${areaLiquidaAtual(form)} ha`:'—'}<br/>
-                  <strong>Produto(s):</strong> {(form.produtos||[]).filter(Boolean).join(', ')||'—'}<br/>
-                  <strong>Piloto:</strong> {form.piloto_nome||profile?.nome}<br/>
-                  <strong>Drone:</strong> {form.drone||'—'}<br/><br/>
-                  Qualquer dúvida estamos à disposição.<br/><br/>
-                  Atenciosamente,<br/>
-                  <strong>Equipe Orofly</strong> | datafly@orofly.com.br
-                </div>
-                <div style={{fontSize:11,color:'#7ba38f',textAlign:'center'}}>📌 Integração de e-mail disponível em breve via orofly.com.br</div>
-              </div>
-            )}
           </div>
           <div style={sw.btnBar}>
             <div style={{display:'flex',gap:6}}>
@@ -3052,21 +3133,6 @@ export default function PilotApp({onSwitchMode}) {
             <DtRow prefix="dt_inicio" form={form} setForm={setForm} label="INÍCIO" />
             <DtRow prefix="dt_fim" form={form} setForm={setForm} label="FIM" />
             <button style={{...s.shareBtn,background:'#0e9f6e',marginTop:8}} onClick={()=>setHorarioModalOpen(false)}>Pronto</button>
-          </div>
-        </div>
-      )}
-
-      {/* EXCLUIR RASCUNHO */}
-      {rascunhoParaExcluir&&(
-        <div style={s.modalOverlay} onClick={()=>setRascunhoParaExcluir(null)}>
-          <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
-            <div style={{...s.modalTitle,color:'#e5484d'}}>🗑️ Excluir rascunho</div>
-            <p style={{fontSize:14,color:'#0b1210',marginBottom:8,lineHeight:1.6}}>Excluir o rascunho de <strong>{rascunhoParaExcluir.cliente||'—'} — {rascunhoParaExcluir.fazenda||'—'}</strong>?</p>
-            <p style={{fontSize:13,color:'#e74c3c',marginBottom:24}}>Essa ação não pode ser desfeita.</p>
-            <div style={{display:'flex',gap:10}}>
-              <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setRascunhoParaExcluir(null)}>Cancelar</button>
-              <button style={{...s.shareBtn,background:'#e5484d',flex:1}} onClick={()=>deletarRascunho(rascunhoParaExcluir)}>Excluir</button>
-            </div>
           </div>
         </div>
       )}
@@ -3251,8 +3317,7 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
   const numBR = (n,dec=2) => n==null||isNaN(n) ? '—' : n.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})
   const fmtHora=p=>{const hh=form[p+'_hh'],mm=form[p+'_mm'];return (hh||mm)?`${hh||'00'}:${mm||'00'}`:'—'}
   const fmtDataCurta=p=>{const d=form[p+'_data'];if(!d)return'—';const partes=d.split('-');return partes.length===3?`${partes[2]}/${partes[1]}`:d}
-  const hoje=new Date()
-  const dataShare=`${String(hoje.getDate()).padStart(2,'0')}/${String(hoje.getMonth()+1).padStart(2,'0')}`
+  const nomeCurto = n => { if(!n) return '—'; const p=n.trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
   const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 
   const areaTotal = parseFloat(form.area_ha)||0
@@ -3261,21 +3326,23 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
   const {feita:areaFeita,pct:pctFeito} = progressoParcial(form)
   const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaAplicada)
 
-  let t = `🚁 *RELATÓRIO OROFLY${parcial?' — PARCIAL 🌙':''}* — ${dataShare}\n\n`
-  t += `📍 Local: ${clienteVal||'—'} / F. ${form.fazenda||'—'}${form.id_fazenda?` [ID ${form.id_fazenda}]`:''}${form.talhao?` (Talhão: ${form.talhao})`:''}\n`
-  t += `⏰ Período: ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} ➔ ${fmtHora('dt_fim')})\n`
-  t += `👨‍✈️ Piloto: ${form.piloto_nome||'—'} | 🛸 ${droneVal||'—'}\n`
+  const localPartes = [clienteVal||null, form.id_fazenda?`ID ${form.id_fazenda}`:null, form.fazenda||null, form.talhao?`Talhão: ${form.talhao}`:null].filter(Boolean)
+
+  let t = `🚁 *RELATÓRIO OROFLY${parcial?' — PARCIAL 🌙':''}*\n`
+  t += `📍 *Local:* ${localPartes.join(' - ')||'—'}\n`
+  t += `⏰ *Período:* ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} ➔ ${fmtHora('dt_fim')})\n`
+  t += `👨‍✈️ *Piloto:* ${nomeCurto(form.piloto_nome)} | 🛸 *Drone:* ${droneVal||'—'}\n`
   t += `${linha}\n`
   if(parcial) {
     t += `🌙 *Progresso até agora:* ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)\n`
     t += `⏳ Operação continua — este é um relatório parcial, não o voo finalizado.\n`
   } else {
-    t += `📏 Áreas: Total ${numBR(areaTotal)} ha${bordTotal>0?` (Aplicada: ${numBR(areaAplicada)} ha | Bord: ${numBR(bordTotal)} ha)`:''}\n`
+    t += `📏 *Área Total:* ${numBR(areaTotal)} ha${bordTotal>0?` (Aplicada: ${numBR(areaAplicada)} ha | Bord: ${numBR(bordTotal)} ha)`:''}\n`
   }
 
   const gastosValidos = gastos.filter(g=>g.nome)
   if(gastosValidos.length){
-    t += `${linha}\n🧪 Produtos:\n`
+    t += `${linha}\n🧪 *Produtos:*\n`
     gastosValidos.forEach(g=>{
       const doseTxt = g.dose!=null ? String(g.dose).replace('.',',') : '—'
       t += `* ${g.nome}: ${doseTxt} ${g.unidade}/ha${g.total!=null?` (Total: ${numBR(g.total)} ${g.unidade})`:''}\n`
@@ -3283,22 +3350,24 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
   }
 
   if(form.vazao_i||form.tamanho_gota||form.velocidade_drone||form.faixa_i){
-    t += `${linha}\n⚙️ Parâmetros:\n`
+    t += `${linha}\n⚙️ *Parâmetros:*\n`
     t += `* Vazão: ${form.vazao_i||'—'} L/ha | Gota: ${form.tamanho_gota||'—'} µm\n`
     t += `* Velocidade: ${form.velocidade_drone||'—'} km/h | Faixa: ${form.faixa_i||'—'} m\n`
   }
 
   const anyIni = ['vento','umidade','temperatura','delta_t'].some(k=>form[k+'_i'])
   if(anyIni){
-    t += `${linha}\n🌤️ Clima (Início ➔ Fim):\n`
-    t += `* Vento: ${form.vento_i||'—'} ➔ ${form.vento_f||'—'} km/h | Umidade: ${form.umidade_i||'—'}% ➔ ${form.umidade_f||'—'}%\n`
-    t += `* Temp: ${form.temperatura_i||'—'}°C ➔ ${form.temperatura_f||'—'}°C | Delta T: ${form.delta_t_i||'—'}°C ➔ ${form.delta_t_f||'—'}°C\n`
+    t += `${linha}\n🌤️ *Clima (Início ➔ Fim):*\n`
+    t += `* Vento: ${form.vento_i||'—'} ➔ ${form.vento_f||'—'} km/h\n`
+    t += `* Umidade: ${form.umidade_i||'—'}% ➔ ${form.umidade_f||'—'}%\n`
+    t += `* Temp: ${form.temperatura_i||'—'}°C ➔ ${form.temperatura_f||'—'}°C\n`
+    t += `* Delta T: ${form.delta_t_i||'—'}°C ➔ ${form.delta_t_f||'—'}°C\n`
   }
 
-  if(form.obs1) t += `${linha}\n📝 Obs: ${form.obs1}\n`
+  if(form.obs1) t += `${linha}\n📝 *Obs:* ${form.obs1}\n`
 
   if(form.gps_lat && form.gps_lng){
-    t += `----\n📍 ${form.gps_lat}, ${form.gps_lng}\nhttps://maps.google.com/?q=${form.gps_lat},${form.gps_lng}\n`
+    t += `${linha}\n📍 ${form.gps_lat}, ${form.gps_lng}\nhttps://maps.google.com/?q=${form.gps_lat},${form.gps_lng}\n`
   }
   return t
 }
