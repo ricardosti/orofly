@@ -507,6 +507,30 @@ export default function AdminPanel({ onSwitchMode }) {
     fetchAll()
   }
 
+  // Mesmo padrão de texto usado no app do piloto pro compartilhamento no WhatsApp, só que
+  // montado a partir da linha crua do banco (rel) em vez do form em edição.
+  function buildTxtAdmin(rel) {
+    const fmtData = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—'
+    const fmtHora = iso => iso ? new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—'
+    const nomeCurto = n => { if(!n) return '—'; const p=n.trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
+    const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
+    const fz = invFazendas.find(f=>f.cliente===rel.cliente && f.nome===rel.fazenda)
+    const localPartes = [rel.cliente||null, fz?.id_fazenda?`ID ${fz.id_fazenda}`:null, rel.fazenda||null, rel.localizacao?`Talhão: ${rel.localizacao}`:null].filter(Boolean)
+    let t = `🚁 *RELATÓRIO OROFLY*\n`
+    t += `📍 *Local:* ${localPartes.join(' - ')||'—'}\n`
+    t += `⏰ *Período:* ${fmtData(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} ➔ ${fmtHora(rel.dt_fim)})\n`
+    t += `👨‍✈️ *Piloto:* ${nomeCurto(rel.piloto_nome)} | 🛸 *Drone:* ${rel.drone||'—'}\n`
+    t += `${linha}\n`
+    t += `📏 *Área Total:* ${rel.area_ha||'—'} ha${rel.bordadura?` (Aplicada: ${areaLiquida(rel)} ha | Bord: ${rel.bordadura} ha)`:''}\n`
+    if((rel.produtos||[]).length){
+      t += `${linha}\n🧪 *Produtos:*\n`
+      rel.produtos.forEach(p=>{ t += `* ${p}\n` })
+    }
+    if(rel.obs1) t += `${linha}\n📝 *Obs:* ${rel.obs1}\n`
+    if(rel.gps_lat && rel.gps_lng) t += `${linha}\n📍 ${rel.gps_lat}, ${rel.gps_lng}\nhttps://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}\n`
+    return t
+  }
+
   async function excluirTodosRascunhos() {
     const ids = relatorios.filter(r=>r.status==='rascunho').map(r=>r.id)
     if(ids.length===0) return
@@ -900,6 +924,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:'#f2960f'}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
                                   <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
+                                  <button title="Enviar relatório no WhatsApp" style={{...sG.iconBtn,color:'#25D366'}} onClick={e => { e.stopPropagation(); window.open('https://wa.me/?text='+encodeURIComponent(buildTxtAdmin(rel)),'_blank') }}>💬</button>
                                   <button title="PDF Cliente" style={{...sG.iconBtn,color:'#22c476'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
                                   <button title="Word / Google Docs" style={{...sG.iconBtn,color:'#2f6fed'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝</button>
                                   {rel.gps_lat && <a title="Maps" style={{ ...sG.iconBtn, textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>🗺️</a>}
@@ -1900,14 +1925,16 @@ export default function AdminPanel({ onSwitchMode }) {
             <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setMapaResumo(null)}>
               <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:420,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>{mapaResumo.cliente||'—'} — {mapaResumo.fazenda||'—'}</div>
+                  <div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>{mapaResumo.cliente||'—'} — {mapaResumo.fazenda||'—'}</div>
+                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>👨‍✈️ {mapaResumo.piloto_nome||'—'}</div>
+                  </div>
                   <button style={{background:'none',border:'none',fontSize:18,color:'#7ba38f',cursor:'pointer'}} onClick={()=>setMapaResumo(null)}>✕</button>
                 </div>
-                <span style={{background:STATUS_BG[mapaResumo.status]||'#f1f8f4',color:STATUS_COLOR[mapaResumo.status]||'#5c7568',fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20,display:'inline-block',marginBottom:14}}>{STATUS_LABEL[mapaResumo.status]||mapaResumo.status}</span>
+                <span style={{background:STATUS_BG[mapaResumo.status]||'#f1f8f4',color:STATUS_COLOR[mapaResumo.status]||'#5c7568',fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20,display:'inline-block',marginTop:8,marginBottom:14}}>{STATUS_LABEL[mapaResumo.status]||mapaResumo.status}</span>
                 {[
                   ['Talhão', mapaResumo.localizacao],
                   ['Área', mapaResumo.area_ha ? `${mapaResumo.area_ha} ha${mapaResumo.bordadura?` (bordadura ${mapaResumo.bordadura} ha)`:''}` : null],
-                  ['Piloto', mapaResumo.piloto_nome],
                   ['Drone', mapaResumo.drone],
                   ['Produtos', (mapaResumo.produtos||[]).join(', ')],
                   ['Data', mapaResumo.dt_inicio ? new Date(mapaResumo.dt_inicio).toLocaleDateString('pt-BR') : new Date(mapaResumo.created_at).toLocaleDateString('pt-BR')],
@@ -1919,8 +1946,14 @@ export default function AdminPanel({ onSwitchMode }) {
                     <span style={{color:'#0b1210',textAlign:'right',flex:1,wordBreak:'break-word'}}>{v}</span>
                   </div>
                 ))}
+                {mapaResumo.gps_lat && mapaResumo.gps_lng && (
+                  <div style={{background:'#eef5f0',borderRadius:10,padding:'10px 12px',marginTop:10,fontSize:12,color:'#5c7568'}}>
+                    📍 {mapaResumo.gps_lat}, {mapaResumo.gps_lng}
+                    <a href={`https://maps.google.com/?q=${mapaResumo.gps_lat},${mapaResumo.gps_lng}`} target="_blank" rel="noreferrer" style={{display:'block',marginTop:6,color:'#0e9f6e',fontWeight:600,textDecoration:'none'}}>🗺️ Abrir no Google Maps</a>
+                  </div>
+                )}
                 <button style={{width:'100%',marginTop:16,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:700,cursor:'pointer'}}
-                  onClick={()=>{setSelected(mapaResumo);setTab('relatorios');setMapaResumo(null)}}>Ver relatório completo →</button>
+                  onClick={()=>{setOsSearch(mapaResumo.ordem_servico||'');setTab('buscaOS');setMapaResumo(null)}}>Ver relatório completo →</button>
               </div>
             </div>
           )}

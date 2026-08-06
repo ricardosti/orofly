@@ -480,6 +480,8 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoErro,setTempoErro] = useState('')
   const [tempoLocal,setTempoLocal] = useState('')
   const [tempoCep,setTempoCep] = useState('')
+  const [tempoHorario,setTempoHorario] = useState(null)
+  const [graficoHora,setGraficoHora] = useState(null)
   const toastTimer=useRef(null)
   const retryTimer=useRef(null)
   const pendingPayload=useRef(null)
@@ -1136,9 +1138,9 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   async function buscarPrevisao(lat,lon,local){
-    setTempoLoading(true); setTempoErro(''); setTempoDias(null)
+    setTempoLoading(true); setTempoErro(''); setTempoDias(null); setGraficoHora(null)
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max&hourly=temperature_2m,relativehumidity_2m&timezone=auto&forecast_days=5`
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,windgusts_10m,precipitation_probability&timezone=auto&forecast_days=5`
       const res = await fetch(url)
       if(!res.ok) throw new Error('Falha ao buscar previsão')
       const data = await res.json()
@@ -1157,7 +1159,7 @@ export default function PilotApp({onSwitchMode}) {
           deltaT, deltaTClass: deltaT!=null?classificarClimaParam('delta_t',deltaT.toFixed(1)):null,
         }
       })
-      setTempoDias(dias); setTempoLocal(local)
+      setTempoDias(dias); setTempoLocal(local); setTempoHorario(data.hourly||null)
     } catch(e){ setTempoErro('Não foi possível buscar a previsão. Confira sua conexão e tente de novo.') }
     finally { setTempoLoading(false) }
   }
@@ -1605,11 +1607,11 @@ export default function PilotApp({onSwitchMode}) {
           {/* Estatísticas do dia */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
             {[
-              [IconDrone,'#0e9f6e',voosHoje.length,'Voos'],
-              [Clock,'#2f6fed',horasHoje.toFixed(1)+'h','Horas de Voo'],
-              [Map,'#f2960f',areaHoje.toFixed(0)+' ha','Área Pulverizada'],
-            ].map(([Icon,color,value,label])=>(
-              <div key={label} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px 6px',textAlign:'center',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              [IconDrone,'#0e9f6e',voosHoje.length,'Voos',()=>{loadFlights();setView('flights')}],
+              [Clock,'#2f6fed',horasHoje.toFixed(1)+'h','Horas de Voo',()=>{loadFlights();setView('flights')}],
+              [Map,'#f2960f',areaHoje.toFixed(0)+' ha','Área Pulverizada',()=>{loadFlights();setView('flights')}],
+            ].map(([Icon,color,value,label,onClick])=>(
+              <div key={label} onClick={onClick} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px 6px',textAlign:'center',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',cursor:'pointer'}}>
                 <Icon size={26} color={color} style={{marginBottom:8}}/>
                 <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{value}</div>
                 <div style={{fontSize:11,color:'#7ba38f',marginTop:3}}>{label}</div>
@@ -1619,14 +1621,20 @@ export default function PilotApp({onSwitchMode}) {
 
           {/* Menu — grid 2x2 */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-              onClick={()=>{loadFlights();setView('flights')}}>
-              <span style={{width:44,height:44,borderRadius:14,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><FileBarChart2 size={20} color="#0e9f6e"/></span>
-              <div>
-                <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>Ver histórico</div>
-              </div>
-            </button>
+            {(()=>{
+              const hoje=new Date()
+              const voosMes = flights.filter(f=>{const d=new Date(f.created_at);return d.getMonth()===hoje.getMonth()&&d.getFullYear()===hoje.getFullYear()}).length
+              return (
+                <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+                  onClick={()=>{loadFlights();setView('flights')}}>
+                  <span style={{width:44,height:44,borderRadius:14,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><FileBarChart2 size={20} color="#0e9f6e"/></span>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
+                    <div style={{fontSize:11,color:'#7ba38f'}}>{voosMes>0?`${voosMes} voo(s) este mês`:'Ver histórico'}</div>
+                  </div>
+                </button>
+              )
+            })()}
 
             {(()=>{
               const pendentes = minhaAgenda.filter(a=>a.status==='pendente')
@@ -1645,14 +1653,20 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
 
-            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-              onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
-              <span style={{width:44,height:44,borderRadius:14,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Receipt size={20} color="#f2960f"/></span>
-              <div>
-                <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>Almoço, gasolina...</div>
-              </div>
-            </button>
+            {(()=>{
+              const hoje=new Date()
+              const notasMes = minhasNotas.filter(n=>{const d=new Date(n.created_at||n.data);return d.getMonth()===hoje.getMonth()&&d.getFullYear()===hoje.getFullYear()}).length
+              return (
+                <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
+                  onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
+                  <span style={{width:44,height:44,borderRadius:14,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Receipt size={20} color="#f2960f"/></span>
+                  <div>
+                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
+                    <div style={{fontSize:11,color:'#7ba38f'}}>{notasMes>0?`${notasMes} nota(s) este mês`:'Almoço, gasolina...'}</div>
+                  </div>
+                </button>
+              )
+            })()}
 
             <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
               onClick={()=>setView('tempo')}>
@@ -2018,23 +2032,62 @@ export default function PilotApp({onSwitchMode}) {
                 <div key={d.data} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                   <div style={{fontSize:14,fontWeight:700,fontFamily:"'Syne',sans-serif",textTransform:'capitalize',marginBottom:10}}>{diaLabel}</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-                    <div style={{background:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>🌡️ TEMPERATURA</div>
+                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='temp'?'#fdf0dc':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
+                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='temp'?null:{data:d.data,tipo:'temp'})}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>🌡️ TEMPERATURA <span style={{opacity:.6}}>· ver por hora</span></div>
                       <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.tempMin)}° / {Math.round(d.tempMax)}°</div>
                     </div>
-                    <div style={{background:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💧 UMIDADE (13H)</div>
+                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='umidade'?'#e3f7ec':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
+                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='umidade'?null:{data:d.data,tipo:'umidade'})}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💧 UMIDADE (13H) <span style={{opacity:.6}}>· ver por hora</span></div>
                       <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{d.umidade!=null?`${Math.round(d.umidade)}%`:'—'}</div>
                     </div>
-                    <div style={{background:'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💨 VENTO MÁX.</div>
+                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='vento'?'#e6f1fb':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
+                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='vento'?null:{data:d.data,tipo:'vento'})}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💨 VENTO MÁX. <span style={{opacity:.6}}>· ver por hora</span></div>
                       <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.ventoMax)} km/h</div>
                     </div>
-                    <div style={{background:chuvaAlerta?'#e6f1fb':'#f1f8f4',borderRadius:14,padding:'10px 12px'}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>☔ CHUVA</div>
+                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='chuva'?'#e6f1fb':(chuvaAlerta?'#e6f1fb':'#f1f8f4'),borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
+                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='chuva'?null:{data:d.data,tipo:'chuva'})}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>☔ CHUVA <span style={{opacity:.6}}>· ver por hora</span></div>
                       <div style={{fontSize:16,fontWeight:700,color:chuvaAlerta?'#2f6fed':'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>
                     </div>
                   </div>
+
+                  {graficoHora?.data===d.data && tempoHorario && (()=>{
+                    const idxs = tempoHorario.time.map((t,i)=>i).filter(i=>tempoHorario.time[i].startsWith(d.data))
+                    const pontos = idxs.map(i=>({
+                      hora: tempoHorario.time[i].slice(11,16),
+                      temp: tempoHorario.temperature_2m?.[i]!=null?Math.round(tempoHorario.temperature_2m[i]):null,
+                      vento: tempoHorario.windspeed_10m?.[i]!=null?Math.round(tempoHorario.windspeed_10m[i]):null,
+                      rajada: tempoHorario.windgusts_10m?.[i]!=null?Math.round(tempoHorario.windgusts_10m[i]):null,
+                      umidade: tempoHorario.relativehumidity_2m?.[i]!=null?Math.round(tempoHorario.relativehumidity_2m[i]):null,
+                      chuva: tempoHorario.precipitation_probability?.[i]!=null?Math.round(tempoHorario.precipitation_probability[i]):null,
+                    }))
+                    const titulos = {temp:'🌡️ TEMPERATURA POR HORA',vento:'💨 VENTO E RAJADAS POR HORA',umidade:'💧 UMIDADE POR HORA',chuva:'☔ CHANCE DE CHUVA POR HORA'}
+                    return (
+                      <div style={{background:'#f9fbfa',borderRadius:14,padding:'12px 6px 6px',marginBottom:8,border:'1px solid #eef5f0'}}>
+                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4,paddingLeft:10}}>{titulos[graficoHora.tipo]}</div>
+                        <ResponsiveContainer width="100%" height={140}>
+                          <ComposedChart data={pontos} margin={{top:5,right:10,left:-20,bottom:0}}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                            <XAxis dataKey="hora" tick={{fontSize:9,fill:'#7ba38f'}} tickLine={false} interval={2}/>
+                            <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                            <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                            {graficoHora.tipo==='temp' && <Line type="monotone" dataKey="temp" stroke="#f2960f" strokeWidth={2.5} dot={{r:2}} name="Temp °C"/>}
+                            {graficoHora.tipo==='vento' && (
+                              <>
+                                <Line type="monotone" dataKey="vento" stroke="#2f6fed" strokeWidth={2.5} dot={{r:2}} name="Vento km/h"/>
+                                <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Rajada km/h"/>
+                              </>
+                            )}
+                            {graficoHora.tipo==='umidade' && <Line type="monotone" dataKey="umidade" stroke="#0e9f6e" strokeWidth={2.5} dot={{r:2}} name="Umidade %"/>}
+                            {graficoHora.tipo==='chuva' && <Bar dataKey="chuva" fill="#2f6fed" radius={[4,4,0,0]} name="Chuva %"/>}
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )
+                  })()}
                   <div style={{background:d.deltaTClass?d.deltaTClass.bg:'#f1f8f4',borderRadius:14,padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                     <div>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>⚖️ DELTA T (13H)</div>
