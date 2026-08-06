@@ -91,6 +91,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [pilotos, setPilotos] = useState([])
   const [times, setTimes] = useState([])
   const [fazendaTimes, setFazendaTimes] = useState([])
+  const [pilotoFazendas, setPilotoFazendas] = useState([])
+  const [pilotoFazendasModal, setPilotoFazendasModal] = useState(null) // piloto sendo editado
+  const [incidentes, setIncidentes] = useState([])
+  const [incidenteFocoId, setIncidenteFocoId] = useState(null)
   const [usuariosSubTab, setUsuariosSubTab] = useState('usuarios')
   const [novoTimeNome, setNovoTimeNome] = useState('')
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
@@ -160,12 +164,13 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invMovimentos, setInvMovimentos] = useState([])
   const [custos, setCustos] = useState([])
   const [osSearch, setOsSearch] = useState('')
+  const [osSearchCliente, setOsSearchCliente] = useState('')
   const [fotoLightbox, setFotoLightbox] = useState(null)
   const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',clienteFazenda:'',dataIni:'',dataFim:''})
   const [custosSubTab, setCustosSubTab] = useState('notas')
   const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
   const [agenda, setAgenda] = useState([])
-  const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',observacao:''})
+  const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',drone:'',observacao:''})
   const [agendaSaving, setAgendaSaving] = useState(false)
   const [agendaClima, setAgendaClima] = useState(null)
   const [agendaClimaLoading, setAgendaClimaLoading] = useState(false)
@@ -387,7 +392,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }, { data: tms }, { data: fzTimes }] = await Promise.all([
+    const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }, { data: tms }, { data: fzTimes }, { data: pilFz }, { data: incs }] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
       fetch(`${API_BASE}/api/list-users`),
       supabase.from('despesas').select('*').order('created_at', { ascending: false }),
@@ -395,6 +400,8 @@ export default function AdminPanel({ onSwitchMode }) {
       supabase.from('gps_logins').select('*').order('created_at', { ascending: false }).limit(300),
       supabase.from('times').select('*').order('nome'),
       supabase.from('fazenda_times').select('*'),
+      supabase.from('piloto_fazendas').select('*'),
+      supabase.from('incidentes').select('*').order('created_at', { ascending: false }),
     ])
     const rs = rels || []
     setRelatorios(rs)
@@ -403,6 +410,8 @@ export default function AdminPanel({ onSwitchMode }) {
     setGpsLogins(logins || [])
     setTimes(tms || [])
     setFazendaTimes(fzTimes || [])
+    setPilotoFazendas(pilFz || [])
+    setIncidentes(incs || [])
     if (usersRes.ok) { const d = await usersRes.json(); setPilotos(d.users || []) }
     const counts = {}
     rs.forEach(r => { counts[r.piloto_id] = (counts[r.piloto_id] || 0) + 1 })
@@ -579,6 +588,31 @@ export default function AdminPanel({ onSwitchMode }) {
     showToast(`🧪 ${ids.length} voo(s) de teste excluído(s)`); fetchAll()
   }
 
+  async function marcarIncidenteStatus(inc, status) {
+    const { error } = await supabase.from('incidentes').update({ status }).eq('id', inc.id)
+    if(error){ showToast('Erro: '+error.message,'error'); return }
+    const msg = { aberto:'🔄 Reaberto', em_tratativa:'▶️ Em tratativa', fechado:'✅ Fechado' }
+    showToast(msg[status]||'Atualizado'); fetchAll()
+  }
+
+  async function salvarDetalhesIncidente(inc, resolucao, custo) {
+    const { error } = await supabase.from('incidentes').update({
+      resolucao: resolucao ? resolucao.trim() : null,
+      custo: custo!=='' && custo!=null ? parseFloat(custo) : null,
+    }).eq('id', inc.id)
+    if(error){ showToast('Erro: '+error.message,'error'); return }
+    showToast('💾 Detalhes salvos'); fetchAll()
+  }
+
+  async function excluirIncidente(inc) {
+    if(!window.confirm(`Excluir definitivamente este incidente${inc.ordem_servico?` (OS ${inc.ordem_servico})`:''}?\n\nApaga o registro e as fotos por completo — essa ação não pode ser desfeita.`)) return
+    const fotos = [inc.foto1_url, inc.foto2_url].filter(Boolean)
+    if(fotos.length>0) await supabase.storage.from('relatorios').remove(fotos)
+    const { error } = await supabase.from('incidentes').delete().eq('id', inc.id)
+    if(error){ showToast('Erro: '+error.message,'error'); return }
+    showToast('🗑️ Incidente excluído'); fetchAll()
+  }
+
   async function toggleAtivo(piloto) {
     try {
       const res = await fetch(`${API_BASE}/api/toggle-user`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: piloto.id, ativo: !piloto.ativo }) })
@@ -628,6 +662,50 @@ export default function AdminPanel({ onSwitchMode }) {
       await supabase.from('fazenda_times').insert({ fazenda_id: fazendaId, time_id: timeId })
     }
     fetchAll()
+  }
+
+  async function toggleFazendaPiloto(fazendaId, pilotoId) {
+    const existente = pilotoFazendas.find(pf=>pf.fazenda_id===fazendaId && pf.piloto_id===pilotoId)
+    if(existente){
+      await supabase.from('piloto_fazendas').delete().eq('id', existente.id)
+    } else {
+      await supabase.from('piloto_fazendas').insert({ fazenda_id: fazendaId, piloto_id: pilotoId })
+    }
+    fetchAll()
+  }
+
+  // Lista de fazendas agrupada por cliente, colapsável — reaproveitada tanto na permissão
+  // por time (Equipes) quanto na permissão individual por piloto.
+  function ChecklistFazendasPorCliente({ chavePrefixo, marcadas, onToggle }) {
+    return (
+      <div style={{border:'1px solid #eef5f0',borderRadius:12,overflow:'hidden'}}>
+        {[...new Set(invFazendas.map(fz=>fz.cliente))].sort().map(cliente=>{
+          const fazendasCli = invFazendas.filter(fz=>fz.cliente===cliente)
+          const marcadasCli = fazendasCli.filter(fz=>marcadas.includes(fz.id)).length
+          const chave = `${chavePrefixo}-${cliente}`
+          const aberto = equipeClienteAberto[chave] ?? marcadasCli>0
+          return (
+            <div key={cliente} style={{borderBottom:'1px solid #f0f5f2'}}>
+              <div onClick={()=>setEquipeClienteAberto(s=>({...s,[chave]:!aberto}))}
+                style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',cursor:'pointer',background:'#f9fbfa'}}>
+                <span style={{fontSize:12,fontWeight:700,color:'#0b1210'}}>🏢 {cliente}</span>
+                <span style={{fontSize:11,color:marcadasCli>0?'#0e9f6e':'#aaa',fontWeight:600}}>{marcadasCli>0?`${marcadasCli}/${fazendasCli.length} liberada(s)`:`${fazendasCli.length} fazenda(s)`} {aberto?'▲':'▼'}</span>
+              </div>
+              {aberto && fazendasCli.map(fz=>{
+                const ativo = marcadas.includes(fz.id)
+                return (
+                  <div key={fz.id} onClick={()=>onToggle(fz.id)}
+                    style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px 7px 26px',cursor:'pointer',fontSize:12,background:ativo?'#e3f7ec':'#fff',borderTop:'1px solid #f7fbf8'}}>
+                    <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${ativo?'#0e9f6e':'#c3d4c9'}`,background:ativo?'#0e9f6e':'#fff',flexShrink:0}}/>
+                    <span style={{color:ativo?'#0b1210':'#5c7568',fontWeight:ativo?600:400}}>{fz.nome}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+      </div>
+    )
   }
 
   async function resetarSenha(piloto) {
@@ -736,6 +814,7 @@ export default function AdminPanel({ onSwitchMode }) {
             ['relatorios', '📋', 'Relatórios', filtered.length],
             ['buscaOS', '🔍', 'Buscar OS', ''],
             ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
+            ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
             ['custos', '💰', 'Financeiro', custos.length],
           ]],
           ['CONFIGURAÇÕES', [
@@ -3219,6 +3298,94 @@ export default function AdminPanel({ onSwitchMode }) {
             )
           })()}
 
+          {/* ===== INCIDENTES ===== */}
+          {tab === 'incidentes' && (() => {
+            const norm = normIncidenteStatus
+            const abertos = incidentes.filter(i=>norm(i.status)==='aberto')
+            const emTratativa = incidentes.filter(i=>norm(i.status)==='em_tratativa')
+            const fechados = incidentes.filter(i=>norm(i.status)==='fechado')
+            const custoTotal = incidentes.reduce((a,i)=>a+(parseFloat(i.custo)||0),0)
+
+            const porTipo = {}
+            incidentes.forEach(i=>{ porTipo[i.tipo]=(porTipo[i.tipo]||0)+1 })
+
+            const porPiloto = {}
+            incidentes.forEach(i=>{
+              const n = i.piloto_nome||'—'
+              porPiloto[n] = (porPiloto[n]||0)+1
+            })
+            const rankingPiloto = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1]).slice(0,5)
+
+            const KpiCard = (label, valor, cor) => (
+              <div style={{background:'#fff',borderRadius:14,border:'1px solid #d7e6dc',padding:'12px 16px'}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>{label}</div>
+                <div style={{fontSize:20,fontWeight:700,color:cor||'#0b1210',fontFamily:"'Syne',sans-serif"}}>{valor}</div>
+              </div>
+            )
+
+            return (
+              <div>
+                <div style={{ marginBottom:18 }}>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>⚠️ Incidentes</div>
+                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>Chamados abertos pelos pilotos — acompanhe, dê andamento e feche</div>
+                </div>
+
+                {incidentes.length>0 && (
+                  <>
+                    <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:10,marginBottom:16}}>
+                      {KpiCard('ABERTOS', abertos.length, '#a3690a')}
+                      {KpiCard('EM TRATATIVA', emTratativa.length, '#2952a3')}
+                      {KpiCard('FECHADOS', fechados.length, '#0e9f6e')}
+                      {KpiCard('CUSTO TOTAL', `R$ ${custoTotal.toFixed(2)}`, '#c0392b')}
+                    </div>
+                    {(Object.keys(porTipo).length>0 || rankingPiloto.length>0) && (
+                      <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:18}}>
+                        <div style={{flex:1,minWidth:200,background:'#fff',borderRadius:14,border:'1px solid #d7e6dc',padding:14}}>
+                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:8}}>POR TIPO</div>
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                            {Object.entries(porTipo).map(([t,n])=>(
+                              <span key={t} style={{fontSize:11,fontWeight:600,background:'#f1f8f4',color:'#5c7568',padding:'4px 10px',borderRadius:20}}>{INCIDENTE_TIPO_LABEL[t]||t}: {n}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{flex:1,minWidth:200,background:'#fff',borderRadius:14,border:'1px solid #d7e6dc',padding:14}}>
+                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:8}}>POR PILOTO</div>
+                          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                            {rankingPiloto.map(([n,c])=>(
+                              <span key={n} style={{fontSize:11,fontWeight:600,background:'#f1f8f4',color:'#5c7568',padding:'4px 10px',borderRadius:20}}>{n}: {c}</span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {incidentes.length===0 ? (
+                  <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum incidente registrado.</div>
+                ) : (
+                  <>
+                    {abertos.map(inc=><IncidenteCard key={inc.id} inc={inc} focoId={incidenteFocoId} supabase={supabase}
+                      onToggleFoco={setIncidenteFocoId} onSalvarDetalhes={salvarDetalhesIncidente} onStatusChange={marcarIncidenteStatus}
+                      onExcluir={excluirIncidente} onFotoClick={setFotoLightbox}/>)}
+                    {emTratativa.map(inc=><IncidenteCard key={inc.id} inc={inc} focoId={incidenteFocoId} supabase={supabase}
+                      onToggleFoco={setIncidenteFocoId} onSalvarDetalhes={salvarDetalhesIncidente} onStatusChange={marcarIncidenteStatus}
+                      onExcluir={excluirIncidente} onFotoClick={setFotoLightbox}/>)}
+                    {fechados.length>0 && (
+                      <>
+                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',margin:'16px 0 8px'}}>FECHADOS</div>
+                        {fechados.map(inc=><IncidenteCard key={inc.id} inc={inc} focoId={incidenteFocoId} supabase={supabase}
+                          onToggleFoco={setIncidenteFocoId} onSalvarDetalhes={salvarDetalhesIncidente} onStatusChange={marcarIncidenteStatus}
+                          onExcluir={excluirIncidente} onFotoClick={setFotoLightbox}/>)}
+                      </>
+                    )}
+                  </>
+                )}
+                {fotoLightbox && <FotoLightbox supabase={supabase} path={fotoLightbox} bucket="relatorios" onClose={()=>setFotoLightbox(null)} />}
+              </div>
+            )
+          })()}
+
           {/* ===== CUSTOS (notas de despesa) ===== */}
           {tab === 'custos' && (() => {
             const pilotosDisponiveis = [...new Set(custos.map(c=>c.piloto_nome).filter(Boolean))].sort()
@@ -3621,10 +3788,31 @@ export default function AdminPanel({ onSwitchMode }) {
             const relEncontrado = q ? relatorios.find(r=>r.ordem_servico && r.ordem_servico.toLowerCase()===q) : null
             const despesasOS = q ? custos.filter(c=>c.ordem_servico && c.ordem_servico.toLowerCase()===q) : []
             const viagensOS = q ? viagens.filter(v=>v.ordem_servico && v.ordem_servico.toLowerCase()===q) : []
+            const incidentesOS = q ? incidentes.filter(i=>i.ordem_servico && i.ordem_servico.toLowerCase()===q) : []
             const manutencoesRel = [] // manutenções não são vinculadas por OS (custo de veículo não é por voo)
             const totalDespesas = despesasOS.reduce((a,c)=>a+parseFloat(c.valor||0),0)
             const CAT_ICON = CATEGORIA_ICON
             const tempo = relEncontrado ? calcTempo(relEncontrado.dt_inicio, relEncontrado.dt_fim, relEncontrado.pausas) : null
+            const INC_TIPO_LABEL = INCIDENTE_TIPO_LABEL
+            const INC_STATUS = INCIDENTE_STATUS
+
+            const ultimasOS = [...relatorios]
+              .filter(r=>r.ordem_servico)
+              .sort((a,b)=> new Date(b.created_at||b.dt_inicio||0) - new Date(a.created_at||a.dt_inicio||0))
+              .slice(0,10)
+            const qCliente = osSearchCliente.trim().toLowerCase()
+            const resultadosClienteFazenda = qCliente
+              ? relatorios.filter(r=>r.ordem_servico && ((r.cliente||'').toLowerCase().includes(qCliente) || (r.fazenda||'').toLowerCase().includes(qCliente)))
+                  .sort((a,b)=> new Date(b.created_at||b.dt_inicio||0) - new Date(a.created_at||a.dt_inicio||0))
+                  .slice(0,15)
+              : []
+            const LinhaOS = (r) => (
+              <div key={r.id} onClick={()=>{setOsSearch(r.ordem_servico);setOsSearchCliente('')}}
+                style={{cursor:'pointer',background:'#f7fbf8',borderRadius:10,padding:'8px 12px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                <div style={{fontSize:12}}><b style={{fontFamily:'ui-monospace,monospace'}}>{r.ordem_servico}</b> — {r.cliente} · {r.fazenda}</div>
+                <div style={{fontSize:11,color:'#7ba38f'}}>{r.dt_inicio?new Date(r.dt_inicio).toLocaleDateString('pt-BR'):''}</div>
+              </div>
+            )
 
             return (
               <div>
@@ -3639,7 +3827,24 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {!q ? (
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Digite uma OS acima pra começar.</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:16}}>
+                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:12}}>🕒 Últimas OS</div>
+                      {ultimasOS.length===0 ? <div style={{fontSize:13,color:'#7ba38f'}}>Nenhum voo com OS ainda.</div> : (
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>{ultimasOS.map(LinhaOS)}</div>
+                      )}
+                    </div>
+                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:10}}>🔎 Buscar por Cliente/Fazenda</div>
+                      <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:12,padding:'10px 12px',fontSize:13,outline:'none',boxSizing:'border-box',marginBottom:qCliente?12:0}}
+                        placeholder="Ex: Fazenda Santa Rita" value={osSearchCliente} onChange={e=>setOsSearchCliente(e.target.value)} />
+                      {qCliente && (
+                        resultadosClienteFazenda.length===0
+                          ? <div style={{fontSize:13,color:'#7ba38f'}}>Nada encontrado.</div>
+                          : <div style={{display:'flex',flexDirection:'column',gap:6}}>{resultadosClienteFazenda.map(LinhaOS)}</div>
+                      )}
+                    </div>
+                  </div>
                 ) : !relEncontrado && despesasOS.length===0 && viagensOS.length===0 ? (
                   <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum voo, despesa ou viagem encontrado com a OS "{osSearch}".</div>
                 ) : (
@@ -3709,6 +3914,28 @@ export default function AdminPanel({ onSwitchMode }) {
                         </div>
                       )}
                     </div>
+
+                    {incidentesOS.length>0 && (
+                      <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:14}}>⚠️ Incidente Vinculado</div>
+                        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                          {incidentesOS.map(inc=>{
+                            const ST = INC_STATUS[inc.status==='resolvido'?'fechado':inc.status] || INC_STATUS.aberto
+                            return (
+                              <div key={inc.id} style={{background:'#f7fbf8',borderRadius:12,padding:'10px 14px'}}>
+                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:4}}>
+                                  <div style={{fontSize:13,fontWeight:600}}>{INC_TIPO_LABEL[inc.tipo]||inc.tipo} — {inc.piloto_nome}</div>
+                                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:ST.bg,color:ST.cor}}>{ST.label}</span>
+                                </div>
+                                <div style={{fontSize:12,color:'#5c7568',marginBottom:6}}>{inc.descricao}</div>
+                                <button style={{background:'none',border:'none',color:'#0e9f6e',fontSize:12,fontWeight:600,cursor:'pointer',padding:0}}
+                                  onClick={()=>{setIncidenteFocoId(inc.id);setTab('incidentes')}}>Ver incidente completo →</button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -3721,11 +3948,18 @@ export default function AdminPanel({ onSwitchMode }) {
             const hoje = new Date(); hoje.setHours(0,0,0,0)
 
             const fzSelecionada = invFazendas.find(f=>f.cliente===agendaForm.cliente && f.nome===agendaForm.fazenda)
-            // Trava de permissão: se a fazenda tiver algum time autorizado configurado (em
-            // Usuários > Equipes), só deixa escalar pilotos desse(s) time(s). Sem nenhum time
-            // configurado pra fazenda, não restringe — evita travar quem ainda não configurou nada.
+            // Trava de permissão: individual (Usuários > 📍) tem prioridade sobre o time — se o
+            // piloto tem alguma fazenda marcada individualmente, só essas valem pra ele, ignorando
+            // o time. Sem individual, vale a permissão do time. Sem nenhuma restrição configurada
+            // (nem individual nem de time) pra essa fazenda, não trava ninguém.
             const timesPermitidosFazenda = fzSelecionada ? fazendaTimes.filter(ft=>ft.fazenda_id===fzSelecionada.id).map(ft=>ft.time_id) : []
-            const pilotosAtivos = pilotos.filter(p=>p.ativo!==false && (timesPermitidosFazenda.length===0 || timesPermitidosFazenda.includes(p.time_id)))
+            const pilotoPodeFazenda = (p) => {
+              if(!fzSelecionada) return true
+              const individuais = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).map(pf=>pf.fazenda_id)
+              if(individuais.length>0) return individuais.includes(fzSelecionada.id)
+              return timesPermitidosFazenda.length===0 || timesPermitidosFazenda.includes(p.time_id)
+            }
+            const pilotosAtivos = pilotos.filter(p=>p.ativo!==false && pilotoPodeFazenda(p))
             const talhoesDaFazendaAgenda = fzSelecionada ? invTalhoes.filter(t=>t.fazenda_id===fzSelecionada.id) : []
             const talhoesSelecionadosAgenda = (agendaForm.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
 
@@ -3783,13 +4017,13 @@ export default function AdminPanel({ onSwitchMode }) {
                   piloto_id: agendaForm.piloto_id, piloto_nome: piloto?.nome||piloto?.email, time_id: piloto?.time_id||null,
                   cliente: agendaForm.cliente, fazenda: agendaForm.fazenda, talhao: agendaForm.talhao||null,
                   data_prevista: agendaForm.data_prevista, produto: agendaForm.produto||null,
-                  dose: agendaForm.dose||null,
+                  dose: agendaForm.dose||null, drone: agendaForm.drone||null,
                   observacao: agendaForm.observacao||null, status:'pendente',
                   ordem_servico: gerarOrdemServico(),
                 })
                 if(error) throw error
                 showToast('📅 Agendamento criado!')
-                setAgendaForm({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',observacao:''})
+                setAgendaForm({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',drone:'',observacao:''})
                 fetchAll()
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setAgendaSaving(false) }
             }
@@ -3891,6 +4125,22 @@ export default function AdminPanel({ onSwitchMode }) {
                     <input style={{...sG.fi,flex:'1 1 140px'}} placeholder="Dose (ex: 2 L/ha)" value={agendaForm.dose} onChange={e=>setAgendaForm(f=>({...f,dose:e.target.value}))}/>
                   </div>
 
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.drone} onChange={e=>setAgendaForm(f=>({...f,drone:e.target.value}))}>
+                      <option value="">Drone (opcional)...</option>
+                      {invDrones.filter(d=>d.ativo!==false).map(d=><option key={d.id} value={d.nome}>{d.nome}</option>)}
+                    </select>
+                  </div>
+
+                  {agendaForm.drone && agendaForm.data_prevista && (()=>{
+                    const conflito = agenda.find(a=>a.status==='pendente' && a.drone===agendaForm.drone && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
+                    return conflito ? (
+                      <div style={{background:'#fff3e0',border:'1px solid #f2960f',borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:'#a3690a'}}>
+                        ⚠️ Esse drone já está agendado pra {conflito.piloto_nome} nesse dia ({conflito.cliente} — {conflito.fazenda}).
+                      </div>
+                    ) : null
+                  })()}
+
                   {agendaForm.fazenda && agendaForm.data_prevista && (
                     agendaClimaLoading ? (
                       <div style={{fontSize:12,color:'#7ba38f',marginBottom:12}}>🌦️ Buscando previsão do tempo da fazenda...</div>
@@ -3951,7 +4201,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
                               {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
                             </div>
-                            <div style={{fontSize:12,color:'#5c7568',marginTop:3}}>{a.cliente} — {a.fazenda}{a.talhao?` (${a.talhao})`:''}{a.produto?` · ${a.produto}${a.dose?` ${a.dose}`:''}`:''}</div>
+                            <div style={{fontSize:12,color:'#5c7568',marginTop:3}}>{a.cliente} — {a.fazenda}{a.talhao?` (${a.talhao})`:''}{a.produto?` · ${a.produto}${a.dose?` ${a.dose}`:''}`:''}{a.drone?` · 🚁 ${a.drone}`:''}</div>
                             <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</div>
                             {a.observacao&&<div style={{fontSize:11,color:'#5c7568',marginTop:4,fontStyle:'italic'}}>{a.observacao}</div>}
                             {a.status==='recusado'&&a.motivo_recusa&&<div style={{fontSize:11,color:'#e5484d',marginTop:4}}>Motivo: {a.motivo_recusa}</div>}
@@ -4011,34 +4261,8 @@ export default function AdminPanel({ onSwitchMode }) {
                             <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>PILOTOS ({membros.length})</div>
                             <div style={{fontSize:12,color:'#5c7568',marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na aba Usuários.'}</div>
                             <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
-                            <div style={{border:'1px solid #eef5f0',borderRadius:12,overflow:'hidden'}}>
-                              {[...new Set(invFazendas.map(fz=>fz.cliente))].sort().map(cliente=>{
-                                const fazendasCli = invFazendas.filter(fz=>fz.cliente===cliente)
-                                const marcadasCli = fazendasCli.filter(fz=>fazendasDoTime.includes(fz.id)).length
-                                const chave = `${t.id}-${cliente}`
-                                const aberto = equipeClienteAberto[chave] ?? marcadasCli>0
-                                return (
-                                  <div key={cliente} style={{borderBottom:'1px solid #f0f5f2'}}>
-                                    <div onClick={()=>setEquipeClienteAberto(s=>({...s,[chave]:!aberto}))}
-                                      style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',cursor:'pointer',background:'#f9fbfa'}}>
-                                      <span style={{fontSize:12,fontWeight:700,color:'#0b1210'}}>🏢 {cliente}</span>
-                                      <span style={{fontSize:11,color:marcadasCli>0?'#0e9f6e':'#aaa',fontWeight:600}}>{marcadasCli>0?`${marcadasCli}/${fazendasCli.length} liberada(s)`:`${fazendasCli.length} fazenda(s)`} {aberto?'▲':'▼'}</span>
-                                    </div>
-                                    {aberto && fazendasCli.map(fz=>{
-                                      const ativo = fazendasDoTime.includes(fz.id)
-                                      return (
-                                        <div key={fz.id} onClick={()=>toggleFazendaTime(fz.id,t.id)}
-                                          style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px 7px 26px',cursor:'pointer',fontSize:12,background:ativo?'#e3f7ec':'#fff',borderTop:'1px solid #f7fbf8'}}>
-                                          <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${ativo?'#0e9f6e':'#c3d4c9'}`,background:ativo?'#0e9f6e':'#fff',flexShrink:0}}/>
-                                          <span style={{color:ativo?'#0b1210':'#5c7568',fontWeight:ativo?600:400}}>{fz.nome}</span>
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                            <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo).</div>
+                            <ChecklistFazendasPorCliente chavePrefixo={t.id} marcadas={fazendasDoTime} onToggle={fzId=>toggleFazendaTime(fzId,t.id)}/>
+                            <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo, a menos que o piloto tenha permissão individual — ver aba Usuários).</div>
                           </div>
                         )
                       })}
@@ -4089,10 +4313,18 @@ export default function AdminPanel({ onSwitchMode }) {
                             )}
                           </td>
                           <td style={sG.td}>
-                            <select style={{...sG.input,padding:'4px 8px',fontSize:11,width:'auto'}} value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}>
-                              <option value="">— Sem time —</option>
-                              {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
-                            </select>
+                            <div style={{display:'flex',alignItems:'center',gap:6}}>
+                              <select style={{...sG.input,padding:'4px 8px',fontSize:11,width:'auto'}} value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}>
+                                <option value="">— Sem time —</option>
+                                {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
+                              </select>
+                              {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
+                                return (
+                                  <button title="Fazendas individuais" style={{background:n>0?'#e3f7ec':'#f1f8f4',color:n>0?'#0e9f6e':'#5c7568',border:'none',borderRadius:12,padding:'4px 8px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
+                                    onClick={()=>setPilotoFazendasModal(p)}>📍{n>0?` ${n}`:''}</button>
+                                )
+                              })()}
+                            </div>
                           </td>
                           <td style={{ ...sG.td, fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#0e9f6e', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
                           <td style={{ ...sG.td }}><span style={{ background: p.ativo?'#e3f7ec':'#fee', color: p.ativo?'#0e9f6e':'#e5484d', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.ativo?'Ativo':'Inativo'}</span></td>
@@ -4114,6 +4346,24 @@ export default function AdminPanel({ onSwitchMode }) {
           )}
         </main>
       </div>
+
+      {/* MODAL FAZENDAS INDIVIDUAIS DO PILOTO */}
+      {pilotoFazendasModal && (()=>{
+        const marcadas = pilotoFazendas.filter(pf=>pf.piloto_id===pilotoFazendasModal.id).map(pf=>pf.fazenda_id)
+        return (
+          <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setPilotoFazendasModal(null)}>
+            <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:460,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>📍 Fazendas de {pilotoFazendasModal.nome}</div>
+                <button style={{background:'none',border:'none',fontSize:18,color:'#7ba38f',cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>✕</button>
+              </div>
+              <p style={{fontSize:12,color:'#5c7568',marginBottom:14,lineHeight:1.5}}>Permissão individual — se marcar alguma fazenda aqui, esse piloto passa a ver <strong>só</strong> essas, ignorando a permissão do time dele. Sem nenhuma marcada, vale a regra do time (ou tudo, se não tiver time).</p>
+              <ChecklistFazendasPorCliente chavePrefixo={'piloto-'+pilotoFazendasModal.id} marcadas={marcadas} onToggle={fzId=>toggleFazendaPiloto(fzId,pilotoFazendasModal.id)}/>
+              <button style={{width:'100%',marginTop:16,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:700,cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>Pronto</button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* MODAL EDITAR */}
       {editModal && (
@@ -4363,6 +4613,87 @@ export default function AdminPanel({ onSwitchMode }) {
 
 function SecTitle({ children }) {
   return <div style={{ fontSize:10, fontWeight:700, color:'#0e9f6e', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:'1px solid #e3f7ec', fontFamily:"'Syne',sans-serif" }}>{children}</div>
+}
+
+const INCIDENTE_TIPO_LABEL = {drone:'🚁 Drone',veiculo:'🚗 Veículo',pessoal:'🤕 Pessoal',outro:'❓ Outro'}
+const INCIDENTE_STATUS = {
+  aberto: { label:'Aberto', bg:'#fff3e0', cor:'#a3690a' },
+  em_tratativa: { label:'Em Tratativa', bg:'#e6f1fb', cor:'#2952a3' },
+  fechado: { label:'Fechado', bg:'#e3f7ec', cor:'#0e9f6e' },
+}
+function normIncidenteStatus(s) { return s==='resolvido' ? 'fechado' : (s||'aberto') } // compat com status antigo, antes da migração
+
+// Componente de módulo (não recriado a cada render do AdminPanel) — se fosse definido
+// dentro da aba, qualquer re-render do painel (polling etc.) trocava a identidade da
+// função e resetava o estado local (expandido/rascunho) do card no meio do uso.
+function IncidenteCard({ inc, focoId, supabase, onToggleFoco, onSalvarDetalhes, onStatusChange, onExcluir, onFotoClick }) {
+  const [expandido, setExpandido] = useState(inc.id===focoId)
+  const [resolucao, setResolucao] = useState(inc.resolucao||'')
+  const [custo, setCusto] = useState(inc.custo!=null?String(inc.custo):'')
+  const norm = normIncidenteStatus
+  const ST = INCIDENTE_STATUS[norm(inc.status)] || INCIDENTE_STATUS.aberto
+  return (
+    <div id={`incidente-${inc.id}`} style={{background:'#fff',borderRadius:16,border:inc.id===focoId?'2px solid #0e9f6e':'1px solid #d7e6dc',padding:16,marginBottom:10}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:8}}>
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2,flexWrap:'wrap'}}>
+            <span style={{fontSize:13,fontWeight:700}}>{INCIDENTE_TIPO_LABEL[inc.tipo]||inc.tipo}</span>
+            <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:ST.bg,color:ST.cor}}>{ST.label}</span>
+            {inc.custo!=null && parseFloat(inc.custo)>0 && (
+              <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:'#fdeaea',color:'#c0392b'}}>R$ {parseFloat(inc.custo).toFixed(2)}</span>
+            )}
+          </div>
+          <div style={{fontSize:12,color:'#5c7568'}}>{inc.piloto_nome} · {new Date(inc.created_at).toLocaleString('pt-BR')}{inc.ordem_servico?` · OS ${inc.ordem_servico}`:''}</div>
+        </div>
+        <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:16,padding:'5px 10px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}
+          onClick={()=>{ setExpandido(e=>!e); if(focoId===inc.id) onToggleFoco(null) }}>{expandido?'▲ Fechar':'Detalhes ▼'}</button>
+      </div>
+      <div style={{fontSize:13,color:'#0b1210',marginBottom:(inc.foto1_url||inc.foto2_url||inc.gps_lat)?10:0}}>{inc.descricao}</div>
+      {(inc.foto1_url||inc.foto2_url) && (
+        <div style={{display:'flex',gap:8,marginBottom:inc.gps_lat?10:0}}>
+          {[inc.foto1_url,inc.foto2_url].filter(Boolean).map((path,i)=>(
+            <FotoThumb key={i} supabase={supabase} path={path} bucket="relatorios" onClick={()=>onFotoClick(path)}/>
+          ))}
+        </div>
+      )}
+      {inc.gps_lat && inc.gps_lng && (
+        <a href={`https://maps.google.com/?q=${inc.gps_lat},${inc.gps_lng}`} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#0e9f6e',fontWeight:600,textDecoration:'none'}}>📍 Ver localização no Maps</a>
+      )}
+      {!expandido && inc.resolucao && (
+        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #f0f5f2',fontSize:12,color:'#5c7568'}}><b style={{color:'#7ba38f'}}>Resolução:</b> {inc.resolucao}</div>
+      )}
+      {expandido && (
+        <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #f0f5f2'}}>
+          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4}}>RESOLUÇÃO / ANDAMENTO</div>
+          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:8,fontSize:12,minHeight:60,marginBottom:10,boxSizing:'border-box',fontFamily:'inherit'}}
+            value={resolucao} onChange={e=>setResolucao(e.target.value)} placeholder="O que foi feito / observações..." />
+          <div style={{maxWidth:160,marginBottom:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4}}>CUSTO (R$)</div>
+            <input type="number" step="0.01" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:8,fontSize:12,boxSizing:'border-box'}}
+              value={custo} onChange={e=>setCusto(e.target.value)} placeholder="0,00" />
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+              onClick={()=>onSalvarDetalhes(inc,resolucao,custo)}>💾 Salvar</button>
+            {norm(inc.status)==='aberto' && (
+              <button style={{background:'#e6f1fb',color:'#2952a3',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>onStatusChange(inc,'em_tratativa')}>▶️ Iniciar Tratativa</button>
+            )}
+            {norm(inc.status)!=='fechado' && (
+              <button style={{background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>onStatusChange(inc,'fechado')}>✅ Fechar</button>
+            )}
+            {norm(inc.status)==='fechado' && (
+              <button style={{background:'#fff3e0',color:'#a3690a',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>onStatusChange(inc,'aberto')}>🔄 Reabrir</button>
+            )}
+            <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',marginLeft:'auto'}}
+              onClick={()=>onExcluir(inc)}>🗑️ Excluir</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function FotoThumb({ supabase, path, bucket, onClick }) {

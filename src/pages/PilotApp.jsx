@@ -361,6 +361,8 @@ export default function PilotApp({onSwitchMode}) {
   const [clientesDB, setClientesDB] = useState([])
   const [fazendasDB, setFazendasDB] = useState([])
   const [fazendaTimes, setFazendaTimes] = useState([])
+  const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState([])
+  const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
   const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState([])
   const [talhoesDB, setTalhoesDB] = useState([])
   const [veiculosDB, setVeiculosDB] = useState([])
@@ -464,6 +466,62 @@ export default function PilotApp({onSwitchMode}) {
   const [recusaModal,setRecusaModal] = useState(null)
   const [recusaMotivo,setRecusaMotivo] = useState('')
   const [recusaSaving,setRecusaSaving] = useState(false)
+  const [incidenteForm,setIncidenteForm] = useState({tipo:'',descricao:'',ordem_servico:''})
+  const [incidenteFotos,setIncidenteFotos] = useState([null,null])
+  const [incidenteFotoFiles,setIncidenteFotoFiles] = useState([null,null])
+  const [incidenteSaving,setIncidenteSaving] = useState(false)
+  const [incidenteCompartilharLoc,setIncidenteCompartilharLoc] = useState(false)
+  const [meusIncidentes,setMeusIncidentes] = useState([])
+
+  function handleIncidenteFoto(slot,f){
+    if(!f) return
+    const r=new FileReader()
+    r.onload=ev=>setIncidenteFotos(arr=>{const a=[...arr];a[slot]=ev.target.result;return a})
+    r.readAsDataURL(f)
+    setIncidenteFotoFiles(arr=>{const a=[...arr];a[slot]=f;return a})
+  }
+
+  async function loadMeusIncidentes(){
+    try {
+      const {data} = await supabase.from('incidentes').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
+      setMeusIncidentes(data||[])
+    } catch {}
+  }
+
+  async function salvarIncidente(){
+    if(!incidenteForm.tipo){ showToast('Escolha o tipo de incidente','error'); return }
+    if(!incidenteForm.descricao.trim()){ showToast('Descreva o que aconteceu','error'); return }
+    setIncidenteSaving(true)
+    try {
+      const fotoUrls = [null,null]
+      for(let i=0;i<2;i++){
+        if(incidenteFotoFiles[i]){
+          const path = `${profile.id}/incidentes/${Date.now()}_${i}.jpg`
+          const {error:upErr} = await supabase.storage.from('relatorios').upload(path,incidenteFotoFiles[i],{upsert:true})
+          if(!upErr) fotoUrls[i]=path
+        }
+      }
+      // Só pede GPS se o piloto marcou o checkbox — não coleta localização por padrão.
+      let gps_lat = null, gps_lng = null
+      if(incidenteCompartilharLoc && navigator.geolocation){
+        try {
+          const pos = await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:10000}))
+          gps_lat = pos.coords.latitude; gps_lng = pos.coords.longitude
+        } catch { showToast('Não deu pra pegar sua localização — incidente será salvo sem ela','error') }
+      }
+      const {error} = await supabase.from('incidentes').insert({
+        piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
+        tipo:incidenteForm.tipo, descricao:incidenteForm.descricao.trim(),
+        ordem_servico:incidenteForm.ordem_servico||null,
+        foto1_url:fotoUrls[0], foto2_url:fotoUrls[1], status:'aberto',
+        gps_lat, gps_lng,
+      })
+      if(error) throw error
+      showToast('⚠️ Incidente registrado')
+      setIncidenteForm({tipo:'',descricao:'',ordem_servico:''}); setIncidenteFotos([null,null]); setIncidenteFotoFiles([null,null]); setIncidenteCompartilharLoc(false)
+      setView('home')
+    } catch(e){ showToast('Erro: '+e.message,'error') } finally { setIncidenteSaving(false) }
+  }
   async function confirmarRecusa(){
     if(!recusaMotivo.trim()){ showToast('Digite o motivo da recusa','error'); return }
     setRecusaSaving(true)
@@ -505,6 +563,10 @@ export default function PilotApp({onSwitchMode}) {
 
     supabase.from('drones').select('nome,horas_limite,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setDronesDB(data); saveCache('orofly_cache_drones',data) } })
+    // Drones em voo ativo agora (de qualquer piloto) — mostra "em uso" no seletor pra evitar
+    // que dois pilotos peguem o mesmo drone sem saber.
+    supabase.from('relatorios').select('drone').in('status',['em_operacao','pausado'])
+      .then(({data}) => { if(data) setDronesEmUsoAgora([...new Set(data.map(r=>r.drone).filter(Boolean))]) })
     supabase.from('relatorios').select('drone,dt_inicio,dt_fim').eq('status','finalizado')
       .then(({data}) => { if(data) setVoosFrotaDrone(data) })
     supabase.from('produtos').select('nome,unidade,dose_padrao,dose_auto,ativo').eq('ativo',true).order('nome')
@@ -517,6 +579,12 @@ export default function PilotApp({onSwitchMode}) {
     // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.
     supabase.from('fazenda_times').select('fazenda_id,time_id')
       .then(({data}) => { if(data) setFazendaTimes(data) })
+    // Permissão individual — se o admin marcou fazendas específicas pra esse piloto (Usuários >
+    // 📍), ela vale por cima da permissão do time.
+    if(profile?.id){
+      supabase.from('piloto_fazendas').select('fazenda_id').eq('piloto_id',profile.id)
+        .then(({data}) => { if(data) setPilotoFazendasIndividuais(data.map(d=>d.fazenda_id)) })
+    }
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
     // Leve, só o necessário pra calcular quanto já foi feito em cada fazenda (de todos os pilotos,
@@ -1683,6 +1751,13 @@ export default function PilotApp({onSwitchMode}) {
             </button>
           </div>
 
+          <button style={{background:'#fdeaea',color:'#e5484d',border:'1px solid #f5c6c6',borderRadius:18,padding:'12px 16px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',textAlign:'left'}}
+            onClick={()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}}>
+            <span style={{fontSize:18}}>⚠️</span>
+            <span style={{fontSize:13,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Registrar Incidente</span>
+            <span style={{marginLeft:'auto',fontSize:16}}>›</span>
+          </button>
+
           {/* Voos compartilhados pendentes */}
           {voosCompartilhados.length>0&&(
             <div style={{background:'#fffbea',border:'2px solid #ffb020',borderRadius:14,padding:14}}>
@@ -1949,6 +2024,91 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           ))}
         </div>
+      </div>
+      <BottomNav/>
+      {toast&&<div style={s.toast}>{toast}</div>}
+      <ExitConfirmModal/>
+    </div>
+  )
+
+  if(view==='incidente') return (
+    <div style={{...s.wrap,paddingBottom:90}}>
+      <div style={s.header}>
+        <div style={s.headerInner}>
+          <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+          <div style={{display:'flex',gap:6}}>
+            {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+            <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+          </div>
+        </div>
+        <div style={s.headerSub}>⚠️ Registrar Incidente</div>
+      </div>
+
+      <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
+
+        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>TIPO DE INCIDENTE</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
+            {[['drone','🚁 Drone'],['veiculo','🚗 Veículo'],['pessoal','🤕 Pessoal'],['outro','❓ Outro']].map(([v,lbl])=>(
+              <button key={v} type="button" style={{background:incidenteForm.tipo===v?'#e5484d':'#f1f8f4',color:incidenteForm.tipo===v?'#fff':'#0b1210',border:'none',borderRadius:16,padding:'12px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>setIncidenteForm(f=>({...f,tipo:v}))}>{lbl}</button>
+            ))}
+          </div>
+
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>O QUE ACONTECEU</div>
+          <textarea style={{...sw.fi,minHeight:90,marginBottom:14,resize:'vertical'}} placeholder="Descreva o incidente..." value={incidenteForm.descricao} onChange={e=>setIncidenteForm(f=>({...f,descricao:e.target.value}))}/>
+
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>OS DO VOO (OPCIONAL)</div>
+          <select style={{...sw.fs,marginBottom:14}} value={incidenteForm.ordem_servico} onChange={e=>setIncidenteForm(f=>({...f,ordem_servico:e.target.value}))}>
+            <option value="">Nenhuma / não relacionado a um voo</option>
+            {osOpcoes.map(r=>(
+              <option key={r.id} value={r.ordem_servico}>OS {r.ordem_servico} — {r.cliente||'—'} / {r.fazenda||'—'}</option>
+            ))}
+          </select>
+
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>FOTOS (OPCIONAL, ATÉ 2)</div>
+          <div style={{display:'flex',gap:10,marginBottom:14}}>
+            {[0,1].map(slot=>(
+              <div key={slot} style={{flex:1}}>
+                {incidenteFotos[slot] ? (
+                  <div style={{position:'relative'}}>
+                    <img src={incidenteFotos[slot]} alt={`incidente-${slot}`} style={{width:'100%',height:100,objectFit:'cover',borderRadius:14,display:'block'}}/>
+                    <button style={{position:'absolute',top:4,right:4,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:22,height:22,cursor:'pointer',fontSize:11}}
+                      onClick={()=>{setIncidenteFotos(a=>{const n=[...a];n[slot]=null;return n});setIncidenteFotoFiles(a=>{const n=[...a];n[slot]=null;return n})}}>✕</button>
+                  </div>
+                ) : (
+                  <button style={{width:'100%',height:100,background:'#f1f8f4',color:'#5c7568',border:'1.5px dashed #d7e6dc',borderRadius:14,fontSize:12,cursor:'pointer'}}
+                    onClick={()=>document.getElementById(`incidente-foto-${slot}`)?.click()}>📷 Adicionar</button>
+                )}
+                <input id={`incidente-foto-${slot}`} type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleIncidenteFoto(slot,e.target.files[0])}/>
+              </div>
+            ))}
+          </div>
+
+          <label style={{display:'flex',alignItems:'center',gap:8,background:incidenteCompartilharLoc?'#fff3e0':'#f9fbfa',border:`1px solid ${incidenteCompartilharLoc?'#f2960f':'#eef5f0'}`,borderRadius:10,padding:'10px 14px',marginBottom:14,cursor:'pointer'}}>
+            <input type="checkbox" checked={incidenteCompartilharLoc} onChange={e=>setIncidenteCompartilharLoc(e.target.checked)} style={{width:16,height:16,accentColor:'#f2960f'}}/>
+            <span style={{fontSize:12,color:incidenteCompartilharLoc?'#a3690a':'#5c7568',fontWeight:600}}>📍 Compartilhar minha localização atual</span>
+          </label>
+
+          <button style={{...s.shareBtn,background:'#e5484d',width:'100%',opacity:incidenteSaving?.7:1}} disabled={incidenteSaving} onClick={salvarIncidente}>{incidenteSaving?'Enviando...':'⚠️ Registrar Incidente'}</button>
+        </div>
+
+        {meusIncidentes.length>0 && (
+          <div>
+            <div style={{fontSize:12,fontWeight:700,color:'#5c7568',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>MEUS INCIDENTES RECENTES</div>
+            {meusIncidentes.map(inc=>(
+              <div key={inc.id} style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',marginBottom:8}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:13,fontWeight:700}}>{{drone:'🚁 Drone',veiculo:'🚗 Veículo',pessoal:'🤕 Pessoal',outro:'❓ Outro'}[inc.tipo]||inc.tipo}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:inc.status==='resolvido'?'#e3f7ec':'#fff3e0',color:inc.status==='resolvido'?'#0e9f6e':'#a3690a'}}>{inc.status==='resolvido'?'Resolvido':'Aberto'}</span>
+                </div>
+                <div style={{fontSize:12,color:'#5c7568',marginTop:4}}>{inc.descricao}</div>
+                <div style={{fontSize:11,color:'#aaa',marginTop:4}}>{new Date(inc.created_at).toLocaleDateString('pt-BR')}{inc.ordem_servico?` · OS ${inc.ordem_servico}`:''}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
@@ -2256,6 +2416,11 @@ export default function PilotApp({onSwitchMode}) {
                   <strong>🧪 {agendaDetalhe.produto}</strong>{agendaDetalhe.dose&&<span style={{color:'#5c7568'}}> · Dose: {agendaDetalhe.dose}</span>}
                 </div>
               )}
+              {agendaDetalhe.drone && (
+                <div style={{background:'#f1f8f4',borderRadius:10,padding:'10px 12px',marginBottom:10,fontSize:13}}>
+                  <strong>🚁 Drone:</strong> {agendaDetalhe.drone}
+                </div>
+              )}
               {agendaDetalhe.observacao && (
                 <div style={{fontSize:13,color:'#5c7568',marginBottom:10,fontStyle:'italic'}}>{agendaDetalhe.observacao}</div>
               )}
@@ -2363,13 +2528,14 @@ export default function PilotApp({onSwitchMode}) {
                 if(talhoesDaFazenda.length===0) return false
                 return talhoesDaFazenda.every(t=>(progressoTalhao(fz,t,talhoesDaFazenda)?.pct??0) >= 100)
               }
-              // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada
-              // em Usuários > Equipes, só deixa escolher essas. Sem time ou sem restrição
-              // configurada, mostra tudo normal (não trava quem ainda não foi organizado em time).
+              // Permissão de fazenda — individual (Usuários > 📍) tem prioridade sobre o time: se
+              // o admin marcou fazendas específicas pra esse piloto, só essas aparecem, ignorando
+              // o time. Sem individual, vale a permissão do time. Sem nenhuma restrição, mostra tudo.
               const fazendasPermitidasTime = profile?.time_id ? fazendaTimes.filter(ft=>ft.time_id===profile.time_id).map(ft=>ft.fazenda_id) : []
+              const permitidas = pilotoFazendasIndividuais.length>0 ? pilotoFazendasIndividuais : fazendasPermitidasTime
               const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente
                 && (norm(fz.nome)===norm(form.fazenda) || !fazendaCompleta(fz))
-                && (fazendasPermitidasTime.length===0 || fazendasPermitidasTime.includes(fz.id)))
+                && (permitidas.length===0 || permitidas.includes(fz.id)))
               const temCadastro = fazendasCliente.length>0
               // Comparação tolerante a maiúsculas/espaços — cadastro pode ter "Fazenda X " vs "FAZENDA X"
               const fazendaSel = fazendasCliente.find(fz=>norm(fz.nome)===norm(form.fazenda))
@@ -2513,7 +2679,7 @@ export default function PilotApp({onSwitchMode}) {
 
             <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Drone...</option>
-              {DRONES.map(d=><option key={d}>{d}</option>)}
+              {DRONES.map(d=><option key={d} value={d}>{dronesEmUsoAgora.includes(d)&&d!==form.drone?`${d} — em uso`:d}</option>)}
             </FS>
             {form.drone==='Outros'&&<FI label="NOME DO DRONE" ph="..." val={form.droneOutro} onChange={e=>setForm(f=>({...f,droneOutro:e.target.value}))}/>}
 
