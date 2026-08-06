@@ -93,6 +93,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fazendaTimes, setFazendaTimes] = useState([])
   const [usuariosSubTab, setUsuariosSubTab] = useState('usuarios')
   const [novoTimeNome, setNovoTimeNome] = useState('')
+  const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
   const [loading, setLoading] = useState(true)
@@ -4010,18 +4011,34 @@ export default function AdminPanel({ onSwitchMode }) {
                             <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>PILOTOS ({membros.length})</div>
                             <div style={{fontSize:12,color:'#5c7568',marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na aba Usuários.'}</div>
                             <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
-                            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                              {invFazendas.map(fz=>{
-                                const ativo = fazendasDoTime.includes(fz.id)
+                            <div style={{border:'1px solid #eef5f0',borderRadius:12,overflow:'hidden'}}>
+                              {[...new Set(invFazendas.map(fz=>fz.cliente))].sort().map(cliente=>{
+                                const fazendasCli = invFazendas.filter(fz=>fz.cliente===cliente)
+                                const marcadasCli = fazendasCli.filter(fz=>fazendasDoTime.includes(fz.id)).length
+                                const chave = `${t.id}-${cliente}`
+                                const aberto = equipeClienteAberto[chave] ?? marcadasCli>0
                                 return (
-                                  <button key={fz.id} onClick={()=>toggleFazendaTime(fz.id,t.id)}
-                                    style={{background:ativo?'#0e9f6e':'#f1f8f4',color:ativo?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}>
-                                    {ativo?'✓ ':''}{fz.nome}
-                                  </button>
+                                  <div key={cliente} style={{borderBottom:'1px solid #f0f5f2'}}>
+                                    <div onClick={()=>setEquipeClienteAberto(s=>({...s,[chave]:!aberto}))}
+                                      style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',cursor:'pointer',background:'#f9fbfa'}}>
+                                      <span style={{fontSize:12,fontWeight:700,color:'#0b1210'}}>🏢 {cliente}</span>
+                                      <span style={{fontSize:11,color:marcadasCli>0?'#0e9f6e':'#aaa',fontWeight:600}}>{marcadasCli>0?`${marcadasCli}/${fazendasCli.length} liberada(s)`:`${fazendasCli.length} fazenda(s)`} {aberto?'▲':'▼'}</span>
+                                    </div>
+                                    {aberto && fazendasCli.map(fz=>{
+                                      const ativo = fazendasDoTime.includes(fz.id)
+                                      return (
+                                        <div key={fz.id} onClick={()=>toggleFazendaTime(fz.id,t.id)}
+                                          style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px 7px 26px',cursor:'pointer',fontSize:12,background:ativo?'#e3f7ec':'#fff',borderTop:'1px solid #f7fbf8'}}>
+                                          <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${ativo?'#0e9f6e':'#c3d4c9'}`,background:ativo?'#0e9f6e':'#fff',flexShrink:0}}/>
+                                          <span style={{color:ativo?'#0b1210':'#5c7568',fontWeight:ativo?600:400}}>{fz.nome}</span>
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
                                 )
                               })}
                             </div>
-                            <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento mostra qualquer piloto).</div>
+                            <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo).</div>
                           </div>
                         )
                       })}

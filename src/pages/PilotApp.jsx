@@ -360,6 +360,7 @@ export default function PilotApp({onSwitchMode}) {
   const [produtosDB, setProdutosDB] = useState([])
   const [clientesDB, setClientesDB] = useState([])
   const [fazendasDB, setFazendasDB] = useState([])
+  const [fazendaTimes, setFazendaTimes] = useState([])
   const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState([])
   const [talhoesDB, setTalhoesDB] = useState([])
   const [veiculosDB, setVeiculosDB] = useState([])
@@ -512,6 +513,10 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
     supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng,cep,id_fazenda').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
+    // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada em
+    // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.
+    supabase.from('fazenda_times').select('fazenda_id,time_id')
+      .then(({data}) => { if(data) setFazendaTimes(data) })
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
     // Leve, só o necessário pra calcular quanto já foi feito em cada fazenda (de todos os pilotos,
@@ -2358,7 +2363,13 @@ export default function PilotApp({onSwitchMode}) {
                 if(talhoesDaFazenda.length===0) return false
                 return talhoesDaFazenda.every(t=>(progressoTalhao(fz,t,talhoesDaFazenda)?.pct??0) >= 100)
               }
-              const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente && (norm(fz.nome)===norm(form.fazenda) || !fazendaCompleta(fz)))
+              // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada
+              // em Usuários > Equipes, só deixa escolher essas. Sem time ou sem restrição
+              // configurada, mostra tudo normal (não trava quem ainda não foi organizado em time).
+              const fazendasPermitidasTime = profile?.time_id ? fazendaTimes.filter(ft=>ft.time_id===profile.time_id).map(ft=>ft.fazenda_id) : []
+              const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente
+                && (norm(fz.nome)===norm(form.fazenda) || !fazendaCompleta(fz))
+                && (fazendasPermitidasTime.length===0 || fazendasPermitidasTime.includes(fz.id)))
               const temCadastro = fazendasCliente.length>0
               // Comparação tolerante a maiúsculas/espaços — cadastro pode ter "Fazenda X " vs "FAZENDA X"
               const fazendaSel = fazendasCliente.find(fz=>norm(fz.nome)===norm(form.fazenda))
