@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import LoginPage from './pages/LoginPage'
 import PilotApp from './pages/PilotApp'
@@ -8,7 +8,17 @@ function AppRouter() {
   const { user, profile, loading } = useAuth()
   const [mode, setMode] = useState(null)
 
-  if (loading) return <Splash />
+  // A checagem de sessão (loading) costuma resolver quase instantaneamente com sessão
+  // em cache — rápido demais pra dar tempo da animação do drone aparecer de verdade.
+  // Garante um tempo mínimo de splash (independente de quanto o loading real demorou),
+  // sem prender o piloto se o loading demorar mais que isso.
+  const [minSplashDone, setMinSplashDone] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setMinSplashDone(true), 1800)
+    return () => clearTimeout(t)
+  }, [])
+
+  if (loading || !minSplashDone) return <Splash />
   if (!user || !profile) return <LoginPage />
   if (!profile.ativo) return <Bloqueado />
 

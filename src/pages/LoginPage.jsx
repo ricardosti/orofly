@@ -67,7 +67,7 @@ export default function LoginPage() {
       <div style={{position:'absolute',top:'-15%',right:'-10%',width:420,height:420,borderRadius:'50%',background:'radial-gradient(circle,rgba(34,196,118,0.28),transparent 70%)',filter:'blur(10px)'}}/>
       <div style={{position:'absolute',bottom:'-20%',left:'-10%',width:340,height:340,borderRadius:'50%',background:'radial-gradient(circle,rgba(255,176,32,0.16),transparent 70%)',filter:'blur(10px)'}}/>
       <div style={{ width: '100%', maxWidth: 1000, position:'relative', zIndex:1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 0 : 48, padding: isMobile ? '48px 28px 24px' : '48px' }}>
-        <div style={{ flex: '1 1 380px', display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'center' : 'flex-start', textAlign: isMobile ? 'center' : 'left', paddingBottom: isMobile ? 24 : 0 }}>
+        <div style={{ flex: isMobile ? '0 0 auto' : '1 1 380px', display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'center' : 'flex-start', textAlign: isMobile ? 'center' : 'left', paddingBottom: isMobile ? 24 : 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <Logo size={isMobile ? 44 : 36} />
             <span style={{ fontFamily: "'Syne',sans-serif", fontSize: isMobile ? 32 : 32, fontWeight: 700, color: '#fff', letterSpacing: -1 }}>Orofly<span style={{ color: '#ffb020' }}>.</span></span>
