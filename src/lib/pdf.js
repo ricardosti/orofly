@@ -781,6 +781,287 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 }
 
 // ============================================================
+// RELATÓRIO DE ÁREA POR FAZENDA E PERÍODO — reaproveita a identidade visual do
+// PDF Cliente (mesmas cores/seções/cards), mas agrega os voos finalizados de uma
+// fazenda dentro de um intervalo de datas escolhido pelo admin, em vez de um
+// único voo. Col 1 = resumo do período + ranking por piloto; Col 2 = tabela com
+// cada voo (pagina automaticamente se não couber tudo numa página).
+// ============================================================
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, areaTotalCadastrada }) {
+  const doc = new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
+  const PW=297, PH=210, C1=8, CW=136, C2=157, M=8
+  const G=[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
+
+  const fmtD = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'
+  const fmtDcurta = v => v ? new Date(v).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '—'
+  const nomeCurto = n => { if(!n) return '—'; const p=String(n).trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
+
+  const voosOrd = [...(voos||[])].sort((a,b)=>new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at))
+  const areaAplicada = voosOrd.reduce((a,r)=>a+areaLiquida(r),0)
+  const porPiloto = {}
+  voosOrd.forEach(r=>{ const n=r.piloto_nome||'—'; porPiloto[n]=(porPiloto[n]||0)+areaLiquida(r) })
+  const rankingPilotos = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1])
+  const pct = areaTotalCadastrada>0 ? Math.min(100,(areaAplicada/areaTotalCadastrada)*100) : null
+
+  function fundoBranco(){ doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F') }
+
+  function sec(x,y,w,num,title){
+    doc.setFillColor(240,248,243);doc.roundedRect(x,y,w,7,1.5,1.5,'F')
+    doc.setFillColor(...G);doc.circle(x+4.5,y+3.5,3.5,'F')
+    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W);doc.text(String(num),x+4.5,y+4.8,{align:'center'})
+    doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text(title,x+11,y+5.5)
+    return y+8.5
+  }
+
+  // ═══ COL 1 — header + resumo do período + ranking por piloto (só na página 1) ═══
+  fundoBranco()
+  let y=M
+  try{doc.addImage(LOGO_B64,'PNG',C1+1,y+1,48,27)}catch(e){
+    doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C1+4,y+18)
+  }
+  doc.setFontSize(12);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+  doc.text('RELATÓRIO DE ÁREA',C1+77,y+10,{align:'center'})
+  doc.text('APLICADA NO PERÍODO',C1+77,y+16.5,{align:'center'})
+  doc.setDrawColor(...G);doc.setLineWidth(0.3)
+  doc.line(C1+54,y+18.5,C1+100,y+18.5)
+  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
+  doc.text('PULVERIZAÇÃO AGRÍCOLA',C1+77,y+23.5,{align:'center'})
+  doc.setDrawColor(...G);doc.setLineWidth(0.5)
+  doc.roundedRect(C1+106,y+2,30,24,2,2,'S')
+  doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
+  doc.text('PERÍODO',C1+121,y+6,{align:'center'})
+  doc.setDrawColor(180,220,200);doc.line(C1+108,y+7.5,C1+134,y+7.5)
+  doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+  doc.text(fmtD(dataIni),C1+121,y+13.5,{align:'center'})
+  doc.setFontSize(6.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
+  doc.text('até',C1+121,y+17.5,{align:'center'})
+  doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+  doc.text(fmtD(dataFim),C1+121,y+22.5,{align:'center'})
+  y+=29
+
+  doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C1,y,C1+CW,y);y+=2
+
+  // Cliente/Fazenda
+  doc.setFillColor(245,251,247);doc.roundedRect(C1,y,CW,12,1.5,1.5,'F')
+  doc.setDrawColor(200,235,215);doc.roundedRect(C1,y,CW,12,1.5,1.5,'S')
+  const tw2=CW/2
+  ;[['CLIENTE',fazenda.cliente||'—'],['FAZENDA',fazenda.nome||'—']].forEach(([lbl,val],i)=>{
+    const x=C1+i*tw2+3
+    doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR);doc.text(lbl,x,y+5)
+    doc.setFontSize(9.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+    doc.text(truncFit(doc,val,tw2-6),x,y+10)
+  })
+  y+=15
+
+  // 1 RESUMO DO PERÍODO
+  y=sec(C1,y,CW,1,'RESUMO DO PERÍODO')
+  const cards=[
+    ['ÁREA APLICADA',areaAplicada.toFixed(2),'ha',IC_AREA,G],
+    ['VOOS REALIZADOS',String(voosOrd.length),'',IC_DRONE,G],
+    ['AVANÇO DA FAZENDA',pct!=null?pct.toFixed(0):'—',pct!=null?'%':'',null,pct!=null?(pct>=100?[14,159,110]:[163,105,10]):GR],
+    ['ÁREA CADASTRADA',areaTotalCadastrada?areaTotalCadastrada.toFixed(2):'—','ha',null,G],
+  ]
+  const rW=CW/4-1.5
+  cards.forEach(([lbl,val,unit,ic,cor],i)=>{
+    const rx=C1+i*(rW+2)
+    doc.setFillColor(...W);doc.setDrawColor(200,235,215);doc.setLineWidth(0.3)
+    doc.roundedRect(rx,y,rW,26,2,2,'FD')
+    if(ic){ try{doc.addImage(ic,'PNG',rx+(rW-8)/2,y+2,8,8)}catch(e){} }
+    doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR)
+    doc.text(lbl,rx+rW/2,y+13,{align:'center',maxWidth:rW-2})
+    doc.setFontSize(unit?13:14);doc.setFont('helvetica','bold');doc.setTextColor(...cor)
+    doc.text(String(val),rx+rW/2,y+19,{align:'center'})
+    if(unit){doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text(unit,rx+rW/2,y+24,{align:'center'})}
+  })
+  y+=28
+
+  // 2 ÁREA POR PILOTO
+  y=sec(C1,y,CW,2,'ÁREA POR PILOTO')
+  doc.setFillColor(240,248,243);doc.rect(C1,y,CW,6,'F')
+  doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
+  doc.text('PILOTO',C1+3,y+4.5);doc.text('ÁREA',C1+CW-30,y+4.5,{align:'right'});doc.text('%',C1+CW-3,y+4.5,{align:'right'})
+  y+=7
+  if(rankingPilotos.length===0){
+    doc.setFillColor(255,255,255);doc.rect(C1,y,CW,7,'F')
+    doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
+    doc.text('Nenhum voo finalizado no período',C1+3,y+5)
+    y+=7
+  }
+  rankingPilotos.forEach(([nome,area],i)=>{
+    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C1,y,CW,7,'F')
+    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
+    doc.text(truncFit(doc,nomeCurto(nome),CW*0.5-4),C1+3,y+5)
+    doc.text(`${area.toFixed(2)} ha`,C1+CW-30,y+5,{align:'right'})
+    doc.text(areaAplicada>0?`${((area/areaAplicada)*100).toFixed(0)}%`:'—',C1+CW-3,y+5,{align:'right'})
+    y+=7
+  })
+
+  // Rodapé col1
+  doc.setFillColor(...G);doc.rect(C1,PH-M-8,CW,9,'F')
+  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
+  doc.text('www.orofly.com.br',C1+4,PH-M-3)
+  doc.text('contato@orofly.com.br',C1+46,PH-M-3)
+  doc.text('(16) 98262-3711',C1+96,PH-M-3)
+
+  // ═══ COL 2 — tabela com cada voo do período (pagina sozinha se precisar) ═══
+  const rodapeY = PH-M-8
+  function cabecalhoTabela(pagina){
+    doc.setDrawColor(200,230,215);doc.setLineWidth(0.5);doc.line(C2-2,M,C2-2,PH-M)
+    try{doc.addImage(LOGO_B64,'PNG',C2,M,42,24)}catch(e){
+      doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C2+4,M+18)
+    }
+    doc.setFillColor(...G);doc.roundedRect(C2+CW-28,M+1,27,10,2,2,'F')
+    doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...W)
+    doc.text(`PÁG. ${pagina}`,C2+CW-14.5,M+7.5,{align:'center'})
+    let yy=M+28
+    doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C2,yy,C2+CW,yy);yy+=3
+    yy=sec(C2,yy,CW,1,'VOOS NO PERÍODO')
+    doc.setFillColor(240,248,243);doc.rect(C2,yy,CW,6,'F')
+    doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
+    doc.text('DATA',C2+3,yy+4.5)
+    doc.text('TALHÃO',C2+CW*0.24,yy+4.5)
+    doc.text('PILOTO',C2+CW*0.55,yy+4.5)
+    doc.text('ÁREA',C2+CW-3,yy+4.5,{align:'right'})
+    yy+=7
+    return yy
+  }
+  function rodapeTabela(){
+    doc.setFillColor(...G);doc.rect(C2,rodapeY,CW,9,'F')
+    doc.setFillColor(45,155,75);doc.circle(C2+5,rodapeY+4.5,3,'F')
+    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
+    doc.text('Orofly — Tecnologia que protege, resultados que voam.',C2+11,rodapeY+5.5)
+  }
+
+  let pagina=1
+  let y2=cabecalhoTabela(pagina)
+  if(voosOrd.length===0){
+    doc.setFillColor(255,255,255);doc.rect(C2,y2,CW,7,'F')
+    doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
+    doc.text('Nenhum voo finalizado nesse período.',C2+3,y2+5)
+  }
+  voosOrd.forEach((r,i)=>{
+    if(y2+7 > rodapeY-2){
+      rodapeTabela()
+      doc.addPage([297,210],'l')
+      fundoBranco()
+      pagina++
+      y2=cabecalhoTabela(pagina)
+    }
+    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C2,y2,CW,7,'F')
+    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
+    doc.text(fmtDcurta(r.dt_inicio||r.created_at),C2+3,y2+5)
+    doc.text(truncFit(doc,r.localizacao||'—',CW*0.28),C2+CW*0.24,y2+5)
+    doc.text(truncFit(doc,nomeCurto(r.piloto_nome),CW*0.24),C2+CW*0.55,y2+5)
+    doc.text(`${areaLiquida(r).toFixed(2)} ha`,C2+CW-3,y2+5,{align:'right'})
+    y2+=7
+  })
+  rodapeTabela()
+
+  return doc
+}
+
+// ============================================================
+// CRONOGRAMA DE AGENDA — tabela exportável em PDF (retrato A4, mais adequado a
+// listas longas que o layout em 2 colunas do PDF Cliente/Fazenda), com a mesma
+// identidade visual da marca.
+// ============================================================
+export function gerarPDFAgenda(agendamentos, { filtroLabel } = {}) {
+  const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
+  const PW=210, PH=297, M=10
+  const G=[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
+  const CW = PW-2*M
+
+  const STATUS_INFO = {
+    pendente:  { label:'Pendente',  cor:[163,105,10] },
+    concluido: { label:'Concluído', cor:[14,159,110] },
+    cancelado: { label:'Cancelado', cor:[229,72,77] },
+    recusado:  { label:'Recusado',  cor:[229,72,77] },
+  }
+  const fmtD = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'}) : '—'
+  const nomeCurto = n => { if(!n) return '—'; const p=String(n).trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
+
+  const ordenados = [...(agendamentos||[])].sort((a,b)=>new Date(a.data_prevista)-new Date(b.data_prevista))
+  const cont = { pendente:0, concluido:0, cancelado:0, recusado:0 }
+  ordenados.forEach(a=>{ cont[a.status] = (cont[a.status]||0)+1 })
+
+  function cabecalho(pagina) {
+    doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F')
+    try{doc.addImage(LOGO_B64,'PNG',M,M,34,19)}catch(e){
+      doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',M+2,M+13)
+    }
+    doc.setFontSize(15);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+    doc.text('CRONOGRAMA DE AGENDAMENTOS',PW-M,M+8,{align:'right'})
+    doc.setFontSize(8.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
+    doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}${filtroLabel?' · '+filtroLabel:''}`,PW-M,M+13.5,{align:'right'})
+    doc.setDrawColor(...G);doc.setLineWidth(0.6);doc.line(M,M+22,PW-M,M+22)
+    let y = M+22
+    if(pagina===1){
+      y+=6
+      const resumo=[['PENDENTES',cont.pendente,[163,105,10]],['CONCLUÍDOS',cont.concluido,[14,159,110]],['CANCEL./RECUSADOS',cont.cancelado+cont.recusado,[229,72,77]],['TOTAL',ordenados.length,G]]
+      const cw=CW/4-2
+      resumo.forEach(([lbl,val,cor],i)=>{
+        const rx=M+i*(cw+2.6)
+        doc.setFillColor(248,251,249);doc.setDrawColor(220,235,225);doc.roundedRect(rx,y,cw,16,2,2,'FD')
+        doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR);doc.text(lbl,rx+cw/2,y+6,{align:'center',maxWidth:cw-4})
+        doc.setFontSize(13);doc.setFont('helvetica','bold');doc.setTextColor(...cor);doc.text(String(val),rx+cw/2,y+13,{align:'center'})
+      })
+      y+=22
+    } else {
+      doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR);doc.text(`Página ${pagina}`,PW-M,y+5,{align:'right'})
+      y+=8
+    }
+    doc.setFillColor(...G);doc.rect(M,y,CW,7,'F')
+    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W)
+    doc.text('DATA',M+3,y+4.8)
+    doc.text('PILOTO',M+CW*0.16,y+4.8)
+    doc.text('CLIENTE / FAZENDA',M+CW*0.36,y+4.8)
+    doc.text('TALHÃO',M+CW*0.60,y+4.8)
+    doc.text('PRODUTO',M+CW*0.73,y+4.8)
+    doc.text('OS',M+CW*0.87,y+4.8)
+    doc.text('STATUS',M+CW-3,y+4.8,{align:'right'})
+    return y+7
+  }
+
+  const rodapeY = PH-M-6
+  function rodape(){
+    doc.setDrawColor(220,235,225);doc.setLineWidth(0.3);doc.line(M,rodapeY,PW-M,rodapeY)
+    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
+    doc.text('Orofly — Tecnologia que protege, resultados que voam.',M,rodapeY+5)
+    doc.text('www.orofly.com.br',PW-M,rodapeY+5,{align:'right'})
+  }
+
+  let pagina=1
+  let y=cabecalho(pagina)
+  if(ordenados.length===0){
+    doc.setFontSize(9);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
+    doc.text('Nenhum agendamento encontrado.',M+3,y+6)
+  }
+  ordenados.forEach((a,i)=>{
+    if(y+7 > rodapeY-2){
+      rodape()
+      doc.addPage('a4','p')
+      pagina++
+      y=cabecalho(pagina)
+    }
+    const st = STATUS_INFO[a.status]||STATUS_INFO.pendente
+    doc.setFillColor(i%2===0?255:248,i%2===0?255:251,i%2===0?255:249);doc.rect(M,y,CW,7,'F')
+    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
+    doc.text(fmtD(a.data_prevista),M+3,y+4.8)
+    doc.text(truncFit(doc,nomeCurto(a.piloto_nome),CW*0.19),M+CW*0.16,y+4.8)
+    doc.text(truncFit(doc,`${a.cliente} — ${a.fazenda}`,CW*0.23),M+CW*0.36,y+4.8)
+    doc.text(truncFit(doc,a.talhao||'—',CW*0.12),M+CW*0.60,y+4.8)
+    doc.text(truncFit(doc,a.produto||'—',CW*0.13),M+CW*0.73,y+4.8)
+    doc.text(truncFit(doc,a.ordem_servico||'—',CW*0.11),M+CW*0.87,y+4.8)
+    doc.setFont('helvetica','bold');doc.setTextColor(...st.cor)
+    doc.text(st.label,M+CW-3,y+4.8,{align:'right'})
+    y+=7
+  })
+  rodape()
+
+  return doc
+}
+
+// ============================================================
 // WORD CLIENTE — HTML exportável como .doc / Google Docs
 // ============================================================
 export async function gerarWordCliente(rel, { supabase, localObsFotos, localFotoMapa } = {}) {

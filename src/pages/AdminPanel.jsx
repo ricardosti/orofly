@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFCliente, gerarWordCliente, areaLiquida } from '../lib/pdf'
+import { gerarPDFCliente, gerarWordCliente, gerarPDFFazendaPeriodo, gerarPDFAgenda, areaLiquida } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { pedirPermissaoNotificacaoLocal, notificarLocal } from '../lib/localNotify'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
@@ -162,6 +162,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzMapaExistente, setFzMapaExistente] = useState(null) // mapa_pdf_path da fazenda em edição
   const [fzMapaUploading, setFzMapaUploading] = useState(false)
   const [mapaViewerFazenda, setMapaViewerFazenda] = useState(null)
+  const [relatorioPeriodoFz, setRelatorioPeriodoFz] = useState(null) // fazenda (com BI) selecionada pro modal de relatório do período
+  const [relatorioPeriodoForm, setRelatorioPeriodoForm] = useState({dataIni:'',dataFim:''})
+  const [relatorioPeriodoLoading, setRelatorioPeriodoLoading] = useState('') // '' | 'pdf' | 'whats'
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
@@ -184,6 +187,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [agendaSaving, setAgendaSaving] = useState(false)
   const [agendaClima, setAgendaClima] = useState(null)
   const [agendaClimaLoading, setAgendaClimaLoading] = useState(false)
+  const [agendaExportLoading, setAgendaExportLoading] = useState('') // '' | 'pdf' | 'whats'
 
   // Previsão do tempo da fazenda selecionada, pro dia agendado — só funciona se a fazenda
   // tiver lat/lng cadastrados (Fazendas & Clientes > editar fazenda).
@@ -583,6 +587,47 @@ export default function AdminPanel({ onSwitchMode }) {
     if(rel.obs1) t += `${linha}\n📝 *Obs:* ${rel.obs1}\n`
     if(rel.gps_lat && rel.gps_lng) t += `${linha}\n📍 ${rel.gps_lat}, ${rel.gps_lng}\nhttps://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}\n`
     return t
+  }
+
+  // Texto pro WhatsApp do relatório de área aplicada por fazenda/período (resumo — o PDF
+  // completo com a tabela de voos vai anexado, quando o app nativo/Web Share suportar).
+  function buildTxtFazendaPeriodo(fz, voosPeriodo, dataIni, dataFim, areaTotalCadastrada) {
+    const fmtD = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR') : '—'
+    const areaAplicada = voosPeriodo.reduce((a,r)=>a+areaLiquida(r),0)
+    const pct = areaTotalCadastrada>0 ? Math.min(100,(areaAplicada/areaTotalCadastrada)*100) : null
+    const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
+    let t = `🌾 *RELATÓRIO DE ÁREA APLICADA — OROFLY*\n`
+    t += `👤 *Cliente:* ${fz.cliente}\n`
+    t += `📍 *Fazenda:* ${fz.nome}\n`
+    t += `📅 *Período:* ${fmtD(dataIni)} a ${fmtD(dataFim)}\n`
+    t += `${linha}\n`
+    t += `✈️ *Voos no período:* ${voosPeriodo.length}\n`
+    t += `📏 *Área aplicada:* ${areaAplicada.toFixed(2)} ha\n`
+    if(pct!=null) t += `📊 *Avanço da fazenda:* ${pct.toFixed(0)}% (${areaAplicada.toFixed(1)} / ${areaTotalCadastrada.toFixed(1)} ha)\n`
+    return t
+  }
+
+  async function gerarRelatorioPeriodo(fz, dataIni, dataFim, tipo) {
+    if(!dataIni || !dataFim){ showToast('Escolha o período (data inicial e final)','error'); return }
+    setRelatorioPeriodoLoading(tipo)
+    try {
+      const voosPeriodo = relatorios.filter(r=>{
+        if(r.cliente!==fz.cliente || r.fazenda!==fz.nome || r.status!=='finalizado') return false
+        const dRef = (r.dt_inicio || r.created_at || '').slice(0,10)
+        return dRef && dRef>=dataIni && dRef<=dataFim
+      })
+      const doc = await gerarPDFFazendaPeriodo({ fazenda: fz, voos: voosPeriodo, dataIni, dataFim, areaTotalCadastrada: fz.areaTotal })
+      const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${dataIni}-a-${dataFim}`
+      if(tipo==='whats'){
+        const texto = buildTxtFazendaPeriodo(fz, voosPeriodo, dataIni, dataFim, fz.areaTotal)
+        const file = new File([doc.output('blob')], `relatorio-${nomeBase}.pdf`, {type:'application/pdf'})
+        await compartilharNativo({ text: texto, file, filename: `relatorio-${nomeBase}.pdf`, webFallbackUrl: 'https://wa.me/?text='+encodeURIComponent(texto) })
+      } else {
+        await salvarOuCompartilharPdf(doc, `relatorio-${nomeBase}.pdf`)
+        showToast('✅ PDF do período gerado!')
+      }
+      setRelatorioPeriodoFz(null)
+    } catch(e){ console.error(e); showToast('Erro ao gerar relatório do período','error') } finally { setRelatorioPeriodoLoading('') }
   }
 
   // Tenta anexar a foto do mapa de pós-aplicação junto do texto. Só funciona de verdade no
@@ -3128,10 +3173,66 @@ export default function AdminPanel({ onSwitchMode }) {
                                 )}
                               </>
                             )}
+                            <button style={{width:'100%',marginTop:10,background:'#f1f8f4',color:'#0e9f6e',border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                              onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoFz(fz)}}>📄 Relatório do período</button>
                           </div>
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* ── RELATÓRIO DE ÁREA POR PERÍODO (modal) ── */}
+                {relatorioPeriodoFz && (
+                  <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,.7)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}
+                    onClick={()=>!relatorioPeriodoLoading && setRelatorioPeriodoFz(null)}>
+                    <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:420,padding:20}} onClick={e=>e.stopPropagation()}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>📄 Relatório do Período</div>
+                        <button style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:14,padding:'5px 10px',fontSize:12,cursor:'pointer'}}
+                          onClick={()=>setRelatorioPeriodoFz(null)} disabled={!!relatorioPeriodoLoading}>✕</button>
+                      </div>
+                      <div style={{fontSize:12,color:'#5c7568',marginBottom:16}}>🌾 {relatorioPeriodoFz.nome} — {relatorioPeriodoFz.cliente}</div>
+                      <div style={{display:'flex',gap:10,marginBottom:16}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:3}}>DE</div>
+                          <input type="date" style={{...sG.fi,width:'100%',boxSizing:'border-box'}} value={relatorioPeriodoForm.dataIni}
+                            onChange={e=>setRelatorioPeriodoForm(f=>({...f,dataIni:e.target.value}))}/>
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:3}}>ATÉ</div>
+                          <input type="date" style={{...sG.fi,width:'100%',boxSizing:'border-box'}} value={relatorioPeriodoForm.dataFim}
+                            onChange={e=>setRelatorioPeriodoForm(f=>({...f,dataFim:e.target.value}))}/>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                        {[['7',7],['30',30],['Mês atual','mes']].map(([lbl,val])=>(
+                          <button key={lbl} style={{background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                            onClick={()=>{
+                              const hoje=new Date()
+                              if(val==='mes'){
+                                const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1)
+                                setRelatorioPeriodoForm({dataIni:ini.toISOString().slice(0,10),dataFim:hoje.toISOString().slice(0,10)})
+                              } else {
+                                const ini=new Date(hoje); ini.setDate(ini.getDate()-val)
+                                setRelatorioPeriodoForm({dataIni:ini.toISOString().slice(0,10),dataFim:hoje.toISOString().slice(0,10)})
+                              }
+                            }}>{val==='mes'?lbl:`Últimos ${lbl}d`}</button>
+                        ))}
+                      </div>
+                      <div style={{display:'flex',gap:8,marginTop:16}}>
+                        <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:relatorioPeriodoLoading?.6:1}}
+                          disabled={!!relatorioPeriodoLoading}
+                          onClick={()=>gerarRelatorioPeriodo(relatorioPeriodoFz,relatorioPeriodoForm.dataIni,relatorioPeriodoForm.dataFim,'pdf')}>
+                          {relatorioPeriodoLoading==='pdf'?'Gerando...':'📄 Baixar PDF'}
+                        </button>
+                        <button style={{flex:1,background:'#25D366',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:relatorioPeriodoLoading?.6:1}}
+                          disabled={!!relatorioPeriodoLoading}
+                          onClick={()=>gerarRelatorioPeriodo(relatorioPeriodoFz,relatorioPeriodoForm.dataIni,relatorioPeriodoForm.dataFim,'whats')}>
+                          {relatorioPeriodoLoading==='whats'?'Gerando...':'📲 WhatsApp'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -4175,6 +4276,51 @@ export default function AdminPanel({ onSwitchMode }) {
               recusado:{ label:'Recusado pelo piloto', bg:'#fdeaea', cor:'#e5484d' },
             }
 
+            const filtroLabelAgenda = [
+              agendaFiltros.piloto ? pilotos.find(p=>p.id===agendaFiltros.piloto)?.nome : null,
+              agendaFiltros.status ? (STATUS_BADGE[agendaFiltros.status]?.label||agendaFiltros.status) : null,
+            ].filter(Boolean).join(' · ') || null
+
+            // Texto pro WhatsApp: cronograma agrupado por dia, na ordem da lista já filtrada.
+            function buildTxtAgenda(lista) {
+              const fmtDia = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'}) : '—'
+              const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
+              let t = `📅 *CRONOGRAMA DE AGENDAMENTOS — OROFLY*\n`
+              t += `Gerado em ${new Date().toLocaleString('pt-BR')}\n`
+              if(filtroLabelAgenda) t += `Filtro: ${filtroLabelAgenda}\n`
+              const porDia = {}
+              ;[...lista].sort((a,b)=>new Date(a.data_prevista)-new Date(b.data_prevista)).forEach(a=>{
+                (porDia[a.data_prevista] = porDia[a.data_prevista]||[]).push(a)
+              })
+              Object.entries(porDia).forEach(([dia,itens])=>{
+                t += `${linha}\n📆 *${fmtDia(dia)}*\n`
+                itens.forEach(a=>{
+                  const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
+                  t += `• ${a.piloto_nome} — ${a.cliente} / ${a.fazenda}${a.talhao?` (${a.talhao})`:''}\n`
+                  if(a.produto) t += `   🧪 ${a.produto}${a.dose?` ${a.dose}`:''}\n`
+                  t += `   ${badge.label}${a.ordem_servico?` · OS ${a.ordem_servico}`:''}\n`
+                })
+              })
+              return t
+            }
+
+            async function exportarAgenda(tipo) {
+              if(agendaFiltrada.length===0){ showToast('Nenhum agendamento pra exportar','error'); return }
+              setAgendaExportLoading(tipo)
+              try {
+                const doc = gerarPDFAgenda(agendaFiltrada, { filtroLabel: filtroLabelAgenda })
+                const nomeBase = `cronograma-agenda-${new Date().toISOString().slice(0,10)}`
+                if(tipo==='whats'){
+                  const texto = buildTxtAgenda(agendaFiltrada)
+                  const file = new File([doc.output('blob')], `${nomeBase}.pdf`, {type:'application/pdf'})
+                  await compartilharNativo({ text: texto, file, filename: `${nomeBase}.pdf`, webFallbackUrl: 'https://wa.me/?text='+encodeURIComponent(texto) })
+                } else {
+                  await salvarOuCompartilharPdf(doc, `${nomeBase}.pdf`)
+                  showToast('✅ PDF do cronograma gerado!')
+                }
+              } catch(e){ console.error(e); showToast('Erro ao exportar agenda','error') } finally { setAgendaExportLoading('') }
+            }
+
             return (
               <div>
                 <div style={{ marginBottom:18 }}>
@@ -4306,6 +4452,15 @@ export default function AdminPanel({ onSwitchMode }) {
                     <option value="cancelado">Cancelado</option>
                     <option value="recusado">Recusado pelo piloto</option>
                   </select>
+                  <div style={{flex:1}}/>
+                  <button style={{background:'#f1f8f4',color:'#0e9f6e',border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer',opacity:agendaExportLoading?.6:1}}
+                    disabled={!!agendaExportLoading} onClick={()=>exportarAgenda('pdf')}>
+                    {agendaExportLoading==='pdf'?'Gerando...':'📄 Exportar PDF'}
+                  </button>
+                  <button style={{background:'#25D366',color:'#fff',border:'none',borderRadius:12,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer',opacity:agendaExportLoading?.6:1}}
+                    disabled={!!agendaExportLoading} onClick={()=>exportarAgenda('whats')}>
+                    {agendaExportLoading==='whats'?'Gerando...':'📲 WhatsApp'}
+                  </button>
                 </div>
 
                 {/* Lista */}
