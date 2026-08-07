@@ -6,6 +6,7 @@ import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
+import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun } from 'lucide-react'
@@ -360,6 +361,7 @@ export default function PilotApp({onSwitchMode}) {
   const [produtosDB, setProdutosDB] = useState([])
   const [clientesDB, setClientesDB] = useState([])
   const [fazendasDB, setFazendasDB] = useState([])
+  const [mapaViewerOpen, setMapaViewerOpen] = useState(false)
   const [fazendaTimes, setFazendaTimes] = useState([])
   const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState([])
   const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
@@ -575,7 +577,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng,cep,id_fazenda').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada em
     // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.
@@ -2457,6 +2459,11 @@ export default function PilotApp({onSwitchMode}) {
               ) : (
                 <div style={{fontSize:11,color:'#aaa',marginBottom:14,fontStyle:'italic'}}>Essa fazenda ainda não tem localização cadastrada.</div>
               )}
+              {fz?.mapa_pdf_path && (
+                <button style={{width:'100%',background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:14,padding:'10px',fontSize:12.5,fontWeight:600,cursor:'pointer',marginBottom:12}}
+                  onClick={()=>setMapaViewerOpen(true)}>🗺️ Ver mapa da fazenda</button>
+              )}
+              {mapaViewerOpen && fz && <MapaFazendaViewer supabase={supabase} fazenda={fz} onClose={()=>setMapaViewerOpen(false)}/>}
               <div style={{display:'flex',gap:8}}>
                 {agendaDetalhe.status==='pendente'&&(
                   <button style={{...s.shareBtn,background:'#fdeaea',color:'#e5484d',flex:1}} onClick={()=>{setRecusaModal(agendaDetalhe);setRecusaMotivo('')}}>❌ Recusar</button>
@@ -2579,6 +2586,11 @@ export default function PilotApp({onSwitchMode}) {
                   ) : (
                     <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
                   )}
+                  {fazendaSel?.mapa_pdf_path && (
+                    <button style={{width:'100%',background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:14,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',marginTop:4}}
+                      onClick={()=>setMapaViewerOpen(true)}>🗺️ Ver mapa da fazenda</button>
+                  )}
+                  {mapaViewerOpen && fazendaSel && <MapaFazendaViewer supabase={supabase} fazenda={fazendaSel} onClose={()=>setMapaViewerOpen(false)}/>}
 
                   {/* TALHÕES — lista multi-seleção; soma as áreas dos selecionados */}
                   {(()=>{

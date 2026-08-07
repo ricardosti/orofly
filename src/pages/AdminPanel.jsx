@@ -7,6 +7,7 @@ import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { pedirPermissaoNotificacaoLocal, notificarLocal } from '../lib/localNotify'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
+import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
 
@@ -156,7 +157,11 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invClientes, setInvClientes] = useState([])
   const [invFazendas, setInvFazendas] = useState([])
   const [invTalhoes, setInvTalhoes] = useState([])
-  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:''})
+  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
+  const [fzMapaFile, setFzMapaFile] = useState(null)
+  const [fzMapaExistente, setFzMapaExistente] = useState(null) // mapa_pdf_path da fazenda em edição
+  const [fzMapaUploading, setFzMapaUploading] = useState(false)
+  const [mapaViewerFazenda, setMapaViewerFazenda] = useState(null)
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
@@ -2963,14 +2968,33 @@ export default function AdminPanel({ onSwitchMode }) {
                   if(r){ lat = r.lat; lng = r.lng }
                 }
                 const payload = {cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,
-                  cep:fzForm.cep||null,lat:lat?parseFloat(lat):null,lng:lng?parseFloat(lng):null,id_fazenda:fzForm.id_fazenda||null}
-                const {error} = fzEditId
-                  ? await supabase.from('fazendas').update(payload).eq('id',fzEditId)
-                  : await supabase.from('fazendas').insert({...payload,ativo:true})
-                if(error) throw error
+                  cep:fzForm.cep||null,lat:lat?parseFloat(lat):null,lng:lng?parseFloat(lng):null,id_fazenda:fzForm.id_fazenda||null,
+                  mapa_lat_min:fzForm.mapa_lat_min?parseFloat(fzForm.mapa_lat_min):null,
+                  mapa_lat_max:fzForm.mapa_lat_max?parseFloat(fzForm.mapa_lat_max):null,
+                  mapa_lng_min:fzForm.mapa_lng_min?parseFloat(fzForm.mapa_lng_min):null,
+                  mapa_lng_max:fzForm.mapa_lng_max?parseFloat(fzForm.mapa_lng_max):null}
+                let savedId = fzEditId
+                if(fzEditId){
+                  const {error} = await supabase.from('fazendas').update(payload).eq('id',fzEditId)
+                  if(error) throw error
+                } else {
+                  const {data,error} = await supabase.from('fazendas').insert({...payload,ativo:true}).select().single()
+                  if(error) throw error
+                  savedId = data.id
+                }
+                // Sobe o PDF do mapa (se um novo arquivo foi escolhido) — só depois de ter o id da fazenda
+                if(fzMapaFile && savedId){
+                  setFzMapaUploading(true)
+                  const path = `mapas/${savedId}/mapa.pdf`
+                  const {error: upErr} = await supabase.storage.from('relatorios').upload(path, fzMapaFile, {upsert:true, contentType:'application/pdf'})
+                  if(upErr) throw upErr
+                  const {error: pathErr} = await supabase.from('fazendas').update({mapa_pdf_path:path}).eq('id',savedId)
+                  if(pathErr) throw pathErr
+                }
                 showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
-                setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:''}); setFzEditId(null); setFzModal(false); fetchInventario()
-              } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false) }
+                setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
+                setFzEditId(null); setFzMapaFile(null); setFzMapaExistente(null); setFzModal(false); fetchInventario()
+              } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false); setFzMapaUploading(false) }
             }
 
             return (
@@ -2988,7 +3012,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   )}
                   {fzTab==='fazendas' && (
                     <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:''});setFzEditId(null);setFzModal(true)}}>
+                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
                       + Nova Fazenda
                     </button>
                   )}
@@ -3166,11 +3190,16 @@ export default function AdminPanel({ onSwitchMode }) {
                                     <span style={{fontSize:11,color:'#7ba38f',fontWeight:500,flexShrink:0}}>{talhoesFz.length} talhão(ões){areaFz>0?` · ${areaFz.toFixed(1)} ha`:''}</span>
                                   </span>
                                   <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
+                                    {fz.mapa_pdf_path && (
+                                      <button style={{background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                        onClick={(e)=>{ e.stopPropagation(); setMapaViewerFazenda(fz) }}>🗺️</button>
+                                    )}
                                     <button style={{background:'#f1f8f4',color:'#0e9f6e',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={(e)=>{
                                         e.stopPropagation()
-                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||''})
-                                        setFzEditId(fz.id); setFzModal(true)
+                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',
+                                          mapa_lat_min:fz.mapa_lat_min??'',mapa_lat_max:fz.mapa_lat_max??'',mapa_lng_min:fz.mapa_lng_min??'',mapa_lng_max:fz.mapa_lng_max??''})
+                                        setFzEditId(fz.id); setFzMapaFile(null); setFzMapaExistente(fz.mapa_pdf_path||null); setFzModal(true)
                                       }}>✏️</button>
                                     <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={async(e)=>{
@@ -3273,14 +3302,41 @@ export default function AdminPanel({ onSwitchMode }) {
                                   type="number" placeholder="Ex: -43.1729" value={fzForm.lng} onChange={e=>setFzForm(f=>({...f,lng:e.target.value}))}/>
                               </div>
                             </div>
+
+                            <div style={{borderTop:'1px solid #eef5f0',paddingTop:12}}>
+                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>🗺️ MAPA DA FAZENDA (OPCIONAL)</div>
+                              <div style={{fontSize:11,color:'#7ba38f',marginBottom:8}}>PDF do mapa que a fazenda manda — o piloto vê a posição dele em cima desse mapa durante o voo.</div>
+                              <label style={{display:'flex',alignItems:'center',gap:8,border:'1px dashed #d7e6dc',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#5c7568',cursor:'pointer'}}>
+                                📄 {fzMapaFile ? fzMapaFile.name : fzMapaExistente ? 'Mapa já cadastrado — escolher outro arquivo' : 'Escolher arquivo PDF...'}
+                                <input type="file" accept="application/pdf" style={{display:'none'}} onChange={e=>setFzMapaFile(e.target.files[0]||null)}/>
+                              </label>
+                              {(fzMapaFile || fzMapaExistente) && (
+                                <>
+                                  <div style={{fontSize:10,color:'#aaa',margin:'10px 0 6px'}}>Coordenadas dos 4 cantos do mapa (vem no PDF se for georreferenciado, ou peça pra quem gerou o mapa):</div>
+                                  <div style={{display:'flex',gap:6,marginBottom:6}}>
+                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                      type="number" placeholder="Lat mínima (sul)" value={fzForm.mapa_lat_min} onChange={e=>setFzForm(f=>({...f,mapa_lat_min:e.target.value}))}/>
+                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                      type="number" placeholder="Lat máxima (norte)" value={fzForm.mapa_lat_max} onChange={e=>setFzForm(f=>({...f,mapa_lat_max:e.target.value}))}/>
+                                  </div>
+                                  <div style={{display:'flex',gap:6}}>
+                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                      type="number" placeholder="Long mínima (oeste)" value={fzForm.mapa_lng_min} onChange={e=>setFzForm(f=>({...f,mapa_lng_min:e.target.value}))}/>
+                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                      type="number" placeholder="Long máxima (leste)" value={fzForm.mapa_lng_max} onChange={e=>setFzForm(f=>({...f,mapa_lng_max:e.target.value}))}/>
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           </div>
                           <div style={{display:'flex',gap:8,marginTop:20}}>
                             <button style={{flex:1,background:'#f1f8f4',color:'#5c7568',border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setFzModal(false)}>Cancelar</button>
-                            <button style={{flex:2,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}} disabled={invSaving} onClick={salvarNovaFazenda}>{invSaving?'Salvando...':'💾 Salvar'}</button>
+                            <button style={{flex:2,background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}} disabled={invSaving} onClick={salvarNovaFazenda}>{fzMapaUploading?'Enviando mapa...':invSaving?'Salvando...':'💾 Salvar'}</button>
                           </div>
                         </div>
                       </div>
                     )}
+                    {mapaViewerFazenda && <MapaFazendaViewer supabase={supabase} fazenda={mapaViewerFazenda} onClose={()=>setMapaViewerFazenda(null)}/>}
                   </div>
                 )}
 
