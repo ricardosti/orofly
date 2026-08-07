@@ -1647,13 +1647,17 @@ export default function PilotApp({onSwitchMode}) {
               <MapPin size={12}/> {tempoLocal}
             </div>
           )}
-          <div onClick={()=>setView('tempo')} style={{display:'flex',alignItems:'stretch',marginTop:8,background:'#f6faf7',border:'1px solid #e6f0ea',borderRadius:18,overflow:'hidden',cursor:'pointer',minHeight:106}}>
-            {condDia ? (
+          <div onClick={()=>setView('tempo')} style={{position:'relative',display:'flex',alignItems:'stretch',marginTop:8,border:'1px solid #e6f0ea',borderRadius:18,overflow:'hidden',cursor:'pointer',minHeight:106}}>
+            {condDia ? (() => {
+              const chuvoso = condDia.chuvaProb>=60, nublado = condDia.chuvaProb>=25
+              const bgFoto = chuvoso?'weather-rainy.jpg':nublado?'weather-cloudy.jpg':'weather-sunny.jpg'
+              return (
               <>
-                <div style={{flex:1,padding:'14px 6px 14px 16px',display:'flex',flexDirection:'column',justifyContent:'center',gap:11,minWidth:0}}>
+                <img src={`${process.env.PUBLIC_URL||''}/${bgFoto}`} alt="Drone pulverizando lavoura" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+                <div style={{position:'absolute',inset:0,background:'linear-gradient(90deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.8) 34%, rgba(255,255,255,0.28) 60%, rgba(255,255,255,0.05) 78%)'}}/>
+                <div style={{position:'relative',flex:1,padding:'14px 6px 14px 16px',display:'flex',flexDirection:'column',justifyContent:'center',gap:11,minWidth:0}}>
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
                     {(() => {
-                      const chuvoso = condDia.chuvaProb>=60, nublado = condDia.chuvaProb>=25
                       const WIcon = chuvoso?CloudRain:nublado?Cloud:Sun
                       const wc = chuvoso?'#2f6fed':nublado?'#8fa79a':'#f2960f'
                       return <WIcon size={30} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'}/>
@@ -1664,21 +1668,19 @@ export default function PilotApp({onSwitchMode}) {
                     </div>
                   </div>
                   <div style={{display:'flex',gap:7}}>
-                    <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px',boxShadow:'0 1px 4px rgba(11,18,16,0.08)'}}>
                       <span style={{width:20,height:20,borderRadius:'50%',background:'#eef2f5',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Wind size={11} color="#5c7568"/></span>
                       <span style={{fontSize:10.5,fontWeight:700,color:'#33473d',whiteSpace:'nowrap'}}>{Math.round(condDia.ventoMax)} km/h</span>
                     </div>
-                    <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px',boxShadow:'0 1px 4px rgba(11,18,16,0.08)'}}>
                       <span style={{width:20,height:20,borderRadius:'50%',background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Droplets size={11} color="#2f6fed"/></span>
                       <span style={{fontSize:10.5,fontWeight:700,color:'#33473d'}}>{condDia.chuvaProb}%</span>
                     </div>
                   </div>
                 </div>
-                <div style={{width:112,position:'relative',flexShrink:0,overflow:'hidden'}}>
-                  <img src={`${process.env.PUBLIC_URL||''}/weather-drone.jpg`} alt="Drone pulverizando lavoura" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
-                </div>
               </>
-            ) : (
+              )
+            })() : (
               <div style={{flex:1,display:'flex',alignItems:'center',gap:10,padding:'14px 16px'}}>
                 <CloudSun size={22} color="#8fac9c"/>
                 <span style={{fontSize:12,color:'#5c7568',fontWeight:600}}>Buscando previsão do tempo...</span>
