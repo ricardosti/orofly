@@ -9,7 +9,8 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
-import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, MapPin, Navigation } from 'lucide-react'
+import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, Droplets, MapPin, Navigation, AlertTriangle } from 'lucide-react'
+import { Drone as PhDrone, ClipboardText as PhClipboardText, CloudSun as PhCloudSun, Warning as PhWarning, ChartBar as PhChartBar, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -462,6 +463,7 @@ export default function PilotApp({onSwitchMode}) {
   const [notaFotoFile,setNotaFotoFile] = useState(null)
   const [notaSaving,setNotaSaving] = useState(false)
   const [minhasNotas,setMinhasNotas] = useState([])
+  const [gestaoPeriodo,setGestaoPeriodo] = useState('mes') // 'mes' | '30' | 'tudo'
   const [loadingNotas,setLoadingNotas] = useState(false)
   const [minhaAgenda,setMinhaAgenda] = useState([])
   const [loadingAgenda,setLoadingAgenda] = useState(false)
@@ -1581,51 +1583,45 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
-  const BottomNav = () => (
-    <div style={{position:'fixed',left:0,right:0,bottom:0,maxWidth:480,margin:'0 auto',background:'#fff',borderTop:'1px solid #dcebe3',padding:'9px 10px calc(env(safe-area-inset-bottom,0px) + 9px)',display:'flex',justifyContent:'space-around',alignItems:'flex-end',zIndex:50,boxShadow:'0 -8px 24px rgba(11,18,16,0.06)'}}>
-      <div onClick={()=>setView('home')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='home'?'#0e9f6e':'#a9beb1',minWidth:44}}>
-        <span style={{fontSize:19}}>🏠</span>
-        <span style={{fontSize:9.5,fontWeight:700}}>Início</span>
+  const BottomNav = () => {
+    const temVooAberto = flightsAbertos.length>0
+    return (
+    <div style={{position:'fixed',left:0,right:0,bottom:0,maxWidth:480,margin:'0 auto',background:'#fff',borderTop:'1px solid #dcebe3',padding:'10px 10px calc(env(safe-area-inset-bottom,0px) + 10px)',display:'flex',justifyContent:'space-around',zIndex:50,boxShadow:'0 -8px 24px rgba(11,18,16,0.06)'}}>
+      <div onClick={()=>setView('home')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='home'?'#0e9f6e':'#a9beb1',minWidth:52}}>
+        <PhHouse size={22} weight={view==='home'?'fill':'regular'}/>
+        <span style={{fontSize:10,fontWeight:700}}>Início</span>
       </div>
-      <div onClick={()=>{loadFlights();setView('flights')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='flights'?'#0e9f6e':'#a9beb1',minWidth:44}}>
-        <span style={{fontSize:19}}>🚁</span>
-        <span style={{fontSize:9.5,fontWeight:700}}>Voos</span>
+      <div onClick={temVooAberto?handleContinuarVoo:()=>{loadFlights();setView('flights')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='flights'?'#0e9f6e':'#a9beb1',minWidth:52,position:'relative'}}>
+        <PhDrone size={22} weight={view==='flights'?'fill':'regular'}/>
+        <span style={{fontSize:10,fontWeight:700}}>Voos</span>
+        {temVooAberto&&<span style={{position:'absolute',top:-3,right:10,width:8,height:8,borderRadius:'50%',background:'#0e9f6e',border:'2px solid #fff'}}/>}
       </div>
-      {(()=>{
-        const temVooAberto = flightsAbertos.length>0
-        return (
-          <div onClick={handleContinuarVoo} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:temVooAberto?'pointer':'default',marginTop:-26,position:'relative'}}>
-            <span style={{width:50,height:50,borderRadius:'50%',background:temVooAberto?'linear-gradient(135deg,#0e9f6e,#22c476)':'#c3d4c9',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:temVooAberto?'0 8px 20px rgba(14,159,110,0.45)':'none',border:'4px solid #fff'}}>
-              <IconRota size={21}/>
-              {flightsAbertos.length>1&&<span style={{position:'absolute',top:-2,right:-2,background:'#ffb020',color:'#3a2a00',fontSize:10,fontWeight:700,borderRadius:20,minWidth:17,height:17,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',border:'2px solid #fff'}}>{flightsAbertos.length}</span>}
-            </span>
-            <span style={{fontSize:9,fontWeight:700,color:temVooAberto?'#0e9f6e':'#a9beb1',whiteSpace:'nowrap'}}>{temVooAberto?'Continuar':'Novo voo'}</span>
-          </div>
-        )
-      })()}
-      <div onClick={()=>setView('mapa')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='mapa'?'#0e9f6e':'#a9beb1',minWidth:44}}>
-        <span style={{fontSize:19}}>🗺️</span>
-        <span style={{fontSize:9.5,fontWeight:700}}>Mapa</span>
+      <div onClick={()=>{loadNotas();setView('gestao')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='gestao'?'#0e9f6e':'#a9beb1',minWidth:52}}>
+        <PhGear size={22} weight={view==='gestao'?'fill':'regular'}/>
+        <span style={{fontSize:10,fontWeight:700}}>Gestão</span>
       </div>
-      <div onClick={()=>{loadAgenda();setView('agenda')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='agenda'?'#0e9f6e':'#a9beb1',minWidth:44,position:'relative'}}>
-        <span style={{fontSize:19}}>📅</span>
-        <span style={{fontSize:9.5,fontWeight:700}}>Agenda</span>
-        {minhaAgenda.filter(a=>a.status==='pendente').length>0&&<span style={{position:'absolute',top:-3,right:6,background:'#e5484d',color:'#fff',fontSize:9,fontWeight:700,borderRadius:20,minWidth:14,height:14,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',border:'2px solid #fff'}}>{minhaAgenda.filter(a=>a.status==='pendente').length}</span>}
+      <div onClick={()=>{loadAgenda();setView('agenda')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='agenda'?'#0e9f6e':'#a9beb1',minWidth:52,position:'relative'}}>
+        <PhCalendarBlank size={22} weight={view==='agenda'?'fill':'regular'}/>
+        <span style={{fontSize:10,fontWeight:700}}>Agenda</span>
+        {minhaAgenda.filter(a=>a.status==='pendente').length>0&&<span style={{position:'absolute',top:-3,right:8,background:'#e5484d',color:'#fff',fontSize:9,fontWeight:700,borderRadius:20,minWidth:14,height:14,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',border:'2px solid #fff'}}>{minhaAgenda.filter(a=>a.status==='pendente').length}</span>}
       </div>
     </div>
-  )
+  )}
 
   if(view==='home') {
     const draftAtivo = opState!=='idle' && opState!=='finished'
     const hoje = new Date()
     const mesmoDia = d => d && new Date(d).toDateString()===hoje.toDateString()
     const finalizados = flights.filter(r=>r.status==='finalizado')
-    const voosHoje = finalizados.filter(r=>mesmoDia(r.dt_inicio||r.created_at))
-    const areaHoje = voosHoje.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
+    // Resumo usa janela de 7 dias (não só "hoje") — um único dia quase sempre fica vazio,
+    // já que o piloto não voa todo santo dia na mesma fazenda.
+    const inicio7d = new Date(hoje); inicio7d.setDate(inicio7d.getDate()-6); inicio7d.setHours(0,0,0,0)
+    const voos7d = finalizados.filter(r=>{ const d=new Date(r.dt_inicio||r.created_at); return d>=inicio7d })
+    const area7d = voos7d.reduce((a,r)=>a+areaLiquida(r),0)
     const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
     const iniciais = (profile?.nome||'P').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
-    const minutosHoje = voosHoje.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
-    const horasHoje = minutosHoje/60
+    const minutos7d = voos7d.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
+    const horas7d = minutos7d/60
     const horaAtual = hoje.getHours()
     const saudacao = horaAtual<12 ? 'Bom dia' : horaAtual<18 ? 'Boa tarde' : 'Boa noite'
     const condDia = tempoDias?.[0]
@@ -1651,25 +1647,43 @@ export default function PilotApp({onSwitchMode}) {
               <MapPin size={12}/> {tempoLocal}
             </div>
           )}
-          <div onClick={()=>setView('tempo')} style={{display:'flex',alignItems:'center',gap:12,marginTop:8,background:'linear-gradient(120deg,#eef7f1,#f6faf7)',border:'1px solid #e6f0ea',borderRadius:16,padding:'10px 14px',cursor:'pointer'}}>
+          <div onClick={()=>setView('tempo')} style={{display:'flex',alignItems:'stretch',marginTop:8,background:'#f6faf7',border:'1px solid #e6f0ea',borderRadius:18,overflow:'hidden',cursor:'pointer',minHeight:106}}>
             {condDia ? (
               <>
-                {(() => { const WIcon = condDia.chuvaProb>=60?CloudRain:condDia.chuvaProb>=25?Cloud:Sun; return <WIcon size={26} color="#0e9f6e"/> })()}
-                <div>
-                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:'#0b1210'}}>{Math.round(condDia.tempMax)}°</span>
-                  <span style={{fontSize:12,color:'#0b1210',fontWeight:600}}> / {Math.round(condDia.tempMin)}°</span>
+                <div style={{flex:1,padding:'14px 6px 14px 16px',display:'flex',flexDirection:'column',justifyContent:'center',gap:11,minWidth:0}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    {(() => {
+                      const chuvoso = condDia.chuvaProb>=60, nublado = condDia.chuvaProb>=25
+                      const WIcon = chuvoso?CloudRain:nublado?Cloud:Sun
+                      const wc = chuvoso?'#2f6fed':nublado?'#8fa79a':'#f2960f'
+                      return <WIcon size={30} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'}/>
+                    })()}
+                    <div>
+                      <div><span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:25,color:'#0b1210'}}>{Math.round(condDia.tempMax)}°</span><span style={{fontSize:13,color:'#8fa79a',fontWeight:700}}> / {Math.round(condDia.tempMin)}°</span></div>
+                      <div style={{fontSize:11,color:'#5c7568',fontWeight:600,marginTop:1}}>{condDia.chuvaProb>=60?'Chuvoso':condDia.chuvaProb>=25?'Parcialmente nublado':'Ensolarado'}</div>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:7}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px'}}>
+                      <span style={{width:20,height:20,borderRadius:'50%',background:'#eef2f5',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Wind size={11} color="#5c7568"/></span>
+                      <span style={{fontSize:10.5,fontWeight:700,color:'#33473d',whiteSpace:'nowrap'}}>{Math.round(condDia.ventoMax)} km/h</span>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px'}}>
+                      <span style={{width:20,height:20,borderRadius:'50%',background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Droplets size={11} color="#2f6fed"/></span>
+                      <span style={{fontSize:10.5,fontWeight:700,color:'#33473d'}}>{condDia.chuvaProb}%</span>
+                    </div>
+                  </div>
                 </div>
-                <div style={{fontSize:11,color:'#5c7568',fontWeight:600,lineHeight:1.4}}>
-                  Vento {Math.round(condDia.ventoMax)} km/h<br/>{condDia.chuvaProb}% de chuva
+                <div style={{width:112,position:'relative',flexShrink:0,overflow:'hidden'}}>
+                  <img src={`${process.env.PUBLIC_URL||''}/weather-drone.jpg`} alt="Drone pulverizando lavoura" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
                 </div>
-                <span style={{marginLeft:'auto',color:'#a9beb1',fontSize:15}}>›</span>
               </>
             ) : (
-              <>
+              <div style={{flex:1,display:'flex',alignItems:'center',gap:10,padding:'14px 16px'}}>
                 <CloudSun size={22} color="#8fac9c"/>
                 <span style={{fontSize:12,color:'#5c7568',fontWeight:600}}>Buscando previsão do tempo...</span>
                 <span style={{marginLeft:'auto',color:'#a9beb1',fontSize:15}}>›</span>
-              </>
+              </div>
             )}
           </div>
           <div style={{marginTop:16}}>
@@ -1708,17 +1722,21 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           ))}
 
-          {/* Ações rápidas — 4 atalhos compactos (estilo DJI) */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+          {/* Ações rápidas — 5 atalhos compactos (estilo DJI) */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:5}}>
             {[
-              ['🚁','#e3f7ec','Novo\nVoo',()=>{ limpar(true); setView('form') }],
-              ['🧾','#fff3e0','Notas',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
-              ['🌤️','#f3ecfb','Tempo',()=>setView('tempo')],
-              ['⚠️','#fdeaea','Incidente',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
-            ].map(([icon,bg,label,onClick])=>(
+              [PhDrone,'#e3f7ec','#0e9f6e','Novo voo','Iniciar operação',()=>{ limpar(true); setView('form') }],
+              [PhClipboardText,'#e0ecfb','#2f6fed','Notas','Ver registros',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
+              [PhCloudSun,'#f3ecfb','#8e44ad','Tempo','Previsão detalhada',()=>setView('tempo')],
+              [PhWarning,'#fdeaea','#e5484d','Incidente','Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
+              [PhChartBar,'#e3f7ec','#0e9f6e','Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
+            ].map(([Icon,bg,fg,label,sub,onClick])=>(
               <div key={label} onClick={onClick} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,cursor:'pointer'}}>
-                <span style={{width:48,height:48,borderRadius:15,background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{icon}</span>
-                <span style={{fontSize:10,fontWeight:700,color:'#33473d',textAlign:'center',whiteSpace:'pre-line',lineHeight:1.15}}>{label}</span>
+                <span style={{width:46,height:46,borderRadius:14,background:bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon size={24} color={fg} weight="duotone"/></span>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:9.5,fontWeight:700,color:'#0b1210',lineHeight:1.15}}>{label}</div>
+                  <div style={{fontSize:7.6,color:'#8fa79a',fontWeight:600,lineHeight:1.2,marginTop:1}}>{sub}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -1732,20 +1750,20 @@ export default function PilotApp({onSwitchMode}) {
             <div style={{fontSize:11.5,fontWeight:700,marginTop:10,display:'flex',alignItems:'center',gap:4}}>Abrir mapa →</div>
           </div>
 
-          {/* Resumo do dia — número-herói + sub-stats */}
+          {/* Resumo dos últimos 7 dias — número-herói + sub-stats */}
           <div onClick={()=>{loadFlights();setView('flights')}} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px 14px',cursor:'pointer'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Resumo do dia</span>
-              <span style={{fontSize:11.5,fontWeight:700,color:'#0e9f6e'}}>{hoje.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} ›</span>
+              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Resumo dos últimos 7 dias</span>
+              <span style={{fontSize:11.5,fontWeight:700,color:'#0e9f6e',display:'flex',alignItems:'center',gap:3}}>{hoje.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} <CalendarDays size={12}/></span>
             </div>
             <div style={{marginTop:8,display:'flex',alignItems:'baseline',gap:8}}>
-              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{areaHoje.toFixed(areaHoje<10?1:0)}</span>
+              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{area7d.toFixed(area7d<10?1:0)}</span>
               <span style={{fontSize:13,fontWeight:700,color:'#7ba38f'}}>ha aplicados</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:14}}>
               {[
-                [IconDrone,voosHoje.length,'Voos'],
-                [Clock,horasHoje.toFixed(1)+'h','Tempo de voo'],
+                [IconDrone,voos7d.length,'Voos'],
+                [Clock,horas7d.toFixed(1)+'h','Tempo de voo'],
                 [condicoesOk===false?CloudRain:Sun,condicoesOk===null?'—':condicoesOk?'Apta':'Atenção','Condições'],
               ].map(([Icon,value,label])=>(
                 <div key={label} style={{display:'flex',flexDirection:'column',gap:3}}>
@@ -1970,6 +1988,79 @@ export default function PilotApp({onSwitchMode}) {
         <ExitConfirmModal/>
         <ConfirmDialogModal/>
         {mapaViewerOpen && fzSel && <MapaFazendaViewer supabase={supabase} fazenda={fzSel} onClose={()=>setMapaViewerOpen(false)}/>}
+      </div>
+    )
+  }
+
+  if(view==='gestao') {
+    const hojeG = new Date()
+    const notasFiltradas = minhasNotas.filter(n=>{
+      const d = new Date(n.data)
+      if(gestaoPeriodo==='tudo') return true
+      if(gestaoPeriodo==='30'){ const d30=new Date(hojeG); d30.setDate(d30.getDate()-30); return d>=d30 }
+      return d.getMonth()===hojeG.getMonth() && d.getFullYear()===hojeG.getFullYear()
+    })
+    const totalGestao = notasFiltradas.reduce((a,n)=>a+(parseFloat(n.valor)||0),0)
+    const porCategoria = {}
+    notasFiltradas.forEach(n=>{ porCategoria[n.categoria] = (porCategoria[n.categoria]||0) + (parseFloat(n.valor)||0) })
+    const categoriasOrdenadas = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1])
+    return (
+      <div style={{...s.wrap,paddingBottom:90}}>
+        <div style={s.header}>
+          <div style={s.headerInner}>
+            <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+            <div style={{display:'flex',gap:6}}>
+              {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+              <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+            </div>
+          </div>
+          <div style={s.headerSub}>📊 Gestão · Resumo financeiro</div>
+        </div>
+
+        <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{display:'flex',gap:8}}>
+            {[['mes','Este mês'],['30','30 dias'],['tudo','Tudo']].map(([v,lbl])=>(
+              <button key={v} style={{background:gestaoPeriodo===v?'#0e9f6e':'#f1f8f4',color:gestaoPeriodo===v?'#fff':'#5c7568',border:'none',borderRadius:20,padding:'7px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}
+                onClick={()=>setGestaoPeriodo(v)}>{lbl}</button>
+            ))}
+          </div>
+
+          <div style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:18}}>
+            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',letterSpacing:.5,textTransform:'uppercase'}}>Total gasto</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',marginTop:4,fontVariantNumeric:'tabular-nums'}}>R$ {totalGestao.toFixed(2)}</div>
+            <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{notasFiltradas.length} nota{notasFiltradas.length!==1?'s':''} lançada{notasFiltradas.length!==1?'s':''}</div>
+          </div>
+
+          <div>
+            <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>Por categoria</div>
+            {loadingNotas ? (
+              <div style={{textAlign:'center',color:'#5c7568',padding:24}}>Carregando...</div>
+            ) : categoriasOrdenadas.length===0 ? (
+              <div style={{textAlign:'center',color:'#5c7568',padding:24,background:'#fff',borderRadius:16,border:'1px solid #dcebe3',fontSize:13}}>Nenhuma nota nesse período</div>
+            ) : categoriasOrdenadas.map(([cat,total])=>{
+              const ic = CATEGORIA_DESPESA_OPTS.find(([c])=>c===cat)?.[1]||'🧾'
+              const pct = totalGestao>0 ? (total/totalGestao)*100 : 0
+              return (
+                <div key={cat} style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'12px 14px',marginBottom:8}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <span style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{ic} {cat}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {total.toFixed(2)}</span>
+                  </div>
+                  <div style={{height:6,background:'#eef5f0',borderRadius:20,overflow:'hidden',marginTop:8}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:'#0e9f6e',borderRadius:20}}/>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <button style={{background:'#f1f8f4',color:'#0e9f6e',border:'none',borderRadius:16,padding:'12px 16px',fontSize:13,fontWeight:700,cursor:'pointer'}}
+            onClick={()=>{loadOsOpcoes();setView('notas')}}>🧾 Lançar nova nota</button>
+        </div>
+        <BottomNav/>
+        {toast&&<div style={s.toast}>{toast}</div>}
+        <ExitConfirmModal/>
+        <ConfirmDialogModal/>
       </div>
     )
   }
