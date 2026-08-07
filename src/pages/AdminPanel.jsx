@@ -137,6 +137,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [workingDaysAnual, setWorkingDaysAnual] = useState(() => { try { return parseInt(localStorage.getItem('orofly_working_days')||'144') } catch { return 144 } })
   const [metaMensalHa, setMetaMensalHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_meta_mensal')||'0') } catch { return 0 } })
   const [pushAtivo, setPushAtivo] = useState(false)
+  const [heatMetrica, setHeatMetrica] = useState('voos') // 'voos' | 'area' | 'horas'
 
   // Sustentabilidade — premissas editáveis (persistidas localmente), com defaults de referência do setor
   const numLS = (key,def) => { try { const v=parseFloat(localStorage.getItem(key)); return isNaN(v)?def:v } catch { return def } }
@@ -1253,9 +1254,16 @@ export default function AdminPanel({ onSwitchMode }) {
 
             // ── Heatmap dias da semana ──
             const diasSemana = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
-            const heatDia = [0,0,0,0,0,0,0]
-            rel.forEach(r => { if(r.dt_inicio) heatDia[new Date(r.dt_inicio).getDay()]++ })
-            const heatData = diasSemana.map((d,i)=>({dia:d,voos:heatDia[i]}))
+            const heatStats = [0,1,2,3,4,5,6].map(()=>({voos:0,area:0,horas:0}))
+            rel.forEach(r => {
+              if(!r.dt_inicio) return
+              const st = heatStats[new Date(r.dt_inicio).getDay()]
+              st.voos++
+              st.area += parseFloat(r.area_ha||0)
+              if(r.dt_fim) st.horas += Math.max(0,(new Date(r.dt_fim)-new Date(r.dt_inicio))/3600000)
+            })
+            const heatData = diasSemana.map((d,i)=>({dia:d, voos:heatStats[i].voos, area:parseFloat(heatStats[i].area.toFixed(1)), horas:parseFloat(heatStats[i].horas.toFixed(1))}))
+            const HEAT_METRICA_INFO = { voos:{label:'Voos',unidade:''}, area:{label:'Área',unidade:'ha'}, horas:{label:'Horas',unidade:'h'} }
 
             // ── Produtos mais usados ──
             const prodUso = {}
@@ -1618,19 +1626,27 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* ── HEATMAP DIAS DA SEMANA ── */}
                 <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
-                  <SecTitle>📅 Produtividade por Dia da Semana</SecTitle>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8,marginBottom:4}}>
+                    <SecTitle>📅 Produtividade por Dia da Semana</SecTitle>
+                    <div style={{display:'flex',gap:6}}>
+                      {Object.entries(HEAT_METRICA_INFO).map(([key,info])=>(
+                        <button key={key} style={{background:heatMetrica===key?'#0e9f6e':'#f1f8f4',color:heatMetrica===key?'#fff':'#5c7568',border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                          onClick={()=>setHeatMetrica(key)}>{info.label}</button>
+                      ))}
+                    </div>
+                  </div>
                   <ResponsiveContainer width="100%" height={120}>
                     <BarChart data={heatData} margin={{top:5,right:10,left:-30,bottom:5}}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
                       <XAxis dataKey="dia" tick={{fontSize:11,fill:'#5c7568'}} tickLine={false}/>
                       <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                      <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v,'Voos']}/>
-                      <Bar dataKey="voos" radius={[6,6,0,0]}>
-                        {heatData.map((entry,i)=><Cell key={i} fill={entry.voos===Math.max(...heatData.map(d=>d.voos))?'#ffb020':'#0e9f6e'}/>)}
+                      <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[`${v}${HEAT_METRICA_INFO[heatMetrica].unidade?' '+HEAT_METRICA_INFO[heatMetrica].unidade:''}`,HEAT_METRICA_INFO[heatMetrica].label]}/>
+                      <Bar dataKey={heatMetrica} radius={[6,6,0,0]}>
+                        {heatData.map((entry,i)=><Cell key={i} fill={entry[heatMetrica]===Math.max(...heatData.map(d=>d[heatMetrica]))?'#ffb020':'#0e9f6e'}/>)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                  <div style={{fontSize:11,color:'#7ba38f',textAlign:'center',marginTop:4}}>⭐ Dia mais produtivo: {heatData.reduce((a,b)=>a.voos>b.voos?a:b,{voos:0,dia:'—'}).dia}</div>
+                  <div style={{fontSize:11,color:'#7ba38f',textAlign:'center',marginTop:4}}>⭐ Dia mais produtivo: {heatData.reduce((a,b)=>a[heatMetrica]>b[heatMetrica]?a:b,{[heatMetrica]:0,dia:'—'}).dia}</div>
                 </div>
 
                 {/* ── DRONES + MANUTENÇÃO ── */}
