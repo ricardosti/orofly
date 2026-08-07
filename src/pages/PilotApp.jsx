@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { ComposedChart, BarChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida } from '../lib/pdf'
@@ -9,7 +9,7 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
-import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun } from 'lucide-react'
+import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, MapPin, Navigation } from 'lucide-react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -362,6 +362,7 @@ export default function PilotApp({onSwitchMode}) {
   const [clientesDB, setClientesDB] = useState([])
   const [fazendasDB, setFazendasDB] = useState([])
   const [mapaViewerOpen, setMapaViewerOpen] = useState(false)
+  const [mapaTabFazendaId, setMapaTabFazendaId] = useState('')
   const [fazendaTimes, setFazendaTimes] = useState([])
   const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState([])
   const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
@@ -464,6 +465,7 @@ export default function PilotApp({onSwitchMode}) {
   const [loadingNotas,setLoadingNotas] = useState(false)
   const [minhaAgenda,setMinhaAgenda] = useState([])
   const [loadingAgenda,setLoadingAgenda] = useState(false)
+  const [agendaDiaFiltro,setAgendaDiaFiltro] = useState('')
   const [agendaDetalhe,setAgendaDetalhe] = useState(null)
   const [recusaModal,setRecusaModal] = useState(null)
   const [recusaMotivo,setRecusaMotivo] = useState('')
@@ -1580,26 +1582,35 @@ export default function PilotApp({onSwitchMode}) {
   )
 
   const BottomNav = () => (
-    <div style={{position:'fixed',left:0,right:0,bottom:0,maxWidth:480,margin:'0 auto',background:'#fff',borderTop:'1px solid #dcebe3',padding:'10px 20px calc(env(safe-area-inset-bottom,0px) + 10px)',display:'flex',justifyContent:'space-around',alignItems:'flex-end',zIndex:50,boxShadow:'0 -8px 24px rgba(11,18,16,0.06)'}}>
-      <div onClick={()=>setView('home')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='home'?'#0e9f6e':'#a9beb1',minWidth:52}}>
-        <span style={{fontSize:20}}>🏠</span>
-        <span style={{fontSize:10,fontWeight:700}}>Início</span>
+    <div style={{position:'fixed',left:0,right:0,bottom:0,maxWidth:480,margin:'0 auto',background:'#fff',borderTop:'1px solid #dcebe3',padding:'9px 10px calc(env(safe-area-inset-bottom,0px) + 9px)',display:'flex',justifyContent:'space-around',alignItems:'flex-end',zIndex:50,boxShadow:'0 -8px 24px rgba(11,18,16,0.06)'}}>
+      <div onClick={()=>setView('home')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='home'?'#0e9f6e':'#a9beb1',minWidth:44}}>
+        <span style={{fontSize:19}}>🏠</span>
+        <span style={{fontSize:9.5,fontWeight:700}}>Início</span>
+      </div>
+      <div onClick={()=>{loadFlights();setView('flights')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='flights'?'#0e9f6e':'#a9beb1',minWidth:44}}>
+        <span style={{fontSize:19}}>🚁</span>
+        <span style={{fontSize:9.5,fontWeight:700}}>Voos</span>
       </div>
       {(()=>{
         const temVooAberto = flightsAbertos.length>0
         return (
           <div onClick={handleContinuarVoo} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,cursor:temVooAberto?'pointer':'default',marginTop:-26,position:'relative'}}>
-            <span style={{width:52,height:52,borderRadius:'50%',background:temVooAberto?'linear-gradient(135deg,#0e9f6e,#22c476)':'#c3d4c9',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:temVooAberto?'0 8px 20px rgba(14,159,110,0.45)':'none',border:'4px solid #fff'}}>
-              <IconRota size={22}/>
+            <span style={{width:50,height:50,borderRadius:'50%',background:temVooAberto?'linear-gradient(135deg,#0e9f6e,#22c476)':'#c3d4c9',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',boxShadow:temVooAberto?'0 8px 20px rgba(14,159,110,0.45)':'none',border:'4px solid #fff'}}>
+              <IconRota size={21}/>
               {flightsAbertos.length>1&&<span style={{position:'absolute',top:-2,right:-2,background:'#ffb020',color:'#3a2a00',fontSize:10,fontWeight:700,borderRadius:20,minWidth:17,height:17,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',border:'2px solid #fff'}}>{flightsAbertos.length}</span>}
             </span>
-            <span style={{fontSize:10,fontWeight:700,color:temVooAberto?'#0e9f6e':'#a9beb1'}}>Continuar voo</span>
+            <span style={{fontSize:9,fontWeight:700,color:temVooAberto?'#0e9f6e':'#a9beb1',whiteSpace:'nowrap'}}>{temVooAberto?'Continuar':'Novo voo'}</span>
           </div>
         )
       })()}
-      <div onClick={()=>{loadFlights();setView('flights')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='flights'?'#0e9f6e':'#a9beb1',minWidth:52}}>
-        <span style={{fontSize:20}}>📋</span>
-        <span style={{fontSize:10,fontWeight:700}}>Relatórios</span>
+      <div onClick={()=>setView('mapa')} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='mapa'?'#0e9f6e':'#a9beb1',minWidth:44}}>
+        <span style={{fontSize:19}}>🗺️</span>
+        <span style={{fontSize:9.5,fontWeight:700}}>Mapa</span>
+      </div>
+      <div onClick={()=>{loadAgenda();setView('agenda')}} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3,cursor:'pointer',color:view==='agenda'?'#0e9f6e':'#a9beb1',minWidth:44,position:'relative'}}>
+        <span style={{fontSize:19}}>📅</span>
+        <span style={{fontSize:9.5,fontWeight:700}}>Agenda</span>
+        {minhaAgenda.filter(a=>a.status==='pendente').length>0&&<span style={{position:'absolute',top:-3,right:6,background:'#e5484d',color:'#fff',fontSize:9,fontWeight:700,borderRadius:20,minWidth:14,height:14,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',border:'2px solid #fff'}}>{minhaAgenda.filter(a=>a.status==='pendente').length}</span>}
       </div>
     </div>
   )
@@ -1635,11 +1646,34 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
           </div>
-          <div style={{marginTop:22}}>
-            <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{saudacao}, {primeiroNome}</div>
-            <div style={{fontSize:14,color:'#7ba38f',marginTop:4,display:'flex',alignItems:'center',gap:6}}>
-              Hoje: {voosHoje.length} voos · {areaHoje.toFixed(areaHoje<10?1:0)} ha{condicoesOk!==null && <> · Condições {condicoesOk?'✅':'⚠️'}</>}
+          {tempoLocal && (
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11,color:'#7ba38f',fontWeight:600,marginTop:14}}>
+              <MapPin size={12}/> {tempoLocal}
             </div>
+          )}
+          <div onClick={()=>setView('tempo')} style={{display:'flex',alignItems:'center',gap:12,marginTop:8,background:'linear-gradient(120deg,#eef7f1,#f6faf7)',border:'1px solid #e6f0ea',borderRadius:16,padding:'10px 14px',cursor:'pointer'}}>
+            {condDia ? (
+              <>
+                {(() => { const WIcon = condDia.chuvaProb>=60?CloudRain:condDia.chuvaProb>=25?Cloud:Sun; return <WIcon size={26} color="#0e9f6e"/> })()}
+                <div>
+                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:'#0b1210'}}>{Math.round(condDia.tempMax)}°</span>
+                  <span style={{fontSize:12,color:'#0b1210',fontWeight:600}}> / {Math.round(condDia.tempMin)}°</span>
+                </div>
+                <div style={{fontSize:11,color:'#5c7568',fontWeight:600,lineHeight:1.4}}>
+                  Vento {Math.round(condDia.ventoMax)} km/h<br/>{condDia.chuvaProb}% de chuva
+                </div>
+                <span style={{marginLeft:'auto',color:'#a9beb1',fontSize:15}}>›</span>
+              </>
+            ) : (
+              <>
+                <CloudSun size={22} color="#8fac9c"/>
+                <span style={{fontSize:12,color:'#5c7568',fontWeight:600}}>Buscando previsão do tempo...</span>
+                <span style={{marginLeft:'auto',color:'#a9beb1',fontSize:15}}>›</span>
+              </>
+            )}
+          </div>
+          <div style={{marginTop:16}}>
+            <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{saudacao}, {primeiroNome}</div>
           </div>
         </div>
 
@@ -1674,101 +1708,77 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           ))}
 
-          {/* Ação principal */}
-          <button style={{background:draftAtivo?'#fff':'linear-gradient(135deg,#0e9f6e,#22c476)',color:draftAtivo?'#0e9f6e':'#fff',border:draftAtivo?'2px solid #0e9f6e':'none',borderRadius:24,padding:'20px',display:'flex',alignItems:'center',gap:14,cursor:'pointer',textAlign:'left',boxShadow:draftAtivo?'none':'0 10px 24px rgba(14,159,110,0.3)'}}
-            onClick={()=>{
-              // Novo Voo sempre começa do zero, sem perguntar nada — o voo anterior (se houver)
-              // já está salvo no servidor e continua acessível por "Continuar voo".
-              limpar(true); setView('form')
-            }}>
-            <span style={{width:48,height:48,borderRadius:14,background:draftAtivo?'#e3f7ec':'rgba(255,255,255,0.2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,color:draftAtivo?'#0e9f6e':'#fff'}}><IconRota size={24}/></span>
-            <div>
-              <div style={{fontSize:16,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Novo Voo</div>
-              <div style={{fontSize:12,opacity:.85}}>Iniciar uma nova operação</div>
-            </div>
-            <span style={{marginLeft:'auto',fontSize:18}}>›</span>
-          </button>
-
-          {/* Estatísticas do dia */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+          {/* Ações rápidas — 4 atalhos compactos (estilo DJI) */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
             {[
-              [IconDrone,'#0e9f6e',voosHoje.length,'Voos',()=>{loadFlights();setView('flights')}],
-              [Clock,'#2f6fed',horasHoje.toFixed(1)+'h','Horas de Voo',()=>{loadFlights();setView('flights')}],
-              [Map,'#f2960f',areaHoje.toFixed(0)+' ha','Área Pulverizada',()=>{loadFlights();setView('flights')}],
-            ].map(([Icon,color,value,label,onClick])=>(
-              <div key={label} onClick={onClick} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px 6px',textAlign:'center',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',cursor:'pointer'}}>
-                <Icon size={26} color={color} style={{marginBottom:8}}/>
-                <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{value}</div>
-                <div style={{fontSize:11,color:'#7ba38f',marginTop:3}}>{label}</div>
+              ['🚁','#e3f7ec','Novo\nVoo',()=>{ limpar(true); setView('form') }],
+              ['🧾','#fff3e0','Notas',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
+              ['🌤️','#f3ecfb','Tempo',()=>setView('tempo')],
+              ['⚠️','#fdeaea','Incidente',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
+            ].map(([icon,bg,label,onClick])=>(
+              <div key={label} onClick={onClick} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,cursor:'pointer'}}>
+                <span style={{width:48,height:48,borderRadius:15,background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{icon}</span>
+                <span style={{fontSize:10,fontWeight:700,color:'#33473d',textAlign:'center',whiteSpace:'pre-line',lineHeight:1.15}}>{label}</span>
               </div>
             ))}
           </div>
 
-          {/* Menu — grid 2x2 */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-            {(()=>{
-              const hoje=new Date()
-              const voosMes = flights.filter(f=>{const d=new Date(f.created_at);return d.getMonth()===hoje.getMonth()&&d.getFullYear()===hoje.getFullYear()}).length
-              return (
-                <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-                  onClick={()=>{loadFlights();setView('flights')}}>
-                  <span style={{width:44,height:44,borderRadius:14,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><FileBarChart2 size={20} color="#0e9f6e"/></span>
-                  <div>
-                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Meus Relatórios</div>
-                    <div style={{fontSize:11,color:'#7ba38f'}}>{voosMes>0?`${voosMes} voo(s) este mês`:'Ver histórico'}</div>
-                  </div>
-                </button>
-              )
-            })()}
-
-            {(()=>{
-              const pendentes = minhaAgenda.filter(a=>a.status==='pendente')
-              return (
-                <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-                  onClick={()=>{loadAgenda();setView('agenda')}}>
-                  <span style={{width:44,height:44,borderRadius:14,background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,position:'relative'}}>
-                    <CalendarDays size={20} color="#2f6fed"/>
-                    {pendentes.length>0&&<span style={{position:'absolute',top:-4,right:-4,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,borderRadius:20,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>{pendentes.length}</span>}
-                  </span>
-                  <div>
-                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Minha Agenda</div>
-                    <div style={{fontSize:11,color:'#7ba38f'}}>{pendentes.length>0?`${pendentes.length} programado(s)`:'Nenhum voo'}</div>
-                  </div>
-                </button>
-              )
-            })()}
-
-            {(()=>{
-              const hoje=new Date()
-              const notasMes = minhasNotas.filter(n=>{const d=new Date(n.created_at||n.data);return d.getMonth()===hoje.getMonth()&&d.getFullYear()===hoje.getFullYear()}).length
-              return (
-                <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-                  onClick={()=>{loadNotas();loadOsOpcoes();setView('notas')}}>
-                  <span style={{width:44,height:44,borderRadius:14,background:'#fff3e0',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Receipt size={20} color="#f2960f"/></span>
-                  <div>
-                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Cadastro de Notas</div>
-                    <div style={{fontSize:11,color:'#7ba38f'}}>{notasMes>0?`${notasMes} nota(s) este mês`:'Almoço, gasolina...'}</div>
-                  </div>
-                </button>
-              )
-            })()}
-
-            <button style={{background:'#fff',color:'#0b1210',border:'1px solid #dcebe3',borderRadius:22,padding:'16px',display:'flex',flexDirection:'column',gap:10,cursor:'pointer',textAlign:'left',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}
-              onClick={()=>setView('tempo')}>
-              <span style={{width:44,height:44,borderRadius:14,background:'#f3ecfb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><CloudSun size={20} color="#8e44ad"/></span>
-              <div>
-                <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Previsão do Tempo</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>{tempoDias?`${Math.round(tempoDias[0].tempMax)}°C hoje`:'Chuva e Delta T'}</div>
-              </div>
-            </button>
+          {/* Promo — mapa da fazenda */}
+          <div onClick={()=>setView('mapa')} style={{borderRadius:20,padding:'16px 18px',color:'#fff',position:'relative',overflow:'hidden',cursor:'pointer',background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',boxShadow:'0 10px 24px rgba(14,159,110,0.3)'}}>
+            <span style={{position:'absolute',right:-6,bottom:-16,fontSize:76,opacity:.16,transform:'rotate(-8deg)'}}>🗺️</span>
+            <div style={{fontSize:10,fontWeight:700,letterSpacing:.6,textTransform:'uppercase',opacity:.85}}>Mapa da fazenda</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:16,marginTop:3}}>Sua posição ao vivo sobre o talhão</div>
+            <div style={{fontSize:11.5,opacity:.9,marginTop:4,maxWidth:210,lineHeight:1.4}}>Veja se está dentro da área aplicada, em tempo real</div>
+            <div style={{fontSize:11.5,fontWeight:700,marginTop:10,display:'flex',alignItems:'center',gap:4}}>Abrir mapa →</div>
           </div>
 
-          <button style={{background:'#fdeaea',color:'#e5484d',border:'1px solid #f5c6c6',borderRadius:18,padding:'12px 16px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',textAlign:'left'}}
-            onClick={()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}}>
-            <span style={{fontSize:18}}>⚠️</span>
-            <span style={{fontSize:13,fontWeight:700,fontFamily:"'Syne',sans-serif"}}>Registrar Incidente</span>
-            <span style={{marginLeft:'auto',fontSize:16}}>›</span>
-          </button>
+          {/* Resumo do dia — número-herói + sub-stats */}
+          <div onClick={()=>{loadFlights();setView('flights')}} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px 14px',cursor:'pointer'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Resumo do dia</span>
+              <span style={{fontSize:11.5,fontWeight:700,color:'#0e9f6e'}}>{hoje.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} ›</span>
+            </div>
+            <div style={{marginTop:8,display:'flex',alignItems:'baseline',gap:8}}>
+              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{areaHoje.toFixed(areaHoje<10?1:0)}</span>
+              <span style={{fontSize:13,fontWeight:700,color:'#7ba38f'}}>ha aplicados</span>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:14}}>
+              {[
+                [IconDrone,voosHoje.length,'Voos'],
+                [Clock,horasHoje.toFixed(1)+'h','Tempo de voo'],
+                [condicoesOk===false?CloudRain:Sun,condicoesOk===null?'—':condicoesOk?'Apta':'Atenção','Condições'],
+              ].map(([Icon,value,label])=>(
+                <div key={label} style={{display:'flex',flexDirection:'column',gap:3}}>
+                  <Icon size={15} color="#0e9f6e"/>
+                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{value}</span>
+                  <span style={{fontSize:8.7,color:'#8fa79a',fontWeight:600,textTransform:'uppercase',letterSpacing:.02}}>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Últimos relatórios finalizados */}
+          {finalizados.length>0 && (()=>{
+            const ultimos = [...finalizados].sort((a,b)=>new Date(b.dt_inicio||b.created_at)-new Date(a.dt_inicio||a.created_at)).slice(0,2)
+            return (
+              <div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Últimos relatórios</span>
+                  <span onClick={()=>{loadFlights();setView('flights')}} style={{fontSize:11,fontWeight:700,color:'#0e9f6e',cursor:'pointer'}}>Ver todos ›</span>
+                </div>
+                <div style={{display:'flex',gap:10}}>
+                  {ultimos.map((rel,i)=>(
+                    <div key={rel.id} onClick={()=>openFlight(rel)} style={{flex:1,borderRadius:16,padding:'12px 13px',color:'#fff',position:'relative',overflow:'hidden',minHeight:88,display:'flex',flexDirection:'column',justifyContent:'flex-end',cursor:'pointer',background:i===0?'linear-gradient(150deg,#1c8a5c,#0b3d2b)':'linear-gradient(150deg,#2a6f56,#0d2a20)'}}>
+                      <span style={{position:'absolute',right:4,top:6,fontSize:34,opacity:.22}}>🌾</span>
+                      <span style={{fontSize:9,fontWeight:700,opacity:.8,textTransform:'uppercase',letterSpacing:.03}}>Finalizado</span>
+                      <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13,marginTop:2}}>{rel.fazenda||'—'}</span>
+                      <span style={{fontSize:10,opacity:.85,marginTop:3}}>{rel.area_ha?`${areaLiquida(rel).toFixed(1)} ha`:'—'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Voos compartilhados pendentes */}
           {voosCompartilhados.length>0&&(
@@ -1806,8 +1816,50 @@ export default function PilotApp({onSwitchMode}) {
         </div>
         <div style={s.headerSub}>Meus Voos · {profile?.nome}</div>
       </div>
-      <div style={s.statusBar}><span>📋 Histórico de voos</span></div>
       <div style={{padding:16,flex:1,display:'flex',flexDirection:'column',gap:10}}>
+        {(()=>{
+          const hoje30 = new Date(); const d30 = new Date(hoje30); d30.setDate(d30.getDate()-30)
+          const d60 = new Date(hoje30); d60.setDate(d60.getDate()-60)
+          const dataVoo = r => new Date(r.dt_inicio||r.created_at)
+          const finalizadosV = flights.filter(f=>f.status==='finalizado')
+          const ult30 = finalizadosV.filter(r=>dataVoo(r)>=d30)
+          const ant30 = finalizadosV.filter(r=>dataVoo(r)>=d60&&dataVoo(r)<d30)
+          const areaUlt30 = ult30.reduce((a,r)=>a+areaLiquida(r),0)
+          const areaAnt30 = ant30.reduce((a,r)=>a+areaLiquida(r),0)
+          const delta = areaAnt30>0 ? Math.round(((areaUlt30-areaAnt30)/areaAnt30)*100) : null
+          const dias7 = [...Array(7)].map((_,i)=>{
+            const d = new Date(); d.setDate(d.getDate()-(6-i)); d.setHours(0,0,0,0)
+            const dn = new Date(d); dn.setDate(dn.getDate()+1)
+            const area = finalizadosV.filter(r=>{const dr=dataVoo(r);return dr>=d&&dr<dn}).reduce((a,r)=>a+areaLiquida(r),0)
+            return { dia: d.toLocaleDateString('pt-BR',{day:'2-digit'}), area: +area.toFixed(1) }
+          })
+          if(finalizadosV.length===0) return null
+          return (
+            <>
+              <div style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px'}}>
+                <div style={{display:'flex',alignItems:'baseline',gap:8}}>
+                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:30,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{areaUlt30.toFixed(1)}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:'#7ba38f'}}>ha</span>
+                </div>
+                <div style={{fontSize:12,color:'#5c7568',marginTop:4}}>
+                  aplicados nos últimos 30 dias{delta!==null && <> · <span style={{color:delta>=0?'#0e9f6e':'#e5484d',fontWeight:700}}>{delta>=0?'▲':'▼'} {Math.abs(delta)}% vs. período anterior</span></>}
+                </div>
+              </div>
+              <div style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px 8px'}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:12.5,color:'#0b1210',marginBottom:6}}>Área aplicada por dia</div>
+                <ResponsiveContainer width="100%" height={110}>
+                  <BarChart data={dias7} margin={{top:8,right:0,left:0,bottom:0}}>
+                    <XAxis dataKey="dia" tick={{fontSize:9,fill:'#a9beb1'}} axisLine={false} tickLine={false}/>
+                    <Tooltip formatter={v=>[`${v} ha`,'Área']} contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                    <Bar dataKey="area" radius={[5,5,2,2]}>
+                      {dias7.map((d,i)=>(<Cell key={i} fill={d.area>0?'#0e9f6e':'#e6f0ea'}/>))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )
+        })()}
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
           <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13}} onClick={()=>setView('home')}>← Voltar</button>
           {flights.some(f=>f.status==='rascunho')&&(
@@ -1859,6 +1911,68 @@ export default function PilotApp({onSwitchMode}) {
       <ConfirmDialogModal/>
     </div>
   )
+
+  if(view==='mapa') {
+    const fazendasComMapa = fazendasDB.filter(f=>f.mapa_pdf_path)
+    const vooAberto = flightsAbertos[0]
+    const hojeStr = new Date().toDateString()
+    const agendaHoje = minhaAgenda.find(a=>a.status==='pendente' && new Date(a.data_prevista+'T12:00:00').toDateString()===hojeStr)
+    const defaultFz = fazendasComMapa.find(f=>vooAberto&&f.cliente===vooAberto.cliente&&f.nome===vooAberto.fazenda)
+      || fazendasComMapa.find(f=>agendaHoje&&f.cliente===agendaHoje.cliente&&f.nome===agendaHoje.fazenda)
+      || fazendasComMapa[0]
+    const fzSel = fazendasComMapa.find(f=>f.id===mapaTabFazendaId) || defaultFz
+    return (
+      <div style={{...s.wrap,paddingBottom:90}}>
+        <div style={s.header}>
+          <div style={s.headerInner}>
+            <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+            <div style={{display:'flex',gap:6}}>
+              {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+              <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+            </div>
+          </div>
+          <div style={s.headerSub}>🗺️ Mapa da Fazenda</div>
+        </div>
+        <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
+          {fazendasComMapa.length===0 ? (
+            <div style={{textAlign:'center',color:'#5c7568',padding:'40px 20px',background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>
+              Nenhuma fazenda com mapa cadastrado ainda.<br/><span style={{fontSize:12,color:'#a9beb1'}}>Peça pro admin subir o PDF georreferenciado da fazenda.</span>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>FAZENDA</label>
+                <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'}}
+                  value={fzSel?.id||''} onChange={e=>setMapaTabFazendaId(e.target.value)}>
+                  {fazendasComMapa.map(f=>(<option key={f.id} value={f.id}>{f.nome} — {f.cliente}</option>))}
+                </select>
+              </div>
+              {fzSel && (
+                <div style={{background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',borderRadius:22,padding:20,color:'#fff',boxShadow:'0 10px 26px rgba(14,159,110,0.3)',position:'relative',overflow:'hidden',cursor:'pointer'}}
+                  onClick={()=>setMapaViewerOpen(true)}>
+                  <span style={{position:'absolute',right:-10,bottom:-14,fontSize:76,opacity:.15}}>🗺️</span>
+                  <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>MAPA GEORREFERENCIADO</div>
+                  <div style={{fontSize:19,fontWeight:700,marginTop:5,fontFamily:"'Syne',sans-serif"}}>{fzSel.nome}</div>
+                  <div style={{fontSize:12,opacity:.85,marginTop:2}}>{fzSel.cliente}</div>
+                  <div style={{fontSize:13,opacity:.95,marginTop:14,display:'flex',alignItems:'center',gap:6}}><Navigation size={15}/> Ver sua posição ao vivo <span style={{marginLeft:'auto'}}>›</span></div>
+                </div>
+              )}
+              {vooAberto && fzSel && vooAberto.cliente===fzSel.cliente && vooAberto.fazenda===fzSel.nome && (
+                <div style={{background:'#e3f7ec',borderRadius:14,padding:'10px 13px',fontSize:12,color:'#0e9f6e',fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
+                  🟢 Você tem um voo em andamento nessa fazenda
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <BottomNav/>
+        {toast&&<div style={s.toast}>{toast}</div>}
+        <ExitConfirmModal/>
+        <ConfirmDialogModal/>
+        {mapaViewerOpen && fzSel && <MapaFazendaViewer supabase={supabase} fazenda={fzSel} onClose={()=>setMapaViewerOpen(false)}/>}
+      </div>
+    )
+  }
 
   if(view==='notas') return (
     <div style={{...s.wrap,paddingBottom:90}}>
@@ -2381,12 +2495,40 @@ export default function PilotApp({onSwitchMode}) {
         <div style={s.headerSub}>📅 Minha Agenda</div>
       </div>
 
-      <div style={{padding:16,display:'flex',flexDirection:'column',gap:10}}>
-        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
+      {(()=>{
+        const hojeD = new Date(); hojeD.setHours(0,0,0,0)
+        const segunda = new Date(hojeD); segunda.setDate(segunda.getDate()-((segunda.getDay()+6)%7))
+        const dias = [...Array(7)].map((_,i)=>{ const d=new Date(segunda); d.setDate(d.getDate()+i); return d })
+        const toStr = d => d.toISOString().slice(0,10)
+        return (
+          <div style={{display:'flex',justifyContent:'space-between',padding:'12px 14px 4px'}}>
+            {dias.map(d=>{
+              const dStr = toStr(d)
+              const isToday = d.getTime()===hojeD.getTime()
+              const isSel = agendaDiaFiltro===dStr
+              const temAgenda = minhaAgenda.some(a=>a.data_prevista===dStr)
+              return (
+                <div key={dStr} onClick={()=>setAgendaDiaFiltro(isSel?'':dStr)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:5,width:32,cursor:'pointer'}}>
+                  <span style={{fontSize:9,color:'#a9beb1',fontWeight:700}}>{d.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','').toUpperCase()}</span>
+                  <span style={{width:30,height:30,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:12.5,color:isSel?'#fff':'#0b1210',background:isSel?'#0e9f6e':isToday?'#e3f7ec':'transparent'}}>{d.getDate()}</span>
+                  <span style={{width:4,height:4,borderRadius:'50%',background:'#0e9f6e',opacity:temAgenda?1:0}}/>
+                </div>
+              )
+            })}
+          </div>
+        )
+      })()}
 
-        {loadingAgenda?<div style={{textAlign:'center',color:'#5c7568',padding:40}}>Carregando...</div>
-        :minhaAgenda.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:40,background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>Nenhum voo programado pelo admin ainda</div>
-        :minhaAgenda.map(a=>{
+      <div style={{padding:16,display:'flex',flexDirection:'column',gap:10}}>
+        {agendaDiaFiltro && (
+          <button style={{...s.nowBtn,padding:'8px 14px',fontSize:12,alignSelf:'flex-start',background:'#f1f8f4',color:'#5c7568'}} onClick={()=>setAgendaDiaFiltro('')}>✕ Ver semana toda</button>
+        )}
+
+        {(()=>{
+          const agendaFiltrada = agendaDiaFiltro ? minhaAgenda.filter(a=>a.data_prevista===agendaDiaFiltro) : minhaAgenda
+          if(loadingAgenda) return <div style={{textAlign:'center',color:'#5c7568',padding:40}}>Carregando...</div>
+          if(agendaFiltrada.length===0) return <div style={{textAlign:'center',color:'#5c7568',padding:40,background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>{agendaDiaFiltro?'Nada programado nesse dia':'Nenhum voo programado pelo admin ainda'}</div>
+          return agendaFiltrada.map(a=>{
           const hoje = new Date(); hoje.setHours(0,0,0,0)
           const atrasado = a.status==='pendente' && new Date(a.data_prevista)<hoje
           const STATUS_BADGE = {pendente:{label:'Pendente',bg:'#fff3e0',cor:'#f2960f'},concluido:{label:'Concluído',bg:'#e3f7ec',cor:'#0e9f6e'},cancelado:{label:'Cancelado',bg:'#fdeaea',cor:'#e5484d'},recusado:{label:'Recusado',bg:'#fdeaea',cor:'#e5484d'}}
@@ -2417,7 +2559,8 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
           )
-        })}
+        })
+        })()}
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}
