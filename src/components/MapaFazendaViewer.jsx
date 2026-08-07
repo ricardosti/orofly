@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { renderPdfPageToCanvas, latLngParaPixel } from '../lib/geopdf'
+import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm } from '../lib/geopdf'
 
 // Mapa georreferenciado da fazenda (estilo Avenza) — renderiza o PDF cadastrado e sobrepõe
 // a posição de GPS ao vivo do usuário, convertida via os 4 cantos (lat/lng) cadastrados.
@@ -13,6 +13,15 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
 
   const temMapa = !!fazenda?.mapa_pdf_path
   const temBounds = fazenda?.mapa_lat_min != null && fazenda?.mapa_lat_max != null && fazenda?.mapa_lng_min != null && fazenda?.mapa_lng_max != null
+
+  // Pra onde apontar o "Abrir no Maps": usa o ponto cadastrado na fazenda se tiver, senão
+  // cai pro centro do próprio mapa georreferenciado — assim funciona mesmo se o admin só
+  // preencheu os 4 cantos do mapa e não o lat/lng "simples" da fazenda.
+  const destino = (fazenda?.lat && fazenda?.lng)
+    ? { lat: fazenda.lat, lng: fazenda.lng }
+    : temBounds
+      ? { lat: (fazenda.mapa_lat_min + fazenda.mapa_lat_max) / 2, lng: (fazenda.mapa_lng_min + fazenda.mapa_lng_max) / 2 }
+      : null
 
   useEffect(() => {
     if (!temMapa) { setCarregando(false); return }
@@ -34,18 +43,22 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     return () => { cancelado = true }
   }, [supabase, fazenda?.mapa_pdf_path, temMapa])
 
+  // Segue o GPS sempre que der pra comparar com algum destino — mesmo longe da fazenda,
+  // isso já mostra distância e o link do Maps, útil pra quem tá testando ou se deslocando.
   useEffect(() => {
-    if (!temMapa || !temBounds || !navigator.geolocation) return
+    if (!destino || !navigator.geolocation) return
     const watchId = navigator.geolocation.watchPosition(
       p => setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
       () => {},
       { enableHighAccuracy: true, maximumAge: 3000 }
     )
     return () => navigator.geolocation.clearWatch(watchId)
-  }, [temMapa, temBounds])
+  }, [destino?.lat, destino?.lng])
 
   const bounds = temBounds ? { latMin: fazenda.mapa_lat_min, latMax: fazenda.mapa_lat_max, lngMin: fazenda.mapa_lng_min, lngMax: fazenda.mapa_lng_max } : null
   const pinPx = pos && bounds && tamCanvas.width ? latLngParaPixel(pos.lat, pos.lng, bounds, tamCanvas.width, tamCanvas.height) : null
+  const distKm = pos && destino ? distanciaKm(pos.lat, pos.lng, destino.lat, destino.lng) : null
+  const longe = distKm != null && distKm > 5 // mais de 5km: nem faz sentido falar de "dentro/fora do talhão", é caso de navegação mesmo
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(11,18,16,.7)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:14 }} onClick={onClose}>
@@ -61,8 +74,8 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         {!temMapa ? (
           <div style={{ background:'#f7fbf8', borderRadius:14, padding:24, textAlign:'center', fontSize:13, color:'#5c7568' }}>
             Essa fazenda ainda não tem mapa cadastrado.
-            {fazenda?.lat && fazenda?.lng && (
-              <a href={`https://maps.google.com/?q=${fazenda.lat},${fazenda.lng}`} target="_blank" rel="noreferrer"
+            {destino && (
+              <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer"
                 style={{ display:'block', marginTop:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir localização no Maps</a>
             )}
           </div>
@@ -87,8 +100,12 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
                 <div style={{ fontSize:11.5, color:'#a3690a', background:'#fff3e0', borderRadius:10, padding:'8px 10px' }}>⚠️ Esse mapa não tem as coordenadas dos cantos cadastradas — não dá pra mostrar a posição em cima dele ainda.</div>
               ) : !pos ? (
                 <div style={{ fontSize:11.5, color:'#7ba38f' }}>📡 Buscando seu GPS...</div>
+              ) : longe ? (
+                <div style={{ fontSize:11.5, color:'#2952a3', fontWeight:600, background:'#e6f1fb', borderRadius:10, padding:'8px 10px' }}>
+                  📍 Você está a ~{distKm < 10 ? distKm.toFixed(1) : Math.round(distKm)} km do mapa — use a rota abaixo pra chegar. A posição ao vivo aparece aqui quando você estiver perto.
+                </div>
               ) : !pinPx?.dentro ? (
-                <div style={{ fontSize:11.5, color:'#e5484d', fontWeight:600 }}>⚠️ Você está fora da área desse mapa</div>
+                <div style={{ fontSize:11.5, color:'#e5484d', fontWeight:600 }}>⚠️ Você está fora da área desse mapa (~{Math.round(distKm*1000)}m do centro)</div>
               ) : (
                 <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600 }}>📍 Você está dentro da área mapeada</div>
               )}
@@ -97,8 +114,8 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
                   {pos.lat.toFixed(5)}, {pos.lng.toFixed(5)} · precisão ±{Math.round(pos.accuracy)}m
                 </div>
               )}
-              {fazenda?.lat && fazenda?.lng && (
-                <a href={`https://maps.google.com/?q=${fazenda.lat},${fazenda.lng}`} target="_blank" rel="noreferrer" style={{ fontSize:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir rota no Maps</a>
+              {destino && (
+                <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer" style={{ fontSize:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir rota no Maps</a>
               )}
             </div>
           </>
