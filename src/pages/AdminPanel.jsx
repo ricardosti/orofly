@@ -163,6 +163,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzSearch, setFzSearch] = useState('')
   const [fzProdutoFiltro, setFzProdutoFiltro] = useState('')
   const [fzClienteFiltro, setFzClienteFiltro] = useState('')
+  const [fzStatusFiltro, setFzStatusFiltro] = useState('') // '' | 'concluida' | 'parcial' | 'nao_iniciada'
   const [fzExpandido, setFzExpandido] = useState({})
   const [invMovimentos, setInvMovimentos] = useState([])
   const [custos, setCustos] = useState([])
@@ -2886,6 +2887,18 @@ export default function AdminPanel({ onSwitchMode }) {
             const chartFazendas = [...comCadastro].sort((a,b)=>b.pct-a.pct).slice(0,10)
               .map(f=>({ name: f.nome.length>16?f.nome.slice(0,15)+'…':f.nome, pct: parseFloat(f.pct.toFixed(1)) }))
 
+            // Sem talhão cadastrado com área conta como "não iniciada" também — na prática,
+            // se não tem nem área lançada, o trabalho ainda nem começou de verdade.
+            function fzStatus(f) {
+              if (f.pct===null || f.pct===0) return 'nao_iniciada'
+              if (f.pct>=100) return 'concluida'
+              return 'parcial'
+            }
+            const fazendasBIFiltradas = fzStatusFiltro ? fazendasBI.filter(f=>fzStatus(f)===fzStatusFiltro) : fazendasBI
+            const qtdConcluidas = fazendasBI.filter(f=>fzStatus(f)==='concluida').length
+            const qtdParciais = fazendasBI.filter(f=>fzStatus(f)==='parcial').length
+            const qtdNaoIniciadas = fazendasBI.filter(f=>fzStatus(f)==='nao_iniciada').length
+
             async function zerarProgresso(fz) {
               if(!window.confirm(`Zerar o progresso de "${fz.nome}"?\n\nIsso reinicia a % de conclusão a partir de agora (o histórico de voos é mantido, só não conta mais pro cálculo). Use para uma nova aplicação/reaplicação na mesma área.`)) return
               const { error } = await supabase.from('fazendas').update({ campanha_inicio: new Date().toISOString() }).eq('id', fz.id)
@@ -3010,7 +3023,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     )}
 
-                    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+                    <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
                       <input style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
                         placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
                       <div style={{flex:'0 0 200px'}}>
@@ -3020,13 +3033,25 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     </div>
 
-                    {fazendasBI.length===0 ? (
+                    <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+                      {[
+                        ['', `Todas (${fazendasBI.length})`, '#5c7568', '#f1f8f4'],
+                        ['concluida', `✅ Concluídas (${qtdConcluidas})`, '#0e9f6e', '#e3f7ec'],
+                        ['parcial', `🟡 Parciais (${qtdParciais})`, '#a3690a', '#fff3e0'],
+                        ['nao_iniciada', `⬜ Não iniciadas (${qtdNaoIniciadas})`, '#5c7568', '#f1f8f4'],
+                      ].map(([val,label,cor,bg])=>(
+                        <button key={val} style={{background:fzStatusFiltro===val?cor:bg,color:fzStatusFiltro===val?'#fff':cor,border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                          onClick={()=>setFzStatusFiltro(val)}>{label}</button>
+                      ))}
+                    </div>
+
+                    {fazendasBIFiltradas.length===0 ? (
                       <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
                         Nenhuma fazenda encontrada.
                       </div>
                     ) : (
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
-                        {fazendasBI.map(fz=>(
+                        {fazendasBIFiltradas.map(fz=>(
                           <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                               <div>
