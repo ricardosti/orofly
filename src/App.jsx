@@ -24,13 +24,45 @@ function AppRouter() {
     : <PilotApp   onSwitchMode={canSwitchMode ? () => setMode('admin')  : null} />
 }
 
+// Tela de carregamento (enquanto a sessão é verificada) — drone parado no centro com as
+// hélices girando rápido, "pousando" visualmente no fundo que a tela de Login também usa,
+// pra não dar flash de cor quando troca de uma pra outra. Some assim que loading vira false
+// (não tem duração fixa: se a sessão carrega rápido, a animação só passa rapidinho).
 function Splash() {
   return (
-    <div style={{minHeight:'100vh',background:'#111a14',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:12}}>
-      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#2da05e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+    <div style={{minHeight:'100dvh',height:'100dvh',background:'radial-gradient(circle at 15% 15%, #123d2c 0%, #0b1210 45%, #0b1210 100%)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:18,overflow:'hidden'}}>
+      <style>{`
+        @keyframes of-hover { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-7px) } }
+        @keyframes of-spin { to { transform: rotate(360deg) } }
+        @keyframes of-fadeup { from { opacity:0; transform: translateY(8px) } to { opacity:1; transform: translateY(0) } }
+        .of-drone { animation: of-hover 1.8s ease-in-out infinite; }
+        .of-prop { transform-box: fill-box; transform-origin: center; animation: of-spin .15s linear infinite; }
+        .of-word { opacity:0; animation: of-fadeup .6s ease-out .35s forwards; }
+        @media (prefers-reduced-motion: reduce) {
+          .of-drone { animation: none; }
+          .of-prop { animation: none; }
+          .of-word { animation: none; opacity:1; }
+        }
+      `}</style>
+      <svg className="of-drone" width="84" height="84" viewBox="0 0 100 100" fill="none">
+        {[[22,22],[78,22],[22,78],[78,78]].map(([x,y])=>(
+          <g key={`${x}-${y}`}>
+            <line x1="50" y1="50" x2={x} y2={y} stroke="#0e9f6e" strokeWidth="3" strokeLinecap="round"/>
+            <g className="of-prop">
+              <circle cx={x} cy={y} r="11" stroke="rgba(34,196,118,0.4)" strokeWidth="1.5"/>
+              <rect x={x-9} y={y-1} width="18" height="2" rx="1" fill="#8fe6b8"/>
+              <rect x={x-1} y={y-9} width="2" height="18" rx="1" fill="#8fe6b8"/>
+            </g>
+            <circle cx={x} cy={y} r="3" fill="#0b1210"/>
+          </g>
+        ))}
+        <rect x="38" y="40" width="24" height="20" rx="6" fill="#0e9f6e"/>
+        <circle cx="50" cy="63" r="4" fill="#0b1210"/>
       </svg>
-      <div style={{fontFamily:"'Syne',sans-serif",color:'#8aad94',fontSize:13,letterSpacing:2}}>OROFLY</div>
+      <div className="of-word" style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+        <div style={{fontFamily:"'Syne',sans-serif",color:'#fff',fontSize:20,fontWeight:700,letterSpacing:-.5}}>Orofly<span style={{color:'#ffb020'}}>.</span></div>
+        <div style={{fontFamily:"'Syne',sans-serif",color:'#7ba38f',fontSize:10.5,letterSpacing:2,textTransform:'uppercase'}}>Aplicações Aéreas</div>
+      </div>
     </div>
   )
 }

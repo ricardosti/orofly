@@ -63,7 +63,7 @@ export default function LoginPage() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 15% 15%, #123d2c 0%, #0b1210 45%, #0b1210 100%)', position:'relative', overflow:'hidden', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ minHeight: '100dvh', height: '100dvh', background: 'radial-gradient(circle at 15% 15%, #123d2c 0%, #0b1210 45%, #0b1210 100%)', position:'relative', overflow:'hidden', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{position:'absolute',top:'-15%',right:'-10%',width:420,height:420,borderRadius:'50%',background:'radial-gradient(circle,rgba(34,196,118,0.28),transparent 70%)',filter:'blur(10px)'}}/>
       <div style={{position:'absolute',bottom:'-20%',left:'-10%',width:340,height:340,borderRadius:'50%',background:'radial-gradient(circle,rgba(255,176,32,0.16),transparent 70%)',filter:'blur(10px)'}}/>
       <div style={{ width: '100%', maxWidth: 1000, position:'relative', zIndex:1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: isMobile ? 0 : 48, padding: isMobile ? '48px 28px 24px' : '48px' }}>
