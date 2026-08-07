@@ -3,7 +3,11 @@
 // cantos (lat/lng) que o admin cadastrou pra essa fazenda.
 import * as pdfjsLib from 'pdfjs-dist'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString()
+// Servido como arquivo estático da pasta public/ (copiado de node_modules na hora do build) —
+// evita depender do bundling de módulo do Webpack pro worker, que quebrava no Vercel (os
+// vários chunks internos do worker davam 404 e caíam no fallback de SPA, servindo HTML no
+// lugar do JS: "Expected a JavaScript-or-Wasm module script... MIME type of text/html").
+pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL || ''}/pdf.worker.min.mjs`
 
 // Renderiza a primeira página do PDF (Blob/ArrayBuffer) num canvas já existente.
 // Retorna { width, height } em pixels do canvas.
