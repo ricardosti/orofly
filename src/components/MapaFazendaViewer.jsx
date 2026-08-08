@@ -27,18 +27,39 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     if (!file || !fazenda?.id) return
     setEnviando(true)
     setErro('')
+    // Timeout manual — em vez de ficar preso em "Enviando..." pra sempre se a rede cair
+    // ou a leitura do arquivo (URI content:// do Android) travar sem erro nem sucesso.
+    const comTimeout = (promessa, ms, msg) => Promise.race([
+      promessa,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
+    ])
     try {
+      console.log('[mapa upload] lendo arquivo:', file.name, file.size, file.type)
+      // Lê os bytes explicitamente antes de enviar — o objeto File vindo de um picker
+      // content:// do Android às vezes trava se passado direto pro fetch/upload.
+      const buf = await comTimeout(file.arrayBuffer(), 15000, 'Não consegui ler o arquivo selecionado (tempo esgotado).')
+      const blob = new Blob([buf], { type: 'application/pdf' })
+      console.log('[mapa upload] arquivo lido, enviando pro Storage...', blob.size)
       const path = `mapas/${fazenda.id}/mapa.pdf`
-      const { error: upErr } = await supabase.storage.from('relatorios').upload(path, file, { upsert: true, contentType: 'application/pdf' })
+      const { error: upErr } = await comTimeout(
+        supabase.storage.from('relatorios').upload(path, blob, { upsert: true, contentType: 'application/pdf' }),
+        20000, 'Envio do arquivo demorou demais (rede lenta ou instável).'
+      )
       if (upErr) throw upErr
-      const { error: dbErr } = await supabase.from('fazendas').update({ mapa_pdf_path: path }).eq('id', fazenda.id)
+      console.log('[mapa upload] enviado, atualizando fazenda...')
+      const { error: dbErr } = await comTimeout(
+        supabase.from('fazendas').update({ mapa_pdf_path: path }).eq('id', fazenda.id),
+        10000, 'Salvou o arquivo mas demorou pra atualizar o cadastro da fazenda.'
+      )
       if (dbErr) throw dbErr
+      console.log('[mapa upload] concluído')
       setCarregando(true)
-      const { width, height } = await renderPdfPageToCanvas(file, canvasRef.current, 1000)
+      const { width, height } = await renderPdfPageToCanvas(blob, canvasRef.current, 1000)
       setTamCanvas({ width, height })
-      salvarMapaCache(fazenda.id, file)
+      salvarMapaCache(fazenda.id, blob)
       setPathOverride(path)
     } catch (e2) {
+      console.error('[mapa upload] erro:', e2)
       setErro('Não consegui enviar o mapa: ' + (e2?.message || 'confira sua conexão e tente de novo.'))
     } finally {
       setEnviando(false)
