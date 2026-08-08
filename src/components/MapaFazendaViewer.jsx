@@ -118,7 +118,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
           <button style={{ background:'#f1f8f4', color:'#5c7568', border:'none', borderRadius:14, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={onClose}>✕</button>
         </div>
 
-        <input ref={fileInputRef} type="file" accept="application/pdf" style={{ display:'none' }} onChange={handleEscolherArquivo}/>
+        <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" style={{ display:'none' }} onChange={handleEscolherArquivo}/>
 
         {!temMapa ? (
           <div style={{ background:'#f7fbf8', borderRadius:14, padding:24, textAlign:'center', fontSize:13, color:'#5c7568' }}>
