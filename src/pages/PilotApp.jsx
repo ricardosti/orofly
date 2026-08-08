@@ -9,7 +9,7 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
-import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, Droplets, MapPin, Navigation, AlertTriangle } from 'lucide-react'
+import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
@@ -1375,6 +1375,55 @@ export default function PilotApp({onSwitchMode}) {
   }
   useEffect(()=>{ carregarFlightsAbertos() },[profile?.id,opState]) // eslint-disable-line
 
+  // Puxar-para-atualizar na Home — evita ter que sair/entrar no app pra ver dados
+  // recém-salvos (ex: acabou de finalizar um voo de teste e quer ver o resumo atualizar).
+  const ptrContainerRef = useRef(null)
+  const ptrStartY = useRef(null)
+  const ptrDistRef = useRef(0)
+  const [ptrPull,setPtrPull] = useState(0)
+  const [ptrRefreshing,setPtrRefreshing] = useState(false)
+  const handlePullRefresh = useCallback(async () => {
+    const tasks = [loadFlights(), carregarFlightsAbertos()]
+    if (tempoLat && tempoLng) tasks.push(buscarPrevisao(tempoLat, tempoLng, tempoLocal||'Sua localização (GPS)'))
+    await Promise.all(tasks)
+  }, [tempoLat, tempoLng, tempoLocal]) // eslint-disable-line
+  useEffect(() => {
+    const el = ptrContainerRef.current
+    if (!el) return
+    function onTouchStart(e){
+      if (ptrRefreshing || window.scrollY>0) { ptrStartY.current=null; return }
+      ptrStartY.current = e.touches[0].clientY
+    }
+    function onTouchMove(e){
+      if (ptrStartY.current==null) return
+      const dy = e.touches[0].clientY - ptrStartY.current
+      if (dy>0 && window.scrollY<=0) {
+        e.preventDefault()
+        const capped = Math.min(dy*0.5, 80)
+        ptrDistRef.current = capped
+        setPtrPull(capped)
+      } else if (dy<=0) {
+        ptrStartY.current=null; ptrDistRef.current=0; setPtrPull(0)
+      }
+    }
+    async function onTouchEnd(){
+      if (ptrStartY.current==null) return
+      ptrStartY.current=null
+      if (ptrDistRef.current>55) {
+        setPtrRefreshing(true); setPtrPull(55)
+        try { await handlePullRefresh() } finally { setPtrRefreshing(false); setPtrPull(0); ptrDistRef.current=0 }
+      } else { setPtrPull(0); ptrDistRef.current=0 }
+    }
+    el.addEventListener('touchstart', onTouchStart, {passive:true})
+    el.addEventListener('touchmove', onTouchMove, {passive:false})
+    el.addEventListener('touchend', onTouchEnd, {passive:true})
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [handlePullRefresh, ptrRefreshing, view])
+
   async function abrirVooAberto(id){
     if(id===relId){ setContinuarModalOpen(false); setView('form'); setWizardStep(4); return }
     try {
@@ -1627,7 +1676,13 @@ export default function PilotApp({onSwitchMode}) {
     const saudacao = horaAtual<12 ? 'Bom dia' : horaAtual<18 ? 'Boa tarde' : 'Boa noite'
     const condDia = tempoDias?.[0]
     return (
-      <div style={s.wrap}>
+      <div ref={ptrContainerRef} style={{...s.wrap,position:'relative'}}>
+        <div style={{position:'absolute',top:0,left:0,right:0,display:'flex',justifyContent:'center',height:0,overflow:'visible',zIndex:5,pointerEvents:'none'}}>
+          <div style={{marginTop:10,width:30,height:30,borderRadius:'50%',background:'#fff',boxShadow:'0 2px 8px rgba(11,18,16,0.18)',display:'flex',alignItems:'center',justifyContent:'center',opacity:ptrPull>4||ptrRefreshing?1:0,transform:`translateY(${Math.max(ptrPull,ptrRefreshing?55:0)-30}px)`,transition:ptrRefreshing?'none':'opacity .15s'}}>
+            <RefreshCw size={15} color="#0e9f6e" className={ptrRefreshing?'of-ptr-spin':''} style={{transform:ptrRefreshing?'none':`rotate(${ptrPull*3}deg)`}}/>
+          </div>
+        </div>
+        <style>{`@keyframes of-ptr-spin{to{transform:rotate(360deg)}} .of-ptr-spin{animation:of-ptr-spin .7s linear infinite}`}</style>
         <div style={{background:'#fff',borderBottom:'1px solid #eef5f0',padding:'calc(env(safe-area-inset-top,0px) + 16px) 18px 20px'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
