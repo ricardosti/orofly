@@ -10,7 +10,7 @@ import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, Droplets, MapPin, Navigation, AlertTriangle } from 'lucide-react'
-import { Drone as PhDrone, ClipboardText as PhClipboardText, CloudSun as PhCloudSun, Warning as PhWarning, ChartBar as PhChartBar, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
+import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -44,7 +44,7 @@ const CircularGauge = ({pct=0, size=42, color='#f2960f', track='#f7ddb0'}) => {
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={track} strokeWidth="5"/>
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
         strokeDasharray={`${c*clamped/100} ${c}`} transform={`rotate(-90 ${size/2} ${size/2})`}/>
-      <text x="50%" y="51%" textAnchor="middle" dominantBaseline="central" fontSize={size*0.26} fontWeight="700" fill="#0b1210" fontFamily="'Syne',sans-serif">{Math.round(clamped)}%</text>
+      <text x="50%" y="51%" textAnchor="middle" dominantBaseline="central" fontSize={size*0.26} fontWeight="700" fill="#0b1210" fontFamily="'Poppins',sans-serif">{Math.round(clamped)}%</text>
     </svg>
   )
 }
@@ -185,17 +185,17 @@ function DtRow({prefix,form,setForm,label}) {
 function FI({label,ph,val,onChange,type='text',styles,disabled}) {
   return (
     <div style={{marginBottom:14}}>
-      <label style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
-      <input type={type} disabled={disabled} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:disabled?'#f1f8f4':'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",opacity:disabled?.6:1}} placeholder={ph||''} value={val||''} onChange={onChange}/>
+      <label style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>{label}</label>
+      <input type={type} disabled={disabled} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:disabled?'#f1f8f4':'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",opacity:disabled?.6:1}} placeholder={ph||''} value={val||''} onChange={onChange}/>
     </div>
   )
 }
 function FS({label,val,onChange,children}) {
   return (
     <div style={{marginBottom:14}}>
-      <label style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>{label}</label>
+      <label style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>{label}</label>
       <div style={{position:'relative'}}>
-        <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'}} value={val||''} onChange={onChange}>{children}</select>
+        <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",appearance:'none'}} value={val||''} onChange={onChange}>{children}</select>
         <span style={{position:'absolute',right:14,top:'50%',transform:'translateY(-50%)',color:'#aaa',pointerEvents:'none',fontSize:11}}>▼</span>
       </div>
     </div>
@@ -1507,10 +1507,10 @@ export default function PilotApp({onSwitchMode}) {
   ]
 
   const sw = {
-    wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#fff',fontFamily:"'DM Sans',sans-serif"},
+    wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#fff',fontFamily:"'Poppins',sans-serif"},
     header:{background:'linear-gradient(135deg,#0e9f6e 0%,#0a6e4f 100%)',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 0'},
     logoRow:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12},
-    logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#fff',display:'flex',alignItems:'center',gap:8},
+    logoTxt:{fontFamily:"'Poppins',sans-serif",fontSize:19,fontWeight:700,color:'#fff',display:'flex',alignItems:'center',gap:8},
     stepsWrap:{padding:'0 18px 14px'},
     stepsRow:{display:'flex',alignItems:'center'},
     stepCirc:{width:28,height:28,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,flexShrink:0,transition:'all .2s'},
@@ -1523,14 +1523,14 @@ export default function PilotApp({onSwitchMode}) {
     stepLbl:{fontSize:9,color:'rgba(255,255,255,0.6)',flex:1,textAlign:'center'},
     stepLblActive:{fontSize:9,color:'#fff',flex:1,textAlign:'center',fontWeight:700},
     body:{flex:1,overflowY:'auto',padding:'20px 18px 8px'},
-    pageTitle:{fontSize:20,fontWeight:700,color:'#0b1210',marginBottom:4,fontFamily:"'Syne',sans-serif"},
+    pageTitle:{fontSize:20,fontWeight:700,color:'#0b1210',marginBottom:4,fontFamily:"'Poppins',sans-serif"},
     pageSub:{fontSize:12,color:'#7ba38f',marginBottom:20},
     fw:{marginBottom:14},
-    fl:{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"},
-    fi:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"},
-    fs:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'},
+    fl:{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"},
+    fi:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif"},
+    fs:{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",appearance:'none'},
     btnBar:{padding:'10px 18px 20px',background:'#fff',borderTop:'1px solid #f0f0f0',boxSizing:'border-box'},
-    btnG:{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:'11px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 6px 18px rgba(14,159,110,0.35)'},
+    btnG:{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:100,padding:'11px',fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:"'Poppins',sans-serif",display:'flex',alignItems:'center',justifyContent:'center',gap:8,boxShadow:'0 6px 18px rgba(14,159,110,0.35)'},
     timerWrap:{display:'flex',flexDirection:'column',alignItems:'center',padding:'16px 0 10px'},
     statusBadge:(st)=>({display:'inline-flex',alignItems:'center',gap:6,padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:600,background:st==='running'?'#e3f7ec':st==='paused'?'#fff3e0':'#f5f5f5',color:st==='running'?'#0e9f6e':st==='paused'?'#f2960f':'#888'}),
   }
@@ -1632,12 +1632,12 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0e9f6e" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-              <span style={{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#0b1210'}}>Orofly<span style={{color:'#0e9f6e'}}>.</span></span>
+              <span style={{fontFamily:"'Poppins',sans-serif",fontSize:19,fontWeight:700,color:'#0b1210'}}>Orofly<span style={{color:'#0e9f6e'}}>.</span></span>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:6}}>
               {onSwitchMode&&<button style={{background:'#f1f8f4',border:'none',color:'#5c7568',borderRadius:20,padding:'6px 9px',fontSize:12,cursor:'pointer'}} onClick={onSwitchMode}>⚙️</button>}
               <button style={{background:'#f1f8f4',border:'none',color:'#5c7568',borderRadius:20,padding:'6px 9px',fontSize:12,cursor:'pointer'}} onClick={tentarSair}>Sair</button>
-              <div onClick={()=>setShowPerfil(true)} style={{width:44,height:44,borderRadius:'50%',background:'#e3f7ec',border:'2px solid #0e9f6e',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,color:'#0e9f6e',fontSize:15,flexShrink:0,cursor:'pointer',overflow:'hidden'}}>
+              <div onClick={()=>setShowPerfil(true)} style={{width:44,height:44,borderRadius:'50%',background:'#e3f7ec',border:'2px solid #0e9f6e',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Poppins',sans-serif",fontWeight:700,color:'#0e9f6e',fontSize:15,flexShrink:0,cursor:'pointer',overflow:'hidden'}}>
                 {avatarUrl?<img src={avatarUrl} alt="avatar" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:iniciais}
               </div>
             </div>
@@ -1663,7 +1663,7 @@ export default function PilotApp({onSwitchMode}) {
                       return <WIcon size={30} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'}/>
                     })()}
                     <div>
-                      <div><span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:25,color:'#0b1210'}}>{Math.round(condDia.tempMax)}°</span><span style={{fontSize:13,color:'#8fa79a',fontWeight:700}}> / {Math.round(condDia.tempMin)}°</span></div>
+                      <div><span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:25,color:'#0b1210'}}>{Math.round(condDia.tempMax)}°</span><span style={{fontSize:13,color:'#8fa79a',fontWeight:700}}> / {Math.round(condDia.tempMin)}°</span></div>
                       <div style={{fontSize:11,color:'#5c7568',fontWeight:600,marginTop:1}}>{condDia.chuvaProb>=60?'Chuvoso':condDia.chuvaProb>=25?'Parcialmente nublado':'Ensolarado'}</div>
                     </div>
                   </div>
@@ -1689,7 +1689,7 @@ export default function PilotApp({onSwitchMode}) {
             )}
           </div>
           <div style={{marginTop:16}}>
-            <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{saudacao}, {primeiroNome}</div>
+            <div style={{fontSize:24,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{saudacao}, {primeiroNome}</div>
           </div>
         </div>
 
@@ -1702,10 +1702,10 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <span style={{width:40,height:40,borderRadius:12,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🕐</span>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif",color:'#0b1210'}}>Operação em Andamento</div>
+                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Poppins',sans-serif",color:'#0b1210'}}>Operação em Andamento</div>
                     <div style={{fontSize:12,color:'#7ba38f',marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{form.fazenda||'—'}{total>0?` · ${feita.toFixed(2)} ha de ${total.toFixed(2)} ha`:''}</div>
                   </div>
-                  <span style={{background:'#e3f7ec',color:'#0e9f6e',fontSize:10,fontWeight:700,borderRadius:20,padding:'4px 10px',flexShrink:0,fontFamily:"'Syne',sans-serif"}}>PARCIAL</span>
+                  <span style={{background:'#e3f7ec',color:'#0e9f6e',fontSize:10,fontWeight:700,borderRadius:20,padding:'4px 10px',flexShrink:0,fontFamily:"'Poppins',sans-serif"}}>PARCIAL</span>
                 </div>
                 {total>0&&(
                   <div style={{height:8,background:'#eef5f0',borderRadius:20,overflow:'hidden',marginTop:12}}>
@@ -1718,7 +1718,7 @@ export default function PilotApp({onSwitchMode}) {
             <div style={{background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',borderRadius:22,padding:18,color:'#fff',cursor:'pointer',boxShadow:'0 10px 26px rgba(14,159,110,0.35)',position:'relative',overflow:'hidden'}} onClick={()=>setView('form')}>
               <span style={{position:'absolute',right:-10,bottom:-14,fontSize:64,opacity:.15}}>🚁</span>
               <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':'🟢 VOO EM ANDAMENTO'}</div>
-              <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Syne',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
+              <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Poppins',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
               {osAtual&&<div style={{fontSize:10,fontFamily:'ui-monospace,monospace',opacity:.8,marginTop:2}}>OS {osAtual}</div>}
               <div style={{fontSize:12,opacity:.9,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
             </div>
@@ -1727,14 +1727,16 @@ export default function PilotApp({onSwitchMode}) {
           {/* Ações rápidas — 5 atalhos compactos (estilo DJI) */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:5}}>
             {[
-              [PhDrone,'#e3f7ec','#0e9f6e','Novo voo','Iniciar operação',()=>{ limpar(true); setView('form') }],
-              [PhClipboardText,'#e0ecfb','#2f6fed','Notas','Ver registros',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
-              [PhCloudSun,'#f3ecfb','#8e44ad','Tempo','Previsão detalhada',()=>setView('tempo')],
-              [PhWarning,'#fdeaea','#e5484d','Incidente','Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
-              [PhChartBar,'#e3f7ec','#0e9f6e','Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
-            ].map(([Icon,bg,fg,label,sub,onClick])=>(
+              [null,'icon-novo-voo.png','#e3f7ec','Novo voo','Iniciar operação',()=>{ limpar(true); setView('form') }],
+              ['📋',null,'#e0ecfb','Notas','Ver registros',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
+              ['🌤️',null,'#f3ecfb','Tempo','Previsão detalhada',()=>setView('tempo')],
+              ['⚠️',null,'#fdeaea','Incidente','Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
+              [null,'icon-relatorios.png','#e3f7ec','Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
+            ].map(([emoji,img,bg,label,sub,onClick])=>(
               <div key={label} onClick={onClick} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,cursor:'pointer'}}>
-                <span style={{width:46,height:46,borderRadius:14,background:bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon size={24} color={fg} weight="duotone"/></span>
+                <span style={{width:46,height:46,borderRadius:14,background:bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:24,lineHeight:1}}>
+                  {img ? <img src={`${process.env.PUBLIC_URL||''}/${img}`} alt={label} style={{width:32,height:32,objectFit:'contain'}}/> : emoji}
+                </span>
                 <div style={{textAlign:'center'}}>
                   <div style={{fontSize:9.5,fontWeight:700,color:'#0b1210',lineHeight:1.15}}>{label}</div>
                   <div style={{fontSize:7.6,color:'#8fa79a',fontWeight:600,lineHeight:1.2,marginTop:1}}>{sub}</div>
@@ -1747,7 +1749,7 @@ export default function PilotApp({onSwitchMode}) {
           <div onClick={()=>setView('mapa')} style={{borderRadius:20,padding:'16px 18px',color:'#fff',position:'relative',overflow:'hidden',cursor:'pointer',background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',boxShadow:'0 10px 24px rgba(14,159,110,0.3)'}}>
             <span style={{position:'absolute',right:-6,bottom:-16,fontSize:76,opacity:.16,transform:'rotate(-8deg)'}}>🗺️</span>
             <div style={{fontSize:10,fontWeight:700,letterSpacing:.6,textTransform:'uppercase',opacity:.85}}>Mapa da fazenda</div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:16,marginTop:3}}>Sua posição ao vivo sobre o talhão</div>
+            <div style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:16,marginTop:3}}>Sua posição ao vivo sobre o talhão</div>
             <div style={{fontSize:11.5,opacity:.9,marginTop:4,maxWidth:210,lineHeight:1.4}}>Veja se está dentro da área aplicada, em tempo real</div>
             <div style={{fontSize:11.5,fontWeight:700,marginTop:10,display:'flex',alignItems:'center',gap:4}}>Abrir mapa →</div>
           </div>
@@ -1755,11 +1757,11 @@ export default function PilotApp({onSwitchMode}) {
           {/* Resumo dos últimos 7 dias — número-herói + sub-stats */}
           <div onClick={()=>{loadFlights();setView('flights')}} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px 14px',cursor:'pointer'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Resumo dos últimos 7 dias</span>
+              <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Resumo dos últimos 7 dias</span>
               <span style={{fontSize:11.5,fontWeight:700,color:'#0e9f6e',display:'flex',alignItems:'center',gap:3}}>{hoje.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} <CalendarDays size={12}/></span>
             </div>
             <div style={{marginTop:8,display:'flex',alignItems:'baseline',gap:8}}>
-              <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{area7d.toFixed(area7d<10?1:0)}</span>
+              <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{area7d.toFixed(area7d<10?1:0)}</span>
               <span style={{fontSize:13,fontWeight:700,color:'#7ba38f'}}>ha aplicados</span>
             </div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:14}}>
@@ -1770,7 +1772,7 @@ export default function PilotApp({onSwitchMode}) {
               ].map(([Icon,value,label])=>(
                 <div key={label} style={{display:'flex',flexDirection:'column',gap:3}}>
                   <Icon size={15} color="#0e9f6e"/>
-                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{value}</span>
+                  <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:13,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{value}</span>
                   <span style={{fontSize:8.7,color:'#8fa79a',fontWeight:600,textTransform:'uppercase',letterSpacing:.02}}>{label}</span>
                 </div>
               ))}
@@ -1783,7 +1785,7 @@ export default function PilotApp({onSwitchMode}) {
             return (
               <div>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Últimos relatórios</span>
+                  <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Últimos relatórios</span>
                   <span onClick={()=>{loadFlights();setView('flights')}} style={{fontSize:11,fontWeight:700,color:'#0e9f6e',cursor:'pointer'}}>Ver todos ›</span>
                 </div>
                 <div style={{display:'flex',gap:10}}>
@@ -1791,7 +1793,7 @@ export default function PilotApp({onSwitchMode}) {
                     <div key={rel.id} onClick={()=>openFlight(rel)} style={{flex:1,borderRadius:16,padding:'12px 13px',color:'#fff',position:'relative',overflow:'hidden',minHeight:88,display:'flex',flexDirection:'column',justifyContent:'flex-end',cursor:'pointer',background:i===0?'linear-gradient(150deg,#1c8a5c,#0b3d2b)':'linear-gradient(150deg,#2a6f56,#0d2a20)'}}>
                       <span style={{position:'absolute',right:4,top:6,fontSize:34,opacity:.22}}>🌾</span>
                       <span style={{fontSize:9,fontWeight:700,opacity:.8,textTransform:'uppercase',letterSpacing:.03}}>Finalizado</span>
-                      <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13,marginTop:2}}>{rel.fazenda||'—'}</span>
+                      <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:13,marginTop:2}}>{rel.fazenda||'—'}</span>
                       <span style={{fontSize:10,opacity:.85,marginTop:3}}>{rel.area_ha?`${areaLiquida(rel).toFixed(1)} ha`:'—'}</span>
                     </div>
                   ))}
@@ -1803,7 +1805,7 @@ export default function PilotApp({onSwitchMode}) {
           {/* Voos compartilhados pendentes */}
           {voosCompartilhados.length>0&&(
             <div style={{background:'#fffbea',border:'2px solid #ffb020',borderRadius:14,padding:14}}>
-              <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
+              <div style={{fontFamily:"'Poppins',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
               {voosCompartilhados.map(v=>(
                 <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
                   <div style={{fontWeight:700,fontSize:13,color:'#0b1210'}}>{v.cliente} — {v.fazenda}</div>
@@ -1858,7 +1860,7 @@ export default function PilotApp({onSwitchMode}) {
             <>
               <div style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px'}}>
                 <div style={{display:'flex',alignItems:'baseline',gap:8}}>
-                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:30,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{areaUlt30.toFixed(1)}</span>
+                  <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:30,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{areaUlt30.toFixed(1)}</span>
                   <span style={{fontSize:12,fontWeight:700,color:'#7ba38f'}}>ha</span>
                 </div>
                 <div style={{fontSize:12,color:'#5c7568',marginTop:4}}>
@@ -1866,7 +1868,7 @@ export default function PilotApp({onSwitchMode}) {
                 </div>
               </div>
               <div style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px 8px'}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:12.5,color:'#0b1210',marginBottom:6}}>Área aplicada por dia</div>
+                <div style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#0b1210',marginBottom:6}}>Área aplicada por dia</div>
                 <ResponsiveContainer width="100%" height={110}>
                   <BarChart data={dias7} margin={{top:8,right:0,left:0,bottom:0}}>
                     <XAxis dataKey="dia" tick={{fontSize:9,fill:'#a9beb1'}} axisLine={false} tickLine={false}/>
@@ -1901,7 +1903,7 @@ export default function PilotApp({onSwitchMode}) {
           <div key={rel.id} style={{background:'#fff',borderRadius:18,border:'1px solid #d7e6dc',padding:'14px 16px',cursor:'pointer',boxShadow:'0 4px 14px rgba(11,18,16,0.05)'}} onClick={()=>openFlight(rel)}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
               <div>
-                <div style={{fontWeight:600,fontSize:14,color:'#0b1210',fontFamily:"'Syne',sans-serif",display:'flex',alignItems:'center',gap:6}}>
+                <div style={{fontWeight:600,fontSize:14,color:'#0b1210',fontFamily:"'Poppins',sans-serif",display:'flex',alignItems:'center',gap:6}}>
                   {rel.cliente||'—'}
                   {rel.teste&&<span style={{fontSize:9,fontWeight:700,color:'#a3690a',background:'#fff3e0',padding:'2px 7px',borderRadius:20}}>🧪 TESTE</span>}
                 </div>
@@ -1961,8 +1963,8 @@ export default function PilotApp({onSwitchMode}) {
           ) : (
             <>
               <div>
-                <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Syne',sans-serif"}}>FAZENDA</label>
-                <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",appearance:'none'}}
+                <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>FAZENDA</label>
+                <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",appearance:'none'}}
                   value={fzSel?.id||''} onChange={e=>setMapaTabFazendaId(e.target.value)}>
                   {fazendasComMapa.map(f=>(<option key={f.id} value={f.id}>{f.nome} — {f.cliente}</option>))}
                 </select>
@@ -1972,7 +1974,7 @@ export default function PilotApp({onSwitchMode}) {
                   onClick={()=>setMapaViewerOpen(true)}>
                   <span style={{position:'absolute',right:-10,bottom:-14,fontSize:76,opacity:.15}}>🗺️</span>
                   <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>MAPA GEORREFERENCIADO</div>
-                  <div style={{fontSize:19,fontWeight:700,marginTop:5,fontFamily:"'Syne',sans-serif"}}>{fzSel.nome}</div>
+                  <div style={{fontSize:19,fontWeight:700,marginTop:5,fontFamily:"'Poppins',sans-serif"}}>{fzSel.nome}</div>
                   <div style={{fontSize:12,opacity:.85,marginTop:2}}>{fzSel.cliente}</div>
                   <div style={{fontSize:13,opacity:.95,marginTop:14,display:'flex',alignItems:'center',gap:6}}><Navigation size={15}/> Ver sua posição ao vivo <span style={{marginLeft:'auto'}}>›</span></div>
                 </div>
@@ -2029,12 +2031,12 @@ export default function PilotApp({onSwitchMode}) {
 
           <div style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:18}}>
             <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',letterSpacing:.5,textTransform:'uppercase'}}>Total gasto</div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',marginTop:4,fontVariantNumeric:'tabular-nums'}}>R$ {totalGestao.toFixed(2)}</div>
+            <div style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',marginTop:4,fontVariantNumeric:'tabular-nums'}}>R$ {totalGestao.toFixed(2)}</div>
             <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{notasFiltradas.length} nota{notasFiltradas.length!==1?'s':''} lançada{notasFiltradas.length!==1?'s':''}</div>
           </div>
 
           <div>
-            <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>Por categoria</div>
+            <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>Por categoria</div>
             {loadingNotas ? (
               <div style={{textAlign:'center',color:'#5c7568',padding:24}}>Carregando...</div>
             ) : categoriasOrdenadas.length===0 ? (
@@ -2046,7 +2048,7 @@ export default function PilotApp({onSwitchMode}) {
                 <div key={cat} style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'12px 14px',marginBottom:8}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                     <span style={{fontSize:13,fontWeight:600,color:'#0b1210'}}>{ic} {cat}</span>
-                    <span style={{fontSize:13,fontWeight:700,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {total.toFixed(2)}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:'#0e9f6e',fontFamily:"'Poppins',sans-serif"}}>R$ {total.toFixed(2)}</span>
                   </div>
                   <div style={{height:6,background:'#eef5f0',borderRadius:20,overflow:'hidden',marginTop:8}}>
                     <div style={{height:'100%',width:`${pct}%`,background:'#0e9f6e',borderRadius:20}}/>
@@ -2094,7 +2096,7 @@ export default function PilotApp({onSwitchMode}) {
 
         <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
           {/* Foto da nota */}
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>FOTO DA NOTA</div>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>FOTO DA NOTA</div>
           {notaFotoPreview ? (
             <div style={{position:'relative',marginBottom:14}}>
               <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:220,objectFit:'cover',borderRadius:14,display:'block'}}/>
@@ -2115,7 +2117,7 @@ export default function PilotApp({onSwitchMode}) {
           {(notaTab==='despesa' || veiculosDB.length===0) && (
             <>
               {/* Categoria */}
-              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>CATEGORIA</div>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>CATEGORIA</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
                 {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>(
                   <button key={cat} type="button" style={{background:notaForm.categoria===cat?'#0e9f6e':'#f1f8f4',color:notaForm.categoria===cat?'#fff':'#0b1210',border:'none',borderRadius:16,padding:'10px 8px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
@@ -2126,11 +2128,11 @@ export default function PilotApp({onSwitchMode}) {
               {/* Valor + data */}
               <div style={{display:'flex',gap:10,marginBottom:14}}>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VALOR (R$)</div>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>VALOR (R$)</div>
                   <input type="number" style={sw.fi} placeholder="0,00" value={notaForm.valor} onChange={e=>setNotaForm(f=>({...f,valor:e.target.value}))}/>
                 </div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>DATA</div>
                   <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
                 </div>
               </div>
@@ -2140,7 +2142,7 @@ export default function PilotApp({onSwitchMode}) {
           {/* Veículo / Viagem — aba dedicada */}
           {notaTab==='viagem' && veiculosDB.length>0 && (
             <div style={{marginBottom:14}}>
-              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>VEÍCULO</div>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>VEÍCULO</div>
               <select style={{...sw.fs,marginBottom:8}} value={notaForm.veiculo_id}
                 onChange={e=>{
                   const v = veiculosDB.find(x=>x.id===e.target.value)
@@ -2152,18 +2154,18 @@ export default function PilotApp({onSwitchMode}) {
               {notaForm.veiculo_id && (
                 <div style={{display:'flex',gap:10,marginBottom:4}}>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM INICIAL</div>
+                    <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>KM INICIAL</div>
                     <input type="number" style={sw.fi} placeholder="0" value={notaForm.km_inicial} onChange={e=>setNotaForm(f=>({...f,km_inicial:e.target.value}))}/>
                   </div>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>KM FINAL</div>
+                    <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>KM FINAL</div>
                     <input type="number" style={sw.fi} placeholder="0" value={notaForm.km_final} onChange={e=>setNotaForm(f=>({...f,km_final:e.target.value}))}/>
                   </div>
                 </div>
               )}
               {notaForm.veiculo_id && (
                 <div style={{marginBottom:10}}>
-                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>GASTOS DESSA VIAGEM (OPCIONAL)</div>
+                  <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>GASTOS DESSA VIAGEM (OPCIONAL)</div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
                     {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>(
                       <button key={cat} type="button" style={{background:'#f1f8f4',color:'#0b1210',border:'none',borderRadius:14,padding:'8px 12px',fontSize:12,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:5}}
@@ -2189,14 +2191,14 @@ export default function PilotApp({onSwitchMode}) {
                 </div>
               )}
               <div style={{marginTop:4}}>
-                <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>DATA</div>
+                <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>DATA</div>
                 <input type="date" style={sw.fi} value={notaForm.data} onChange={e=>setNotaForm(f=>({...f,data:e.target.value}))}/>
               </div>
             </div>
           )}
 
           {/* Ordem de serviço */}
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>ORDEM DE SERVIÇO (OPCIONAL)</div>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>ORDEM DE SERVIÇO (OPCIONAL)</div>
           {osModo==='lista' ? (
             <select style={{...sw.fs,marginBottom:4}} value={notaForm.ordem_servico}
               onChange={e=>{
@@ -2218,7 +2220,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{fontSize:11,color:'#7ba38f',marginBottom:14}}>{onSwitchMode?'Voos recentes de todos os pilotos aparecem na lista':'Voos recentes seus aparecem na lista'} — ou digite a OS manualmente</div>
 
           {/* Observação */}
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>OBSERVAÇÃO (OPCIONAL)</div>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>OBSERVAÇÃO (OPCIONAL)</div>
           <input style={{...sw.fi,marginBottom:16}} placeholder="Ex: almoço com equipe" value={notaForm.observacao} onChange={e=>setNotaForm(f=>({...f,observacao:e.target.value}))}/>
 
           <button style={{...sw.btnG,opacity:notaSaving?.7:1}} disabled={notaSaving} onClick={salvarNota}>
@@ -2228,7 +2230,7 @@ export default function PilotApp({onSwitchMode}) {
 
         {/* Notas recentes */}
         <div>
-          <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>Notas Recentes</div>
+          <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>Notas Recentes</div>
           {loadingNotas?<div style={{textAlign:'center',color:'#5c7568',padding:20}}>Carregando...</div>
           :minhasNotas.length===0?<div style={{textAlign:'center',color:'#5c7568',padding:20,fontSize:13}}>Nenhuma nota cadastrada ainda</div>
           :minhasNotas.map(n=>(
@@ -2238,7 +2240,7 @@ export default function PilotApp({onSwitchMode}) {
                   <div style={{fontWeight:600,fontSize:13,color:'#0b1210'}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
                   <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(n.data).toLocaleDateString('pt-BR')}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}{n.veiculo_id?` · 🚗 ${veiculosDB.find(v=>v.id===n.veiculo_id)?.placa||''}`:''}</div>
                 </div>
-                <div style={{fontWeight:700,fontSize:14,color:'#0e9f6e',fontFamily:"'Syne',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
+                <div style={{fontWeight:700,fontSize:14,color:'#0e9f6e',fontFamily:"'Poppins',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
               </div>
               {n.foto_url && <div style={{marginTop:10}}><StorageFotoSlot supabase={supabase} path={n.foto_url} height={120}/></div>}
             </div>
@@ -2269,7 +2271,7 @@ export default function PilotApp({onSwitchMode}) {
         <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
 
         <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>TIPO DE INCIDENTE</div>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>TIPO DE INCIDENTE</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
             {[['drone','🚁 Drone'],['veiculo','🚗 Veículo'],['pessoal','🤕 Pessoal'],['outro','❓ Outro']].map(([v,lbl])=>(
               <button key={v} type="button" style={{background:incidenteForm.tipo===v?'#e5484d':'#f1f8f4',color:incidenteForm.tipo===v?'#fff':'#0b1210',border:'none',borderRadius:16,padding:'12px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
@@ -2277,10 +2279,10 @@ export default function PilotApp({onSwitchMode}) {
             ))}
           </div>
 
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>O QUE ACONTECEU</div>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>O QUE ACONTECEU</div>
           <textarea style={{...sw.fi,minHeight:90,marginBottom:14,resize:'vertical'}} placeholder="Descreva o incidente..." value={incidenteForm.descricao} onChange={e=>setIncidenteForm(f=>({...f,descricao:e.target.value}))}/>
 
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>OS DO VOO (OPCIONAL)</div>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>OS DO VOO (OPCIONAL)</div>
           <select style={{...sw.fs,marginBottom:14}} value={incidenteForm.ordem_servico} onChange={e=>setIncidenteForm(f=>({...f,ordem_servico:e.target.value}))}>
             <option value="">Nenhuma / não relacionado a um voo</option>
             {osOpcoes.map(r=>(
@@ -2288,7 +2290,7 @@ export default function PilotApp({onSwitchMode}) {
             ))}
           </select>
 
-          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>FOTOS (OPCIONAL, ATÉ 2)</div>
+          <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>FOTOS (OPCIONAL, ATÉ 2)</div>
           <div style={{display:'flex',gap:10,marginBottom:14}}>
             {[0,1].map(slot=>(
               <div key={slot} style={{flex:1}}>
@@ -2317,7 +2319,7 @@ export default function PilotApp({onSwitchMode}) {
 
         {meusIncidentes.length>0 && (
           <div>
-            <div style={{fontSize:12,fontWeight:700,color:'#5c7568',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>MEUS INCIDENTES RECENTES</div>
+            <div style={{fontSize:12,fontWeight:700,color:'#5c7568',marginBottom:8,fontFamily:"'Poppins',sans-serif"}}>MEUS INCIDENTES RECENTES</div>
             {meusIncidentes.map(inc=>(
               <div key={inc.id} style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',marginBottom:8}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -2423,27 +2425,27 @@ export default function PilotApp({onSwitchMode}) {
               const chuvaAlerta = d.chuvaProb>=50
               return (
                 <div key={d.data} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                  <div style={{fontSize:14,fontWeight:700,fontFamily:"'Syne',sans-serif",textTransform:'capitalize',marginBottom:10}}>{diaLabel}</div>
+                  <div style={{fontSize:14,fontWeight:700,fontFamily:"'Poppins',sans-serif",textTransform:'capitalize',marginBottom:10}}>{diaLabel}</div>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
                     <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='temp'?'#fdf0dc':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
                       onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='temp'?null:{data:d.data,tipo:'temp'})}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>🌡️ TEMPERATURA <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.tempMin)}° / {Math.round(d.tempMax)}°</div>
+                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.tempMin)}° / {Math.round(d.tempMax)}°</div>
                     </div>
                     <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='umidade'?'#e3f7ec':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
                       onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='umidade'?null:{data:d.data,tipo:'umidade'})}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💧 UMIDADE (13H) <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{d.umidade!=null?`${Math.round(d.umidade)}%`:'—'}</div>
+                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{d.umidade!=null?`${Math.round(d.umidade)}%`:'—'}</div>
                     </div>
                     <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='vento'?'#e6f1fb':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
                       onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='vento'?null:{data:d.data,tipo:'vento'})}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💨 VENTO MÁX. <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.ventoMax)} km/h</div>
+                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.ventoMax)} km/h</div>
                     </div>
                     <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='chuva'?'#e6f1fb':(chuvaAlerta?'#e6f1fb':'#f1f8f4'),borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
                       onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='chuva'?null:{data:d.data,tipo:'chuva'})}>
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>☔ CHUVA <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:chuvaAlerta?'#2f6fed':'#0b1210',fontFamily:"'Syne',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>
+                      <div style={{fontSize:16,fontWeight:700,color:chuvaAlerta?'#2f6fed':'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>
                     </div>
                   </div>
 
@@ -2486,7 +2488,7 @@ export default function PilotApp({onSwitchMode}) {
                       <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>⚖️ DELTA T (13H)</div>
                       {d.deltaTClass&&<div style={{fontSize:11,color:d.deltaTClass.cor,marginTop:2,fontWeight:600}}>{d.deltaTClass.icon} {d.deltaTClass.label}</div>}
                     </div>
-                    <div style={{fontSize:20,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>
+                    <div style={{fontSize:20,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>
                   </div>
                 </div>
               )
@@ -2603,7 +2605,7 @@ export default function PilotApp({onSwitchMode}) {
               return (
                 <div key={dStr} onClick={()=>setAgendaDiaFiltro(isSel?'':dStr)} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:5,width:32,cursor:'pointer'}}>
                   <span style={{fontSize:9,color:'#a9beb1',fontWeight:700}}>{d.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','').toUpperCase()}</span>
-                  <span style={{width:30,height:30,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:12.5,color:isSel?'#fff':'#0b1210',background:isSel?'#0e9f6e':isToday?'#e3f7ec':'transparent'}}>{d.getDate()}</span>
+                  <span style={{width:30,height:30,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:isSel?'#fff':'#0b1210',background:isSel?'#0e9f6e':isToday?'#e3f7ec':'transparent'}}>{d.getDate()}</span>
                   <span style={{width:4,height:4,borderRadius:'50%',background:'#0e9f6e',opacity:temAgenda?1:0}}/>
                 </div>
               )
@@ -2633,7 +2635,7 @@ export default function PilotApp({onSwitchMode}) {
                 {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
                 {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
               </div>
-              <div style={{fontWeight:700,fontSize:15,fontFamily:"'Syne',sans-serif"}}>{a.cliente} — {a.fazenda}{a.talhao?<span style={{fontWeight:400,fontSize:12,color:'#7ba38f'}}> ({a.talhao})</span>:''}</div>
+              <div style={{fontWeight:700,fontSize:15,fontFamily:"'Poppins',sans-serif"}}>{a.cliente} — {a.fazenda}{a.talhao?<span style={{fontWeight:400,fontSize:12,color:'#7ba38f'}}> ({a.talhao})</span>:''}</div>
               <div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}{a.produto?` · ${a.produto}`:''}</div>
               {a.observacao&&<div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{a.observacao}</div>}
               <AgendaClimaBadge fz={fazendasDB.find(fz=>fz.cliente===a.cliente&&fz.nome===a.fazenda)} data={a.data_prevista}/>
@@ -2715,7 +2717,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{...s.modal,paddingBottom:24}} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>❌ Recusar agendamento</div>
             <p style={{fontSize:13,color:'#5c7568',marginBottom:12,lineHeight:1.5}}>{recusaModal.cliente} — {recusaModal.fazenda}. O admin vai ver o motivo que você digitar aqui.</p>
-            <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:10,padding:'10px 12px',fontSize:13,outline:'none',boxSizing:'border-box',minHeight:80,fontFamily:"'DM Sans',sans-serif",resize:'vertical'}}
+            <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:10,padding:'10px 12px',fontSize:13,outline:'none',boxSizing:'border-box',minHeight:80,fontFamily:"'Poppins',sans-serif",resize:'vertical'}}
               placeholder="Ex: sem condição climática, drone em manutenção, muito longe..." value={recusaMotivo} onChange={e=>setRecusaMotivo(e.target.value)}/>
             <div style={{display:'flex',gap:10,marginTop:14}}>
               <button style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',flex:1}} onClick={()=>setRecusaModal(null)}>Cancelar</button>
@@ -2740,7 +2742,7 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* Piloto — só exibe */}
             <div style={{...sw.fw,background:'#f1f8f4',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
-              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,fontFamily:"'Syne',sans-serif",marginBottom:3}}>PILOTO</div>
+              <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,fontFamily:"'Poppins',sans-serif",marginBottom:3}}>PILOTO</div>
               <div style={{fontSize:14,fontWeight:600,color:'#0e9f6e'}}>{profile?.nome}</div>
             </div>
 
@@ -2853,7 +2855,7 @@ export default function PilotApp({onSwitchMode}) {
 
                         {/* Campo fechado — estilo igual ao select de Fazenda/Cliente */}
                         <div onClick={()=>setTalhaoDropdownOpen(o=>!o)}
-                          style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:selecionados.length?'#0b1210':'#aaa',background:'#fff',boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',fontFamily:"'DM Sans',sans-serif"}}>
+                          style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:selecionados.length?'#0b1210':'#aaa',background:'#fff',boxSizing:'border-box',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between',fontFamily:"'Poppins',sans-serif"}}>
                           <span>{selecionados.length ? `${selecionados.length} talhão(ões) selecionado(s)` : 'Selecione os talhões...'}</span>
                           <span style={{color:'#aaa',fontSize:11}}>{talhaoDropdownOpen?'▲':'▼'}</span>
                         </div>
@@ -2963,7 +2965,7 @@ export default function PilotApp({onSwitchMode}) {
 
             {voosCompartilhados.length>0&&(
               <div style={{background:'#fffbea',border:'2px solid #ffb020',borderRadius:12,padding:14,marginTop:4}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
+                <div style={{fontFamily:"'Poppins',sans-serif",fontSize:13,fontWeight:700,color:'#7a5c00',marginBottom:10}}>🤝 Voos Disponíveis ({voosCompartilhados.length})</div>
                 {voosCompartilhados.map(v=>(
                   <div key={v.id} style={{background:'#fff',borderRadius:10,padding:'10px 12px',marginBottom:8,border:'1px solid #f0d070'}}>
                     <div style={{fontWeight:700,fontSize:13,color:'#0b1210'}}>{v.cliente} — {v.fazenda}</div>
@@ -3079,7 +3081,7 @@ export default function PilotApp({onSwitchMode}) {
               {geral && (
                 <div style={{background:geral.cor,borderRadius:12,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12}}>
                   <span style={{fontSize:24}}>{geral.status==='apta'?'✅':geral.status==='alerta'?'⚡':'🚫'}</span>
-                  <span style={{fontSize:15,fontWeight:700,color:'#fff',fontFamily:"'Syne',sans-serif"}}>{geral.label}</span>
+                  <span style={{fontSize:15,fontWeight:700,color:'#fff',fontFamily:"'Poppins',sans-serif"}}>{geral.label}</span>
                 </div>
               )}
 
@@ -3100,7 +3102,7 @@ export default function PilotApp({onSwitchMode}) {
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
                       <div style={{display:'flex',alignItems:'center',gap:10}}>
                         <span style={{fontSize:22}}>{PARAM_ICONS[key]}</span>
-                        <div style={{fontSize:11,fontWeight:700,color:'#5c7568',letterSpacing:.5,fontFamily:"'Syne',sans-serif"}}>{PARAM_LABELS[key]} <span style={{fontWeight:400,color:'#7ba38f'}}>({PARAM_UNITS[key]})</span></div>
+                        <div style={{fontSize:11,fontWeight:700,color:'#5c7568',letterSpacing:.5,fontFamily:"'Poppins',sans-serif"}}>{PARAM_LABELS[key]} <span style={{fontWeight:400,color:'#7ba38f'}}>({PARAM_UNITS[key]})</span></div>
                       </div>
                       {classifPrincipal && (
                         <div style={{display:'flex',alignItems:'center',gap:5}}>
@@ -3158,7 +3160,7 @@ export default function PilotApp({onSwitchMode}) {
 
               {/* Evidências climáticas (foto ou PDF de ferramenta agro) */}
               <div style={{marginTop:16,background:'#f1f8f4',borderRadius:12,padding:14,border:'1px solid #d7e6dc'}}>
-                <div style={{fontSize:12,fontWeight:700,color:'#0e9f6e',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>📎 EVIDÊNCIA CLIMÁTICA <span style={{fontWeight:400,color:'#7ba38f'}}>(foto ou PDF)</span></div>
+                <div style={{fontSize:12,fontWeight:700,color:'#0e9f6e',marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>📎 EVIDÊNCIA CLIMÁTICA <span style={{fontWeight:400,color:'#7ba38f'}}>(foto ou PDF)</span></div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
                   {[[1,'INÍCIO'],[2,'FIM']].map(([slot,lbl])=>(
                     <div key={slot}>
@@ -3240,7 +3242,7 @@ export default function PilotApp({onSwitchMode}) {
                 <button style={{flex:2,background:opState==='idle'?'linear-gradient(135deg,#0e9f6e,#22c476)':opState==='paused'?'#fff3e0':'#0e9f6e',
                     color:opState==='paused'?'#f2960f':'#fff',border:opState==='paused'?'1.5px solid #f2960f':'none',
                     borderRadius:16,padding:'14px 10px',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',
-                    fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,boxShadow:opState==='idle'?'0 6px 16px rgba(14,159,110,0.3)':'none'}}
+                    fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:14,boxShadow:opState==='idle'?'0 6px 16px rgba(14,159,110,0.3)':'none'}}
                   disabled={saving}
                   onClick={()=>{
                     if(opState==='idle'){
@@ -3285,7 +3287,7 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* Pausas */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-              <span style={{fontSize:11,fontWeight:600,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>PAUSAS</span>
+              <span style={{fontSize:11,fontWeight:600,color:'#7ba38f',fontFamily:"'Poppins',sans-serif"}}>PAUSAS</span>
               <button style={{background:'#f1f8f4',border:'1px solid #d7e6dc',color:'#0e9f6e',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                 onClick={()=>setForm(f=>({...f,pausas:[...(f.pausas||[]),{inicio:new Date().toISOString(),fim:null,motivo:''}]}))}>+ Pausa</button>
             </div>
@@ -3327,7 +3329,7 @@ export default function PilotApp({onSwitchMode}) {
             ))}
 
             {/* Resumo da Operação */}
-            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>RESUMO DA OPERAÇÃO</div>
+            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Poppins',sans-serif"}}>RESUMO DA OPERAÇÃO</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
               <div style={{gridColumn:'1 / -1',background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:'12px 14px',display:'flex',alignItems:'center',gap:12}}>
                 <span style={{width:36,height:36,borderRadius:10,background:'#e3f7ec',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>🌱</span>
@@ -3344,7 +3346,7 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{display:'flex',alignItems:'center',gap:14}}>
                   <button type="button" style={{width:28,height:28,borderRadius:8,border:'1px solid #dcebe3',background:'#f7fbf8',color:'#0e9f6e',fontSize:16,fontWeight:700,cursor:'pointer',lineHeight:1}}
                     onClick={()=>setForm(f=>({...f,qtd_voos:Math.max(1,(parseInt(f.qtd_voos)||1)-1)}))}>−</button>
-                  <span style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{form.qtd_voos||1}</span>
+                  <span style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{form.qtd_voos||1}</span>
                   <button type="button" style={{width:28,height:28,borderRadius:8,border:'1px solid #dcebe3',background:'#f7fbf8',color:'#0e9f6e',fontSize:16,fontWeight:700,cursor:'pointer',lineHeight:1}}
                     onClick={()=>setForm(f=>({...f,qtd_voos:(parseInt(f.qtd_voos)||1)+1}))}>+</button>
                 </div>
@@ -3352,14 +3354,14 @@ export default function PilotApp({onSwitchMode}) {
             </div>
 
             {/* Editar Horário — abre popup em vez de ficar sempre visível */}
-            <button style={{background:'#fff',border:'1px solid #dcebe3',borderRadius:16,padding:'12px',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',marginBottom:16,color:'#0b1210',fontWeight:600,fontSize:13,fontFamily:"'Syne',sans-serif"}}
+            <button style={{background:'#fff',border:'1px solid #dcebe3',borderRadius:16,padding:'12px',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',marginBottom:16,color:'#0b1210',fontWeight:600,fontSize:13,fontFamily:"'Poppins',sans-serif"}}
               onClick={()=>setHorarioModalOpen(true)}>
               🕐 Editar Horário
             </button>
 
             {/* Finalizado Parcial */}
             {(opState==='running'||opState==='paused')&&(
-              <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:20,padding:'12px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
+              <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:20,padding:'12px',width:'100%',fontFamily:"'Poppins',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
                 onClick={()=>setParcialModalOpen(true)}>
                 🌙 Finalizado Parcial (continua amanhã)
               </button>
@@ -3398,7 +3400,7 @@ export default function PilotApp({onSwitchMode}) {
 
             {/* SOS */}
             {(opState==='running'||opState==='paused')&&(
-              <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:20,padding:'13px',width:'100%',fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
+              <button style={{background:sosLoading?'#a93226':'#e74c3c',color:'#fff',border:'none',borderRadius:20,padding:'13px',width:'100%',fontFamily:"'Poppins',sans-serif",fontSize:14,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
                 onClick={()=>!sosLoading&&setSosConfirm(true)} disabled={sosLoading}>
                 🆘 {sosLoading?'ENVIANDO SOS...':'SOS — EMERGÊNCIA'}
               </button>
@@ -3529,7 +3531,7 @@ export default function PilotApp({onSwitchMode}) {
               if(!comDose.length) return null
               return (
                 <div style={{background:'#f1f8f4',borderRadius:12,padding:14,marginBottom:16,border:'1px solid #d7e6dc'}}>
-                  <div style={{fontSize:12,fontWeight:700,color:'#0e9f6e',marginBottom:8,fontFamily:"'Syne',sans-serif"}}>⚗️ EXPECTATIVA DE GASTO POR PRODUTO</div>
+                  <div style={{fontSize:12,fontWeight:700,color:'#0e9f6e',marginBottom:8,fontFamily:"'Poppins',sans-serif"}}>⚗️ EXPECTATIVA DE GASTO POR PRODUTO</div>
                   {comDose.map((g,i)=>(
                     <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'4px 0',borderBottom:i<comDose.length-1?'1px solid #e8eee8':'none'}}>
                       <span style={{color:'#0b1210'}}>{g.nome}</span>
@@ -3743,22 +3745,22 @@ export default function PilotApp({onSwitchMode}) {
       {fotoPickerOpen && (
         <div style={s.modalOverlay} onClick={()=>setFotoPickerOpen(null)}>
           <div style={{...s.modal,paddingBottom:32}} onClick={e=>e.stopPropagation()}>
-            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,color:'#0b1210',marginBottom:20}}>{fotoPickerOpen.tipo==='evid'?`📎 Evidência — ${fotoPickerOpen.lbl}`:'📷 Adicionar foto'}</div>
+            <div style={{fontFamily:"'Poppins',sans-serif",fontSize:16,fontWeight:700,color:'#0b1210',marginBottom:20}}>{fotoPickerOpen.tipo==='evid'?`📎 Evidência — ${fotoPickerOpen.lbl}`:'📷 Adicionar foto'}</div>
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
-              <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
+              <button style={{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Poppins',sans-serif",fontWeight:600,cursor:'pointer'}}
                 onClick={()=>{
                   const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-camera' : fotoPickerOpen.tipo==='evid' ? `evid-camera-${fotoPickerOpen.idx}` : `obs-camera-${fotoPickerOpen.idx}`
                   setFotoPickerOpen(null)
                   setTimeout(()=>document.getElementById(id)?.click(),150)
                 }}>📸 Tirar foto com câmera</button>
-              <button style={{background:'#2f6fed',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
+              <button style={{background:'#2f6fed',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Poppins',sans-serif",fontWeight:600,cursor:'pointer'}}
                 onClick={()=>{
                   const id = fotoPickerOpen.tipo==='mapa' ? 'mapa-galeria' : fotoPickerOpen.tipo==='evid' ? `evid-galeria-${fotoPickerOpen.idx}` : `obs-galeria-${fotoPickerOpen.idx}`
                   setFotoPickerOpen(null)
                   setTimeout(()=>document.getElementById(id)?.click(),150)
                 }}>🖼️ Escolher da galeria</button>
               {fotoPickerOpen.tipo==='evid'&&(
-                <button style={{background:'#6b4fa0',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Syne',sans-serif",fontWeight:600,cursor:'pointer'}}
+                <button style={{background:'#6b4fa0',color:'#fff',border:'none',borderRadius:20,padding:14,fontSize:15,fontFamily:"'Poppins',sans-serif",fontWeight:600,cursor:'pointer'}}
                   onClick={()=>{
                     const id = `evid-pdf-${fotoPickerOpen.idx}`
                     setFotoPickerOpen(null)
@@ -3875,12 +3877,12 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
 function Sec({title,icon,children}){return <div style={s.section}><div style={s.sectionHeader}>{icon} {title}</div>{children}</div>}
 
 const s={
-  wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#f1f8f4',fontFamily:"'DM Sans',sans-serif"},
+  wrap:{maxWidth:480,margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',background:'#f1f8f4',fontFamily:"'Poppins',sans-serif"},
   // ── Header verde novo design ──
   header:{background:'#0e9f6e',padding:'calc(env(safe-area-inset-top,0px)+14px) 18px 12px'},
   headerInner:{display:'flex',alignItems:'center',justifyContent:'space-between'},
   logo:{display:'flex',alignItems:'center',gap:8},
-  logoTxt:{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:'#fff',letterSpacing:-0.5},
+  logoTxt:{fontFamily:"'Poppins',sans-serif",fontSize:19,fontWeight:700,color:'#fff',letterSpacing:-0.5},
   dot:{color:'rgba(255,255,255,0.6)'},
   headerSub:{fontSize:11,color:'rgba(255,255,255,0.7)',marginTop:3},
   logoutBtn:{background:'rgba(255,255,255,0.15)',border:'none',color:'#fff',borderRadius:16,padding:'5px 10px',fontSize:12,cursor:'pointer'},
@@ -3899,18 +3901,18 @@ const s={
   statusBar:{background:'#0e9f6e',padding:'6px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',fontSize:12,color:'rgba(255,255,255,0.85)'},
   statusDot:{display:'inline-block',width:7,height:7,background:'#ffb020',borderRadius:'50%',marginRight:5},
   opBar:{display:'flex',gap:8,padding:'10px 16px',background:'#fff',borderBottom:'1px solid #e8f0ec'},
-  opBtn:{flex:1,padding:'10px 4px',border:'none',borderRadius:12,fontFamily:"'Syne',sans-serif",fontSize:12,fontWeight:600,cursor:'pointer',color:'#fff'},
+  opBtn:{flex:1,padding:'10px 4px',border:'none',borderRadius:12,fontFamily:"'Poppins',sans-serif",fontSize:12,fontWeight:600,cursor:'pointer',color:'#fff'},
   // ── Body e cards ──
   body:{padding:14,flex:1,display:'flex',flexDirection:'column',gap:10,paddingBottom:80},
   section:{background:'#fff',borderRadius:14,border:'0.5px solid #dcebe3',overflow:'hidden',boxShadow:'0 1px 3px rgba(0,0,0,0.04)'},
-  sectionHeader:{background:'#f2f9f5',padding:'9px 14px',fontFamily:"'Syne',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'#0e9f6e',borderBottom:'0.5px solid #dcebe3'},
+  sectionHeader:{background:'#f2f9f5',padding:'9px 14px',fontFamily:"'Poppins',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'#0e9f6e',borderBottom:'0.5px solid #dcebe3'},
   field:{padding:'11px 14px',borderBottom:'0.5px solid #f0f5f2'},
-  label:{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:4,fontFamily:"'Syne',sans-serif",textTransform:'uppercase'},
-  input:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent'},
-  textarea:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',resize:'none'},
-  select:{width:'100%',border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',appearance:'none',cursor:'pointer'},
+  label:{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:4,fontFamily:"'Poppins',sans-serif",textTransform:'uppercase'},
+  input:{width:'100%',border:'none',outline:'none',fontFamily:"'Poppins',sans-serif",fontSize:14,color:'#0b1210',background:'transparent'},
+  textarea:{width:'100%',border:'none',outline:'none',fontFamily:"'Poppins',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',resize:'none'},
+  select:{width:'100%',border:'none',outline:'none',fontFamily:"'Poppins',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',appearance:'none',cursor:'pointer'},
   dtRow:{display:'flex',alignItems:'center',gap:6},
-  dateInput:{flex:1,border:'none',outline:'none',fontFamily:"'DM Sans',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',appearance:'none'},
+  dateInput:{flex:1,border:'none',outline:'none',fontFamily:"'Poppins',sans-serif",fontSize:14,color:'#0b1210',background:'transparent',appearance:'none'},
   timeSelects:{display:'flex',alignItems:'center',gap:2},
   timeSelect:{background:'#f2f9f5',border:'1px solid #d7e6dc',borderRadius:7,color:'#0b1210',fontSize:14,padding:'3px 4px',width:48,textAlign:'center',appearance:'none',cursor:'pointer',outline:'none'},
   timeSep:{fontSize:16,fontWeight:600,color:'#5c7568'},
@@ -3919,9 +3921,9 @@ const s={
   gpsBtn:{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:8,padding:'6px 12px',fontSize:12,fontWeight:500,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0},
   mapsLink:{display:'flex',alignItems:'center',gap:4,fontSize:12,color:'#0e9f6e',textDecoration:'none',marginTop:6},
   tabs:{display:'flex',borderBottom:'0.5px solid #dcebe3'},
-  tab:{flex:1,padding:9,fontSize:12,fontWeight:600,textAlign:'center',cursor:'pointer',color:'#7ba38f',borderBottom:'2px solid transparent',fontFamily:"'Syne',sans-serif",letterSpacing:.5},
+  tab:{flex:1,padding:9,fontSize:12,fontWeight:600,textAlign:'center',cursor:'pointer',color:'#7ba38f',borderBottom:'2px solid transparent',fontFamily:"'Poppins',sans-serif",letterSpacing:.5},
   tabActive:{color:'#0e9f6e',borderBottomColor:'#0e9f6e'},
-  prodInput:{background:'#f1f8f4',border:'1px solid #dcebe3',borderRadius:10,padding:'8px 10px',fontSize:14,fontFamily:"'DM Sans',sans-serif",color:'#0b1210',outline:'none'},
+  prodInput:{background:'#f1f8f4',border:'1px solid #dcebe3',borderRadius:10,padding:'8px 10px',fontSize:14,fontFamily:"'Poppins',sans-serif",color:'#0b1210',outline:'none'},
   remBtn:{background:'none',border:'none',color:'#e5484d',fontSize:20,cursor:'pointer',flexShrink:0},
   addBtn:{background:'#f2f9f5',border:'1px dashed #c3e0d0',color:'#0e9f6e',borderRadius:10,padding:'10px 12px',fontSize:13,fontWeight:500,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center'},
   obsFotos:{display:'flex',gap:8,padding:'0 14px 14px'},
@@ -3931,7 +3933,7 @@ const s={
   kmlItem:{display:'flex',alignItems:'center',gap:8,background:'#f1f8f4',borderRadius:10,padding:'8px 14px',margin:'4px 14px 0',border:'0.5px solid #dcebe3'},
   kmlAdd:{margin:'8px 14px 14px',border:'1.5px dashed #d7e6dc',borderRadius:12,padding:13,textAlign:'center',cursor:'pointer',display:'block'},
   footer:{padding:'0 14px 16px',display:'flex',flexDirection:'column',gap:10},
-  btnPrimary:{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:14,padding:16,fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:600,cursor:'pointer',position:'relative',overflow:'hidden'},
+  btnPrimary:{background:'#0e9f6e',color:'#fff',border:'none',borderRadius:14,padding:16,fontFamily:"'Poppins',sans-serif",fontSize:15,fontWeight:600,cursor:'pointer',position:'relative',overflow:'hidden'},
   btnAccent:{position:'absolute',bottom:0,left:0,right:0,height:3,background:'#ffb020'},
   btnSecondary:{background:'transparent',color:'#0e9f6e',border:'1.5px solid #0e9f6e',borderRadius:14,padding:13,fontSize:14,fontWeight:500,cursor:'pointer'},
   // ── Timer circular ──
@@ -3941,13 +3943,13 @@ const s={
   navItem:{flex:1,display:'flex',flexDirection:'column',alignItems:'center',padding:'8px 4px 10px',gap:2,cursor:'pointer',border:'none',background:'none'},
   navIcon:{fontSize:20,color:'#b0c4b8'},
   navIconActive:{fontSize:20,color:'#0e9f6e'},
-  navLabel:{fontSize:9,color:'#b0c4b8',fontWeight:500,fontFamily:"'Syne',sans-serif"},
-  navLabelActive:{fontSize:9,color:'#0e9f6e',fontWeight:700,fontFamily:"'Syne',sans-serif"},
+  navLabel:{fontSize:9,color:'#b0c4b8',fontWeight:500,fontFamily:"'Poppins',sans-serif"},
+  navLabelActive:{fontSize:9,color:'#0e9f6e',fontWeight:700,fontFamily:"'Poppins',sans-serif"},
   // ── Modals ──
   modalOverlay:{position:'fixed',inset:0,background:'rgba(0,0,0,.55)',zIndex:100,display:'flex',alignItems:'flex-end',justifyContent:'center'},
   modal:{background:'#fff',borderRadius:'20px 20px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:480,maxHeight:'85vh',overflowY:'auto'},
-  modalTitle:{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:700,color:'#0b1210',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'},
+  modalTitle:{fontFamily:"'Poppins',sans-serif",fontSize:18,fontWeight:700,color:'#0b1210',marginBottom:16,display:'flex',justifyContent:'space-between',alignItems:'center'},
   modalClose:{background:'none',border:'none',fontSize:22,cursor:'pointer',color:'#5c7568'},
-  shareBtn:{color:'#fff',border:'none',borderRadius:14,padding:14,fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',width:'100%'},
+  shareBtn:{color:'#fff',border:'none',borderRadius:14,padding:14,fontFamily:"'Poppins',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',width:'100%'},
   toast:{position:'fixed',bottom:80,left:'50%',transform:'translateX(-50%)',background:'#0b1210',color:'#fff',padding:'12px 24px',borderRadius:100,fontSize:13,fontWeight:500,zIndex:200,whiteSpace:'nowrap',borderBottom:'3px solid #ffb020'},
 }
