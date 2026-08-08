@@ -298,7 +298,7 @@ export default function PilotApp({onSwitchMode}) {
   const [calcAgua,setCalcAgua] = useState('')
   const [calcArea,setCalcArea] = useState('')
   const [calcVazao,setCalcVazao] = useState('')
-  const [calcProdutos,setCalcProdutos] = useState([{nome:'',dose:'',unidade:'L/ha'}])
+  const [calcProdutos,setCalcProdutos] = useState([{nome:'',dose:'',unidade:'L/ha',custom:false}])
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
     supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data,error})=>{
@@ -2035,7 +2035,9 @@ export default function PilotApp({onSwitchMode}) {
   )
 
   if(view==='mapa') {
-    const fazendasComMapa = fazendasDB.filter(f=>f.mapa_pdf_path)
+    // Lista todas as fazendas (não só as que já têm mapa) — senão o piloto nunca
+    // consegue chegar no botão de cadastrar/enviar mapa de uma fazenda nova.
+    const fazendasComMapa = fazendasDB
     const vooAberto = flightsAbertos[0]
     const hojeStr = new Date().toDateString()
     const agendaHoje = minhaAgenda.find(a=>a.status==='pendente' && new Date(a.data_prevista+'T12:00:00').toDateString()===hojeStr)
@@ -2058,7 +2060,7 @@ export default function PilotApp({onSwitchMode}) {
         <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
           {fazendasComMapa.length===0 ? (
             <div style={{textAlign:'center',color:'#5c7568',padding:'40px 20px',background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>
-              Nenhuma fazenda com mapa cadastrado ainda.<br/><span style={{fontSize:12,color:'#a9beb1'}}>Peça pro admin subir o PDF georreferenciado da fazenda.</span>
+              Nenhuma fazenda cadastrada ainda.
             </div>
           ) : (
             <>
@@ -2066,17 +2068,17 @@ export default function PilotApp({onSwitchMode}) {
                 <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>FAZENDA</label>
                 <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",appearance:'none'}}
                   value={fzSel?.id||''} onChange={e=>setMapaTabFazendaId(e.target.value)}>
-                  {fazendasComMapa.map(f=>(<option key={f.id} value={f.id}>{f.nome} — {f.cliente}</option>))}
+                  {fazendasComMapa.map(f=>(<option key={f.id} value={f.id}>{f.nome} — {f.cliente}{!f.mapa_pdf_path?' (sem mapa)':''}</option>))}
                 </select>
               </div>
               {fzSel && (
                 <div style={{background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',borderRadius:22,padding:20,color:'#fff',boxShadow:'0 10px 26px rgba(14,159,110,0.3)',position:'relative',overflow:'hidden',cursor:'pointer'}}
                   onClick={()=>setMapaViewerOpen(true)}>
                   <span style={{position:'absolute',right:-10,bottom:-14,fontSize:76,opacity:.15}}>🗺️</span>
-                  <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>MAPA GEORREFERENCIADO</div>
+                  <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{fzSel.mapa_pdf_path?'MAPA GEORREFERENCIADO':'SEM MAPA AINDA'}</div>
                   <div style={{fontSize:19,fontWeight:700,marginTop:5,fontFamily:"'Poppins',sans-serif"}}>{fzSel.nome}</div>
                   <div style={{fontSize:12,opacity:.85,marginTop:2}}>{fzSel.cliente}</div>
-                  <div style={{fontSize:13,opacity:.95,marginTop:14,display:'flex',alignItems:'center',gap:6}}><Navigation size={15}/> Ver sua posição ao vivo <span style={{marginLeft:'auto'}}>›</span></div>
+                  <div style={{fontSize:13,opacity:.95,marginTop:14,display:'flex',alignItems:'center',gap:6}}><Navigation size={15}/> {fzSel.mapa_pdf_path?'Ver sua posição ao vivo':'Enviar mapa (PDF) dessa fazenda'} <span style={{marginLeft:'auto'}}>›</span></div>
                 </div>
               )}
               {vooAberto && fzSel && vooAberto.cliente===fzSel.cliente && vooAberto.fazenda===fzSel.nome && (
@@ -2698,7 +2700,7 @@ export default function PilotApp({onSwitchMode}) {
     const totalProdutos = produtosCalc.reduce((a,p)=>a+p.totalL,0)
     const agua = calcModo==='agua' ? aguaN : Math.max(0,aguaPorHa*area)
     const totalCalda = agua+totalProdutos
-    const addProduto = () => setCalcProdutos(ps=>[...ps,{nome:'',dose:'',unidade:'L/ha'}])
+    const addProduto = () => setCalcProdutos(ps=>[...ps,{nome:'',dose:'',unidade:'L/ha',custom:false}])
     const removeProduto = i => setCalcProdutos(ps=>ps.filter((_,idx)=>idx!==i))
     const updProduto = (i,campo,v) => setCalcProdutos(ps=>ps.map((p,idx)=>idx===i?{...p,[campo]:v}:p))
     const ORDEM_ADICAO = [
@@ -2752,18 +2754,37 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
             <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>PRODUTOS</div>
             {calcProdutos.map((p,i)=>(
-              <div key={i} style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
-                <input placeholder="Nome" value={p.nome} onChange={e=>updProduto(i,'nome',e.target.value)}
-                  style={{flex:'2 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 10px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none'}}/>
-                <input placeholder="Dose" type="number" value={p.dose} onChange={e=>updProduto(i,'dose',e.target.value)}
-                  style={{flex:'1 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 8px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none'}}/>
-                <select value={p.unidade} onChange={e=>updProduto(i,'unidade',e.target.value)}
-                  style={{border:'1px solid #e0ece5',borderRadius:10,padding:'10px 6px',fontSize:11.5,fontFamily:"'Poppins',sans-serif",outline:'none',background:'#fff'}}>
-                  <option value="L/ha">L/ha</option>
-                  <option value="mL/ha">mL/ha</option>
-                </select>
-                <span style={{minWidth:58,textAlign:'right',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#0e9f6e',flexShrink:0}}>{produtosCalc[i].totalL.toFixed(2)} L</span>
-                {calcProdutos.length>1 && <button onClick={()=>removeProduto(i)} style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:8,width:26,height:26,fontSize:13,cursor:'pointer',flexShrink:0}}>✕</button>}
+              <div key={i} style={{marginBottom:8}}>
+                <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                  {p.custom ? (
+                    <input placeholder="Nome do produto" value={p.nome} onChange={e=>updProduto(i,'nome',e.target.value)} autoFocus
+                      style={{flex:'2 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 10px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none'}}/>
+                  ) : (
+                    <select value={p.nome} onChange={e=>{
+                        const v = e.target.value
+                        if (v==='__outro__') { setCalcProdutos(ps=>ps.map((pp,idx)=>idx===i?{...pp,custom:true,nome:''}:pp)); return }
+                        const pd = produtosDB.find(x=>x.nome===v)
+                        const doseAuto = pd && pd.dose_auto!==false && pd.dose_padrao!=null ? String(pd.dose_padrao) : p.dose
+                        const un = pd?.unidade==='mL' ? 'mL/ha' : pd ? 'L/ha' : p.unidade
+                        setCalcProdutos(ps=>ps.map((pp,idx)=>idx===i?{...pp,nome:v,dose:doseAuto,unidade:un}:pp))
+                      }}
+                      style={{flex:'2 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 10px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none',background:'#fff'}}>
+                      <option value="">Selecione...</option>
+                      {produtosDB.filter(pd=>pd.ativo).map(pd=><option key={pd.nome} value={pd.nome}>{pd.nome}</option>)}
+                      <option value="__outro__">Outros (digitar)</option>
+                    </select>
+                  )}
+                  <input placeholder="Dose" type="number" value={p.dose} onChange={e=>updProduto(i,'dose',e.target.value)}
+                    style={{flex:'1 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 8px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none'}}/>
+                  <select value={p.unidade} onChange={e=>updProduto(i,'unidade',e.target.value)}
+                    style={{border:'1px solid #e0ece5',borderRadius:10,padding:'10px 6px',fontSize:11.5,fontFamily:"'Poppins',sans-serif",outline:'none',background:'#fff'}}>
+                    <option value="L/ha">L/ha</option>
+                    <option value="mL/ha">mL/ha</option>
+                  </select>
+                  <span style={{minWidth:58,textAlign:'right',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#0e9f6e',flexShrink:0}}>{produtosCalc[i].totalL.toFixed(2)} L</span>
+                  {calcProdutos.length>1 && <button onClick={()=>removeProduto(i)} style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:8,width:26,height:26,fontSize:13,cursor:'pointer',flexShrink:0}}>✕</button>}
+                </div>
+                {p.custom && <button onClick={()=>updProduto(i,'custom',false)} style={{background:'none',border:'none',color:'#7ba38f',fontSize:10.5,fontWeight:600,cursor:'pointer',padding:'4px 0 0'}}>‹ Escolher da lista de produtos</button>}
               </div>
             ))}
             <button onClick={addProduto} style={{width:'100%',background:'#f1f8f4',color:'#0e9f6e',border:'1px dashed #b8ddc9',borderRadius:10,padding:'10px',fontSize:12.5,fontWeight:700,cursor:'pointer',marginTop:4}}>+ Adicionar produto</button>
