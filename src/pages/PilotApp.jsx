@@ -11,6 +11,7 @@ import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
+import { App as CapApp } from '@capacitor/app'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -320,6 +321,21 @@ export default function PilotApp({onSwitchMode}) {
     if (isPopRef.current) { isPopRef.current = false; return }
     window.history.pushState({view}, '')
   }, [view])
+
+  // Botão físico/gesto de voltar do Android — sem o listener nativo do @capacitor/app,
+  // o WebView às vezes ignora o histórico de pushState acima e sai do app direto na
+  // primeira tela. Aqui a gente força: se ainda há histórico de telas, volta uma; só
+  // fecha o app quando já está na Home (raiz da navegação).
+  useEffect(() => {
+    const listenerPromise = CapApp.addListener('backButton', () => {
+      if (window.history.state?.view && window.history.state.view !== 'home') {
+        window.history.back()
+      } else {
+        CapApp.exitApp()
+      }
+    })
+    return () => { listenerPromise.then(l => l.remove()) }
+  }, [])
   const [form,setForm] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).form||initForm() } catch{}
     return initForm()
