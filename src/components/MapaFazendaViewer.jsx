@@ -127,7 +127,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
               style={{ display:'block', width:'100%', marginTop:14, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
               {enviando?'Enviando...':'📤 Enviar mapa (PDF)'}
             </button>
-            {destino && (
+            {destino && !enviando && (
               <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer"
                 style={{ display:'block', marginTop:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir localização no Maps</a>
             )}
