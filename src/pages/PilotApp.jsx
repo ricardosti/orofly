@@ -2678,17 +2678,25 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   if(view==='calculadora') {
+    // Vazão total = volume da CALDA PRONTA por hectare (água + produtos), não só água —
+    // então a água por hectare é o que sobra da vazão depois de tirar os produtos.
     const vazaoN = parseFloat(calcVazao)||0
     const aguaN = parseFloat(calcAgua)||0
     const areaN = parseFloat(calcArea)||0
-    const area = calcModo==='agua' ? (vazaoN>0?aguaN/vazaoN:0) : areaN
-    const agua = calcModo==='agua' ? aguaN : area*vazaoN
+    const produtosPorHa = calcProdutos.reduce((a,p)=>{
+      const dose = parseFloat(p.dose)||0
+      return a + (p.unidade==='mL/ha' ? dose/1000 : dose)
+    },0)
+    const aguaPorHa = vazaoN-produtosPorHa
+    const vazaoInsuficiente = vazaoN>0 && produtosPorHa>0 && aguaPorHa<=0
+    const area = calcModo==='agua' ? (aguaPorHa>0?aguaN/aguaPorHa:0) : areaN
     const produtosCalc = calcProdutos.map(p=>{
       const dose = parseFloat(p.dose)||0
       const totalBase = dose*area
       return { ...p, totalL: p.unidade==='mL/ha' ? totalBase/1000 : totalBase }
     })
     const totalProdutos = produtosCalc.reduce((a,p)=>a+p.totalL,0)
+    const agua = calcModo==='agua' ? aguaN : Math.max(0,aguaPorHa*area)
     const totalCalda = agua+totalProdutos
     const addProduto = () => setCalcProdutos(ps=>[...ps,{nome:'',dose:'',unidade:'L/ha'}])
     const removeProduto = i => setCalcProdutos(ps=>ps.filter((_,idx)=>idx!==i))
@@ -2724,15 +2732,21 @@ export default function PilotApp({onSwitchMode}) {
               onClick={()=>setCalcModo('area')}>Tenho área definida</button>
           </div>
 
+          <div style={{fontSize:11,color:'#5c7568',background:'#e6f1fb',borderRadius:10,padding:'8px 10px',lineHeight:1.4}}>ℹ️ A vazão informada (L/ha) é o <strong>volume total da calda</strong> (água + produtos), não só água.</div>
+
           <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
             {calcModo==='agua'
               ? <FI label="ÁGUA DISPONÍVEL (LITROS)" ph="Ex: 250" val={calcAgua} onChange={e=>setCalcAgua(e.target.value)} type="number"/>
               : <FI label="ÁREA (HECTARES)" ph="Ex: 25" val={calcArea} onChange={e=>setCalcArea(e.target.value)} type="number"/>}
-            <FI label="VAZÃO DO DRONE (L/HA)" ph="Ex: 10" val={calcVazao} onChange={e=>setCalcVazao(e.target.value)} type="number"/>
-            <div style={{background:'#f1f8f4',borderRadius:14,padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span style={{fontSize:12.5,color:'#5c7568',fontWeight:600}}>{calcModo==='agua'?'Área que essa água cobre':'Água necessária pra essa área'}</span>
-              <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:19,color:'#0e9f6e'}}>{calcModo==='agua'?`${area.toFixed(2)} ha`:`${agua.toFixed(1)} L`}</span>
-            </div>
+            <FI label="VAZÃO TOTAL DA CALDA (L/HA)" ph="Ex: 15" val={calcVazao} onChange={e=>setCalcVazao(e.target.value)} type="number"/>
+            {vazaoInsuficiente ? (
+              <div style={{fontSize:11.5,color:'#e5484d',background:'#fdeaea',borderRadius:10,padding:'8px 10px'}}>⚠️ A vazão total precisa ser maior que a soma dos produtos por hectare ({produtosPorHa.toFixed(3)} L/ha) — senão não sobra água.</div>
+            ) : (
+              <div style={{background:'#f1f8f4',borderRadius:14,padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontSize:12.5,color:'#5c7568',fontWeight:600}}>{calcModo==='agua'?'Área possível de aplicar':'Água necessária'}</span>
+                <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:19,color:'#0e9f6e'}}>{calcModo==='agua'?`${area.toFixed(2)} ha`:`${agua.toFixed(2)} L`}</span>
+              </div>
+            )}
           </div>
 
           <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
