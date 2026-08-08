@@ -6,13 +6,45 @@ import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salv
 // Usado tanto no Admin (conferir o cadastro) quanto no app do piloto (durante o voo).
 export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   const canvasRef = useRef(null)
+  const fileInputRef = useRef(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
   const [tamCanvas, setTamCanvas] = useState({ width: 0, height: 0 })
   const [pos, setPos] = useState(null) // { lat, lng, accuracy }
+  const [enviando, setEnviando] = useState(false)
+  // Depois que o piloto envia um PDF novo, a fazenda que veio por props ainda não reflete
+  // isso (o admin que carregou a lista não sabe do upload) — guarda local pra já mostrar
+  // o mapa sem precisar fechar/reabrir a tela.
+  const [pathOverride, setPathOverride] = useState(null)
 
-  const temMapa = !!fazenda?.mapa_pdf_path
+  const mapaPdfPath = pathOverride || fazenda?.mapa_pdf_path
+  const temMapa = !!mapaPdfPath
   const temBounds = fazenda?.mapa_lat_min != null && fazenda?.mapa_lat_max != null && fazenda?.mapa_lng_min != null && fazenda?.mapa_lng_max != null
+
+  async function handleEscolherArquivo(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !fazenda?.id) return
+    setEnviando(true)
+    setErro('')
+    try {
+      const path = `mapas/${fazenda.id}/mapa.pdf`
+      const { error: upErr } = await supabase.storage.from('relatorios').upload(path, file, { upsert: true, contentType: 'application/pdf' })
+      if (upErr) throw upErr
+      const { error: dbErr } = await supabase.from('fazendas').update({ mapa_pdf_path: path }).eq('id', fazenda.id)
+      if (dbErr) throw dbErr
+      setCarregando(true)
+      const { width, height } = await renderPdfPageToCanvas(file, canvasRef.current, 1000)
+      setTamCanvas({ width, height })
+      salvarMapaCache(fazenda.id, file)
+      setPathOverride(path)
+    } catch (e2) {
+      setErro('Não consegui enviar o mapa: ' + (e2?.message || 'confira sua conexão e tente de novo.'))
+    } finally {
+      setEnviando(false)
+      setCarregando(false)
+    }
+  }
 
   // Pra onde apontar o "Abrir no Maps": usa o ponto cadastrado na fazenda se tiver, senão
   // cai pro centro do próprio mapa georreferenciado — assim funciona mesmo se o admin só
@@ -40,7 +72,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         } catch {}
       }
       try {
-        const { data, error } = await supabase.storage.from('relatorios').download(fazenda.mapa_pdf_path)
+        const { data, error } = await supabase.storage.from('relatorios').download(mapaPdfPath)
         if (error) throw error
         if (cancelado) return
         if (!mostrouCache) {
@@ -56,7 +88,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       }
     })()
     return () => { cancelado = true }
-  }, [supabase, fazenda?.id, fazenda?.mapa_pdf_path, temMapa])
+  }, [supabase, fazenda?.id, mapaPdfPath, temMapa])
 
   // Segue o GPS sempre que der pra comparar com algum destino — mesmo longe da fazenda,
   // isso já mostra distância e o link do Maps, útil pra quem tá testando ou se deslocando.
@@ -86,16 +118,28 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
           <button style={{ background:'#f1f8f4', color:'#5c7568', border:'none', borderRadius:14, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={onClose}>✕</button>
         </div>
 
+        <input ref={fileInputRef} type="file" accept="application/pdf" style={{ display:'none' }} onChange={handleEscolherArquivo}/>
+
         {!temMapa ? (
           <div style={{ background:'#f7fbf8', borderRadius:14, padding:24, textAlign:'center', fontSize:13, color:'#5c7568' }}>
             Essa fazenda ainda não tem mapa cadastrado.
+            <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
+              style={{ display:'block', width:'100%', marginTop:14, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
+              {enviando?'Enviando...':'📤 Enviar mapa (PDF)'}
+            </button>
             {destino && (
               <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer"
                 style={{ display:'block', marginTop:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir localização no Maps</a>
             )}
           </div>
         ) : erro ? (
-          <div style={{ background:'#fdeaea', color:'#e5484d', borderRadius:14, padding:16, fontSize:13 }}>{erro}</div>
+          <div style={{ background:'#fdeaea', color:'#e5484d', borderRadius:14, padding:16, fontSize:13 }}>
+            {erro}
+            <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
+              style={{ display:'block', width:'100%', marginTop:12, background:'#fff', color:'#e5484d', border:'1px solid #e5484d', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
+              {enviando?'Enviando...':'📤 Enviar mapa de novo (PDF)'}
+            </button>
+          </div>
         ) : (
           <>
             <div style={{ position:'relative', borderRadius:14, overflow:'hidden', border:'1px solid #dcebe3', background:'#eef3ee' }}>
@@ -132,6 +176,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
               {destino && (
                 <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer" style={{ fontSize:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir rota no Maps</a>
               )}
+              <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
+                style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#7ba38f', fontSize:11, fontWeight:600, cursor:'pointer', padding:0, marginTop:4 }}>
+                {enviando?'Enviando...':'🔄 Trocar mapa (enviar PDF novo)'}
+              </button>
             </div>
           </>
         )}

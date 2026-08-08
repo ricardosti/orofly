@@ -292,6 +292,13 @@ export default function PilotApp({onSwitchMode}) {
   const [avatarUrl,setAvatarUrl] = useState(null)
   const [gpsPos,setGpsPos] = useState(null)
   const [notaTab,setNotaTab] = useState('viagem')
+  // Calculadora de calda — modo1: informo água disponível e descubro quantos ha dá pra
+  // cobrir; modo2: informo a área e descubro quanta água/produto preparar.
+  const [calcModo,setCalcModo] = useState('agua')
+  const [calcAgua,setCalcAgua] = useState('')
+  const [calcArea,setCalcArea] = useState('')
+  const [calcVazao,setCalcVazao] = useState('')
+  const [calcProdutos,setCalcProdutos] = useState([{nome:'',dose:'',unidade:'L/ha'}])
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
     supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data,error})=>{
@@ -1691,6 +1698,14 @@ export default function PilotApp({onSwitchMode}) {
     const horaAtual = hoje.getHours()
     const saudacao = horaAtual<12 ? 'Bom dia' : horaAtual<18 ? 'Boa tarde' : 'Boa noite'
     const condDia = tempoDias?.[0]
+    // O card mostra a condição de AGORA, não a pior hora do dia inteiro — usando
+    // precipitation_probability_max (que é o pico do dia, geralmente de madrugada) o
+    // card acusava "chuvoso" com céu limpo só porque ia chover às 4h da manhã.
+    const pad2 = n => String(n).padStart(2,'0')
+    const horaKeyAgora = `${hoje.getFullYear()}-${pad2(hoje.getMonth()+1)}-${pad2(hoje.getDate())}T${pad2(hoje.getHours())}:00`
+    const idxAgora = tempoHorario?.time ? tempoHorario.time.indexOf(horaKeyAgora) : -1
+    const chuvaAgora = idxAgora>=0 && tempoHorario.precipitation_probability?.[idxAgora]!=null ? tempoHorario.precipitation_probability[idxAgora] : condDia?.chuvaProb
+    const ventoAgora = idxAgora>=0 && tempoHorario.windspeed_10m?.[idxAgora]!=null ? tempoHorario.windspeed_10m[idxAgora] : condDia?.ventoMax
     return (
       <div ref={ptrContainerRef} style={{...s.wrap,position:'relative'}}>
         <div style={{position:'absolute',top:0,left:0,right:0,display:'flex',justifyContent:'center',height:0,overflow:'visible',zIndex:5,pointerEvents:'none'}}>
@@ -1720,7 +1735,7 @@ export default function PilotApp({onSwitchMode}) {
           )}
           <div onClick={()=>setView('tempo')} style={{position:'relative',display:'flex',alignItems:'stretch',marginTop:8,border:'1px solid #e6f0ea',borderRadius:18,overflow:'hidden',cursor:'pointer',minHeight:106}}>
             {condDia ? (() => {
-              const chuvoso = condDia.chuvaProb>=60, nublado = condDia.chuvaProb>=25
+              const chuvoso = chuvaAgora>=60, nublado = chuvaAgora>=25
               const bgFoto = chuvoso?'weather-rainy.jpg':nublado?'weather-cloudy.jpg':'weather-sunny.jpg'
               return (
               <>
@@ -1735,17 +1750,17 @@ export default function PilotApp({onSwitchMode}) {
                     })()}
                     <div>
                       <div><span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:25,color:'#0b1210'}}>{Math.round(condDia.tempMax)}°</span><span style={{fontSize:13,color:'#8fa79a',fontWeight:700}}> / {Math.round(condDia.tempMin)}°</span></div>
-                      <div style={{fontSize:11,color:'#5c7568',fontWeight:600,marginTop:1}}>{condDia.chuvaProb>=60?'Chuvoso':condDia.chuvaProb>=25?'Parcialmente nublado':'Ensolarado'}</div>
+                      <div style={{fontSize:11,color:'#5c7568',fontWeight:600,marginTop:1}}>{chuvoso?'Chuvoso':nublado?'Parcialmente nublado':'Ensolarado'}</div>
                     </div>
                   </div>
                   <div style={{display:'flex',gap:7}}>
                     <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px',boxShadow:'0 1px 4px rgba(11,18,16,0.08)'}}>
                       <span style={{width:20,height:20,borderRadius:'50%',background:'#eef2f5',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Wind size={11} color="#5c7568"/></span>
-                      <span style={{fontSize:10.5,fontWeight:700,color:'#33473d',whiteSpace:'nowrap'}}>{Math.round(condDia.ventoMax)} km/h</span>
+                      <span style={{fontSize:10.5,fontWeight:700,color:'#33473d',whiteSpace:'nowrap'}}>{Math.round(ventoAgora)} km/h</span>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:6,background:'#fff',border:'1px solid #e6f0ea',borderRadius:20,padding:'4px 10px 4px 4px',boxShadow:'0 1px 4px rgba(11,18,16,0.08)'}}>
                       <span style={{width:20,height:20,borderRadius:'50%',background:'#e6f1fb',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Droplets size={11} color="#2f6fed"/></span>
-                      <span style={{fontSize:10.5,fontWeight:700,color:'#33473d'}}>{condDia.chuvaProb}%</span>
+                      <span style={{fontSize:10.5,fontWeight:700,color:'#33473d'}}>{Math.round(chuvaAgora)}%</span>
                     </div>
                   </div>
                 </div>
@@ -1795,14 +1810,15 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           ))}
 
-          {/* Ações rápidas — 5 atalhos compactos (estilo DJI) */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:5}}>
+          {/* Ações rápidas — 6 atalhos compactos (estilo DJI) */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 5px'}}>
             {[
               [null,'icon-novo-voo.png','#e3f7ec','Novo voo','Iniciar operação',()=>{ limpar(true); setView('form') }],
               ['📋',null,'#e0ecfb','Notas','Ver registros',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
               ['🌤️',null,'#f3ecfb','Tempo','Previsão detalhada',()=>setView('tempo')],
               ['⚠️',null,'#fdeaea','Incidente','Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
               [null,'icon-relatorios.png','#e3f7ec','Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
+              ['🧪',null,'#f3ecfb','Calculadora','Calda e produtos',()=>setView('calculadora')],
             ].map(([emoji,img,bg,label,sub,onClick])=>(
               <div key={label} onClick={onClick} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,cursor:'pointer'}}>
                 <span style={{width:46,height:46,borderRadius:14,background:bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:24,lineHeight:1}}>
@@ -2661,6 +2677,119 @@ export default function PilotApp({onSwitchMode}) {
     return <span style={{fontSize:11,color:'#7ba38f'}}>📏 ≈{km.toFixed(0)} km em linha reta da sua posição</span>
   }
 
+  if(view==='calculadora') {
+    const vazaoN = parseFloat(calcVazao)||0
+    const aguaN = parseFloat(calcAgua)||0
+    const areaN = parseFloat(calcArea)||0
+    const area = calcModo==='agua' ? (vazaoN>0?aguaN/vazaoN:0) : areaN
+    const agua = calcModo==='agua' ? aguaN : area*vazaoN
+    const produtosCalc = calcProdutos.map(p=>{
+      const dose = parseFloat(p.dose)||0
+      const totalBase = dose*area
+      return { ...p, totalL: p.unidade==='mL/ha' ? totalBase/1000 : totalBase }
+    })
+    const totalProdutos = produtosCalc.reduce((a,p)=>a+p.totalL,0)
+    const totalCalda = agua+totalProdutos
+    const addProduto = () => setCalcProdutos(ps=>[...ps,{nome:'',dose:'',unidade:'L/ha'}])
+    const removeProduto = i => setCalcProdutos(ps=>ps.filter((_,idx)=>idx!==i))
+    const updProduto = (i,campo,v) => setCalcProdutos(ps=>ps.map((p,idx)=>idx===i?{...p,[campo]:v}:p))
+    const ORDEM_ADICAO = [
+      ['💧','Água — ponto inicial','Adicione água limpa no tanque até cerca de 1/3 do volume total.'],
+      ['🧴','Adjuvantes','Adicione os adjuvantes e faça a pré-mistura com a água.'],
+      ['🧂','Produtos sólidos (WG/WP)','Adicione os produtos sólidos e mantenha a agitação até dissolver.'],
+      ['🧪','Produtos líquidos','Adicione os produtos líquidos em seguida, mantendo a agitação.'],
+      ['💧','Completar com água','Complete o volume de água restante até o total desejado.'],
+      ['✅','Aplicação','A calda está pronta. Mantenha a agitação durante toda a aplicação.'],
+    ]
+    return (
+      <div style={{...s.wrap,paddingBottom:90}}>
+        <div style={s.header}>
+          <div style={s.headerInner}>
+            <div style={s.logo}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg><span style={s.logoTxt}>Orofly<span style={s.dot}>.</span></span></div>
+            <div style={{display:'flex',gap:6}}>
+              {onSwitchMode&&<button style={s.switchBtn} onClick={onSwitchMode}>⚙️ Admin</button>}
+              <button style={s.logoutBtn} onClick={tentarSair}>Sair</button>
+            </div>
+          </div>
+          <div style={s.headerSub}>🧪 Calculadora de Calda</div>
+        </div>
+
+        <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+          <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
+
+          <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4}}>
+            <button style={{flex:1,background:calcModo==='agua'?'#fff':'transparent',color:calcModo==='agua'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'10px 8px',fontSize:12.5,fontWeight:700,cursor:'pointer',boxShadow:calcModo==='agua'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+              onClick={()=>setCalcModo('agua')}>Tenho água disponível</button>
+            <button style={{flex:1,background:calcModo==='area'?'#fff':'transparent',color:calcModo==='area'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'10px 8px',fontSize:12.5,fontWeight:700,cursor:'pointer',boxShadow:calcModo==='area'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+              onClick={()=>setCalcModo('area')}>Tenho área definida</button>
+          </div>
+
+          <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+            {calcModo==='agua'
+              ? <FI label="ÁGUA DISPONÍVEL (LITROS)" ph="Ex: 250" val={calcAgua} onChange={e=>setCalcAgua(e.target.value)} type="number"/>
+              : <FI label="ÁREA (HECTARES)" ph="Ex: 25" val={calcArea} onChange={e=>setCalcArea(e.target.value)} type="number"/>}
+            <FI label="VAZÃO DO DRONE (L/HA)" ph="Ex: 10" val={calcVazao} onChange={e=>setCalcVazao(e.target.value)} type="number"/>
+            <div style={{background:'#f1f8f4',borderRadius:14,padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontSize:12.5,color:'#5c7568',fontWeight:600}}>{calcModo==='agua'?'Área que essa água cobre':'Água necessária pra essa área'}</span>
+              <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:19,color:'#0e9f6e'}}>{calcModo==='agua'?`${area.toFixed(2)} ha`:`${agua.toFixed(1)} L`}</span>
+            </div>
+          </div>
+
+          <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+            <div style={{fontSize:10,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>PRODUTOS</div>
+            {calcProdutos.map((p,i)=>(
+              <div key={i} style={{display:'flex',gap:6,alignItems:'center',marginBottom:8}}>
+                <input placeholder="Nome" value={p.nome} onChange={e=>updProduto(i,'nome',e.target.value)}
+                  style={{flex:'2 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 10px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none'}}/>
+                <input placeholder="Dose" type="number" value={p.dose} onChange={e=>updProduto(i,'dose',e.target.value)}
+                  style={{flex:'1 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 8px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none'}}/>
+                <select value={p.unidade} onChange={e=>updProduto(i,'unidade',e.target.value)}
+                  style={{border:'1px solid #e0ece5',borderRadius:10,padding:'10px 6px',fontSize:11.5,fontFamily:"'Poppins',sans-serif",outline:'none',background:'#fff'}}>
+                  <option value="L/ha">L/ha</option>
+                  <option value="mL/ha">mL/ha</option>
+                </select>
+                <span style={{minWidth:58,textAlign:'right',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#0e9f6e',flexShrink:0}}>{produtosCalc[i].totalL.toFixed(2)} L</span>
+                {calcProdutos.length>1 && <button onClick={()=>removeProduto(i)} style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:8,width:26,height:26,fontSize:13,cursor:'pointer',flexShrink:0}}>✕</button>}
+              </div>
+            ))}
+            <button onClick={addProduto} style={{width:'100%',background:'#f1f8f4',color:'#0e9f6e',border:'1px dashed #b8ddc9',borderRadius:10,padding:'10px',fontSize:12.5,fontWeight:700,cursor:'pointer',marginTop:4}}>+ Adicionar produto</button>
+          </div>
+
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {[
+              ['💧 Água total', `${agua.toFixed(1)} L`],
+              ['🧪 Total produtos', `${totalProdutos.toFixed(2)} L`],
+              ['🧴 Total da calda', `${totalCalda.toFixed(2)} L`],
+              ['🌾 Área aplicada', `${area.toFixed(2)} ha`],
+            ].map(([label,val])=>(
+              <div key={label} style={{background:'#fff',border:'1px solid #dcebe3',borderRadius:16,padding:'12px 14px'}}>
+                <div style={{fontSize:10,color:'#8fa79a',fontWeight:600}}>{label}</div>
+                <div style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:16,color:'#0b1210',marginTop:2}}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+            <div style={{fontSize:13,fontWeight:700,fontFamily:"'Poppins',sans-serif",marginBottom:12}}>📋 Ordem de adição dos produtos</div>
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              {ORDEM_ADICAO.map(([icon,titulo,desc],i)=>(
+                <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                  <span style={{width:24,height:24,borderRadius:'50%',background:'#0e9f6e',color:'#fff',fontSize:11,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{i+1}</span>
+                  <div>
+                    <div style={{fontSize:12.5,fontWeight:700}}>{icon} {titulo}</div>
+                    <div style={{fontSize:11.5,color:'#7ba38f',marginTop:1}}>{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{fontSize:11,color:'#a3690a',background:'#fff3e0',borderRadius:10,padding:'10px 12px'}}>⚠️ Siga sempre a bula/receituário e use os EPIs adequados no preparo da calda.</div>
+        </div>
+      </div>
+    )
+  }
+
   if(view==='agenda') return (
     <div style={{...s.wrap,paddingBottom:90}}>
       <div style={s.header}>
@@ -2709,7 +2838,7 @@ export default function PilotApp({onSwitchMode}) {
           if(agendaFiltrada.length===0) return <div style={{textAlign:'center',color:'#5c7568',padding:40,background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>{agendaDiaFiltro?'Nada programado nesse dia':'Nenhum voo programado pelo admin ainda'}</div>
           return agendaFiltrada.map(a=>{
           const hoje = new Date(); hoje.setHours(0,0,0,0)
-          const atrasado = a.status==='pendente' && new Date(a.data_prevista)<hoje
+          const atrasado = a.status==='pendente' && new Date(a.data_prevista+'T00:00:00')<hoje
           const STATUS_BADGE = {pendente:{label:'Pendente',bg:'#fff3e0',cor:'#f2960f'},concluido:{label:'Concluído',bg:'#e3f7ec',cor:'#0e9f6e'},cancelado:{label:'Cancelado',bg:'#fdeaea',cor:'#e5484d'},recusado:{label:'Recusado',bg:'#fdeaea',cor:'#e5484d'}}
           const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
           return (
