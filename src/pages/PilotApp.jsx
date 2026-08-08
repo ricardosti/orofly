@@ -1618,6 +1618,7 @@ export default function PilotApp({onSwitchMode}) {
     const inicio7d = new Date(hoje); inicio7d.setDate(inicio7d.getDate()-6); inicio7d.setHours(0,0,0,0)
     const voos7d = finalizados.filter(r=>{ const d=new Date(r.dt_inicio||r.created_at); return d>=inicio7d })
     const area7d = voos7d.reduce((a,r)=>a+areaLiquida(r),0)
+    const talhoes7d = new Set(voos7d.flatMap(r=>(r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean))).size
     const primeiroNome = (profile?.nome||'').split(' ')[0] || 'Piloto'
     const iniciais = (profile?.nome||'P').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase()
     const minutos7d = voos7d.reduce((a,r)=>{ if(!r.dt_inicio||!r.dt_fim) return a; return a+Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000)) },0)
@@ -1625,7 +1626,6 @@ export default function PilotApp({onSwitchMode}) {
     const horaAtual = hoje.getHours()
     const saudacao = horaAtual<12 ? 'Bom dia' : horaAtual<18 ? 'Boa tarde' : 'Boa noite'
     const condDia = tempoDias?.[0]
-    const condicoesOk = condDia ? (condDia.deltaTClass?.status==='apta' && condDia.chuvaProb<50) : null
     return (
       <div style={s.wrap}>
         <div style={{background:'#fff',borderBottom:'1px solid #eef5f0',padding:'calc(env(safe-area-inset-top,0px) + 16px) 18px 20px'}}>
@@ -1757,26 +1757,27 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           </div>
 
-          {/* Resumo dos últimos 7 dias — número-herói + sub-stats */}
-          <div onClick={()=>{loadFlights();setView('flights')}} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'16px 18px 14px',cursor:'pointer'}}>
+          {/* Resumo dos últimos 7 dias — estilo 4 colunas (hero boxed + 3 stats) */}
+          <div onClick={()=>{loadFlights();setView('flights')}} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',boxShadow:'0 6px 18px rgba(11,18,16,.05)',padding:'13px 16px',cursor:'pointer'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:13.5,color:'#0b1210'}}>Resumo dos últimos 7 dias</span>
               <span style={{fontSize:11.5,fontWeight:700,color:'#0e9f6e',display:'flex',alignItems:'center',gap:3}}>{hoje.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} <CalendarDays size={12}/></span>
             </div>
-            <div style={{marginTop:8,display:'flex',alignItems:'baseline',gap:8}}>
-              <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:32,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{area7d.toFixed(area7d<10?1:0)}</span>
-              <span style={{fontSize:13,fontWeight:700,color:'#7ba38f'}}>ha aplicados</span>
-            </div>
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:14}}>
+            <div style={{display:'flex',alignItems:'stretch',gap:0,marginTop:10}}>
+              <div style={{background:'#f6faf7',border:'1px solid #e6f0ea',borderRadius:12,padding:'9px 13px',display:'flex',flexDirection:'column',gap:2,flex:'0 0 auto',marginRight:10}}>
+                <Sun size={16} color="#f2960f"/>
+                <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:21,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{area7d.toFixed(area7d<10?1:0)}</span>
+                <span style={{fontSize:9.5,color:'#7ba38f',fontWeight:600,whiteSpace:'nowrap'}}>ha aplicados</span>
+              </div>
               {[
-                [IconDrone,voos7d.length,'Voos'],
-                [Clock,horas7d.toFixed(1)+'h','Tempo de voo'],
-                [condicoesOk===false?CloudRain:Sun,condicoesOk===null?'—':condicoesOk?'Apta':'Atenção','Condições'],
+                [IconDrone,voos7d.length,'voos'],
+                [Clock,horas7d.toFixed(1)+'h','tempo total'],
+                [MapPin,talhoes7d,'talhões'],
               ].map(([Icon,value,label])=>(
-                <div key={label} style={{display:'flex',flexDirection:'column',gap:3}}>
-                  <Icon size={15} color="#0e9f6e"/>
-                  <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:13,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{value}</span>
-                  <span style={{fontSize:8.7,color:'#8fa79a',fontWeight:600,textTransform:'uppercase',letterSpacing:.02}}>{label}</span>
+                <div key={label} style={{flex:1,borderLeft:'1px solid #eef2ef',padding:'2px 10px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,textAlign:'center'}}>
+                  <Icon size={14} color="#0e9f6e"/>
+                  <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:14,color:'#0b1210',fontVariantNumeric:'tabular-nums'}}>{value}</span>
+                  <span style={{fontSize:9,color:'#8fa79a',fontWeight:600}}>{label}</span>
                 </div>
               ))}
             </div>
@@ -1792,14 +1793,23 @@ export default function PilotApp({onSwitchMode}) {
                   <span onClick={()=>{loadFlights();setView('flights')}} style={{fontSize:11,fontWeight:700,color:'#0e9f6e',cursor:'pointer'}}>Ver todos ›</span>
                 </div>
                 <div style={{display:'flex',gap:10}}>
-                  {ultimos.map((rel,i)=>(
-                    <div key={rel.id} onClick={()=>openFlight(rel)} style={{flex:1,borderRadius:16,padding:'12px 13px',color:'#fff',position:'relative',overflow:'hidden',minHeight:88,display:'flex',flexDirection:'column',justifyContent:'flex-end',cursor:'pointer',background:i===0?'linear-gradient(150deg,#1c8a5c,#0b3d2b)':'linear-gradient(150deg,#2a6f56,#0d2a20)'}}>
-                      <span style={{position:'absolute',right:4,top:6,fontSize:34,opacity:.22}}>🌾</span>
-                      <span style={{fontSize:9,fontWeight:700,opacity:.8,textTransform:'uppercase',letterSpacing:.03}}>Finalizado</span>
-                      <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:13,marginTop:2}}>{rel.fazenda||'—'}</span>
-                      <span style={{fontSize:10,opacity:.85,marginTop:3}}>{rel.area_ha?`${areaLiquida(rel).toFixed(1)} ha`:'—'}</span>
+                  {ultimos.map((rel)=>{
+                    const dt = rel.dt_inicio ? new Date(rel.dt_inicio) : null
+                    return (
+                    <div key={rel.id} onClick={()=>openFlight(rel)} style={{flex:1,background:'#fff',border:'1px solid #e6f0ea',borderRadius:16,padding:'12px 13px',position:'relative',cursor:'pointer',boxShadow:'0 4px 14px rgba(11,18,16,0.05)'}}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:6}}>
+                        <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12,color:'#0b1210'}}>{rel.fazenda||'—'}</span>
+                        <span style={{fontSize:7.5,fontWeight:700,color:'#0e9f6e',background:'#e3f7ec',borderRadius:8,padding:'3px 6px',textTransform:'uppercase',letterSpacing:.02,whiteSpace:'nowrap'}}>Finalizado</span>
+                      </div>
+                      <div style={{fontSize:9.5,color:'#8fa79a',fontWeight:600,marginTop:3}}>{dt?`${dt.toLocaleDateString('pt-BR')} · ${dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:'—'}</div>
+                      <div style={{fontSize:8.7,color:'#8fa79a',fontWeight:600,marginTop:9,textTransform:'uppercase',letterSpacing:.02}}>Área aplicada</div>
+                      <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginTop:2}}>
+                        <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:16,color:'#0e9f6e'}}>{rel.area_ha?`${areaLiquida(rel).toFixed(1)} ha`:'—'}</span>
+                        <span style={{width:24,height:24,borderRadius:8,background:'#f1f8f4',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><FileBarChart2 size={13} color="#0e9f6e"/></span>
+                      </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )
