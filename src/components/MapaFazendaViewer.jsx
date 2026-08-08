@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm } from '../lib/geopdf'
+import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salvarMapaCache } from '../lib/geopdf'
 
 // Mapa georreferenciado da fazenda (estilo Avenza) — renderiza o PDF cadastrado e sobrepõe
 // a posição de GPS ao vivo do usuário, convertida via os 4 cantos (lat/lng) cadastrados.
@@ -23,25 +23,40 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       ? { lat: (fazenda.mapa_lat_min + fazenda.mapa_lat_max) / 2, lng: (fazenda.mapa_lng_min + fazenda.mapa_lng_max) / 2 }
       : null
 
+  // Abre do cache local primeiro (rápido e funciona sem sinal em campo) e, em paralelo,
+  // tenta buscar a versão mais nova do servidor — se conseguir, atualiza o cache pra
+  // próxima vez. Só mostra erro se não tinha cache E não conseguiu baixar (sem sinal na
+  // primeira vez que abre esse mapa nesse aparelho).
   useEffect(() => {
     if (!temMapa) { setCarregando(false); return }
     let cancelado = false
     ;(async () => {
+      let mostrouCache = false
+      const cache = await lerMapaCache(fazenda.id)
+      if (cache && !cancelado) {
+        try {
+          const { width, height } = await renderPdfPageToCanvas(cache, canvasRef.current, 1000)
+          if (!cancelado) { setTamCanvas({ width, height }); setCarregando(false); mostrouCache = true }
+        } catch {}
+      }
       try {
         const { data, error } = await supabase.storage.from('relatorios').download(fazenda.mapa_pdf_path)
         if (error) throw error
         if (cancelado) return
-        const { width, height } = await renderPdfPageToCanvas(data, canvasRef.current, 1000)
-        if (cancelado) return
-        setTamCanvas({ width, height })
+        if (!mostrouCache) {
+          const { width, height } = await renderPdfPageToCanvas(data, canvasRef.current, 1000)
+          if (cancelado) return
+          setTamCanvas({ width, height })
+        }
+        salvarMapaCache(fazenda.id, data)
       } catch (e) {
-        if (!cancelado) setErro('Não consegui abrir o mapa dessa fazenda. Tente cadastrar o PDF de novo.')
+        if (!mostrouCache && !cancelado) setErro('Não consegui abrir o mapa dessa fazenda. Confira sua conexão e tente de novo.')
       } finally {
         if (!cancelado) setCarregando(false)
       }
     })()
     return () => { cancelado = true }
-  }, [supabase, fazenda?.mapa_pdf_path, temMapa])
+  }, [supabase, fazenda?.id, fazenda?.mapa_pdf_path, temMapa])
 
   // Segue o GPS sempre que der pra comparar com algum destino — mesmo longe da fazenda,
   // isso já mostra distância e o link do Maps, útil pra quem tá testando ou se deslocando.

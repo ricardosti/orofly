@@ -2,6 +2,7 @@
 // (GeoPDF de verdade ou não) num canvas, e converte GPS em posição na imagem usando os 4
 // cantos (lat/lng) que o admin cadastrou pra essa fazenda.
 import * as pdfjsLib from 'pdfjs-dist'
+import { Capacitor } from '@capacitor/core'
 
 // Servido como arquivo estático da pasta public/ (copiado de node_modules na hora do build) —
 // evita depender do bundling de módulo do Webpack pro worker, que quebrava no Vercel (os
@@ -47,4 +48,43 @@ export function latLngParaPixel(lat, lng, bounds, imgWidth, imgHeight) {
     y: Math.max(0, Math.min(imgHeight, (1 - v) * imgHeight)), // y de tela é invertido (0 no topo)
     dentro: u >= 0 && u <= 1 && v >= 0 && v <= 1,
   }
+}
+
+function base64ParaArrayBuffer(base64) {
+  const binario = atob(base64)
+  const bytes = new Uint8Array(binario.length)
+  for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i)
+  return bytes.buffer
+}
+
+function blobParaBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+// Cache local do PDF do mapa (pasta Data do app, via @capacitor/filesystem) — depois da
+// primeira vez que o mapa foi baixado com internet, ele abre de novo em campo mesmo sem
+// sinal. Só existe no app nativo (Android/iOS); no navegador comum não faz nada.
+export async function lerMapaCache(fazendaId) {
+  if (!Capacitor.isNativePlatform()) return null
+  try {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem')
+    const res = await Filesystem.readFile({ path: `mapas-cache/${fazendaId}.pdf`, directory: Directory.Data })
+    return base64ParaArrayBuffer(res.data)
+  } catch { return null }
+}
+
+export async function salvarMapaCache(fazendaId, blobOuArrayBuffer) {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem')
+    const blob = blobOuArrayBuffer instanceof Blob ? blobOuArrayBuffer : new Blob([blobOuArrayBuffer])
+    const base64 = await blobParaBase64(blob)
+    await Filesystem.mkdir({ path: 'mapas-cache', directory: Directory.Data, recursive: true }).catch(() => {})
+    await Filesystem.writeFile({ path: `mapas-cache/${fazendaId}.pdf`, data: base64, directory: Directory.Data })
+  } catch (e) { console.error('Erro ao salvar mapa em cache local:', e) }
 }
