@@ -1746,12 +1746,15 @@ export default function PilotApp({onSwitchMode}) {
           </div>
 
           {/* Promo — mapa da fazenda */}
-          <div onClick={()=>setView('mapa')} style={{borderRadius:20,padding:'16px 18px',color:'#fff',position:'relative',overflow:'hidden',cursor:'pointer',background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',boxShadow:'0 10px 24px rgba(14,159,110,0.3)'}}>
-            <span style={{position:'absolute',right:-6,bottom:-16,fontSize:76,opacity:.16,transform:'rotate(-8deg)'}}>🗺️</span>
-            <div style={{fontSize:10,fontWeight:700,letterSpacing:.6,textTransform:'uppercase',opacity:.85}}>Mapa da fazenda</div>
-            <div style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:16,marginTop:3}}>Sua posição ao vivo sobre o talhão</div>
-            <div style={{fontSize:11.5,opacity:.9,marginTop:4,maxWidth:210,lineHeight:1.4}}>Veja se está dentro da área aplicada, em tempo real</div>
-            <div style={{fontSize:11.5,fontWeight:700,marginTop:10,display:'flex',alignItems:'center',gap:4}}>Abrir mapa →</div>
+          <div onClick={()=>setView('mapa')} style={{borderRadius:20,padding:'16px 18px',color:'#fff',position:'relative',overflow:'hidden',cursor:'pointer',minHeight:150,display:'flex',flexDirection:'column',justifyContent:'center',boxShadow:'0 10px 24px rgba(14,159,110,0.3)'}}>
+            <img src={`${process.env.PUBLIC_URL||''}/mapa-fazenda-bg.jpg`} alt="Mapa da fazenda" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+            <div style={{position:'absolute',inset:0,background:'linear-gradient(90deg, rgba(9,38,26,0.92) 0%, rgba(9,38,26,0.8) 42%, rgba(9,38,26,0.25) 68%, rgba(9,38,26,0.05) 85%)'}}/>
+            <div style={{position:'relative'}}>
+              <div style={{fontSize:10,fontWeight:700,letterSpacing:.6,textTransform:'uppercase',opacity:.85}}>Mapa da fazenda</div>
+              <div style={{fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:16,marginTop:3}}>Sua posição ao vivo sobre o talhão</div>
+              <div style={{fontSize:11.5,opacity:.9,marginTop:4,maxWidth:210,lineHeight:1.4}}>Veja se está dentro da área aplicada, em tempo real</div>
+              <div style={{fontSize:11.5,fontWeight:700,marginTop:10,display:'flex',alignItems:'center',gap:4}}>Abrir mapa →</div>
+            </div>
           </div>
 
           {/* Resumo dos últimos 7 dias — número-herói + sub-stats */}
