@@ -203,7 +203,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const gestoRef = useRef({ modo: null, x0: 0, y0: 0, panX0: 0, panY0: 0, dist0: 0, zoom0: 1, ang0: 0, rot0: 0 })
-  const ZOOM_MIN = 1, ZOOM_MAX = 6
+  const ZOOM_MIN = 0.5, ZOOM_MAX = 6
 
   // Rotação do mapa (estilo Avenza) — gira com gesto de 2 dedos, ou automaticamente
   // seguindo a bússola/magnetômetro do celular quando "seguindoBussola" está ativo.
@@ -211,12 +211,25 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   const [seguindoBussola, setSeguindoBussola] = useState(false)
   const [transicaoSuave, setTransicaoSuave] = useState(false)
 
+  // Tela cheia agora (sem popup): a imagem é "contida" dentro da tela toda (como object-fit:
+  // contain), centralizada — essa é a escala de ajuste antes de aplicar o zoom do usuário.
+  function escalaBase() {
+    const box = mapBoxRef.current
+    if (!box || !tamCanvas.width || !tamCanvas.height) return 1
+    const r = box.getBoundingClientRect()
+    if (!r.width || !r.height) return 1
+    return Math.min(r.width / tamCanvas.width, r.height / tamCanvas.height)
+  }
   function limitarPan(z, p) {
     const box = mapBoxRef.current
-    if (!box) return p
+    if (!box || !tamCanvas.width) return p
     const r = box.getBoundingClientRect()
-    const maxX = (r.width * (z - 1)) / 2
-    const maxY = (r.height * (z - 1)) / 2
+    const base = escalaBase()
+    const imgW = tamCanvas.width * base * z, imgH = tamCanvas.height * base * z
+    // permite arrastar o mapa pra fora da tela (revela o fundo neutro), mas sempre deixa uma
+    // folga pra conseguir puxar ele de volta — não perde a imagem de vista de vez.
+    const maxX = Math.max(0, (imgW - r.width) / 2) + r.width * 0.15
+    const maxY = Math.max(0, (imgH - r.height) / 2) + r.height * 0.15
     return { x: Math.max(-maxX, Math.min(maxX, p.x)), y: Math.max(-maxY, Math.min(maxY, p.y)) }
   }
   function resetZoom() { setZoom(1); setPan({ x: 0, y: 0 }) }
@@ -245,17 +258,41 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       let deltaAng = anguloEntreToques(e.touches) - g.ang0
       deltaAng = ((deltaAng + 180) % 360 + 360) % 360 - 180 // menor caminho, evita saltar 350° ao cruzar o limite
       setSeguindoBussola(false)
+      setSeguindoGps(false)
       setTransicaoSuave(false)
       setRotacao(g.rot0 + deltaAng)
       setZoom(novoZoom)
       setPan(limitarPan(novoZoom, { x: g.panX0, y: g.panY0 }))
     } else if (g.modo === 'pan' && e.touches.length === 1) {
-      if (zoom > 1) e.preventDefault()
+      e.preventDefault()
+      setSeguindoGps(false)
       const dx = e.touches[0].clientX - g.x0, dy = e.touches[0].clientY - g.y0
       setPan(limitarPan(zoom, { x: g.panX0 + dx, y: g.panY0 + dy }))
     }
   }
   function onMapaTouchEnd() { gestoRef.current = { modo: null } }
+
+  // FAB "minha localização" — centraliza a câmera no pin do GPS e trava ali (segue
+  // automaticamente conforme a posição atualiza), até o usuário arrastar/pinçar manualmente.
+  const [seguindoGps, setSeguindoGps] = useState(false)
+  useEffect(() => {
+    if (!seguindoGps || !pinPx || !tamCanvas.width) return
+    const base = escalaBase()
+    const rad = rotacao * Math.PI / 180
+    // o vetor até o centro da imagem está no espaço "local" (não rotacionado) do mapa — como
+    // o pan é aplicado depois da rotação no transform, precisa girar esse vetor também.
+    const localDx = (tamCanvas.width / 2 - pinPx.x) * base * zoom
+    const localDy = (tamCanvas.height / 2 - pinPx.y) * base * zoom
+    const dx = localDx * Math.cos(rad) - localDy * Math.sin(rad)
+    const dy = localDx * Math.sin(rad) + localDy * Math.cos(rad)
+    setPan({ x: dx, y: dy })
+  }, [seguindoGps, pos?.lat, pos?.lng, rotacao, zoom]) // eslint-disable-line
+  function alternarSeguirGps() {
+    if (!pinPx) return
+    setTransicaoSuave(!seguindoGps)
+    setSeguindoGps(v => !v)
+    setTimeout(() => setTransicaoSuave(false), 350)
+  }
 
   // Rotação automática seguindo o heading do celular (magnetômetro), quando ativada pelo
   // botão da bússola. iOS entrega o heading pronto (webkitCompassHeading); Android entrega
@@ -308,6 +345,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     setPan(p => limitarPan(novoZoom, p))
   }
 
+  // HUD da tela cheia — menu de opções (⋯) e o drawer de log, escondido por padrão.
+  const [menuAberto, setMenuAberto] = useState(false)
+  const [mostrarLog, setMostrarLog] = useState(false)
+
   // Calibração por 2 pontos — toca em 2 lugares reconhecíveis no mapa, informa a
   // coordenada real de cada um (digitando ou usando o GPS de quem está lá), e o app
   // calcula os 4 cantos sozinho. Substitui ter que descobrir/digitar os 4 números
@@ -324,6 +365,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     setPontosCalib([])
     setPendente(null)
     setCalibLat(''); setCalibLng('')
+    setSeguindoGps(false)
     resetZoom()
     log('calibração iniciada')
   }
@@ -424,21 +466,39 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   }
   const escala = temMapa && !carregando ? calcularEscala() : null
 
+  const itemMenuStyle = { display:'block', width:'100%', textAlign:'left', background:'none', border:'none', borderBottom:'1px solid #eef3ee', color:'#26362d', fontSize:13, fontWeight:600, padding:'12px 14px', cursor:'pointer', textDecoration:'none' }
+
   return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(11,18,16,.7)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:14 }} onClick={onClose}>
-      <div style={{ background:'#fff', borderRadius:20, width:'100%', maxWidth:480, maxHeight:'92vh', overflowY:'auto', padding:16 }} onClick={e=>e.stopPropagation()}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12 }}>
-          <div>
-            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:16, fontWeight:700 }}>🗺️ Mapa da Fazenda</div>
-            <div style={{ fontSize:12, color:'#5c7568' }}>{fazenda?.nome} — {fazenda?.cliente}</div>
-          </div>
-          <button style={{ background:'#f1f8f4', color:'#5c7568', border:'none', borderRadius:14, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={onClose}>✕</button>
+    <div style={{ position:'fixed', inset:0, zIndex:2000, background:'#1c2321', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" style={{ display:'none' }} onChange={handleEscolherArquivo}/>
+
+      {/* HUD topo — voltar / nome da fazenda / opções */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:20, display:'flex', alignItems:'center', gap:10,
+        padding:'calc(env(safe-area-inset-top,0px) + 10px) 12px 24px', background:'linear-gradient(rgba(11,18,16,.8),rgba(11,18,16,0))', pointerEvents:'none' }}>
+        <button onClick={onClose} style={{ pointerEvents:'auto', width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,.14)', border:'none', color:'#fff', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>←</button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ color:'#fff', fontWeight:700, fontSize:14, fontFamily:"'Syne',sans-serif", whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{fazenda?.nome}</div>
+          <div style={{ color:'rgba(255,255,255,.65)', fontSize:11, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{fazenda?.cliente}</div>
         </div>
+        {temMapa && !erro && (
+          <button onClick={()=>setMenuAberto(v=>!v)} style={{ pointerEvents:'auto', width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,.14)', border:'none', color:'#fff', fontSize:18, fontWeight:700, cursor:'pointer', flexShrink:0 }}>⋯</button>
+        )}
+      </div>
+      {menuAberto && <div onClick={()=>setMenuAberto(false)} style={{ position:'absolute', inset:0, zIndex:20 }}/>}
+      {menuAberto && (
+        <div style={{ position:'absolute', top:'calc(env(safe-area-inset-top,0px) + 54px)', right:12, zIndex:21, background:'#fff', borderRadius:14, boxShadow:'0 10px 30px rgba(0,0,0,.4)', overflow:'hidden', minWidth:210 }}>
+          <button onClick={()=>{ iniciarCalibracao(); setMenuAberto(false) }} style={itemMenuStyle}>🎯 {bounds ? 'Recalibrar mapa' : 'Calibrar mapa'}</button>
+          <button disabled={enviando} onClick={()=>{ fileInputRef.current?.click(); setMenuAberto(false) }} style={itemMenuStyle}>🔄 {enviando ? 'Enviando...' : 'Trocar mapa (PDF)'}</button>
+          {destino && (
+            <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer" onClick={()=>setMenuAberto(false)} style={itemMenuStyle}>🗺️ Abrir no Maps</a>
+          )}
+          <button onClick={()=>{ setMostrarLog(v=>!v); setMenuAberto(false) }} style={{ ...itemMenuStyle, borderBottom:'none', color:'#7ba38f' }}>🐞 {mostrarLog ? 'Esconder' : 'Mostrar'} log (debug)</button>
+        </div>
+      )}
 
-        <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" style={{ display:'none' }} onChange={handleEscolherArquivo}/>
-
-        {!temMapa ? (
-          <div style={{ background:'#f7fbf8', borderRadius:14, padding:24, textAlign:'center', fontSize:13, color:'#5c7568' }}>
+      {!temMapa ? (
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div style={{ background:'#fff', borderRadius:18, padding:24, textAlign:'center', fontSize:13, color:'#5c7568', maxWidth:340, width:'100%' }}>
             Essa fazenda ainda não tem mapa cadastrado.
             <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
               style={{ display:'block', width:'100%', marginTop:14, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
@@ -449,29 +509,36 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
                 style={{ display:'block', marginTop:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir localização no Maps</a>
             )}
           </div>
-        ) : erro ? (
-          <div style={{ background:'#fdeaea', color:'#e5484d', borderRadius:14, padding:16, fontSize:13 }}>
+        </div>
+      ) : erro ? (
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div style={{ background:'#fdeaea', color:'#e5484d', borderRadius:18, padding:20, fontSize:13, maxWidth:340, width:'100%' }}>
             {erro}
             <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
               style={{ display:'block', width:'100%', marginTop:12, background:'#fff', color:'#e5484d', border:'1px solid #e5484d', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
               {enviando?'Enviando...':'📤 Enviar mapa de novo (PDF)'}
             </button>
           </div>
-        ) : (
-          <>
-            <div ref={mapBoxRef}
-              style={{ position:'relative', borderRadius:14, overflow:'hidden', border:'1px solid #dcebe3', background:'#eef3ee',
-                aspectRatio: tamCanvas.width && tamCanvas.height ? `${tamCanvas.width}/${tamCanvas.height}` : '4/3', touchAction:'none',
-                cursor: calibrando ? 'crosshair' : 'default' }}
-              onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
-              onDoubleClick={resetZoom} onWheel={onMapaWheel} onClick={onMapaClickCalibrar}>
-              {carregando && <div style={{ padding:60, textAlign:'center', fontSize:13, color:'#7ba38f' }}>Abrindo mapa...</div>}
+        </div>
+      ) : (
+        <>
+          <div ref={mapBoxRef}
+            style={{ flex:1, position:'relative', overflow:'hidden',
+              backgroundColor:'#1c2321',
+              backgroundImage:'linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px)',
+              backgroundSize:'26px 26px', touchAction:'none',
+              cursor: calibrando ? 'crosshair' : 'default' }}
+            onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
+            onDoubleClick={resetZoom} onWheel={onMapaWheel} onClick={onMapaClickCalibrar}>
+            {carregando && <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#9fc2af' }}>Abrindo mapa...</div>}
+            {tamCanvas.width > 0 && (
               <div style={{
-                position:'absolute', inset:0, transformOrigin:'center center',
-                transform:`translate(${pan.x}px,${pan.y}px) rotate(${rotacao}deg) scale(${zoom})`,
+                position:'absolute', left:'50%', top:'50%', width:tamCanvas.width, height:tamCanvas.height,
+                transformOrigin:'center center',
+                transform:`translate(-50%,-50%) translate(${pan.x}px,${pan.y}px) rotate(${rotacao}deg) scale(${escalaBase()*zoom})`,
                 transition: transicaoSuave ? 'transform .35s ease' : 'none',
                 display: carregando ? 'none' : 'block' }}>
-                <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block' }} />
+                <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block', boxShadow:'0 4px 30px rgba(0,0,0,.5)' }} />
                 {pinPx && !calibrando && (
                   <>
                     {precisaoPctX != null && (
@@ -483,7 +550,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
                     )}
                     <div style={{
                       position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
-                      transform:`translate(-50%,-50%) scale(${1/zoom})`, width:20, height:20, borderRadius:'50%',
+                      transform:`translate(-50%,-50%) scale(${1/(escalaBase()*zoom)})`, width:20, height:20, borderRadius:'50%',
                       background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
                       boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
                     }}/>
@@ -499,132 +566,125 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
                   }}>{i+1}</div>
                 ))}
               </div>
-              {zoom>1 && !calibrando && (
-                <button onClick={resetZoom} style={{ position:'absolute', right:8, bottom:8, background:'rgba(11,18,16,.75)', color:'#fff', border:'none', borderRadius:20, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
-                  ⤢ {zoom.toFixed(1)}x — resetar
-                </button>
-              )}
-              {escala && !calibrando && (
-                <div style={{ position:'absolute', left:8, bottom:8, display:'flex', flexDirection:'column', alignItems:'flex-start', pointerEvents:'none' }}>
-                  <div style={{ width:escala.larguraPx, height:4, background:'rgba(11,18,16,.75)', borderLeft:'2px solid rgba(11,18,16,.75)', borderRight:'2px solid rgba(11,18,16,.75)' }}/>
-                  <span style={{ fontSize:10, fontWeight:700, color:'#fff', background:'rgba(11,18,16,.75)', borderRadius:6, padding:'1px 5px', marginTop:2 }}>{escala.label}</span>
-                </div>
-              )}
-              {temMapa && !carregando && !calibrando && (
-                <button onClick={alternarBussola} title="Bússola — toque pra girar o mapa seguindo a direção do celular, ou resetar pro norte"
-                  style={{ position:'absolute', right:8, top:8, width:32, height:32, borderRadius:'50%', padding:0,
-                    background: seguindoBussola ? '#0e9f6e' : 'rgba(11,18,16,.75)', border:'none', cursor:'pointer',
-                    display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <div style={{ position:'relative', width:14, height:14 }}>
-                    <div style={{ position:'absolute', inset:0, transform:`rotate(${-rotacao}deg)`, transition: transicaoSuave ? 'transform .35s ease' : 'none' }}>
-                      <div style={{ position:'absolute', left:'50%', top:0, transform:'translateX(-50%)', width:0, height:0, borderLeft:'4.5px solid transparent', borderRight:'4.5px solid transparent', borderBottom:'8px solid #ff5c5c' }}/>
-                      <div style={{ position:'absolute', left:'50%', bottom:0, transform:'translateX(-50%)', width:0, height:0, borderLeft:'4.5px solid transparent', borderRight:'4.5px solid transparent', borderTop:'8px solid #dfe8e2' }}/>
-                    </div>
-                  </div>
-                </button>
-              )}
-              {pos && !calibrando && (
-                <div style={{ position:'absolute', right:8, top:46, background:'rgba(11,18,16,.75)', color:'#fff', fontSize:9.5, fontFamily:'ui-monospace,monospace', borderRadius:8, padding:'4px 8px' }}>
-                  {formatarCoord(pos.lat, pos.lng)} · ±{Math.round(pos.accuracy)}m
-                </div>
-              )}
-              {calibrando && (
-                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'flex-start', justifyContent:'center', pointerEvents:'none', paddingTop:8 }}>
-                  <div style={{ background:'rgba(11,18,16,.85)', color:'#fff', fontSize:11.5, fontWeight:600, borderRadius:10, padding:'6px 12px', textAlign:'center', pointerEvents:'none' }}>
-                    {pendente ? 'Informe a coordenada desse ponto abaixo ⬇️' : `Toque no ${pontosCalib.length===0?'1º':'2º'} ponto que você reconhece no mapa`}
+            )}
+            {(zoom>1.02||zoom<0.98) && !calibrando && (
+              <button onClick={resetZoom} style={{ position:'absolute', right:8, bottom:96, background:'rgba(11,18,16,.75)', color:'#fff', border:'none', borderRadius:20, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                ⤢ {zoom.toFixed(1)}x — resetar
+              </button>
+            )}
+            {escala && !calibrando && (
+              <div style={{ position:'absolute', left:12, bottom:96, display:'flex', flexDirection:'column', alignItems:'flex-start', pointerEvents:'none' }}>
+                <div style={{ width:escala.larguraPx, height:4, background:'rgba(11,18,16,.75)', borderLeft:'2px solid rgba(11,18,16,.75)', borderRight:'2px solid rgba(11,18,16,.75)' }}/>
+                <span style={{ fontSize:10, fontWeight:700, color:'#fff', background:'rgba(11,18,16,.75)', borderRadius:6, padding:'1px 5px', marginTop:2 }}>{escala.label}</span>
+              </div>
+            )}
+            {temMapa && !carregando && !calibrando && (
+              <button onClick={alternarBussola} title="Bússola — toque pra girar o mapa seguindo a direção do celular, ou resetar pro norte"
+                style={{ position:'absolute', right:8, top:'calc(env(safe-area-inset-top,0px) + 62px)', width:34, height:34, borderRadius:'50%', padding:0,
+                  background: seguindoBussola ? '#0e9f6e' : 'rgba(11,18,16,.75)', border:'none', cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <div style={{ position:'relative', width:14, height:14 }}>
+                  <div style={{ position:'absolute', inset:0, transform:`rotate(${-rotacao}deg)`, transition: transicaoSuave ? 'transform .35s ease' : 'none' }}>
+                    <div style={{ position:'absolute', left:'50%', top:0, transform:'translateX(-50%)', width:0, height:0, borderLeft:'4.5px solid transparent', borderRight:'4.5px solid transparent', borderBottom:'8px solid #ff5c5c' }}/>
+                    <div style={{ position:'absolute', left:'50%', bottom:0, transform:'translateX(-50%)', width:0, height:0, borderLeft:'4.5px solid transparent', borderRight:'4.5px solid transparent', borderTop:'8px solid #dfe8e2' }}/>
                   </div>
                 </div>
-              )}
-            </div>
+              </button>
+            )}
             {calibrando && (
-              <div style={{ marginTop:10, background:'#f6faf7', border:'1px solid #dcebe3', borderRadius:14, padding:12, display:'flex', flexDirection:'column', gap:8 }}>
-                {pendente ? (
-                  <>
-                    <div style={{ fontSize:11, fontWeight:700, color:'#5c7568' }}>COORDENADA DO PONTO {pontosCalib.length+1}</div>
-                    <div style={{ display:'flex', gap:6 }}>
-                      <input placeholder="Latitude" value={calibLat} onChange={e=>setCalibLat(e.target.value)} type="number"
-                        style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
-                      <input placeholder="Longitude" value={calibLng} onChange={e=>setCalibLng(e.target.value)} type="number"
-                        style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
-                    </div>
-                    {pos && (
-                      <button onClick={usarGpsAtual} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#0e9f6e', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>
-                        📡 Usar minha localização atual (só se você estiver nesse ponto agora)
-                      </button>
-                    )}
-                    <div style={{ display:'flex', gap:8 }}>
-                      <button onClick={()=>setPendente(null)} style={{ flex:1, background:'#fff', color:'#5c7568', border:'1px solid #dcebe3', borderRadius:10, padding:'9px', fontSize:12.5, fontWeight:600, cursor:'pointer' }}>Cancelar ponto</button>
-                      <button onClick={confirmarPonto} disabled={!calibLat||!calibLng} style={{ flex:1, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:10, padding:'9px', fontSize:12.5, fontWeight:600, cursor:'pointer', opacity:(!calibLat||!calibLng)?.5:1 }}>Confirmar ponto</button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize:11.5, color:'#5c7568' }}>
-                      🎯 Toque em 2 pontos <strong>bem afastados e em diagonal</strong> no mapa que você reconhece na realidade (ex: canto do talhão, cruzamento de estrada). Pra cada um, informe a coordenada real — se estiver lá agora, é só usar o GPS.
-                    </div>
-                    {calibSalvando && <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600 }}>Salvando calibração...</div>}
-                    <button onClick={cancelarCalibracao} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#7ba38f', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>✕ Cancelar calibração</button>
-                  </>
-                )}
-              </div>
-            )}
-            {!calibrando && (
-              <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:6 }}>
-                {!bounds ? (
-                  <div style={{ fontSize:11.5, color:'#a3690a', background:'#fff3e0', borderRadius:10, padding:'8px 10px' }}>⚠️ Esse mapa ainda não foi calibrado — toque em "🎯 Calibrar mapa" abaixo pra localizar 2 pontos e alinhar a posição.</div>
-                ) : !pos ? (
-                  <div style={{ fontSize:11.5, color:'#7ba38f' }}>📡 Buscando seu GPS...</div>
-                ) : longe ? (
-                  <div style={{ fontSize:11.5, color:'#2952a3', fontWeight:600, background:'#e6f1fb', borderRadius:10, padding:'8px 10px' }}>
-                    📍 Você está a ~{distKm < 10 ? distKm.toFixed(1) : Math.round(distKm)} km do mapa — use a rota abaixo pra chegar. A posição ao vivo aparece aqui quando você estiver perto.
-                  </div>
-                ) : !pinPx?.dentro ? (
-                  <div style={{ fontSize:11.5, color:'#e5484d', fontWeight:600 }}>⚠️ Você está fora da área desse mapa (~{Math.round(distKm*1000)}m do centro)</div>
-                ) : (
-                  <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600 }}>📍 Você está dentro da área mapeada</div>
-                )}
-                {pos && (
-                  <div style={{ fontFamily:'ui-monospace,monospace', fontSize:11, color:'#5c7568' }}>
-                    {formatarCoord(pos.lat, pos.lng)} · precisão ±{Math.round(pos.accuracy)}m
-                  </div>
-                )}
-                {destino && (
-                  <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer" style={{ fontSize:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir rota no Maps</a>
-                )}
-                <div style={{ display:'flex', gap:14, marginTop:4 }}>
-                  <button onClick={iniciarCalibracao}
-                    style={{ background:'none', border:'none', color:'#0e9f6e', fontSize:11, fontWeight:700, cursor:'pointer', padding:0 }}>
-                    🎯 {bounds ? 'Recalibrar mapa' : 'Calibrar mapa'}
-                  </button>
-                  <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
-                    style={{ background:'none', border:'none', color:'#7ba38f', fontSize:11, fontWeight:600, cursor:'pointer', padding:0 }}>
-                    {enviando?'Enviando...':'🔄 Trocar mapa (enviar PDF novo)'}
-                  </button>
+              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'flex-start', justifyContent:'center', pointerEvents:'none', paddingTop:'calc(env(safe-area-inset-top,0px) + 62px)' }}>
+                <div style={{ background:'rgba(11,18,16,.85)', color:'#fff', fontSize:11.5, fontWeight:600, borderRadius:10, padding:'6px 12px', textAlign:'center', pointerEvents:'none' }}>
+                  {pendente ? 'Informe a coordenada desse ponto abaixo ⬇️' : `Toque no ${pontosCalib.length===0?'1º':'2º'} ponto que você reconhece no mapa`}
                 </div>
               </div>
             )}
-          </>
-        )}
+          </div>
 
-        {/* TEMP — log de diagnóstico visível na tela, pra debugar o upload sem cabo USB.
-            Remover depois que o fluxo estiver validado. */}
-        {logs.length > 0 && (
-          <div style={{ marginTop:14, background:'#0b1210', borderRadius:12, padding:10 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-              <span style={{ fontSize:10, fontWeight:700, color:'#8fe6b8', letterSpacing:.5 }}>LOG (debug)</span>
-              <div style={{ display:'flex', gap:6 }}>
-                <button onClick={()=>compartilharNativo({ text: logs.join('\n') })}
-                  style={{ background:'#1a3a2c', color:'#8fe6b8', border:'none', borderRadius:8, padding:'4px 8px', fontSize:10, fontWeight:600, cursor:'pointer' }}>📤 Compartilhar</button>
-                <button onClick={()=>setLogs([])}
-                  style={{ background:'#1a3a2c', color:'#8fe6b8', border:'none', borderRadius:8, padding:'4px 8px', fontSize:10, fontWeight:600, cursor:'pointer' }}>Limpar</button>
-              </div>
+          {/* Banner flutuante do rodapé — coordenadas ao vivo + precisão */}
+          {!calibrando && (
+            <div style={{ position:'absolute', left:12, right:86, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
+              background:'rgba(11,18,16,.82)', color:'#fff', borderRadius:14, padding:'10px 14px' }}>
+              {!bounds ? (
+                <div style={{ fontSize:12, fontWeight:600, color:'#ffcf8a' }}>⚠️ Mapa não calibrado — use "🎯 Calibrar mapa" no menu ⋯</div>
+              ) : !pos ? (
+                <div style={{ fontSize:12, color:'#9fc2af' }}>📡 Buscando seu GPS...</div>
+              ) : (
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:8 }}>
+                  <span style={{ fontFamily:'ui-monospace,monospace', fontSize:11, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{formatarCoord(pos.lat, pos.lng)}</span>
+                  <span style={{ fontSize:11, fontWeight:700, whiteSpace:'nowrap', color: longe ? '#7fb4ff' : pinPx?.dentro ? '#8fe6b8' : '#ff9d9d' }}>
+                    ±{Math.round(pos.accuracy)}m {longe ? `· ${distKm<10?distKm.toFixed(1):Math.round(distKm)}km daqui` : pinPx?.dentro ? '· dentro da área' : '· fora da área'}
+                  </span>
+                </div>
+              )}
             </div>
-            <div style={{ maxHeight:150, overflowY:'auto', fontFamily:'ui-monospace,monospace', fontSize:10, color:'#c8eed8', lineHeight:1.5 }}>
-              {logs.map((l,i)=><div key={i} style={{ wordBreak:'break-word' }}>{l}</div>)}
+          )}
+
+          {/* FAB — centraliza e trava a câmera na posição do GPS */}
+          {!calibrando && (
+            <button onClick={alternarSeguirGps} disabled={!pinPx} title="Centralizar na minha localização"
+              style={{ position:'absolute', right:14, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 20px)',
+                width:52, height:52, borderRadius:'50%', border:'none', fontSize:21, cursor: pinPx ? 'pointer' : 'default',
+                background: seguindoGps ? '#0e9f6e' : '#fff', color: seguindoGps ? '#fff' : '#0e9f6e',
+                boxShadow:'0 4px 16px rgba(0,0,0,.4)', opacity: pinPx ? 1 : .5 }}>
+              🎯
+            </button>
+          )}
+
+          {calibrando && (
+            <div style={{ position:'absolute', left:0, right:0, bottom:0, zIndex:20, background:'#fff', borderTopLeftRadius:20, borderTopRightRadius:20,
+              padding:'14px 16px calc(env(safe-area-inset-bottom,0px) + 16px)', display:'flex', flexDirection:'column', gap:8, boxShadow:'0 -10px 30px rgba(0,0,0,.35)' }}>
+              {pendente ? (
+                <>
+                  <div style={{ fontSize:11, fontWeight:700, color:'#5c7568' }}>COORDENADA DO PONTO {pontosCalib.length+1}</div>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <input placeholder="Latitude" value={calibLat} onChange={e=>setCalibLat(e.target.value)} type="number"
+                      style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
+                    <input placeholder="Longitude" value={calibLng} onChange={e=>setCalibLng(e.target.value)} type="number"
+                      style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
+                  </div>
+                  {pos && (
+                    <button onClick={usarGpsAtual} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#0e9f6e', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>
+                      📡 Usar minha localização atual (só se você estiver nesse ponto agora)
+                    </button>
+                  )}
+                  <div style={{ display:'flex', gap:8 }}>
+                    <button onClick={()=>setPendente(null)} style={{ flex:1, background:'#fff', color:'#5c7568', border:'1px solid #dcebe3', borderRadius:10, padding:'9px', fontSize:12.5, fontWeight:600, cursor:'pointer' }}>Cancelar ponto</button>
+                    <button onClick={confirmarPonto} disabled={!calibLat||!calibLng} style={{ flex:1, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:10, padding:'9px', fontSize:12.5, fontWeight:600, cursor:'pointer', opacity:(!calibLat||!calibLng)?.5:1 }}>Confirmar ponto</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize:11.5, color:'#5c7568' }}>
+                    🎯 Toque em 2 pontos <strong>bem afastados e em diagonal</strong> no mapa que você reconhece na realidade (ex: canto do talhão, cruzamento de estrada). Pra cada um, informe a coordenada real — se estiver lá agora, é só usar o GPS.
+                  </div>
+                  {calibSalvando && <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600 }}>Salvando calibração...</div>}
+                  <button onClick={cancelarCalibracao} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#7ba38f', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>✕ Cancelar calibração</button>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Log de diagnóstico — escondido por padrão, só aparece via menu ⋯ "Mostrar log (debug)" */}
+      {mostrarLog && logs.length > 0 && (
+        <div style={{ position:'absolute', left:12, right:12, zIndex:22, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)', background:'#0b1210', borderRadius:12, padding:10, maxHeight:'40vh', display:'flex', flexDirection:'column' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+            <span style={{ fontSize:10, fontWeight:700, color:'#8fe6b8', letterSpacing:.5 }}>LOG (debug)</span>
+            <div style={{ display:'flex', gap:6 }}>
+              <button onClick={()=>compartilharNativo({ text: logs.join('\n') })}
+                style={{ background:'#1a3a2c', color:'#8fe6b8', border:'none', borderRadius:8, padding:'4px 8px', fontSize:10, fontWeight:600, cursor:'pointer' }}>📤 Compartilhar</button>
+              <button onClick={()=>setLogs([])}
+                style={{ background:'#1a3a2c', color:'#8fe6b8', border:'none', borderRadius:8, padding:'4px 8px', fontSize:10, fontWeight:600, cursor:'pointer' }}>Limpar</button>
+              <button onClick={()=>setMostrarLog(false)}
+                style={{ background:'#1a3a2c', color:'#8fe6b8', border:'none', borderRadius:8, padding:'4px 8px', fontSize:10, fontWeight:600, cursor:'pointer' }}>✕</button>
             </div>
           </div>
-        )}
-      </div>
+          <div style={{ overflowY:'auto', fontFamily:'ui-monospace,monospace', fontSize:10, color:'#c8eed8', lineHeight:1.5 }}>
+            {logs.map((l,i)=><div key={i} style={{ wordBreak:'break-word' }}>{l}</div>)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
