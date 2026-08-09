@@ -226,18 +226,9 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     if (!r.width || !r.height) return 1
     return Math.min(r.width / tamCanvas.width, r.height / tamCanvas.height)
   }
-  function limitarPan(z, p) {
-    const box = mapBoxRef.current
-    if (!box || !tamCanvas.width) return p
-    const r = box.getBoundingClientRect()
-    const base = escalaBase()
-    const imgW = tamCanvas.width * base * z, imgH = tamCanvas.height * base * z
-    // permite arrastar o mapa pra fora da tela (revela o fundo neutro), mas sempre deixa uma
-    // folga pra conseguir puxar ele de volta — não perde a imagem de vista de vez.
-    const maxX = Math.max(0, (imgW - r.width) / 2) + r.width * 0.15
-    const maxY = Math.max(0, (imgH - r.height) / 2) + r.height * 0.15
-    return { x: Math.max(-maxX, Math.min(maxX, p.x)), y: Math.max(-maxY, Math.min(maxY, p.y)) }
-  }
+  // Arraste livre (estilo Avenza) — sem trava de bordas: o piloto pode levar a mira até
+  // qualquer canto do mapa, da tabela técnica ou do fundo neutro, em qualquer zoom.
+  function limitarPan(z, p) { return p }
   function resetZoom() { setZoom(1); setPan({ x: 0, y: 0 }) }
   function distEntreToques(touches) {
     const [a, b] = touches
@@ -489,10 +480,13 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   const coordMira = pontoMira && bounds ? pixelParaLatLng(pontoMira.x, pontoMira.y, bounds, tamCanvas.width, tamCanvas.height, viewport) : null
   const distMiraGps = coordMira && pos ? distanciaKm(coordMira.lat, coordMira.lng, pos.lat, pos.lng) : null
 
-  function compartilharPontoMira() {
+  async function compartilharPontoMira() {
     if (!coordMira) return
     const lat = coordMira.lat.toFixed(6), lng = coordMira.lng.toFixed(6)
-    const texto = `📍 Localização da Fazenda ${fazenda?.nome || ''} (mira no mapa):\nCoordenadas: ${lat}, ${lng}\nLink no Google Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via aplicativo Orofly Agro 🚀`
+    const texto = `📍 Ponto de Interesse - Fazenda ${fazenda?.nome || ''}\nCoordenadas: ${lat}, ${lng}\nGoogle Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via Orofly Agro 🚀`
+    // Copia pra área de transferência de brinde (funciona em qualquer navegador/webview,
+    // sem depender do menu nativo abrir) — o compartilhamento continua sendo a ação principal.
+    try { await navigator.clipboard?.writeText(texto) } catch { /* sem permissão de clipboard, sem problema */ }
     compartilharNativo({ text: texto, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(texto)}` })
   }
 
