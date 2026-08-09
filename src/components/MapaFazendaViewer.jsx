@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
+import { detectarCantosPorOcr } from '../lib/ocrCoordenadas'
 
 // Resolução de renderização do PDF — alta o bastante pra ficar nítido até no zoom máximo
 // (6x) num celular comum, sem precisar re-renderizar a cada nível de zoom (o PDF é vetorial,
@@ -514,6 +515,32 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   const [imgSeLat, setImgSeLat] = useState('')
   const [imgSeLng, setImgSeLng] = useState('')
   const [imgCalibSalvando, setImgCalibSalvando] = useState(false)
+  // Leitura automática (OCR) das coordenadas impressas na borda da foto — roda sozinha assim
+  // que a tela de calibração de imagem abre; se achar, pré-preenche os 4 campos (ainda
+  // editáveis) e avisa pra conferir. Se não achar (grid em UTM, imagem tremida, sem sinal pra
+  // baixar o modelo de OCR na primeira vez etc), simplesmente não preenche nada — cai pro
+  // preenchimento manual normal, sem travar nem mostrar erro.
+  const [ocrRodando, setOcrRodando] = useState(false)
+  const [ocrEncontrou, setOcrEncontrou] = useState(false)
+  useEffect(() => {
+    if (!calibrandoImagem || !avulsoBlob) return
+    let cancelado = false
+    setOcrRodando(true)
+    setOcrEncontrou(false)
+    log('lendo coordenadas da foto automaticamente (OCR)...')
+    detectarCantosPorOcr(avulsoBlob)
+      .then(res => {
+        if (cancelado) return
+        if (!res) { log('OCR não achou coordenadas suficientes na borda — preencha manualmente.'); return }
+        setImgNwLat(String(res.nwLat)); setImgNwLng(String(res.nwLng))
+        setImgSeLat(String(res.seLat)); setImgSeLng(String(res.seLng))
+        setOcrEncontrou(true)
+        log(`OCR detectou os 2 cantos ✅ — NW ${res.nwLat}, ${res.nwLng} · SE ${res.seLat}, ${res.seLng} (confira antes de calibrar)`)
+      })
+      .catch(e => { if (!cancelado) log(`OCR falhou (${e?.message||e}) — preencha manualmente.`) })
+      .finally(() => { if (!cancelado) setOcrRodando(false) })
+    return () => { cancelado = true }
+  }, [calibrandoImagem, avulsoBlob]) // eslint-disable-line
   async function salvarCalibracaoImagem() {
     const nwLat = parseFloat(imgNwLat), nwLng = parseFloat(imgNwLng)
     const seLat = parseFloat(imgSeLat), seLng = parseFloat(imgSeLng)
@@ -918,6 +945,16 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
               <div style={{ fontSize:11.5, color:'#5c7568' }}>
                 📐 Leia as coordenadas impressas nas bordas da imagem e digite os 2 cantos abaixo pra alinhar o mapa com o GPS.
               </div>
+              {ocrRodando && (
+                <div style={{ fontSize:11.5, color:'#7ba38f', fontWeight:600, display:'flex', alignItems:'center', gap:6 }}>
+                  🔍 Lendo coordenadas da foto automaticamente...
+                </div>
+              )}
+              {ocrEncontrou && !ocrRodando && (
+                <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600, background:'#e3f7ec', borderRadius:10, padding:'8px 10px' }}>
+                  ✨ Coordenadas detectadas na foto! Confira se os valores conferem com as bordas do mapa antes de calibrar.
+                </div>
+              )}
               <div style={{ fontSize:11, fontWeight:700, color:'#5c7568' }}>CANTO SUPERIOR ESQUERDO (NW)</div>
               <div style={{ display:'flex', gap:6 }}>
                 <input placeholder="Latitude" value={imgNwLat} onChange={e=>setImgNwLat(e.target.value)} type="number"
