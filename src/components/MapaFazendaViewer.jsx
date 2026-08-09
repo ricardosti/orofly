@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salvarMapaCache } from '../lib/geopdf'
+import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 
 // Mapa georreferenciado da fazenda (estilo Avenza) — renderiza o PDF cadastrado e sobrepõe
@@ -49,7 +49,18 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       // content:// do Android às vezes trava se passado direto pro fetch/upload.
       const buf = await comTimeout(file.arrayBuffer(), 15000, 'Não consegui ler o arquivo selecionado (tempo esgotado).')
       const blob = new Blob([buf], { type: 'application/pdf' })
-      log(`arquivo lido (${(blob.size/1024).toFixed(0)}KB), enviando pro Storage...`)
+      log(`arquivo lido (${(blob.size/1024).toFixed(0)}KB), verificando se é GeoPDF...`)
+      // Tenta ler georreferenciamento nativo (GeoPDF de verdade, com /GPTS gravado) antes de
+      // subir — se achar, já salva os 4 cantos junto com o path, sem precisar de calibração
+      // manual depois. Se não achar (PDF comum), segue o fluxo normal e o botão "Calibrar
+      // mapa" continua disponível depois de aberto.
+      const geo = await extrairGeoPdf(blob)
+      if (geo.encontrado) {
+        log(`GeoPDF detectado ✅ (${geo.pontosUsados} pontos GPTS) — lat ${geo.bounds.latMin.toFixed(6)}~${geo.bounds.latMax.toFixed(6)}, lng ${geo.bounds.lngMin.toFixed(6)}~${geo.bounds.lngMax.toFixed(6)}. Calibração automática, não vai precisar calibrar na mão.`)
+      } else {
+        log(`não é GeoPDF (${geo.motivo}) — depois de abrir, calibre com o botão "Calibrar mapa".`)
+      }
+      log('enviando pro Storage...')
       const path = `mapas/${fazenda.id}/mapa.pdf`
       const { error: upErr } = await comTimeout(
         supabase.storage.from('relatorios').upload(path, blob, { upsert: true, contentType: 'application/pdf' }),
@@ -57,11 +68,19 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       )
       if (upErr) { log(`ERRO no upload: ${upErr.message||JSON.stringify(upErr)}`); throw upErr }
       log('upload OK, atualizando cadastro da fazenda...')
+      const updateFazenda = { mapa_pdf_path: path }
+      if (geo.encontrado) {
+        updateFazenda.mapa_lat_min = geo.bounds.latMin
+        updateFazenda.mapa_lat_max = geo.bounds.latMax
+        updateFazenda.mapa_lng_min = geo.bounds.lngMin
+        updateFazenda.mapa_lng_max = geo.bounds.lngMax
+      }
       const { error: dbErr } = await comTimeout(
-        supabase.from('fazendas').update({ mapa_pdf_path: path }).eq('id', fazenda.id),
+        supabase.from('fazendas').update(updateFazenda).eq('id', fazenda.id),
         10000, 'Salvou o arquivo mas demorou pra atualizar o cadastro da fazenda.'
       )
       if (dbErr) { log(`ERRO ao atualizar fazenda: ${dbErr.message||JSON.stringify(dbErr)}`); throw dbErr }
+      if (geo.encontrado) setBoundsOverride(geo.bounds)
       log('cadastro atualizado, salvando no cache local...')
       // Não renderiza aqui direto — o <canvas> só existe na tela depois que temMapa vira
       // true (troca de tela do "sem mapa" pro visualizador), então o ref ainda está null
