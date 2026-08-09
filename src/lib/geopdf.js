@@ -26,6 +26,35 @@ export async function renderPdfPageToCanvas(pdfData, canvas, maxWidth = 1000) {
   return { width: viewport.width, height: viewport.height }
 }
 
+// Diz se um nome de arquivo é imagem (foto/print de mapa impresso) em vez de PDF — usado
+// no modo avulso pra decidir se abre via pdf.js ou como imagem comum.
+export function ehImagem(nomeArquivo) {
+  return /\.(jpe?g|png)$/i.test(nomeArquivo || '')
+}
+
+// Renderiza uma imagem (foto/print de mapa impresso, sem georreferenciamento embutido) num
+// canvas já existente — equivalente ao renderPdfPageToCanvas, mas pra JPG/PNG. A calibração
+// desses mapas é sempre manual (2 cantos digitados), nunca automática.
+export async function renderImagemParaCanvas(blob, canvas, maxWidth = 1600) {
+  const url = URL.createObjectURL(blob)
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new window.Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('não consegui ler essa imagem (arquivo corrompido ou formato não suportado)'))
+      el.src = url
+    })
+    const scale = Math.min(1, maxWidth / img.naturalWidth) || 1
+    const width = Math.round(img.naturalWidth * scale), height = Math.round(img.naturalHeight * scale)
+    canvas.width = width
+    canvas.height = height
+    canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+    return { width, height }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 // Distância em linha reta entre 2 pontos (fórmula de Haversine), em km.
 export function distanciaKm(lat1, lng1, lat2, lng2) {
   const R = 6371

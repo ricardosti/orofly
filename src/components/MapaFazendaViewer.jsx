@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { renderPdfPageToCanvas, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
+import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
 
@@ -44,7 +44,12 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   // calibração ao lado do PDF — se nunca foi salvo, a calibração vale só pra essa sessão).
   const [avulsoBlob, setAvulsoBlob] = useState(null)
   const [avulsoId, setAvulsoId] = useState(avulso?.id || null)
-  const nomeArquivoAvulso = avulso?.nome?.replace(/\.pdf$/i, '') || 'mapa'
+  // Se o usuário trocar o arquivo pelo menu ("Trocar mapa") dentro da própria tela, o nome
+  // não vem mais do prop `avulso` (que não muda) — guarda local, igual ao pathOverride do
+  // modo fazenda, pra header/compartilhamento refletirem o arquivo atual na hora.
+  const [nomeAvulsoOverride, setNomeAvulsoOverride] = useState(null)
+  const nomeArquivoAvulso = nomeAvulsoOverride || avulso?.nome || 'mapa'
+  const modoImagem = modoAvulso && ehImagem(nomeArquivoAvulso)
 
   const mapaPdfPath = pathOverride || fazenda?.mapa_pdf_path
   const temMapa = modoAvulso ? !!avulsoBlob : !!mapaPdfPath
@@ -142,23 +147,31 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     setViewportOverride(null)
     setTamCanvas({ width: 0, height: 0 })
     setAvulsoId(null)
+    setNomeAvulsoOverride(file.name)
     setCarregando(true)
+    const trocandoImagem = ehImagem(file.name)
     try {
       const buf = await file.arrayBuffer()
-      const blob = new Blob([buf], { type: 'application/pdf' })
-      log(`PDF avulso trocado: ${file.name} (${(blob.size/1024).toFixed(0)}KB), verificando GeoPDF...`)
-      const geo = await extrairGeoPdf(blob)
-      if (geo.encontrado) {
-        setBoundsOverride(geo.bounds)
-        setViewportOverride(geo.viewport)
-        log(`GeoPDF detectado ✅ — calibração automática.`)
+      const blob = new Blob([buf], { type: trocandoImagem ? (file.type || 'image/jpeg') : 'application/pdf' })
+      log(`arquivo avulso trocado: ${file.name} (${(blob.size/1024).toFixed(0)}KB)`)
+      if (trocandoImagem) {
+        log('imagem — informe os 2 cantos (NW/SE) pra calibrar.')
+        setCalibrandoImagem(true)
       } else {
-        log(`não é GeoPDF (${geo.motivo}) — calibre manualmente pelo menu ⋯.`)
+        log('verificando se é GeoPDF...')
+        const geo = await extrairGeoPdf(blob)
+        if (geo.encontrado) {
+          setBoundsOverride(geo.bounds)
+          setViewportOverride(geo.viewport)
+          log(`GeoPDF detectado ✅ — calibração automática.`)
+        } else {
+          log(`não é GeoPDF (${geo.motivo}) — calibre manualmente pelo menu ⋯.`)
+        }
       }
       setAvulsoBlob(blob)
     } catch (e) {
-      log(`FALHOU ao trocar PDF: ${e?.message || e}`)
-      setErro('Não consegui abrir esse PDF: ' + (e?.message || 'tente escolher o arquivo de novo.'))
+      log(`FALHOU ao trocar arquivo: ${e?.message || e}`)
+      setErro('Não consegui abrir esse arquivo: ' + (e?.message || 'tente escolher de novo.'))
     } finally {
       setEnviando(false)
     }
@@ -175,9 +188,11 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
         ? { lat: (fazenda.mapa_lat_min + fazenda.mapa_lat_max) / 2, lng: (fazenda.mapa_lng_min + fazenda.mapa_lng_max) / 2 }
         : null
 
-  // Modo avulso: carrega o PDF (do picker ou do armazenamento offline) uma vez ao abrir,
-  // detecta GeoPDF ou recupera a calibração já salva localmente, e opcionalmente salva
-  // offline se o usuário marcou o checkbox antes de abrir.
+  // Modo avulso: carrega o PDF/imagem (do picker ou do armazenamento offline) uma vez ao
+  // abrir, detecta GeoPDF (só pra PDF) ou recupera a calibração já salva localmente, e
+  // opcionalmente salva offline se o usuário marcou o checkbox antes de abrir. Imagens
+  // (foto/print de mapa impresso) nunca têm georreferenciamento embutido — sempre precisam
+  // dos 2 cantos digitados manualmente, por isso abrem direto na tela "Calibrar Imagem".
   useEffect(() => {
     if (!modoAvulso) return
     let cancelado = false
@@ -185,15 +200,16 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       setCarregando(true)
       setErro('')
       try {
+        const tipo = modoImagem ? (avulso.blob?.type || 'image/jpeg') : 'application/pdf'
         let blob
         if (avulso.blob) {
           const buf = await avulso.blob.arrayBuffer()
-          blob = new Blob([buf], { type: 'application/pdf' })
+          blob = new Blob([buf], { type: tipo })
         } else if (avulso.id) {
           log(`carregando mapa avulso salvo: ${avulso.id}`)
           const buf = await lerMapaAvulso(avulso.id)
           if (!buf) throw new Error('arquivo salvo não encontrado (pode ter sido apagado)')
-          blob = new Blob([buf], { type: 'application/pdf' })
+          blob = new Blob([buf], { type: tipo })
         } else {
           throw new Error('nenhum arquivo fornecido')
         }
@@ -203,7 +219,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
           const meta = await lerMetaMapaAvulso(avulso.id)
           if (meta?.bounds) { bounds = meta.bounds; viewport = meta.viewport; log('calibração salva localmente encontrada ✅') }
         }
-        if (!bounds) {
+        if (!bounds && !modoImagem) {
           const geo = await extrairGeoPdf(blob)
           if (geo.encontrado) { bounds = geo.bounds; viewport = geo.viewport; log('GeoPDF detectado ✅ — calibração automática.') }
           else log(`não é GeoPDF (${geo.motivo}) — calibre manualmente pelo menu ⋯.`)
@@ -211,6 +227,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
         if (cancelado) return
         setBoundsOverride(bounds)
         setViewportOverride(viewport)
+        if (!bounds && modoImagem) { setCalibrandoImagem(true); log('imagem selecionada — informe os 2 cantos (NW/SE) pra calibrar.') }
         let id = avulso.id || null
         if (!id && avulso.salvarOffline) {
           id = await salvarMapaAvulso(avulso.nome, blob)
@@ -218,7 +235,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
         }
         if (!cancelado) { setAvulsoId(id); setAvulsoBlob(blob) }
       } catch (e) {
-        if (!cancelado) { log(`FALHOU ao abrir PDF avulso: ${e?.message||e}`); setErro('Não consegui abrir esse PDF: ' + (e?.message || 'tente selecionar de novo.')) }
+        if (!cancelado) { log(`FALHOU ao abrir mapa avulso: ${e?.message||e}`); setErro('Não consegui abrir esse arquivo: ' + (e?.message || 'tente selecionar de novo.')) }
       } finally {
         if (!cancelado) setCarregando(false)
       }
@@ -226,9 +243,9 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     return () => { cancelado = true }
   }, [modoAvulso]) // eslint-disable-line
 
-  // Renderiza o PDF avulso no canvas sempre que os bytes mudam (abertura inicial ou troca
-  // de arquivo) — separado do fluxo de download/cache do modo fazenda, porque aqui os bytes
-  // já estão em memória (não precisa baixar nada).
+  // Renderiza o PDF/imagem avulso no canvas sempre que os bytes mudam (abertura inicial ou
+  // troca de arquivo) — separado do fluxo de download/cache do modo fazenda, porque aqui os
+  // bytes já estão em memória (não precisa baixar nada).
   useEffect(() => {
     if (!modoAvulso || !avulsoBlob) return
     let cancelado = false
@@ -236,16 +253,18 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       setCarregando(true)
       try {
         if (!canvasRef.current) throw new Error('canvas ainda não montado (bug de timing — não deveria acontecer)')
-        const { width, height } = await renderPdfPageToCanvas(avulsoBlob, canvasRef.current, RENDER_LARGURA_HD)
+        const { width, height } = modoImagem
+          ? await renderImagemParaCanvas(avulsoBlob, canvasRef.current, RENDER_LARGURA_HD)
+          : await renderPdfPageToCanvas(avulsoBlob, canvasRef.current, RENDER_LARGURA_HD)
         if (!cancelado) { setTamCanvas({ width, height }); log(`renderizado ✅ (${width}x${height})`) }
       } catch (e) {
-        if (!cancelado) { log(`erro ao renderizar: ${e?.message||e}`); setErro('Não consegui renderizar esse PDF.') }
+        if (!cancelado) { log(`erro ao renderizar: ${e?.message||e}`); setErro('Não consegui renderizar esse arquivo.') }
       } finally {
         if (!cancelado) setCarregando(false)
       }
     })()
     return () => { cancelado = true }
-  }, [modoAvulso, avulsoBlob])
+  }, [modoAvulso, avulsoBlob, modoImagem])
 
   // Abre do cache local primeiro (rápido e funciona sem sinal em campo) e, em paralelo,
   // tenta buscar a versão mais nova do servidor — se conseguir, atualiza o cache pra
@@ -485,6 +504,39 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   const [calibLng, setCalibLng] = useState('')
   const [calibSalvando, setCalibSalvando] = useState(false)
 
+  // Calibração de imagem (foto/print de mapa impresso) — em vez de tocar em 2 pontos, digita
+  // as coordenadas dos 2 cantos (NW/SE) lidas direto na borda da foto. Mais rápido que a
+  // calibração por toque nesse caso porque o piloto normalmente não está fisicamente nos
+  // pontos marcados (são coordenadas impressas no papel, não posições reais pra usar o GPS).
+  const [calibrandoImagem, setCalibrandoImagem] = useState(false)
+  const [imgNwLat, setImgNwLat] = useState('')
+  const [imgNwLng, setImgNwLng] = useState('')
+  const [imgSeLat, setImgSeLat] = useState('')
+  const [imgSeLng, setImgSeLng] = useState('')
+  const [imgCalibSalvando, setImgCalibSalvando] = useState(false)
+  async function salvarCalibracaoImagem() {
+    const nwLat = parseFloat(imgNwLat), nwLng = parseFloat(imgNwLng)
+    const seLat = parseFloat(imgSeLat), seLng = parseFloat(imgSeLng)
+    if ([nwLat, nwLng, seLat, seLng].some(isNaN)) return
+    const novoBounds = { latMin: Math.min(nwLat, seLat), latMax: Math.max(nwLat, seLat), lngMin: Math.min(nwLng, seLng), lngMax: Math.max(nwLng, seLng) }
+    const viewportCheio = { x: 0, y: 0, w: 1, h: 1 }
+    setImgCalibSalvando(true)
+    log(`calibração da imagem: lat ${novoBounds.latMin.toFixed(6)}~${novoBounds.latMax.toFixed(6)}, lng ${novoBounds.lngMin.toFixed(6)}~${novoBounds.lngMax.toFixed(6)}`)
+    try {
+      if (avulsoId) {
+        await salvarMetaMapaAvulso(avulsoId, { bounds: novoBounds, viewport: viewportCheio })
+        log('calibração salva no dispositivo ✅')
+      } else {
+        log('calibração aplicada só nesta sessão — essa imagem não foi salva offline.')
+      }
+      setBoundsOverride(novoBounds)
+      setViewportOverride(viewportCheio)
+    } finally {
+      setImgCalibSalvando(false)
+      setCalibrandoImagem(false)
+    }
+  }
+
   function iniciarCalibracao() {
     setCalibrando(true)
     setPontosCalib([])
@@ -633,14 +685,14 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:2000, background:'#1c2321', display:'flex', flexDirection:'column', overflow:'hidden' }}>
-      <input ref={fileInputRef} type="file" accept="application/pdf,.pdf" style={{ display:'none' }} onChange={handleEscolherArquivo}/>
+      <input ref={fileInputRef} type="file" accept={modoAvulso ? 'application/pdf,.pdf,image/jpeg,image/png,.jpg,.jpeg,.png' : 'application/pdf,.pdf'} style={{ display:'none' }} onChange={handleEscolherArquivo}/>
 
       {/* HUD topo — voltar / nome da fazenda / opções */}
       <div style={{ position:'absolute', top:0, left:0, right:0, zIndex:20, display:'flex', alignItems:'center', gap:10,
         padding:'calc(env(safe-area-inset-top,0px) + 10px) 12px 24px', background:'linear-gradient(rgba(11,18,16,.8),rgba(11,18,16,0))', pointerEvents:'none' }}>
         <button onClick={onClose} style={{ pointerEvents:'auto', width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,.14)', border:'none', color:'#fff', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>←</button>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ color:'#fff', fontWeight:700, fontSize:14, fontFamily:"'Syne',sans-serif", whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{modoAvulso ? (avulso?.nome || 'PDF avulso') : fazenda?.nome}</div>
+          <div style={{ color:'#fff', fontWeight:700, fontSize:14, fontFamily:"'Syne',sans-serif", whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{modoAvulso ? nomeArquivoAvulso : fazenda?.nome}</div>
           <div style={{ color:'rgba(255,255,255,.65)', fontSize:11, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{modoAvulso ? '📄 PDF avulso' : fazenda?.cliente}</div>
         </div>
         {temMapa && !erro && (
@@ -787,7 +839,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
           {/* Banner flutuante do rodapé — coordenada da MIRA central (não do GPS), atualiza
               em tempo real conforme arrasta o mapa, com a distância até você e um botão de
               compartilhar esse ponto exato. */}
-          {!calibrando && (
+          {!calibrando && !calibrandoImagem && (
             <div style={{ position:'absolute', left:12, right:12, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
               background:'rgba(11,18,16,.82)', color:'#fff', borderRadius:14, padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ flex:1, minWidth:0 }}>
@@ -816,7 +868,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
           )}
 
           {/* FAB — centraliza e trava a câmera na posição do GPS */}
-          {!calibrando && (
+          {!calibrando && !calibrandoImagem && (
             <button onClick={alternarSeguirGps} disabled={!pinPx} title="Centralizar na minha localização"
               style={{ position:'absolute', right:14, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 96px)',
                 width:52, height:52, borderRadius:'50%', border:'none', fontSize:21, cursor: pinPx ? 'pointer' : 'default',
@@ -857,6 +909,34 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                   <button onClick={cancelarCalibracao} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#7ba38f', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>✕ Cancelar calibração</button>
                 </>
               )}
+            </div>
+          )}
+
+          {calibrandoImagem && (
+            <div style={{ position:'absolute', left:0, right:0, bottom:0, zIndex:20, background:'#fff', borderTopLeftRadius:20, borderTopRightRadius:20,
+              padding:'14px 16px calc(env(safe-area-inset-bottom,0px) + 16px)', display:'flex', flexDirection:'column', gap:8, boxShadow:'0 -10px 30px rgba(0,0,0,.35)', maxHeight:'70vh', overflowY:'auto' }}>
+              <div style={{ fontSize:11.5, color:'#5c7568' }}>
+                📐 Leia as coordenadas impressas nas bordas da imagem e digite os 2 cantos abaixo pra alinhar o mapa com o GPS.
+              </div>
+              <div style={{ fontSize:11, fontWeight:700, color:'#5c7568' }}>CANTO SUPERIOR ESQUERDO (NW)</div>
+              <div style={{ display:'flex', gap:6 }}>
+                <input placeholder="Latitude" value={imgNwLat} onChange={e=>setImgNwLat(e.target.value)} type="number"
+                  style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
+                <input placeholder="Longitude" value={imgNwLng} onChange={e=>setImgNwLng(e.target.value)} type="number"
+                  style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
+              </div>
+              <div style={{ fontSize:11, fontWeight:700, color:'#5c7568', marginTop:4 }}>CANTO INFERIOR DIREITO (SE)</div>
+              <div style={{ display:'flex', gap:6 }}>
+                <input placeholder="Latitude" value={imgSeLat} onChange={e=>setImgSeLat(e.target.value)} type="number"
+                  style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
+                <input placeholder="Longitude" value={imgSeLng} onChange={e=>setImgSeLng(e.target.value)} type="number"
+                  style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
+              </div>
+              {imgCalibSalvando && <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600 }}>Salvando calibração...</div>}
+              <button onClick={salvarCalibracaoImagem} disabled={!imgNwLat||!imgNwLng||!imgSeLat||!imgSeLng||imgCalibSalvando}
+                style={{ background:'#0e9f6e', color:'#fff', border:'none', borderRadius:10, padding:'10px', fontSize:12.5, fontWeight:600, cursor:'pointer', marginTop:6, opacity:(!imgNwLat||!imgNwLng||!imgSeLat||!imgSeLng)?.5:1 }}>
+                Calibrar imagem
+              </button>
             </div>
           )}
         </>

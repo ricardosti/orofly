@@ -2133,17 +2133,17 @@ export default function PilotApp({onSwitchMode}) {
             )
           ) : (
             <>
-              <input ref={avulsoFileInputRef} type="file" accept="application/pdf,.pdf" style={{display:'none'}} onChange={handleEscolherPdfAvulso}/>
+              <input ref={avulsoFileInputRef} type="file" accept="application/pdf,.pdf,image/jpeg,image/png,.jpg,.jpeg,.png" style={{display:'none'}} onChange={handleEscolherPdfAvulso}/>
               <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,textAlign:'center'}}>
                 <div style={{fontSize:36,marginBottom:8}}>📄</div>
-                <div style={{fontSize:13,color:'#5c7568',marginBottom:16}}>Abra qualquer PDF de mapa direto do celular (baixado do WhatsApp, e-mail etc), sem precisar vincular a uma fazenda cadastrada.</div>
+                <div style={{fontSize:13,color:'#5c7568',marginBottom:16}}>Abra qualquer PDF ou foto/print (JPG, PNG) de mapa direto do celular (baixado do WhatsApp, e-mail, câmera etc), sem precisar vincular a uma fazenda cadastrada.</div>
                 <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12.5,color:'#26362d',justifyContent:'center',marginBottom:16,cursor:'pointer'}}>
                   <input type="checkbox" checked={avulsoSalvarOffline} onChange={e=>setAvulsoSalvarOffline(e.target.checked)} style={{width:16,height:16}}/>
                   Salvar mapa offline no dispositivo
                 </label>
                 <button onClick={()=>avulsoFileInputRef.current?.click()}
                   style={{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:12,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
-                  📤 Selecionar PDF do celular
+                  📤 Selecionar PDF, foto ou imagem
                 </button>
                 <button onClick={()=>{ carregarMapasAvulsosSalvos(); setGerenciarMapasAberto(true) }}
                   style={{width:'100%',background:'none',color:'#7ba38f',border:'none',borderRadius:12,padding:'10px',fontSize:12,fontWeight:600,cursor:'pointer',marginTop:4}}>
