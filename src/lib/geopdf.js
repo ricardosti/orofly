@@ -37,15 +37,22 @@ export function distanciaKm(lat1, lng1, lat2, lng2) {
 // Converte uma coordenada GPS em posição (x,y) dentro da imagem renderizada, usando os 4
 // cantos cadastrados (retângulo alinhado aos eixos — sem rotação, é o caso real observado
 // nos GeoPDFs que a Bracell manda). Fora dos limites, retorna null.
-export function latLngParaPixel(lat, lng, bounds, imgWidth, imgHeight) {
+//
+// `viewport` (opcional) diz que fração da imagem renderizada é realmente o mapa — nos
+// GeoPDFs reais dos clientes, a folha inteira é renderizada (mapa + tabela técnica do
+// lado), mas os 4 cantos cadastrados correspondem só à área do mapa. Sem isso, o pin
+// cai deslocado pra dentro da tabela. Default = imagem inteira é o mapa (calibração manual
+// já corrige isso sozinha, sem precisar de viewport).
+export function latLngParaPixel(lat, lng, bounds, imgWidth, imgHeight, viewport) {
   const { latMin, latMax, lngMin, lngMax } = bounds
   if (latMax === latMin || lngMax === lngMin) return null
   const u = (lng - lngMin) / (lngMax - lngMin)
   const v = (lat - latMin) / (latMax - latMin)
   if (u < -0.05 || u > 1.05 || v < -0.05 || v > 1.05) return null // bem fora do mapa
+  const vp = viewport || { x: 0, y: 0, w: 1, h: 1 }
   return {
-    x: Math.max(0, Math.min(imgWidth, u * imgWidth)),
-    y: Math.max(0, Math.min(imgHeight, (1 - v) * imgHeight)), // y de tela é invertido (0 no topo)
+    x: Math.max(0, Math.min(imgWidth, (vp.x + u * vp.w) * imgWidth)),
+    y: Math.max(0, Math.min(imgHeight, (vp.y + (1 - v) * vp.h) * imgHeight)), // y de tela é invertido (0 no topo)
     dentro: u >= 0 && u <= 1 && v >= 0 && v <= 1,
   }
 }
@@ -67,6 +74,11 @@ export function latLngParaPixel(lat, lng, bounds, imgWidth, imgHeight) {
 // fica levemente deslocado — por isso ainda vale checar visualmente depois de importar.
 // Também não lê object streams comprimidos (/ObjStm); se o GPTS estiver lá dentro, não
 // vamos achar e cai pro fallback manual — não é 100% dos GeoPDFs, mas cobre boa parte.
+// Nos GeoPDFs reais que os clientes mandam, a folha inteira (A4) é renderizada, mas o
+// desenho do mapa em si ocupa só os 72% esquerdos — o resto é a tabela técnica (talhões,
+// legenda, etc). Usado como fallback quando não dá pra descobrir a área exata via /BBox.
+const VIEWPORT_PADRAO_CLIENTE = { x: 0, y: 0, w: 0.72, h: 1 }
+
 export async function extrairGeoPdf(pdfData) {
   try {
     const buf = pdfData instanceof Blob ? await pdfData.arrayBuffer() : pdfData
@@ -89,6 +101,32 @@ export async function extrairGeoPdf(pdfData) {
     if (!gpts || !lpts || gpts.length < 4 || lpts.length < 4 || gpts.length !== lpts.length) {
       return { encontrado: false, motivo: gpts||lpts ? 'GPTS/LPTS incompletos ou de tamanhos diferentes' : 'sem dicionário /GPTS (PDF comum, não é GeoPDF)' }
     }
+
+    // Descobre a área real do mapa na folha comparando o /BBox do viewport (perto do /GPTS
+    // no texto) com o /MediaBox da página. Se não achar (formato diferente, ou dentro de um
+    // object stream comprimido que não conseguimos ler), cai no padrão observado nos PDFs
+    // reais dos clientes (mapa nos 72% esquerdos da folha).
+    let viewport = VIEWPORT_PADRAO_CLIENTE
+    try {
+      const idxGpts = texto.search(/\/GPTS\s*\[/)
+      const janela = texto.slice(Math.max(0, idxGpts - 500), idxGpts)
+      const mBBox = janela.match(/\/BBox\s*\[([^\]]+)\]/)
+      const mMedia = texto.match(/\/MediaBox\s*\[([^\]]+)\]/)
+      if (mBBox && mMedia) {
+        const bbox = mBBox[1].trim().split(/\s+/).map(Number)
+        const media = mMedia[1].trim().split(/\s+/).map(Number)
+        if (bbox.length === 4 && media.length === 4 && !bbox.some(isNaN) && !media.some(isNaN)) {
+          const pageW = media[2] - media[0], pageH = media[3] - media[1]
+          if (pageW > 0 && pageH > 0) {
+            const x0f = (Math.min(bbox[0], bbox[2]) - media[0]) / pageW
+            const x1f = (Math.max(bbox[0], bbox[2]) - media[0]) / pageW
+            const y0f = (Math.min(bbox[1], bbox[3]) - media[1]) / pageH
+            const y1f = (Math.max(bbox[1], bbox[3]) - media[1]) / pageH
+            viewport = { x: x0f, y: 1 - y1f, w: x1f - x0f, h: y1f - y0f }
+          }
+        }
+      }
+    } catch { /* mantém o padrão */ }
 
     const pontos = []
     for (let i = 0; i + 1 < gpts.length; i += 2) {
@@ -116,6 +154,7 @@ export async function extrairGeoPdf(pdfData) {
     return {
       encontrado: true,
       pontosUsados: pontos.length,
+      viewport,
       bounds: {
         latMin: Math.min(latMin, latMax), latMax: Math.max(latMin, latMax),
         lngMin: Math.min(lngMin, lngMax), lngMax: Math.max(lngMin, lngMax),

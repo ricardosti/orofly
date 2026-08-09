@@ -2,6 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 
+// Resolução de renderização do PDF — alta o bastante pra ficar nítido até no zoom máximo
+// (6x) num celular comum, sem precisar re-renderizar a cada nível de zoom (o PDF é vetorial,
+// então renderiza uma vez nessa largura e o CSS cuida do resto).
+const RENDER_LARGURA_HD = 2200
+
 // Mapa georreferenciado da fazenda (estilo Avenza) — renderiza o PDF cadastrado e sobrepõe
 // a posição de GPS ao vivo do usuário, convertida via os 4 cantos (lat/lng) cadastrados.
 // Usado tanto no Admin (conferir o cadastro) quanto no app do piloto (durante o voo).
@@ -21,6 +26,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   // Mesma ideia do pathOverride, mas pros 4 cantos — depois de calibrar, mostra a posição
   // na hora sem esperar reabrir a tela.
   const [boundsOverride, setBoundsOverride] = useState(null)
+  // Mesma ideia, mas pra área útil do mapa dentro da folha renderizada (viewport) — nos
+  // GeoPDFs reais dos clientes, o mapa ocupa só ~72% da largura da página (o resto é a
+  // tabela técnica ao lado), então a posição do GPS precisa considerar só essa fração.
+  const [viewportOverride, setViewportOverride] = useState(null)
   // Log visível na própria tela — pra diagnosticar em campo sem precisar de cabo USB/
   // debug remoto. Cada linha tem hora + mensagem; fica num painel copiável no rodapé.
   const [logs, setLogs] = useState([])
@@ -56,7 +65,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       // mapa" continua disponível depois de aberto.
       const geo = await extrairGeoPdf(blob)
       if (geo.encontrado) {
-        log(`GeoPDF detectado ✅ (${geo.pontosUsados} pontos GPTS) — lat ${geo.bounds.latMin.toFixed(6)}~${geo.bounds.latMax.toFixed(6)}, lng ${geo.bounds.lngMin.toFixed(6)}~${geo.bounds.lngMax.toFixed(6)}. Calibração automática, não vai precisar calibrar na mão.`)
+        log(`GeoPDF detectado ✅ (${geo.pontosUsados} pontos GPTS) — lat ${geo.bounds.latMin.toFixed(6)}~${geo.bounds.latMax.toFixed(6)}, lng ${geo.bounds.lngMin.toFixed(6)}~${geo.bounds.lngMax.toFixed(6)}. Área útil do mapa na folha: ${(geo.viewport.w*100).toFixed(0)}% da largura. Calibração automática, não vai precisar calibrar na mão.`)
       } else {
         log(`não é GeoPDF (${geo.motivo}) — depois de abrir, calibre com o botão "Calibrar mapa".`)
       }
@@ -74,13 +83,17 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         updateFazenda.mapa_lat_max = geo.bounds.latMax
         updateFazenda.mapa_lng_min = geo.bounds.lngMin
         updateFazenda.mapa_lng_max = geo.bounds.lngMax
+        updateFazenda.mapa_vp_x = geo.viewport.x
+        updateFazenda.mapa_vp_y = geo.viewport.y
+        updateFazenda.mapa_vp_w = geo.viewport.w
+        updateFazenda.mapa_vp_h = geo.viewport.h
       }
       const { error: dbErr } = await comTimeout(
         supabase.from('fazendas').update(updateFazenda).eq('id', fazenda.id),
         10000, 'Salvou o arquivo mas demorou pra atualizar o cadastro da fazenda.'
       )
       if (dbErr) { log(`ERRO ao atualizar fazenda: ${dbErr.message||JSON.stringify(dbErr)}`); throw dbErr }
-      if (geo.encontrado) setBoundsOverride(geo.bounds)
+      if (geo.encontrado) { setBoundsOverride(geo.bounds); setViewportOverride(geo.viewport) }
       log('cadastro atualizado, salvando no cache local...')
       // Não renderiza aqui direto — o <canvas> só existe na tela depois que temMapa vira
       // true (troca de tela do "sem mapa" pro visualizador), então o ref ainda está null
@@ -122,7 +135,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       log(`cache local: ${cache ? 'encontrado' : 'não tem'}`)
       if (cache && !cancelado) {
         try {
-          const { width, height } = await renderPdfPageToCanvas(cache, canvasRef.current, 1000)
+          const { width, height } = await renderPdfPageToCanvas(cache, canvasRef.current, RENDER_LARGURA_HD)
           if (!cancelado) { setTamCanvas({ width, height }); setCarregando(false); mostrouCache = true; log('renderizado do cache ✅') }
         } catch (eCache) { log(`falhou renderizar cache: ${eCache?.message||eCache}`) }
       }
@@ -133,7 +146,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         if (cancelado) return
         log(`baixado (${(data.size/1024).toFixed(0)}KB)`)
         if (!mostrouCache) {
-          const { width, height } = await renderPdfPageToCanvas(data, canvasRef.current, 1000)
+          const { width, height } = await renderPdfPageToCanvas(data, canvasRef.current, RENDER_LARGURA_HD)
           if (cancelado) return
           setTamCanvas({ width, height })
           log('renderizado do servidor ✅')
@@ -162,16 +175,41 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   }, [destino?.lat, destino?.lng])
 
   const bounds = boundsOverride || (temBounds ? { latMin: fazenda.mapa_lat_min, latMax: fazenda.mapa_lat_max, lngMin: fazenda.mapa_lng_min, lngMax: fazenda.mapa_lng_max } : null)
-  const pinPx = pos && bounds && tamCanvas.width ? latLngParaPixel(pos.lat, pos.lng, bounds, tamCanvas.width, tamCanvas.height) : null
+  // Área útil do mapa dentro da imagem renderizada (ver comentário no latLngParaPixel) —
+  // default é a imagem inteira (calibração manual e mapas antigos sem essa coluna ainda).
+  const viewport = viewportOverride || (fazenda?.mapa_vp_w != null
+    ? { x: fazenda.mapa_vp_x ?? 0, y: fazenda.mapa_vp_y ?? 0, w: fazenda.mapa_vp_w, h: fazenda.mapa_vp_h ?? 1 }
+    : { x: 0, y: 0, w: 1, h: 1 })
+  const pinPx = pos && bounds && tamCanvas.width ? latLngParaPixel(pos.lat, pos.lng, bounds, tamCanvas.width, tamCanvas.height, viewport) : null
   const distKm = pos && destino ? distanciaKm(pos.lat, pos.lng, destino.lat, destino.lng) : null
   const longe = distKm != null && distKm > 5 // mais de 5km: nem faz sentido falar de "dentro/fora do talhão", é caso de navegação mesmo
+  // Raio (em % do canvas) do círculo de precisão do GPS ao redor do pin — cresce/encolhe
+  // corretamente com o zoom porque fica dentro da mesma camada transformada que o mapa.
+  let precisaoPctX = null, precisaoPctY = null
+  if (pos?.accuracy && bounds && tamCanvas.width && tamCanvas.height) {
+    const latMed = (bounds.latMax + bounds.latMin) / 2
+    const totalMLng = (bounds.lngMax - bounds.lngMin) * 111320 * Math.cos(latMed * Math.PI / 180)
+    const totalMLat = (bounds.latMax - bounds.latMin) * 111320
+    if (totalMLng > 0 && totalMLat > 0) {
+      const pxPorMx = (tamCanvas.width * viewport.w) / totalMLng
+      const pxPorMy = (tamCanvas.height * viewport.h) / totalMLat
+      precisaoPctX = ((pos.accuracy * pxPorMx * 2) / tamCanvas.width) * 100
+      precisaoPctY = ((pos.accuracy * pxPorMy * 2) / tamCanvas.height) * 100
+    }
+  }
 
   // Pinch-to-zoom + arrastar no mapa (estilo Avenza) — zoom entre 1x e 6x, arrastar livre
   // dentro desse zoom, e duplo toque/clique reseta pra visão inteira.
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  const gestoRef = useRef({ modo: null, x0: 0, y0: 0, panX0: 0, panY0: 0, dist0: 0, zoom0: 1 })
+  const gestoRef = useRef({ modo: null, x0: 0, y0: 0, panX0: 0, panY0: 0, dist0: 0, zoom0: 1, ang0: 0, rot0: 0 })
   const ZOOM_MIN = 1, ZOOM_MAX = 6
+
+  // Rotação do mapa (estilo Avenza) — gira com gesto de 2 dedos, ou automaticamente
+  // seguindo a bússola/magnetômetro do celular quando "seguindoBussola" está ativo.
+  const [rotacao, setRotacao] = useState(0) // graus
+  const [seguindoBussola, setSeguindoBussola] = useState(false)
+  const [transicaoSuave, setTransicaoSuave] = useState(false)
 
   function limitarPan(z, p) {
     const box = mapBoxRef.current
@@ -186,10 +224,14 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     const [a, b] = touches
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
   }
+  function anguloEntreToques(touches) {
+    const [a, b] = touches
+    return Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180 / Math.PI
+  }
   function onMapaTouchStart(e) {
     if (calibrando) return
     if (e.touches.length === 2) {
-      gestoRef.current = { modo: 'pinch', dist0: distEntreToques(e.touches), zoom0: zoom, panX0: pan.x, panY0: pan.y }
+      gestoRef.current = { modo: 'pinch', dist0: distEntreToques(e.touches), ang0: anguloEntreToques(e.touches), zoom0: zoom, rot0: rotacao, panX0: pan.x, panY0: pan.y }
     } else if (e.touches.length === 1) {
       gestoRef.current = { modo: 'pan', x0: e.touches[0].clientX, y0: e.touches[0].clientY, panX0: pan.x, panY0: pan.y }
     }
@@ -200,6 +242,11 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     if (g.modo === 'pinch' && e.touches.length === 2) {
       e.preventDefault()
       const novoZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, g.zoom0 * (distEntreToques(e.touches) / g.dist0)))
+      let deltaAng = anguloEntreToques(e.touches) - g.ang0
+      deltaAng = ((deltaAng + 180) % 360 + 360) % 360 - 180 // menor caminho, evita saltar 350° ao cruzar o limite
+      setSeguindoBussola(false)
+      setTransicaoSuave(false)
+      setRotacao(g.rot0 + deltaAng)
       setZoom(novoZoom)
       setPan(limitarPan(novoZoom, { x: g.panX0, y: g.panY0 }))
     } else if (g.modo === 'pan' && e.touches.length === 1) {
@@ -209,6 +256,50 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     }
   }
   function onMapaTouchEnd() { gestoRef.current = { modo: null } }
+
+  // Rotação automática seguindo o heading do celular (magnetômetro), quando ativada pelo
+  // botão da bússola. iOS entrega o heading pronto (webkitCompassHeading); Android entrega
+  // "alpha" cru, que precisa inverter pra virar heading (cresce ao contrário do relógio).
+  useEffect(() => {
+    if (!seguindoBussola) return
+    const normalizar = a => ((a % 360) + 360) % 360
+    function onOrientacao(e) {
+      let heading = null
+      if (typeof e.webkitCompassHeading === 'number') heading = e.webkitCompassHeading
+      else if (e.alpha != null) heading = normalizar(360 - e.alpha)
+      if (heading == null) return
+      const alvo = normalizar(-heading) // mapa gira ao contrário do heading, pra apontar "pra onde o celular tá virado" pra cima
+      setRotacao(atual => {
+        const delta = normalizar(alvo - normalizar(atual) + 180) - 180 // menor caminho entre -180 e 180
+        return atual + delta * 0.25 // suaviza, evita tremedeira do sensor
+      })
+    }
+    const evento = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation'
+    window.addEventListener(evento, onOrientacao)
+    return () => window.removeEventListener(evento, onOrientacao)
+  }, [seguindoBussola])
+
+  // Toque na bússola: se já tava seguindo o heading, desativa e volta suavemente pro norte
+  // (0°) — se tava parada, ativa a rotação automática (pedindo permissão do sensor no iOS,
+  // que só funciona dentro do clique do usuário).
+  async function alternarBussola() {
+    if (seguindoBussola) {
+      setSeguindoBussola(false)
+      setTransicaoSuave(true)
+      setRotacao(0)
+      setTimeout(() => setTransicaoSuave(false), 350)
+      log('bússola desativada — norte pra cima')
+      return
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const resp = await DeviceOrientationEvent.requestPermission()
+        if (resp !== 'granted') { log('permissão de bússola negada'); return }
+      } catch (e) { log('erro ao pedir permissão de bússola: ' + (e?.message || e)); return }
+    }
+    setSeguindoBussola(true)
+    log('bússola ativada — mapa gira seguindo pra onde o celular aponta')
+  }
   function onMapaWheel(e) {
     if (calibrando) return
     e.preventDefault()
@@ -265,12 +356,18 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     setCalibSalvando(true)
     log(`calibração calculada: lat ${novoBounds.latMin.toFixed(6)}~${novoBounds.latMax.toFixed(6)}, lng ${novoBounds.lngMin.toFixed(6)}~${novoBounds.lngMax.toFixed(6)}`)
     try {
+      // Calibração manual é feita direto sobre a imagem inteira renderizada (o usuário toca
+      // no que vê na tela), então zera qualquer viewport de GeoPDF detectado antes — senão a
+      // posição ficaria deslocada, aplicando duas correções sobrepostas.
+      const viewportCheio = { x: 0, y: 0, w: 1, h: 1 }
       const { error } = await supabase.from('fazendas').update({
         mapa_lat_min: novoBounds.latMin, mapa_lat_max: novoBounds.latMax,
         mapa_lng_min: novoBounds.lngMin, mapa_lng_max: novoBounds.lngMax,
+        mapa_vp_x: viewportCheio.x, mapa_vp_y: viewportCheio.y, mapa_vp_w: viewportCheio.w, mapa_vp_h: viewportCheio.h,
       }).eq('id', fazenda.id)
       if (error) throw error
       setBoundsOverride(novoBounds)
+      setViewportOverride(viewportCheio)
       log('calibração salva ✅')
     } catch (e) {
       log(`ERRO ao salvar calibração: ${e?.message || e}`)
@@ -313,7 +410,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     const latMed = (bounds.latMax + bounds.latMin) / 2
     const metrosPorGrauLng = 111320 * Math.cos(latMed * Math.PI / 180)
     const totalMetros = (bounds.lngMax - bounds.lngMin) * metrosPorGrauLng
-    const metrosPorPixelTela = totalMetros / (r.width * zoom)
+    const metrosPorPixelTela = totalMetros / (r.width * viewport.w * zoom)
     if (!isFinite(metrosPorPixelTela) || metrosPorPixelTela <= 0) return null
     let escolhido = ESCALA_DEGRAUS[0]
     for (const deg of ESCALA_DEGRAUS) { if (deg / metrosPorPixelTela <= 140) escolhido = deg; else break }
@@ -369,15 +466,28 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
               onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
               onDoubleClick={resetZoom} onWheel={onMapaWheel} onClick={onMapaClickCalibrar}>
               {carregando && <div style={{ padding:60, textAlign:'center', fontSize:13, color:'#7ba38f' }}>Abrindo mapa...</div>}
-              <div style={{ position:'absolute', inset:0, transformOrigin:'center center', transform:`translate(${pan.x}px,${pan.y}px) scale(${zoom})`, display: carregando ? 'none' : 'block' }}>
+              <div style={{
+                position:'absolute', inset:0, transformOrigin:'center center',
+                transform:`translate(${pan.x}px,${pan.y}px) rotate(${rotacao}deg) scale(${zoom})`,
+                transition: transicaoSuave ? 'transform .35s ease' : 'none',
+                display: carregando ? 'none' : 'block' }}>
                 <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block' }} />
                 {pinPx && !calibrando && (
-                  <div style={{
-                    position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
-                    transform:`translate(-50%,-50%) scale(${1/zoom})`, width:20, height:20, borderRadius:'50%',
-                    background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
-                    boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
-                  }}/>
+                  <>
+                    {precisaoPctX != null && (
+                      <div style={{
+                        position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
+                        width:`${precisaoPctX}%`, height:`${precisaoPctY}%`, transform:'translate(-50%,-50%)', borderRadius:'50%',
+                        background:'rgba(14,159,110,.15)', border:'1px solid rgba(14,159,110,.55)', pointerEvents:'none',
+                      }}/>
+                    )}
+                    <div style={{
+                      position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
+                      transform:`translate(-50%,-50%) scale(${1/zoom})`, width:20, height:20, borderRadius:'50%',
+                      background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
+                      boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
+                    }}/>
+                  </>
                 )}
                 {calibrando && [...pontosCalib, ...(pendente ? [pendente] : [])].map((p,i) => (
                   <div key={i} style={{
@@ -400,9 +510,22 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
                   <span style={{ fontSize:10, fontWeight:700, color:'#fff', background:'rgba(11,18,16,.75)', borderRadius:6, padding:'1px 5px', marginTop:2 }}>{escala.label}</span>
                 </div>
               )}
+              {temMapa && !carregando && !calibrando && (
+                <button onClick={alternarBussola} title="Bússola — toque pra girar o mapa seguindo a direção do celular, ou resetar pro norte"
+                  style={{ position:'absolute', right:8, top:8, width:32, height:32, borderRadius:'50%', padding:0,
+                    background: seguindoBussola ? '#0e9f6e' : 'rgba(11,18,16,.75)', border:'none', cursor:'pointer',
+                    display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <div style={{ position:'relative', width:14, height:14 }}>
+                    <div style={{ position:'absolute', inset:0, transform:`rotate(${-rotacao}deg)`, transition: transicaoSuave ? 'transform .35s ease' : 'none' }}>
+                      <div style={{ position:'absolute', left:'50%', top:0, transform:'translateX(-50%)', width:0, height:0, borderLeft:'4.5px solid transparent', borderRight:'4.5px solid transparent', borderBottom:'8px solid #ff5c5c' }}/>
+                      <div style={{ position:'absolute', left:'50%', bottom:0, transform:'translateX(-50%)', width:0, height:0, borderLeft:'4.5px solid transparent', borderRight:'4.5px solid transparent', borderTop:'8px solid #dfe8e2' }}/>
+                    </div>
+                  </div>
+                </button>
+              )}
               {pos && !calibrando && (
-                <div style={{ position:'absolute', right:8, top:8, background:'rgba(11,18,16,.75)', color:'#fff', fontSize:9.5, fontFamily:'ui-monospace,monospace', borderRadius:8, padding:'4px 8px' }}>
-                  {formatarCoord(pos.lat, pos.lng)}
+                <div style={{ position:'absolute', right:8, top:46, background:'rgba(11,18,16,.75)', color:'#fff', fontSize:9.5, fontFamily:'ui-monospace,monospace', borderRadius:8, padding:'4px 8px' }}>
+                  {formatarCoord(pos.lat, pos.lng)} · ±{Math.round(pos.accuracy)}m
                 </div>
               )}
               {calibrando && (
