@@ -14,27 +14,33 @@ function nomeArquivoSeguro(nomeOriginal) {
   return nomeOriginal.replace(/[\\/:*?"<>|]/g, '_')
 }
 
+// Extensões reconhecidas como mapa (PDF ou foto/imagem) — o .json de calibração ao lado
+// de cada arquivo NÃO entra aqui, senão apareceria como um "mapa" fantasma na lista.
+const EXT_MAPA = /\.(pdf|jpe?g|png)$/i
+
 export async function listarMapasAvulsos() {
   if (!Capacitor.isNativePlatform()) return []
   try {
     const { Filesystem, Directory } = await import('@capacitor/filesystem')
     const res = await Filesystem.readdir({ path: DIR_AVULSOS, directory: Directory.Data })
-    const pdfs = res.files.filter(f => f.name.toLowerCase().endsWith('.pdf'))
+    const arquivos = res.files.filter(f => EXT_MAPA.test(f.name))
     const itens = []
-    for (const f of pdfs) {
+    for (const f of arquivos) {
       try {
         const stat = await Filesystem.stat({ path: `${DIR_AVULSOS}/${f.name}`, directory: Directory.Data })
-        itens.push({ id: f.name, nome: f.name.replace(/\.pdf$/i, ''), tamanho: stat.size, modificado: stat.mtime || 0 })
+        itens.push({ id: f.name, nome: f.name, tamanho: stat.size, modificado: stat.mtime || 0 })
       } catch { /* arquivo sumiu entre o readdir e o stat, ignora */ }
     }
     return itens.sort((a, b) => b.modificado - a.modificado)
   } catch { return [] }
 }
 
+// Mantém a extensão original do arquivo (.pdf, .jpg, .jpeg ou .png) — antes forçava
+// ".pdf" em qualquer coisa, o que deixava imagens salvas com nome tipo "foto.jpg.pdf".
 export async function salvarMapaAvulso(nomeOriginal, blob) {
   if (!Capacitor.isNativePlatform()) return null
   const { Filesystem, Directory } = await import('@capacitor/filesystem')
-  const id = nomeArquivoSeguro(nomeOriginal.replace(/\.pdf$/i, '')) + '.pdf'
+  const id = nomeArquivoSeguro(nomeOriginal)
   const base64 = await blobParaBase64(blob)
   await Filesystem.mkdir({ path: DIR_AVULSOS, directory: Directory.Data, recursive: true }).catch(() => {})
   await Filesystem.writeFile({ path: `${DIR_AVULSOS}/${id}`, data: base64, directory: Directory.Data })

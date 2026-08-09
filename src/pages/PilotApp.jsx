@@ -390,13 +390,12 @@ export default function PilotApp({onSwitchMode}) {
   const [mapaViewerOpen, setMapaViewerOpen] = useState(false)
   const [mapaTabFazendaId, setMapaTabFazendaId] = useState('')
   // "Leitor de PDF Avulso" — igual ao Avenza Maps, abre qualquer PDF do celular sem
-  // precisar vincular a uma fazenda cadastrada. mapaModo alterna entre os 2 sub-modos da
-  // aba Mapa; avulsoAtual guarda o que abrir no viewer ({nome,blob} recém-escolhido ou
-  // {nome,id} reabrindo um salvo offline).
+  // precisar vincular a uma fazenda cadastrada. mapaModo alterna entre os 3 sub-modos da
+  // aba Mapa (fazenda/avulso/salvos); avulsoAtual guarda o que abrir no viewer
+  // ({nome,blob} recém-escolhido ou {nome,id} reabrindo um salvo offline).
   const [mapaModo, setMapaModo] = useState('fazenda')
   const [avulsoAtual, setAvulsoAtual] = useState(null)
   const [avulsoSalvarOffline, setAvulsoSalvarOffline] = useState(true)
-  const [gerenciarMapasAberto, setGerenciarMapasAberto] = useState(false)
   const [mapasAvulsosSalvos, setMapasAvulsosSalvos] = useState(null)
   const avulsoFileInputRef = useRef(null)
   async function carregarMapasAvulsosSalvos() {
@@ -2091,13 +2090,17 @@ export default function PilotApp({onSwitchMode}) {
         <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
           <div style={{display:'flex',gap:4,background:'#eef3ee',borderRadius:12,padding:4}}>
             <button onClick={()=>setMapaModo('fazenda')}
-              style={{flex:1,padding:'9px',borderRadius:9,border:'none',fontSize:12.5,fontWeight:700,cursor:'pointer',
+              style={{flex:1,padding:'9px 4px',borderRadius:9,border:'none',fontSize:11.5,fontWeight:700,cursor:'pointer',
                 background:mapaModo==='fazenda'?'#fff':'transparent',color:mapaModo==='fazenda'?'#0b1210':'#7ba38f',
-                boxShadow:mapaModo==='fazenda'?'0 1px 4px rgba(0,0,0,.12)':'none'}}>📁 Fazenda Cadastrada</button>
+                boxShadow:mapaModo==='fazenda'?'0 1px 4px rgba(0,0,0,.12)':'none'}}>📁 Fazenda</button>
             <button onClick={()=>setMapaModo('avulso')}
-              style={{flex:1,padding:'9px',borderRadius:9,border:'none',fontSize:12.5,fontWeight:700,cursor:'pointer',
+              style={{flex:1,padding:'9px 4px',borderRadius:9,border:'none',fontSize:11.5,fontWeight:700,cursor:'pointer',
                 background:mapaModo==='avulso'?'#fff':'transparent',color:mapaModo==='avulso'?'#0b1210':'#7ba38f',
-                boxShadow:mapaModo==='avulso'?'0 1px 4px rgba(0,0,0,.12)':'none'}}>📄 PDF Avulso</button>
+                boxShadow:mapaModo==='avulso'?'0 1px 4px rgba(0,0,0,.12)':'none'}}>📄 Avulso</button>
+            <button onClick={()=>{ setMapaModo('salvos'); carregarMapasAvulsosSalvos() }}
+              style={{flex:1,padding:'9px 4px',borderRadius:9,border:'none',fontSize:11.5,fontWeight:700,cursor:'pointer',
+                background:mapaModo==='salvos'?'#fff':'transparent',color:mapaModo==='salvos'?'#0b1210':'#7ba38f',
+                boxShadow:mapaModo==='salvos'?'0 1px 4px rgba(0,0,0,.12)':'none'}}>🗂️ Salvos</button>
           </div>
 
           {mapaModo==='fazenda' ? (
@@ -2131,7 +2134,7 @@ export default function PilotApp({onSwitchMode}) {
                 )}
               </>
             )
-          ) : (
+          ) : mapaModo==='avulso' ? (
             <>
               <input ref={avulsoFileInputRef} type="file" accept="application/pdf,.pdf,image/jpeg,image/png,.jpg,.jpeg,.png" style={{display:'none'}} onChange={handleEscolherPdfAvulso}/>
               <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,textAlign:'center'}}>
@@ -2145,12 +2148,30 @@ export default function PilotApp({onSwitchMode}) {
                   style={{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:12,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
                   📤 Selecionar PDF, foto ou imagem
                 </button>
-                <button onClick={()=>{ carregarMapasAvulsosSalvos(); setGerenciarMapasAberto(true) }}
-                  style={{width:'100%',background:'none',color:'#7ba38f',border:'none',borderRadius:12,padding:'10px',fontSize:12,fontWeight:600,cursor:'pointer',marginTop:4}}>
-                  🗂️ Gerenciar mapas salvos offline
-                </button>
               </div>
             </>
+          ) : (
+            mapasAvulsosSalvos===null ? (
+              <div style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>Carregando...</div>
+            ) : mapasAvulsosSalvos.length===0 ? (
+              <div style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:'40px 20px',background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>
+                Nenhum mapa salvo offline ainda.<br/>Marque "Salvar mapa offline" ao abrir um PDF Avulso pra ele aparecer aqui.
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {mapasAvulsosSalvos.map(m=>(
+                  <div key={m.id} style={{display:'flex',alignItems:'center',gap:10,background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'12px 14px'}}>
+                    <div style={{flex:1,minWidth:0,cursor:'pointer'}}
+                      onClick={()=>{ setAvulsoAtual({nome:m.nome,id:m.id}); setMapaViewerOpen(true) }}>
+                      <div style={{fontSize:13,fontWeight:600,color:'#26362d',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>📄 {m.nome}</div>
+                      <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{(m.tamanho/1024/1024)>=1 ? (m.tamanho/1024/1024).toFixed(1)+' MB' : Math.round(m.tamanho/1024)+' KB'}</div>
+                    </div>
+                    <button onClick={async()=>{ await excluirMapaAvulso(m.id); carregarMapasAvulsosSalvos() }}
+                      style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:10,padding:'9px 11px',fontSize:12,fontWeight:600,cursor:'pointer',flexShrink:0}}>🗑️</button>
+                  </div>
+                ))}
+              </div>
+            )
           )}
         </div>
         <BottomNav/>
@@ -2158,34 +2179,7 @@ export default function PilotApp({onSwitchMode}) {
         <ExitConfirmModal/>
         <ConfirmDialogModal/>
         {mapaViewerOpen && mapaModo==='fazenda' && fzSel && <MapaFazendaViewer supabase={supabase} fazenda={fzSel} onClose={()=>setMapaViewerOpen(false)}/>}
-        {mapaViewerOpen && mapaModo==='avulso' && avulsoAtual && <MapaFazendaViewer supabase={supabase} avulso={avulsoAtual} onClose={()=>{setMapaViewerOpen(false);setAvulsoAtual(null)}}/>}
-        {gerenciarMapasAberto && (
-          <div style={s.modalOverlay} onClick={()=>setGerenciarMapasAberto(false)}>
-            <div style={{...s.modal,textAlign:'left',paddingBottom:20}} onClick={e=>e.stopPropagation()}>
-              <div style={s.modalTitle}>🗂️ Mapas Salvos Offline</div>
-              {mapasAvulsosSalvos===null ? (
-                <div style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:24}}>Carregando...</div>
-              ) : mapasAvulsosSalvos.length===0 ? (
-                <div style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:24}}>Nenhum mapa salvo offline ainda.</div>
-              ) : (
-                <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:'55vh',overflowY:'auto'}}>
-                  {mapasAvulsosSalvos.map(m=>(
-                    <div key={m.id} style={{display:'flex',alignItems:'center',gap:10,background:'#f7fbf8',borderRadius:12,padding:'10px 12px'}}>
-                      <div style={{flex:1,minWidth:0,cursor:'pointer'}}
-                        onClick={()=>{ setAvulsoAtual({nome:m.nome,id:m.id}); setMapaModo('avulso'); setMapaViewerOpen(true); setGerenciarMapasAberto(false) }}>
-                        <div style={{fontSize:12.5,fontWeight:600,color:'#26362d',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>📄 {m.nome}</div>
-                        <div style={{fontSize:10.5,color:'#7ba38f',marginTop:2}}>{(m.tamanho/1024/1024)>=1 ? (m.tamanho/1024/1024).toFixed(1)+' MB' : Math.round(m.tamanho/1024)+' KB'}</div>
-                      </div>
-                      <button onClick={async()=>{ await excluirMapaAvulso(m.id); carregarMapasAvulsosSalvos() }}
-                        style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:10,padding:'8px 10px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0}}>🗑️</button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button onClick={()=>setGerenciarMapasAberto(false)} style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',width:'100%',marginTop:16}}>Fechar</button>
-            </div>
-          </div>
-        )}
+        {mapaViewerOpen && mapaModo!=='fazenda' && avulsoAtual && <MapaFazendaViewer supabase={supabase} avulso={avulsoAtual} onClose={()=>{setMapaViewerOpen(false);setAvulsoAtual(null)}}/>}
       </div>
     )
   }
