@@ -723,8 +723,9 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   }
   function compartilharCoordenadaSimples() {
     if (!coordMira) return
-    const texto = `${coordMira.lat.toFixed(6)}, ${coordMira.lng.toFixed(6)}`
-    compartilharNativo({ text: texto, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(texto)}` })
+    const lat = coordMira.lat.toFixed(6), lng = coordMira.lng.toFixed(6)
+    const link = `https://maps.google.com/?q=${lat},${lng}`
+    compartilharNativo({ text: link, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(link)}` })
   }
 
   const itemMenuStyle = { display:'block', width:'100%', textAlign:'left', background:'none', border:'none', borderBottom:'1px solid #eef3ee', color:'#26362d', fontSize:13, fontWeight:600, padding:'12px 14px', cursor:'pointer', textDecoration:'none' }
