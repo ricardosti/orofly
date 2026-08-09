@@ -167,6 +167,22 @@ export async function extrairGeoPdf(pdfData) {
   }
 }
 
+// Inverso do latLngParaPixel — dado um ponto (x,y) em pixels do canvas renderizado, devolve
+// a coordenada real que fica embaixo dele. Usado pela mira central: conforme o piloto
+// arrasta o mapa, dá pra saber a coordenada exata que ficou parada no meio da tela.
+export function pixelParaLatLng(x, y, bounds, imgWidth, imgHeight, viewport) {
+  const { latMin, latMax, lngMin, lngMax } = bounds
+  if (!imgWidth || !imgHeight) return null
+  const vp = viewport || { x: 0, y: 0, w: 1, h: 1 }
+  if (!vp.w || !vp.h) return null
+  const u = (x / imgWidth - vp.x) / vp.w
+  const v = 1 - (y / imgHeight - vp.y) / vp.h
+  return {
+    lat: latMin + v * (latMax - latMin),
+    lng: lngMin + u * (lngMax - lngMin),
+  }
+}
+
 function base64ParaArrayBuffer(base64) {
   const binario = atob(base64)
   const bytes = new Uint8Array(binario.length)

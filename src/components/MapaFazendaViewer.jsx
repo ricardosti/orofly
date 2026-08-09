@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
+import { renderPdfPageToCanvas, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 
 // Resolução de renderização do PDF — alta o bastante pra ficar nítido até no zoom máximo
@@ -472,6 +472,30 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   }
   const escala = temMapa && !carregando ? calcularEscala() : null
 
+  // Ponto da mira central — qual pixel do canvas está parado embaixo do crosshair fixo no
+  // meio da tela, considerando o pan/zoom/rotação atuais (é o inverso da transform aplicada
+  // no mapa). Atualiza a cada render, então acompanha o arrastar em tempo real.
+  function pontoSobMira() {
+    if (!tamCanvas.width || !tamCanvas.height) return null
+    const s = escalaBase() * zoom
+    if (!s) return null
+    const rad = rotacao * Math.PI / 180
+    const vx = -pan.x, vy = -pan.y
+    const dx = (vx * Math.cos(rad) + vy * Math.sin(rad)) / s
+    const dy = (-vx * Math.sin(rad) + vy * Math.cos(rad)) / s
+    return { x: tamCanvas.width / 2 + dx, y: tamCanvas.height / 2 + dy }
+  }
+  const pontoMira = temMapa && !carregando && !calibrando ? pontoSobMira() : null
+  const coordMira = pontoMira && bounds ? pixelParaLatLng(pontoMira.x, pontoMira.y, bounds, tamCanvas.width, tamCanvas.height, viewport) : null
+  const distMiraGps = coordMira && pos ? distanciaKm(coordMira.lat, coordMira.lng, pos.lat, pos.lng) : null
+
+  function compartilharPontoMira() {
+    if (!coordMira) return
+    const lat = coordMira.lat.toFixed(6), lng = coordMira.lng.toFixed(6)
+    const texto = `📍 Localização da Fazenda ${fazenda?.nome || ''} (mira no mapa):\nCoordenadas: ${lat}, ${lng}\nLink no Google Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via aplicativo Orofly Agro 🚀`
+    compartilharNativo({ text: texto, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(texto)}` })
+  }
+
   const itemMenuStyle = { display:'block', width:'100%', textAlign:'left', background:'none', border:'none', borderBottom:'1px solid #eef3ee', color:'#26362d', fontSize:13, fontWeight:600, padding:'12px 14px', cursor:'pointer', textDecoration:'none' }
 
   return (
@@ -591,12 +615,12 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
               </div>
             )}
             {(zoom>1.02||zoom<0.98) && !calibrando && (
-              <button onClick={resetZoom} style={{ position:'absolute', right:8, bottom:96, background:'rgba(11,18,16,.75)', color:'#fff', border:'none', borderRadius:20, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+              <button onClick={resetZoom} style={{ position:'absolute', right:8, bottom:160, background:'rgba(11,18,16,.75)', color:'#fff', border:'none', borderRadius:20, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
                 ⤢ {zoom.toFixed(1)}x — resetar
               </button>
             )}
             {escala && !calibrando && (
-              <div style={{ position:'absolute', left:12, bottom:96, display:'flex', flexDirection:'column', alignItems:'flex-start', pointerEvents:'none' }}>
+              <div style={{ position:'absolute', left:12, bottom:160, display:'flex', flexDirection:'column', alignItems:'flex-start', pointerEvents:'none' }}>
                 <div style={{ width:escala.larguraPx, height:4, background:'rgba(11,18,16,.75)', borderLeft:'2px solid rgba(11,18,16,.75)', borderRight:'2px solid rgba(11,18,16,.75)' }}/>
                 <span style={{ fontSize:10, fontWeight:700, color:'#fff', background:'rgba(11,18,16,.75)', borderRadius:6, padding:'1px 5px', marginTop:2 }}>{escala.label}</span>
               </div>
@@ -623,21 +647,33 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
             )}
           </div>
 
-          {/* Banner flutuante do rodapé — coordenadas ao vivo + precisão */}
+          {/* Banner flutuante do rodapé — coordenada da MIRA central (não do GPS), atualiza
+              em tempo real conforme arrasta o mapa, com a distância até você e um botão de
+              compartilhar esse ponto exato. */}
           {!calibrando && (
-            <div style={{ position:'absolute', left:12, right:86, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
-              background:'rgba(11,18,16,.82)', color:'#fff', borderRadius:14, padding:'10px 14px' }}>
-              {!bounds ? (
-                <div style={{ fontSize:12, fontWeight:600, color:'#ffcf8a' }}>⚠️ Mapa não calibrado — use "🎯 Calibrar mapa" no menu ⋯</div>
-              ) : !pos ? (
-                <div style={{ fontSize:12, color:'#9fc2af' }}>📡 Buscando seu GPS...</div>
-              ) : (
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', gap:8 }}>
-                  <span style={{ fontFamily:'ui-monospace,monospace', fontSize:11, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{formatarCoord(pos.lat, pos.lng)}</span>
-                  <span style={{ fontSize:11, fontWeight:700, whiteSpace:'nowrap', color: longe ? '#7fb4ff' : pinPx?.dentro ? '#8fe6b8' : '#ff9d9d' }}>
-                    ±{Math.round(pos.accuracy)}m {longe ? `· ${distKm<10?distKm.toFixed(1):Math.round(distKm)}km daqui` : pinPx?.dentro ? '· dentro da área' : '· fora da área'}
-                  </span>
-                </div>
+            <div style={{ position:'absolute', left:12, right:12, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
+              background:'rgba(11,18,16,.82)', color:'#fff', borderRadius:14, padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                {!bounds ? (
+                  <div style={{ fontSize:12, fontWeight:600, color:'#ffcf8a' }}>⚠️ Mapa não calibrado — use "🎯 Calibrar mapa" no menu ⋯</div>
+                ) : coordMira ? (
+                  <>
+                    <div style={{ fontFamily:'ui-monospace,monospace', fontSize:11.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                      🎯 {formatarCoord(coordMira.lat, coordMira.lng)}
+                    </div>
+                    <div style={{ fontSize:10.5, color:'#9fc2af', marginTop:2 }}>
+                      {pos ? `a ${distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você` : 'buscando seu GPS...'}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize:12, color:'#9fc2af' }}>📡 Carregando posição...</div>
+                )}
+              </div>
+              {coordMira && (
+                <button onClick={compartilharPontoMira} title="Compartilhar esse ponto"
+                  style={{ flexShrink:0, width:38, height:38, borderRadius:'50%', background:'#25D366', border:'none', color:'#fff', fontSize:17, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  📤
+                </button>
               )}
             </div>
           )}
@@ -645,7 +681,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
           {/* FAB — centraliza e trava a câmera na posição do GPS */}
           {!calibrando && (
             <button onClick={alternarSeguirGps} disabled={!pinPx} title="Centralizar na minha localização"
-              style={{ position:'absolute', right:14, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 20px)',
+              style={{ position:'absolute', right:14, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 96px)',
                 width:52, height:52, borderRadius:'50%', border:'none', fontSize:21, cursor: pinPx ? 'pointer' : 'default',
                 background: seguindoGps ? '#0e9f6e' : '#fff', color: seguindoGps ? '#fff' : '#0e9f6e',
                 boxShadow:'0 4px 16px rgba(0,0,0,.4)', opacity: pinPx ? 1 : .5 }}>
