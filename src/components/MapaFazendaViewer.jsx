@@ -127,6 +127,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   useEffect(() => {
     if (!temMapa) { setCarregando(false); return }
     setCarregando(true)
+    console.log('[MapaFazendaViewer] URI do mapa recebido:', mapaPdfPath)
     log(`abrindo mapa: path=${mapaPdfPath}`)
     let cancelado = false
     ;(async () => {
@@ -135,8 +136,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       log(`cache local: ${cache ? 'encontrado' : 'não tem'}`)
       if (cache && !cancelado) {
         try {
+          if (!canvasRef.current) throw new Error('canvas ainda não montado (bug de timing — não deveria acontecer)')
           const { width, height } = await renderPdfPageToCanvas(cache, canvasRef.current, RENDER_LARGURA_HD)
-          if (!cancelado) { setTamCanvas({ width, height }); setCarregando(false); mostrouCache = true; log('renderizado do cache ✅') }
+          console.log('[MapaFazendaViewer] dimensões renderizadas (cache):', { width, height })
+          if (!cancelado) { setTamCanvas({ width, height }); setCarregando(false); mostrouCache = true; log(`renderizado do cache ✅ (${width}x${height})`) }
         } catch (eCache) { log(`falhou renderizar cache: ${eCache?.message||eCache}`) }
       }
       try {
@@ -146,13 +149,16 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         if (cancelado) return
         log(`baixado (${(data.size/1024).toFixed(0)}KB)`)
         if (!mostrouCache) {
+          if (!canvasRef.current) throw new Error('canvas ainda não montado (bug de timing — não deveria acontecer)')
           const { width, height } = await renderPdfPageToCanvas(data, canvasRef.current, RENDER_LARGURA_HD)
+          console.log('[MapaFazendaViewer] dimensões renderizadas (servidor):', { width, height })
           if (cancelado) return
           setTamCanvas({ width, height })
-          log('renderizado do servidor ✅')
+          log(`renderizado do servidor ✅ (${width}x${height})`)
         }
         salvarMapaCache(fazenda.id, data)
       } catch (e) {
+        console.error('[MapaFazendaViewer] erro ao baixar/renderizar:', e)
         log(`erro ao baixar/renderizar: ${e?.message||e}`)
         if (!mostrouCache && !cancelado) setErro('Não consegui abrir o mapa dessa fazenda. Confira sua conexão e tente de novo.')
       } finally {
@@ -531,42 +537,45 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
             onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
             onDoubleClick={resetZoom} onWheel={onMapaWheel} onClick={onMapaClickCalibrar}>
             {carregando && <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#9fc2af' }}>Abrindo mapa...</div>}
-            {tamCanvas.width > 0 && (
-              <div style={{
-                position:'absolute', left:'50%', top:'50%', width:tamCanvas.width, height:tamCanvas.height,
-                transformOrigin:'center center',
-                transform:`translate(-50%,-50%) translate(${pan.x}px,${pan.y}px) rotate(${rotacao}deg) scale(${escalaBase()*zoom})`,
-                transition: transicaoSuave ? 'transform .35s ease' : 'none',
-                display: carregando ? 'none' : 'block' }}>
-                <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block', boxShadow:'0 4px 30px rgba(0,0,0,.5)' }} />
-                {pinPx && !calibrando && (
-                  <>
-                    {precisaoPctX != null && (
-                      <div style={{
-                        position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
-                        width:`${precisaoPctX}%`, height:`${precisaoPctY}%`, transform:'translate(-50%,-50%)', borderRadius:'50%',
-                        background:'rgba(14,159,110,.15)', border:'1px solid rgba(14,159,110,.55)', pointerEvents:'none',
-                      }}/>
-                    )}
+            {/* O canvas precisa ficar sempre montado (mesmo com tamCanvas ainda 0/0) — é nele
+                que o useEffect de carregamento renderiza o PDF via canvasRef.current; se isso
+                aqui virar condicional em tamCanvas.width, o canvas nunca chega a existir no DOM
+                a tempo (tamCanvas só é preenchido DEPOIS que o render acontece: fica um "ovo e
+                galinha" e o mapa nunca aparece). */}
+            <div style={{
+              position:'absolute', left:'50%', top:'50%', width:tamCanvas.width || '100%', height:tamCanvas.height || '100%',
+              transformOrigin:'center center',
+              transform:`translate(-50%,-50%) translate(${pan.x}px,${pan.y}px) rotate(${rotacao}deg) scale(${escalaBase()*zoom})`,
+              transition: transicaoSuave ? 'transform .35s ease' : 'none',
+              display: carregando ? 'none' : 'block' }}>
+              <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block', boxShadow:'0 4px 30px rgba(0,0,0,.5)' }} />
+              {pinPx && !calibrando && tamCanvas.width > 0 && (
+                <>
+                  {precisaoPctX != null && (
                     <div style={{
                       position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
-                      transform:`translate(-50%,-50%) scale(${1/(escalaBase()*zoom)})`, width:20, height:20, borderRadius:'50%',
-                      background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
-                      boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
+                      width:`${precisaoPctX}%`, height:`${precisaoPctY}%`, transform:'translate(-50%,-50%)', borderRadius:'50%',
+                      background:'rgba(14,159,110,.15)', border:'1px solid rgba(14,159,110,.55)', pointerEvents:'none',
                     }}/>
-                  </>
-                )}
-                {calibrando && [...pontosCalib, ...(pendente ? [pendente] : [])].map((p,i) => (
-                  <div key={i} style={{
-                    position:'absolute', left:`${(p.px/tamCanvas.width)*100}%`, top:`${(p.py/tamCanvas.height)*100}%`,
-                    transform:'translate(-50%,-50%)', width:22, height:22, borderRadius:'50%',
-                    background: i < pontosCalib.length ? '#0e9f6e' : '#ffb020', border:'3px solid #fff',
-                    display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:11, fontWeight:700,
-                    boxShadow:'0 2px 6px rgba(0,0,0,.35)',
-                  }}>{i+1}</div>
-                ))}
-              </div>
-            )}
+                  )}
+                  <div style={{
+                    position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
+                    transform:`translate(-50%,-50%) scale(${1/(escalaBase()*zoom)})`, width:20, height:20, borderRadius:'50%',
+                    background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
+                    boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
+                  }}/>
+                </>
+              )}
+              {calibrando && tamCanvas.width > 0 && [...pontosCalib, ...(pendente ? [pendente] : [])].map((p,i) => (
+                <div key={i} style={{
+                  position:'absolute', left:`${(p.px/tamCanvas.width)*100}%`, top:`${(p.py/tamCanvas.height)*100}%`,
+                  transform:'translate(-50%,-50%)', width:22, height:22, borderRadius:'50%',
+                  background: i < pontosCalib.length ? '#0e9f6e' : '#ffb020', border:'3px solid #fff',
+                  display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:11, fontWeight:700,
+                  boxShadow:'0 2px 6px rgba(0,0,0,.35)',
+                }}>{i+1}</div>
+              ))}
+            </div>
             {(zoom>1.02||zoom<0.98) && !calibrando && (
               <button onClick={resetZoom} style={{ position:'absolute', right:8, bottom:96, background:'rgba(11,18,16,.75)', color:'#fff', border:'none', borderRadius:20, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
                 ⤢ {zoom.toFixed(1)}x — resetar
