@@ -708,6 +708,25 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     compartilharNativo({ text: texto, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(texto)}` })
   }
 
+  // Versões simples — só a coordenada crua, sem nome/link/marca, pra quando o piloto só
+  // quer colar o número em outro lugar rapidinho (planilha, mensagem, etc).
+  const [coordCopiada, setCoordCopiada] = useState(false)
+  async function copiarCoordenadaMira() {
+    if (!coordMira) return
+    const texto = `${coordMira.lat.toFixed(6)}, ${coordMira.lng.toFixed(6)}`
+    try {
+      await navigator.clipboard.writeText(texto)
+      setCoordCopiada(true)
+      setTimeout(() => setCoordCopiada(false), 1500)
+      log(`coordenada copiada: ${texto}`)
+    } catch (e) { log(`não consegui copiar: ${e?.message || e}`) }
+  }
+  function compartilharCoordenadaSimples() {
+    if (!coordMira) return
+    const texto = `${coordMira.lat.toFixed(6)}, ${coordMira.lng.toFixed(6)}`
+    compartilharNativo({ text: texto, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(texto)}` })
+  }
+
   const itemMenuStyle = { display:'block', width:'100%', textAlign:'left', background:'none', border:'none', borderBottom:'1px solid #eef3ee', color:'#26362d', fontSize:13, fontWeight:600, padding:'12px 14px', cursor:'pointer', textDecoration:'none' }
 
   return (
@@ -886,10 +905,20 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                 )}
               </div>
               {coordMira && (
-                <button onClick={compartilharPontoMira} title="Compartilhar esse ponto"
-                  style={{ flexShrink:0, width:38, height:38, borderRadius:'50%', background:'#25D366', border:'none', color:'#fff', fontSize:17, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  📤
-                </button>
+                <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+                  <button onClick={copiarCoordenadaMira} title="Copiar só a coordenada"
+                    style={{ width:34, height:34, borderRadius:'50%', background: coordCopiada ? '#0e9f6e' : 'rgba(255,255,255,.15)', border:'none', color:'#fff', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    {coordCopiada ? '✓' : '📋'}
+                  </button>
+                  <button onClick={compartilharCoordenadaSimples} title="Compartilhar só a coordenada"
+                    style={{ width:34, height:34, borderRadius:'50%', background:'rgba(255,255,255,.15)', border:'none', color:'#fff', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    📨
+                  </button>
+                  <button onClick={compartilharPontoMira} title="Compartilhar ponto completo (com nome e link do Maps)"
+                    style={{ width:38, height:38, borderRadius:'50%', background:'#25D366', border:'none', color:'#fff', fontSize:17, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    📤
+                  </button>
+                </div>
               )}
             </div>
           )}
