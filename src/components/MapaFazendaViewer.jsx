@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salvarMapaCache } from '../lib/geopdf'
+import { compartilharNativo } from '../lib/nativeShare'
 
 // Mapa georreferenciado da fazenda (estilo Avenza) — renderiza o PDF cadastrado e sobrepõe
 // a posição de GPS ao vivo do usuário, convertida via os 4 cantos (lat/lng) cadastrados.
@@ -7,6 +8,7 @@ import { renderPdfPageToCanvas, latLngParaPixel, distanciaKm, lerMapaCache, salv
 export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
+  const mapBoxRef = useRef(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
   const [tamCanvas, setTamCanvas] = useState({ width: 0, height: 0 })
@@ -16,6 +18,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   // isso (o admin que carregou a lista não sabe do upload) — guarda local pra já mostrar
   // o mapa sem precisar fechar/reabrir a tela.
   const [pathOverride, setPathOverride] = useState(null)
+  // Log visível na própria tela — pra diagnosticar em campo sem precisar de cabo USB/
+  // debug remoto. Cada linha tem hora + mensagem; fica num painel copiável no rodapé.
+  const [logs, setLogs] = useState([])
+  const log = (msg) => setLogs(l => [...l, `${new Date().toLocaleTimeString('pt-BR')}  ${msg}`])
 
   const mapaPdfPath = pathOverride || fazenda?.mapa_pdf_path
   const temMapa = !!mapaPdfPath
@@ -24,6 +30,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   async function handleEscolherArquivo(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
+    log(`arquivo selecionado: ${file ? `${file.name} (${(file.size/1024).toFixed(0)}KB, ${file.type||'sem tipo'})` : 'NENHUM (picker cancelado ou não retornou arquivo)'}`)
     if (!file || !fazenda?.id) return
     setEnviando(true)
     setErro('')
@@ -34,32 +41,33 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       new Promise((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
     ])
     try {
-      console.log('[mapa upload] lendo arquivo:', file.name, file.size, file.type)
+      log('lendo bytes do arquivo...')
       // Lê os bytes explicitamente antes de enviar — o objeto File vindo de um picker
       // content:// do Android às vezes trava se passado direto pro fetch/upload.
       const buf = await comTimeout(file.arrayBuffer(), 15000, 'Não consegui ler o arquivo selecionado (tempo esgotado).')
       const blob = new Blob([buf], { type: 'application/pdf' })
-      console.log('[mapa upload] arquivo lido, enviando pro Storage...', blob.size)
+      log(`arquivo lido (${(blob.size/1024).toFixed(0)}KB), enviando pro Storage...`)
       const path = `mapas/${fazenda.id}/mapa.pdf`
       const { error: upErr } = await comTimeout(
         supabase.storage.from('relatorios').upload(path, blob, { upsert: true, contentType: 'application/pdf' }),
         20000, 'Envio do arquivo demorou demais (rede lenta ou instável).'
       )
-      if (upErr) throw upErr
-      console.log('[mapa upload] enviado, atualizando fazenda...')
+      if (upErr) { log(`ERRO no upload: ${upErr.message||JSON.stringify(upErr)}`); throw upErr }
+      log('upload OK, atualizando cadastro da fazenda...')
       const { error: dbErr } = await comTimeout(
         supabase.from('fazendas').update({ mapa_pdf_path: path }).eq('id', fazenda.id),
         10000, 'Salvou o arquivo mas demorou pra atualizar o cadastro da fazenda.'
       )
-      if (dbErr) throw dbErr
-      console.log('[mapa upload] concluído')
+      if (dbErr) { log(`ERRO ao atualizar fazenda: ${dbErr.message||JSON.stringify(dbErr)}`); throw dbErr }
+      log('cadastro atualizado, renderizando PDF...')
       setCarregando(true)
       const { width, height } = await renderPdfPageToCanvas(blob, canvasRef.current, 1000)
       setTamCanvas({ width, height })
       salvarMapaCache(fazenda.id, blob)
       setPathOverride(path)
+      log('concluído com sucesso ✅')
     } catch (e2) {
-      console.error('[mapa upload] erro:', e2)
+      log(`FALHOU: ${e2?.message || String(e2)}`)
       setErro('Não consegui enviar o mapa: ' + (e2?.message || 'confira sua conexão e tente de novo.'))
     } finally {
       setEnviando(false)
@@ -82,27 +90,33 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   // primeira vez que abre esse mapa nesse aparelho).
   useEffect(() => {
     if (!temMapa) { setCarregando(false); return }
+    log(`abrindo mapa: path=${mapaPdfPath}`)
     let cancelado = false
     ;(async () => {
       let mostrouCache = false
       const cache = await lerMapaCache(fazenda.id)
+      log(`cache local: ${cache ? 'encontrado' : 'não tem'}`)
       if (cache && !cancelado) {
         try {
           const { width, height } = await renderPdfPageToCanvas(cache, canvasRef.current, 1000)
-          if (!cancelado) { setTamCanvas({ width, height }); setCarregando(false); mostrouCache = true }
-        } catch {}
+          if (!cancelado) { setTamCanvas({ width, height }); setCarregando(false); mostrouCache = true; log('renderizado do cache ✅') }
+        } catch (eCache) { log(`falhou renderizar cache: ${eCache?.message||eCache}`) }
       }
       try {
+        log('baixando do servidor...')
         const { data, error } = await supabase.storage.from('relatorios').download(mapaPdfPath)
         if (error) throw error
         if (cancelado) return
+        log(`baixado (${(data.size/1024).toFixed(0)}KB)`)
         if (!mostrouCache) {
           const { width, height } = await renderPdfPageToCanvas(data, canvasRef.current, 1000)
           if (cancelado) return
           setTamCanvas({ width, height })
+          log('renderizado do servidor ✅')
         }
         salvarMapaCache(fazenda.id, data)
       } catch (e) {
+        log(`erro ao baixar/renderizar: ${e?.message||e}`)
         if (!mostrouCache && !cancelado) setErro('Não consegui abrir o mapa dessa fazenda. Confira sua conexão e tente de novo.')
       } finally {
         if (!cancelado) setCarregando(false)
@@ -127,6 +141,54 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   const pinPx = pos && bounds && tamCanvas.width ? latLngParaPixel(pos.lat, pos.lng, bounds, tamCanvas.width, tamCanvas.height) : null
   const distKm = pos && destino ? distanciaKm(pos.lat, pos.lng, destino.lat, destino.lng) : null
   const longe = distKm != null && distKm > 5 // mais de 5km: nem faz sentido falar de "dentro/fora do talhão", é caso de navegação mesmo
+
+  // Pinch-to-zoom + arrastar no mapa (estilo Avenza) — zoom entre 1x e 6x, arrastar livre
+  // dentro desse zoom, e duplo toque/clique reseta pra visão inteira.
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const gestoRef = useRef({ modo: null, x0: 0, y0: 0, panX0: 0, panY0: 0, dist0: 0, zoom0: 1 })
+  const ZOOM_MIN = 1, ZOOM_MAX = 6
+
+  function limitarPan(z, p) {
+    const box = mapBoxRef.current
+    if (!box) return p
+    const r = box.getBoundingClientRect()
+    const maxX = (r.width * (z - 1)) / 2
+    const maxY = (r.height * (z - 1)) / 2
+    return { x: Math.max(-maxX, Math.min(maxX, p.x)), y: Math.max(-maxY, Math.min(maxY, p.y)) }
+  }
+  function resetZoom() { setZoom(1); setPan({ x: 0, y: 0 }) }
+  function distEntreToques(touches) {
+    const [a, b] = touches
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+  }
+  function onMapaTouchStart(e) {
+    if (e.touches.length === 2) {
+      gestoRef.current = { modo: 'pinch', dist0: distEntreToques(e.touches), zoom0: zoom, panX0: pan.x, panY0: pan.y }
+    } else if (e.touches.length === 1) {
+      gestoRef.current = { modo: 'pan', x0: e.touches[0].clientX, y0: e.touches[0].clientY, panX0: pan.x, panY0: pan.y }
+    }
+  }
+  function onMapaTouchMove(e) {
+    const g = gestoRef.current
+    if (g.modo === 'pinch' && e.touches.length === 2) {
+      e.preventDefault()
+      const novoZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, g.zoom0 * (distEntreToques(e.touches) / g.dist0)))
+      setZoom(novoZoom)
+      setPan(limitarPan(novoZoom, { x: g.panX0, y: g.panY0 }))
+    } else if (g.modo === 'pan' && e.touches.length === 1) {
+      if (zoom > 1) e.preventDefault()
+      const dx = e.touches[0].clientX - g.x0, dy = e.touches[0].clientY - g.y0
+      setPan(limitarPan(zoom, { x: g.panX0 + dx, y: g.panY0 + dy }))
+    }
+  }
+  function onMapaTouchEnd() { gestoRef.current = { modo: null } }
+  function onMapaWheel(e) {
+    e.preventDefault()
+    const novoZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom * (e.deltaY < 0 ? 1.15 : 0.87)))
+    setZoom(novoZoom)
+    setPan(p => limitarPan(novoZoom, p))
+  }
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(11,18,16,.7)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:14 }} onClick={onClose}>
@@ -163,16 +225,27 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
           </div>
         ) : (
           <>
-            <div style={{ position:'relative', borderRadius:14, overflow:'hidden', border:'1px solid #dcebe3', background:'#eef3ee' }}>
+            <div ref={mapBoxRef}
+              style={{ position:'relative', borderRadius:14, overflow:'hidden', border:'1px solid #dcebe3', background:'#eef3ee',
+                aspectRatio: tamCanvas.width && tamCanvas.height ? `${tamCanvas.width}/${tamCanvas.height}` : '4/3', touchAction:'none' }}
+              onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
+              onDoubleClick={resetZoom} onWheel={onMapaWheel}>
               {carregando && <div style={{ padding:60, textAlign:'center', fontSize:13, color:'#7ba38f' }}>Abrindo mapa...</div>}
-              <canvas ref={canvasRef} style={{ width:'100%', display: carregando ? 'none' : 'block' }} />
-              {pinPx && (
-                <div style={{
-                  position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
-                  transform:'translate(-50%,-50%)', width:20, height:20, borderRadius:'50%',
-                  background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
-                  boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
-                }}/>
+              <div style={{ position:'absolute', inset:0, transformOrigin:'center center', transform:`translate(${pan.x}px,${pan.y}px) scale(${zoom})`, display: carregando ? 'none' : 'block' }}>
+                <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block' }} />
+                {pinPx && (
+                  <div style={{
+                    position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
+                    transform:`translate(-50%,-50%) scale(${1/zoom})`, width:20, height:20, borderRadius:'50%',
+                    background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
+                    boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
+                  }}/>
+                )}
+              </div>
+              {zoom>1 && (
+                <button onClick={resetZoom} style={{ position:'absolute', right:8, bottom:8, background:'rgba(11,18,16,.75)', color:'#fff', border:'none', borderRadius:20, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
+                  ⤢ {zoom.toFixed(1)}x — resetar
+                </button>
               )}
             </div>
             <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:6 }}>
@@ -203,6 +276,25 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
               </button>
             </div>
           </>
+        )}
+
+        {/* TEMP — log de diagnóstico visível na tela, pra debugar o upload sem cabo USB.
+            Remover depois que o fluxo estiver validado. */}
+        {logs.length > 0 && (
+          <div style={{ marginTop:14, background:'#0b1210', borderRadius:12, padding:10 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <span style={{ fontSize:10, fontWeight:700, color:'#8fe6b8', letterSpacing:.5 }}>LOG (debug)</span>
+              <div style={{ display:'flex', gap:6 }}>
+                <button onClick={()=>compartilharNativo({ text: logs.join('\n') })}
+                  style={{ background:'#1a3a2c', color:'#8fe6b8', border:'none', borderRadius:8, padding:'4px 8px', fontSize:10, fontWeight:600, cursor:'pointer' }}>📤 Compartilhar</button>
+                <button onClick={()=>setLogs([])}
+                  style={{ background:'#1a3a2c', color:'#8fe6b8', border:'none', borderRadius:8, padding:'4px 8px', fontSize:10, fontWeight:600, cursor:'pointer' }}>Limpar</button>
+              </div>
+            </div>
+            <div style={{ maxHeight:150, overflowY:'auto', fontFamily:'ui-monospace,monospace', fontSize:10, color:'#c8eed8', lineHeight:1.5 }}>
+              {logs.map((l,i)=><div key={i} style={{ wordBreak:'break-word' }}>{l}</div>)}
+            </div>
+          </div>
         )}
       </div>
     </div>
