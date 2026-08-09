@@ -3072,12 +3072,6 @@ export default function PilotApp({onSwitchMode}) {
                   ) : (
                     <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
                   )}
-                  {fazendaSel?.mapa_pdf_path && (
-                    <button style={{width:'100%',background:'#e3f7ec',color:'#0e9f6e',border:'none',borderRadius:14,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer',marginTop:4}}
-                      onClick={()=>setMapaViewerOpen(true)}>🗺️ Ver mapa da fazenda</button>
-                  )}
-                  {mapaViewerOpen && fazendaSel && <MapaFazendaViewer supabase={supabase} fazenda={fazendaSel} onClose={()=>setMapaViewerOpen(false)}/>}
-
                   {/* TALHÕES — lista multi-seleção; soma as áreas dos selecionados */}
                   {(()=>{
                     const talhoesFaz = fazendaSel ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel.id) : []

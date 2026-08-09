@@ -576,6 +576,20 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
                 }}>{i+1}</div>
               ))}
             </div>
+            {/* Mira central (estilo Avenza) — fica parada no meio da tela enquanto o mapa se
+                move por baixo (fora da camada com pan/zoom/rotação, de propósito). */}
+            {!carregando && !calibrando && (
+              <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:34, height:34, pointerEvents:'none' }}>
+                <svg width="34" height="34" viewBox="0 0 34 34">
+                  <circle cx="17" cy="17" r="9" fill="none" stroke="rgba(255,255,255,.85)" strokeWidth="1.4"/>
+                  <circle cx="17" cy="17" r="9" fill="none" stroke="rgba(11,18,16,.5)" strokeWidth="3.4" opacity=".25"/>
+                  <line x1="17" y1="0" x2="17" y2="9" stroke="rgba(255,255,255,.85)" strokeWidth="1.4"/>
+                  <line x1="17" y1="25" x2="17" y2="34" stroke="rgba(255,255,255,.85)" strokeWidth="1.4"/>
+                  <line x1="0" y1="17" x2="9" y2="17" stroke="rgba(255,255,255,.85)" strokeWidth="1.4"/>
+                  <line x1="25" y1="17" x2="34" y2="17" stroke="rgba(255,255,255,.85)" strokeWidth="1.4"/>
+                </svg>
+              </div>
+            )}
             {(zoom>1.02||zoom<0.98) && !calibrando && (
               <button onClick={resetZoom} style={{ position:'absolute', right:8, bottom:96, background:'rgba(11,18,16,.75)', color:'#fff', border:'none', borderRadius:20, padding:'6px 12px', fontSize:11, fontWeight:600, cursor:'pointer' }}>
                 ⤢ {zoom.toFixed(1)}x — resetar

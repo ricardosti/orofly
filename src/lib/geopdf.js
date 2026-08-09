@@ -75,9 +75,11 @@ export function latLngParaPixel(lat, lng, bounds, imgWidth, imgHeight, viewport)
 // Também não lê object streams comprimidos (/ObjStm); se o GPTS estiver lá dentro, não
 // vamos achar e cai pro fallback manual — não é 100% dos GeoPDFs, mas cobre boa parte.
 // Nos GeoPDFs reais que os clientes mandam, a folha inteira (A4) é renderizada, mas o
-// desenho do mapa em si ocupa só os 72% esquerdos — o resto é a tabela técnica (talhões,
-// legenda, etc). Usado como fallback quando não dá pra descobrir a área exata via /BBox.
-const VIEWPORT_PADRAO_CLIENTE = { x: 0, y: 0, w: 0.72, h: 1 }
+// desenho do mapa em si ocupa só ~72% da largura — o resto é a tabela técnica (talhões,
+// legenda, etc), que fica na esquerda (a tabela vem primeiro, o mapa depois, à direita).
+// Usado como fallback quando não dá pra descobrir a área exata via /BBox — confirmado em
+// teste real: sem isso o pin caía na tabela em branco à esquerda, fora do desenho.
+const VIEWPORT_PADRAO_CLIENTE = { x: 0.28, y: 0, w: 0.72, h: 1 }
 
 export async function extrairGeoPdf(pdfData) {
   try {
