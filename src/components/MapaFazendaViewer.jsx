@@ -59,13 +59,14 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         10000, 'Salvou o arquivo mas demorou pra atualizar o cadastro da fazenda.'
       )
       if (dbErr) { log(`ERRO ao atualizar fazenda: ${dbErr.message||JSON.stringify(dbErr)}`); throw dbErr }
-      log('cadastro atualizado, renderizando PDF...')
-      setCarregando(true)
-      const { width, height } = await renderPdfPageToCanvas(blob, canvasRef.current, 1000)
-      setTamCanvas({ width, height })
-      salvarMapaCache(fazenda.id, blob)
+      log('cadastro atualizado, salvando no cache local...')
+      // Não renderiza aqui direto — o <canvas> só existe na tela depois que temMapa vira
+      // true (troca de tela do "sem mapa" pro visualizador), então o ref ainda está null
+      // nesse instante. Guarda no cache e deixa o useEffect de carregamento (que já roda
+      // assim que mapaPdfPath muda) cuidar de renderizar, igual quando abre um mapa existente.
+      await salvarMapaCache(fazenda.id, blob)
       setPathOverride(path)
-      log('concluído com sucesso ✅')
+      log('concluído — abrindo o mapa...')
     } catch (e2) {
       log(`FALHOU: ${e2?.message || String(e2)}`)
       setErro('Não consegui enviar o mapa: ' + (e2?.message || 'confira sua conexão e tente de novo.'))
@@ -90,6 +91,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   // primeira vez que abre esse mapa nesse aparelho).
   useEffect(() => {
     if (!temMapa) { setCarregando(false); return }
+    setCarregando(true)
     log(`abrindo mapa: path=${mapaPdfPath}`)
     let cancelado = false
     ;(async () => {
