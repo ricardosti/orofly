@@ -7,6 +7,8 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
+import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
+import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw } from 'lucide-react'
@@ -387,6 +389,27 @@ export default function PilotApp({onSwitchMode}) {
   const [fazendasDB, setFazendasDB] = useState([])
   const [mapaViewerOpen, setMapaViewerOpen] = useState(false)
   const [mapaTabFazendaId, setMapaTabFazendaId] = useState('')
+  // "Leitor de PDF Avulso" — igual ao Avenza Maps, abre qualquer PDF do celular sem
+  // precisar vincular a uma fazenda cadastrada. mapaModo alterna entre os 2 sub-modos da
+  // aba Mapa; avulsoAtual guarda o que abrir no viewer ({nome,blob} recém-escolhido ou
+  // {nome,id} reabrindo um salvo offline).
+  const [mapaModo, setMapaModo] = useState('fazenda')
+  const [avulsoAtual, setAvulsoAtual] = useState(null)
+  const [avulsoSalvarOffline, setAvulsoSalvarOffline] = useState(true)
+  const [gerenciarMapasAberto, setGerenciarMapasAberto] = useState(false)
+  const [mapasAvulsosSalvos, setMapasAvulsosSalvos] = useState(null)
+  const avulsoFileInputRef = useRef(null)
+  async function carregarMapasAvulsosSalvos() {
+    setMapasAvulsosSalvos(null)
+    setMapasAvulsosSalvos(await listarMapasAvulsos())
+  }
+  function handleEscolherPdfAvulso(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setAvulsoAtual({ nome: file.name, blob: file, salvarOffline: avulsoSalvarOffline })
+    setMapaViewerOpen(true)
+  }
   const [fazendaTimes, setFazendaTimes] = useState([])
   const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState([])
   const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
@@ -665,7 +688,15 @@ export default function PilotApp({onSwitchMode}) {
         const lat = pos.coords.latitude, lng = pos.coords.longitude
         setGpsPos({lat,lng})
         supabase.from('gps_logins').insert({ piloto_id: profile.id, piloto_nome: profile.nome||profile.email, lat, lng }).then(()=>{})
-        buscarPrevisao(lat, lng, 'Sua localização (GPS)')
+        // Dispara a previsão já com o rótulo genérico (não trava esperando o reverse
+        // geocode) e só troca pelo nome do município DEPOIS que a previsão terminar —
+        // encadeado, não em paralelo, pra não correr o risco de buscarPrevisao (que
+        // também mexe em tempoLocal) sobrescrever de volta o rótulo bonito por último.
+        buscarPrevisao(lat, lng, 'Sua localização (GPS)').then(() => {
+          reverseGeocode(lat, lng).then(loc => {
+            if (loc) setTempoLocal(`${loc.cidade}${loc.uf ? ' - ' + loc.uf : ''} (GPS)`)
+          })
+        })
       },
       () => {},
       { enableHighAccuracy:true, timeout:10000 }
@@ -2058,34 +2089,67 @@ export default function PilotApp({onSwitchMode}) {
           <div style={s.headerSub}>🗺️ Mapa da Fazenda</div>
         </div>
         <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
-          {fazendasComMapa.length===0 ? (
-            <div style={{textAlign:'center',color:'#5c7568',padding:'40px 20px',background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>
-              Nenhuma fazenda cadastrada ainda.
-            </div>
+          <div style={{display:'flex',gap:4,background:'#eef3ee',borderRadius:12,padding:4}}>
+            <button onClick={()=>setMapaModo('fazenda')}
+              style={{flex:1,padding:'9px',borderRadius:9,border:'none',fontSize:12.5,fontWeight:700,cursor:'pointer',
+                background:mapaModo==='fazenda'?'#fff':'transparent',color:mapaModo==='fazenda'?'#0b1210':'#7ba38f',
+                boxShadow:mapaModo==='fazenda'?'0 1px 4px rgba(0,0,0,.12)':'none'}}>📁 Fazenda Cadastrada</button>
+            <button onClick={()=>setMapaModo('avulso')}
+              style={{flex:1,padding:'9px',borderRadius:9,border:'none',fontSize:12.5,fontWeight:700,cursor:'pointer',
+                background:mapaModo==='avulso'?'#fff':'transparent',color:mapaModo==='avulso'?'#0b1210':'#7ba38f',
+                boxShadow:mapaModo==='avulso'?'0 1px 4px rgba(0,0,0,.12)':'none'}}>📄 PDF Avulso</button>
+          </div>
+
+          {mapaModo==='fazenda' ? (
+            fazendasComMapa.length===0 ? (
+              <div style={{textAlign:'center',color:'#5c7568',padding:'40px 20px',background:'#fff',borderRadius:20,border:'1px solid #dcebe3'}}>
+                Nenhuma fazenda cadastrada ainda.
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>FAZENDA</label>
+                  <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",appearance:'none'}}
+                    value={fzSel?.id||''} onChange={e=>setMapaTabFazendaId(e.target.value)}>
+                    {fazendasComMapa.map(f=>(<option key={f.id} value={f.id}>{f.nome} — {f.cliente}{!f.mapa_pdf_path?' (sem mapa)':''}</option>))}
+                  </select>
+                </div>
+                {fzSel && (
+                  <div style={{background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',borderRadius:22,padding:20,color:'#fff',boxShadow:'0 10px 26px rgba(14,159,110,0.3)',position:'relative',overflow:'hidden',cursor:'pointer'}}
+                    onClick={()=>setMapaViewerOpen(true)}>
+                    <span style={{position:'absolute',right:-10,bottom:-14,fontSize:76,opacity:.15}}>🗺️</span>
+                    <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{fzSel.mapa_pdf_path?'MAPA GEORREFERENCIADO':'SEM MAPA AINDA'}</div>
+                    <div style={{fontSize:19,fontWeight:700,marginTop:5,fontFamily:"'Poppins',sans-serif"}}>{fzSel.nome}</div>
+                    <div style={{fontSize:12,opacity:.85,marginTop:2}}>{fzSel.cliente}</div>
+                    <div style={{fontSize:13,opacity:.95,marginTop:14,display:'flex',alignItems:'center',gap:6}}><Navigation size={15}/> {fzSel.mapa_pdf_path?'Ver sua posição ao vivo':'Enviar mapa (PDF) dessa fazenda'} <span style={{marginLeft:'auto'}}>›</span></div>
+                  </div>
+                )}
+                {vooAberto && fzSel && vooAberto.cliente===fzSel.cliente && vooAberto.fazenda===fzSel.nome && (
+                  <div style={{background:'#e3f7ec',borderRadius:14,padding:'10px 13px',fontSize:12,color:'#0e9f6e',fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
+                    🟢 Você tem um voo em andamento nessa fazenda
+                  </div>
+                )}
+              </>
+            )
           ) : (
             <>
-              <div>
-                <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>FAZENDA</label>
-                <select style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:'#0b1210',outline:'none',background:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",appearance:'none'}}
-                  value={fzSel?.id||''} onChange={e=>setMapaTabFazendaId(e.target.value)}>
-                  {fazendasComMapa.map(f=>(<option key={f.id} value={f.id}>{f.nome} — {f.cliente}{!f.mapa_pdf_path?' (sem mapa)':''}</option>))}
-                </select>
+              <input ref={avulsoFileInputRef} type="file" accept="application/pdf,.pdf" style={{display:'none'}} onChange={handleEscolherPdfAvulso}/>
+              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,textAlign:'center'}}>
+                <div style={{fontSize:36,marginBottom:8}}>📄</div>
+                <div style={{fontSize:13,color:'#5c7568',marginBottom:16}}>Abra qualquer PDF de mapa direto do celular (baixado do WhatsApp, e-mail etc), sem precisar vincular a uma fazenda cadastrada.</div>
+                <label style={{display:'flex',alignItems:'center',gap:8,fontSize:12.5,color:'#26362d',justifyContent:'center',marginBottom:16,cursor:'pointer'}}>
+                  <input type="checkbox" checked={avulsoSalvarOffline} onChange={e=>setAvulsoSalvarOffline(e.target.checked)} style={{width:16,height:16}}/>
+                  Salvar mapa offline no dispositivo
+                </label>
+                <button onClick={()=>avulsoFileInputRef.current?.click()}
+                  style={{width:'100%',background:'#0e9f6e',color:'#fff',border:'none',borderRadius:12,padding:'11px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                  📤 Selecionar PDF do celular
+                </button>
+                <button onClick={()=>{ carregarMapasAvulsosSalvos(); setGerenciarMapasAberto(true) }}
+                  style={{width:'100%',background:'none',color:'#7ba38f',border:'none',borderRadius:12,padding:'10px',fontSize:12,fontWeight:600,cursor:'pointer',marginTop:4}}>
+                  🗂️ Gerenciar mapas salvos offline
+                </button>
               </div>
-              {fzSel && (
-                <div style={{background:'linear-gradient(135deg,#0e9f6e,#0a6e4f)',borderRadius:22,padding:20,color:'#fff',boxShadow:'0 10px 26px rgba(14,159,110,0.3)',position:'relative',overflow:'hidden',cursor:'pointer'}}
-                  onClick={()=>setMapaViewerOpen(true)}>
-                  <span style={{position:'absolute',right:-10,bottom:-14,fontSize:76,opacity:.15}}>🗺️</span>
-                  <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{fzSel.mapa_pdf_path?'MAPA GEORREFERENCIADO':'SEM MAPA AINDA'}</div>
-                  <div style={{fontSize:19,fontWeight:700,marginTop:5,fontFamily:"'Poppins',sans-serif"}}>{fzSel.nome}</div>
-                  <div style={{fontSize:12,opacity:.85,marginTop:2}}>{fzSel.cliente}</div>
-                  <div style={{fontSize:13,opacity:.95,marginTop:14,display:'flex',alignItems:'center',gap:6}}><Navigation size={15}/> {fzSel.mapa_pdf_path?'Ver sua posição ao vivo':'Enviar mapa (PDF) dessa fazenda'} <span style={{marginLeft:'auto'}}>›</span></div>
-                </div>
-              )}
-              {vooAberto && fzSel && vooAberto.cliente===fzSel.cliente && vooAberto.fazenda===fzSel.nome && (
-                <div style={{background:'#e3f7ec',borderRadius:14,padding:'10px 13px',fontSize:12,color:'#0e9f6e',fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
-                  🟢 Você tem um voo em andamento nessa fazenda
-                </div>
-              )}
             </>
           )}
         </div>
@@ -2093,7 +2157,35 @@ export default function PilotApp({onSwitchMode}) {
         {toast&&<div style={s.toast}>{toast}</div>}
         <ExitConfirmModal/>
         <ConfirmDialogModal/>
-        {mapaViewerOpen && fzSel && <MapaFazendaViewer supabase={supabase} fazenda={fzSel} onClose={()=>setMapaViewerOpen(false)}/>}
+        {mapaViewerOpen && mapaModo==='fazenda' && fzSel && <MapaFazendaViewer supabase={supabase} fazenda={fzSel} onClose={()=>setMapaViewerOpen(false)}/>}
+        {mapaViewerOpen && mapaModo==='avulso' && avulsoAtual && <MapaFazendaViewer supabase={supabase} avulso={avulsoAtual} onClose={()=>{setMapaViewerOpen(false);setAvulsoAtual(null)}}/>}
+        {gerenciarMapasAberto && (
+          <div style={s.modalOverlay} onClick={()=>setGerenciarMapasAberto(false)}>
+            <div style={{...s.modal,textAlign:'left',paddingBottom:20}} onClick={e=>e.stopPropagation()}>
+              <div style={s.modalTitle}>🗂️ Mapas Salvos Offline</div>
+              {mapasAvulsosSalvos===null ? (
+                <div style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:24}}>Carregando...</div>
+              ) : mapasAvulsosSalvos.length===0 ? (
+                <div style={{fontSize:13,color:'#7ba38f',textAlign:'center',padding:24}}>Nenhum mapa salvo offline ainda.</div>
+              ) : (
+                <div style={{display:'flex',flexDirection:'column',gap:8,maxHeight:'55vh',overflowY:'auto'}}>
+                  {mapasAvulsosSalvos.map(m=>(
+                    <div key={m.id} style={{display:'flex',alignItems:'center',gap:10,background:'#f7fbf8',borderRadius:12,padding:'10px 12px'}}>
+                      <div style={{flex:1,minWidth:0,cursor:'pointer'}}
+                        onClick={()=>{ setAvulsoAtual({nome:m.nome,id:m.id}); setMapaModo('avulso'); setMapaViewerOpen(true); setGerenciarMapasAberto(false) }}>
+                        <div style={{fontSize:12.5,fontWeight:600,color:'#26362d',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>📄 {m.nome}</div>
+                        <div style={{fontSize:10.5,color:'#7ba38f',marginTop:2}}>{(m.tamanho/1024/1024)>=1 ? (m.tamanho/1024/1024).toFixed(1)+' MB' : Math.round(m.tamanho/1024)+' KB'}</div>
+                      </div>
+                      <button onClick={async()=>{ await excluirMapaAvulso(m.id); carregarMapasAvulsosSalvos() }}
+                        style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:10,padding:'8px 10px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0}}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={()=>setGerenciarMapasAberto(false)} style={{...s.shareBtn,background:'#f1f8f4',color:'#5c7568',width:'100%',marginTop:16}}>Fechar</button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

@@ -1,16 +1,20 @@
 import { useState, useEffect, useRef } from 'react'
 import { renderPdfPageToCanvas, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
+import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
 
 // Resolução de renderização do PDF — alta o bastante pra ficar nítido até no zoom máximo
 // (6x) num celular comum, sem precisar re-renderizar a cada nível de zoom (o PDF é vetorial,
 // então renderiza uma vez nessa largura e o CSS cuida do resto).
 const RENDER_LARGURA_HD = 2200
 
-// Mapa georreferenciado da fazenda (estilo Avenza) — renderiza o PDF cadastrado e sobrepõe
-// a posição de GPS ao vivo do usuário, convertida via os 4 cantos (lat/lng) cadastrados.
-// Usado tanto no Admin (conferir o cadastro) quanto no app do piloto (durante o voo).
-export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
+// Mapa georreferenciado (estilo Avenza) — renderiza um PDF e sobrepõe a posição de GPS ao
+// vivo do usuário, convertida via os 4 cantos (lat/lng) cadastrados/detectados. Funciona em
+// 2 modos: `fazenda` (mapa vinculado a uma fazenda cadastrada, persiste no Supabase) ou
+// `avulso` (PDF solto do celular, sem vínculo — persiste só localmente, se o usuário marcou
+// "salvar offline"). Um dos dois deve ser passado; nunca os dois.
+export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }) {
+  const modoAvulso = !fazenda && !!avulso
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
   const mapBoxRef = useRef(null)
@@ -35,15 +39,26 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   const [logs, setLogs] = useState([])
   const log = (msg) => setLogs(l => [...l, `${new Date().toLocaleTimeString('pt-BR')}  ${msg}`])
 
+  // Estado só do modo avulso: os bytes do PDF em memória (vindo do picker ou carregados do
+  // armazenamento offline) e o id salvo offline (se já foi salvo, pra poder persistir a
+  // calibração ao lado do PDF — se nunca foi salvo, a calibração vale só pra essa sessão).
+  const [avulsoBlob, setAvulsoBlob] = useState(null)
+  const [avulsoId, setAvulsoId] = useState(avulso?.id || null)
+  const nomeArquivoAvulso = avulso?.nome?.replace(/\.pdf$/i, '') || 'mapa'
+
   const mapaPdfPath = pathOverride || fazenda?.mapa_pdf_path
-  const temMapa = !!mapaPdfPath
-  const temBounds = fazenda?.mapa_lat_min != null && fazenda?.mapa_lat_max != null && fazenda?.mapa_lng_min != null && fazenda?.mapa_lng_max != null
+  const temMapa = modoAvulso ? !!avulsoBlob : !!mapaPdfPath
+  const temBounds = modoAvulso
+    ? false // no modo avulso os bounds sempre vêm de boundsOverride (detecção automática ou calibração) — nunca de um "fazenda" pré-cadastrado
+    : fazenda?.mapa_lat_min != null && fazenda?.mapa_lat_max != null && fazenda?.mapa_lng_min != null && fazenda?.mapa_lng_max != null
 
   async function handleEscolherArquivo(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
     log(`arquivo selecionado: ${file ? `${file.name} (${(file.size/1024).toFixed(0)}KB, ${file.type||'sem tipo'})` : 'NENHUM (picker cancelado ou não retornou arquivo)'}`)
-    if (!file || !fazenda?.id) return
+    if (!file) return
+    if (modoAvulso) { await trocarArquivoAvulso(file); return }
+    if (!fazenda?.id) return
     setEnviando(true)
     setErro('')
     // Timeout manual — em vez de ficar preso em "Enviando..." pra sempre se a rede cair
@@ -77,7 +92,14 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       )
       if (upErr) { log(`ERRO no upload: ${upErr.message||JSON.stringify(upErr)}`); throw upErr }
       log('upload OK, atualizando cadastro da fazenda...')
-      const updateFazenda = { mapa_pdf_path: path }
+      // Limpa qualquer bounds/viewport da tela ANTES de aplicar os novos — senão, se o PDF
+      // novo não for GeoPDF (geo.encontrado=false), a tela ficava mostrando o pin na
+      // posição/calibração do mapa ANTERIOR até o usuário recalibrar (bug real, reportado
+      // em campo: trocar o mapa não limpava os metadados do mapa antigo).
+      setBoundsOverride(null)
+      setViewportOverride(null)
+      setTamCanvas({ width: 0, height: 0 })
+      const updateFazenda = { mapa_pdf_path: path, mapa_lat_min: null, mapa_lat_max: null, mapa_lng_min: null, mapa_lng_max: null, mapa_vp_x: 0, mapa_vp_y: 0, mapa_vp_w: 1, mapa_vp_h: 1 }
       if (geo.encontrado) {
         updateFazenda.mapa_lat_min = geo.bounds.latMin
         updateFazenda.mapa_lat_max = geo.bounds.latMax
@@ -111,20 +133,126 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
     }
   }
 
-  // Pra onde apontar o "Abrir no Maps": usa o ponto cadastrado na fazenda se tiver, senão
-  // cai pro centro do próprio mapa georreferenciado — assim funciona mesmo se o admin só
-  // preencheu os 4 cantos do mapa e não o lat/lng "simples" da fazenda.
-  const destino = (fazenda?.lat && fazenda?.lng)
-    ? { lat: fazenda.lat, lng: fazenda.lng }
-    : temBounds
-      ? { lat: (fazenda.mapa_lat_min + fazenda.mapa_lat_max) / 2, lng: (fazenda.mapa_lng_min + fazenda.mapa_lng_max) / 2 }
-      : null
+  // Troca o PDF avulso (seleção inicial ou "Trocar mapa" no modo avulso) — tudo local, sem
+  // Supabase. Limpa qualquer bounds/viewport do arquivo ANTERIOR antes de processar o novo.
+  async function trocarArquivoAvulso(file) {
+    setEnviando(true)
+    setErro('')
+    setBoundsOverride(null)
+    setViewportOverride(null)
+    setTamCanvas({ width: 0, height: 0 })
+    setAvulsoId(null)
+    setCarregando(true)
+    try {
+      const buf = await file.arrayBuffer()
+      const blob = new Blob([buf], { type: 'application/pdf' })
+      log(`PDF avulso trocado: ${file.name} (${(blob.size/1024).toFixed(0)}KB), verificando GeoPDF...`)
+      const geo = await extrairGeoPdf(blob)
+      if (geo.encontrado) {
+        setBoundsOverride(geo.bounds)
+        setViewportOverride(geo.viewport)
+        log(`GeoPDF detectado ✅ — calibração automática.`)
+      } else {
+        log(`não é GeoPDF (${geo.motivo}) — calibre manualmente pelo menu ⋯.`)
+      }
+      setAvulsoBlob(blob)
+    } catch (e) {
+      log(`FALHOU ao trocar PDF: ${e?.message || e}`)
+      setErro('Não consegui abrir esse PDF: ' + (e?.message || 'tente escolher o arquivo de novo.'))
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  // Pra onde apontar o "Abrir no Maps": no modo fazenda, usa o ponto cadastrado se tiver,
+  // senão o centro do mapa georreferenciado; no modo avulso, só existe o centro do que foi
+  // detectado/calibrado (não tem cadastro de fazenda com lat/lng "simples").
+  const destino = modoAvulso
+    ? (boundsOverride ? { lat: (boundsOverride.latMin + boundsOverride.latMax) / 2, lng: (boundsOverride.lngMin + boundsOverride.lngMax) / 2 } : null)
+    : (fazenda?.lat && fazenda?.lng)
+      ? { lat: fazenda.lat, lng: fazenda.lng }
+      : temBounds
+        ? { lat: (fazenda.mapa_lat_min + fazenda.mapa_lat_max) / 2, lng: (fazenda.mapa_lng_min + fazenda.mapa_lng_max) / 2 }
+        : null
+
+  // Modo avulso: carrega o PDF (do picker ou do armazenamento offline) uma vez ao abrir,
+  // detecta GeoPDF ou recupera a calibração já salva localmente, e opcionalmente salva
+  // offline se o usuário marcou o checkbox antes de abrir.
+  useEffect(() => {
+    if (!modoAvulso) return
+    let cancelado = false
+    ;(async () => {
+      setCarregando(true)
+      setErro('')
+      try {
+        let blob
+        if (avulso.blob) {
+          const buf = await avulso.blob.arrayBuffer()
+          blob = new Blob([buf], { type: 'application/pdf' })
+        } else if (avulso.id) {
+          log(`carregando mapa avulso salvo: ${avulso.id}`)
+          const buf = await lerMapaAvulso(avulso.id)
+          if (!buf) throw new Error('arquivo salvo não encontrado (pode ter sido apagado)')
+          blob = new Blob([buf], { type: 'application/pdf' })
+        } else {
+          throw new Error('nenhum arquivo fornecido')
+        }
+        if (cancelado) return
+        let bounds = null, viewport = null
+        if (avulso.id) {
+          const meta = await lerMetaMapaAvulso(avulso.id)
+          if (meta?.bounds) { bounds = meta.bounds; viewport = meta.viewport; log('calibração salva localmente encontrada ✅') }
+        }
+        if (!bounds) {
+          const geo = await extrairGeoPdf(blob)
+          if (geo.encontrado) { bounds = geo.bounds; viewport = geo.viewport; log('GeoPDF detectado ✅ — calibração automática.') }
+          else log(`não é GeoPDF (${geo.motivo}) — calibre manualmente pelo menu ⋯.`)
+        }
+        if (cancelado) return
+        setBoundsOverride(bounds)
+        setViewportOverride(viewport)
+        let id = avulso.id || null
+        if (!id && avulso.salvarOffline) {
+          id = await salvarMapaAvulso(avulso.nome, blob)
+          if (id) { log(`mapa salvo offline ✅ (${id})`); if (bounds) await salvarMetaMapaAvulso(id, { bounds, viewport }) }
+        }
+        if (!cancelado) { setAvulsoId(id); setAvulsoBlob(blob) }
+      } catch (e) {
+        if (!cancelado) { log(`FALHOU ao abrir PDF avulso: ${e?.message||e}`); setErro('Não consegui abrir esse PDF: ' + (e?.message || 'tente selecionar de novo.')) }
+      } finally {
+        if (!cancelado) setCarregando(false)
+      }
+    })()
+    return () => { cancelado = true }
+  }, [modoAvulso]) // eslint-disable-line
+
+  // Renderiza o PDF avulso no canvas sempre que os bytes mudam (abertura inicial ou troca
+  // de arquivo) — separado do fluxo de download/cache do modo fazenda, porque aqui os bytes
+  // já estão em memória (não precisa baixar nada).
+  useEffect(() => {
+    if (!modoAvulso || !avulsoBlob) return
+    let cancelado = false
+    ;(async () => {
+      setCarregando(true)
+      try {
+        if (!canvasRef.current) throw new Error('canvas ainda não montado (bug de timing — não deveria acontecer)')
+        const { width, height } = await renderPdfPageToCanvas(avulsoBlob, canvasRef.current, RENDER_LARGURA_HD)
+        if (!cancelado) { setTamCanvas({ width, height }); log(`renderizado ✅ (${width}x${height})`) }
+      } catch (e) {
+        if (!cancelado) { log(`erro ao renderizar: ${e?.message||e}`); setErro('Não consegui renderizar esse PDF.') }
+      } finally {
+        if (!cancelado) setCarregando(false)
+      }
+    })()
+    return () => { cancelado = true }
+  }, [modoAvulso, avulsoBlob])
 
   // Abre do cache local primeiro (rápido e funciona sem sinal em campo) e, em paralelo,
   // tenta buscar a versão mais nova do servidor — se conseguir, atualiza o cache pra
   // próxima vez. Só mostra erro se não tinha cache E não conseguiu baixar (sem sinal na
-  // primeira vez que abre esse mapa nesse aparelho).
+  // primeira vez que abre esse mapa nesse aparelho). Só roda no modo fazenda.
   useEffect(() => {
+    if (modoAvulso) return
     if (!temMapa) { setCarregando(false); return }
     setCarregando(true)
     console.log('[MapaFazendaViewer] URI do mapa recebido:', mapaPdfPath)
@@ -166,7 +294,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       }
     })()
     return () => { cancelado = true }
-  }, [supabase, fazenda?.id, mapaPdfPath, temMapa])
+  }, [supabase, fazenda?.id, mapaPdfPath, temMapa, modoAvulso])
 
   // Segue o GPS sempre que der pra comparar com algum destino — mesmo longe da fazenda,
   // isso já mostra distância e o link do Maps, útil pra quem tá testando ou se deslocando.
@@ -399,15 +527,24 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
       // no que vê na tela), então zera qualquer viewport de GeoPDF detectado antes — senão a
       // posição ficaria deslocada, aplicando duas correções sobrepostas.
       const viewportCheio = { x: 0, y: 0, w: 1, h: 1 }
-      const { error } = await supabase.from('fazendas').update({
-        mapa_lat_min: novoBounds.latMin, mapa_lat_max: novoBounds.latMax,
-        mapa_lng_min: novoBounds.lngMin, mapa_lng_max: novoBounds.lngMax,
-        mapa_vp_x: viewportCheio.x, mapa_vp_y: viewportCheio.y, mapa_vp_w: viewportCheio.w, mapa_vp_h: viewportCheio.h,
-      }).eq('id', fazenda.id)
-      if (error) throw error
+      if (modoAvulso) {
+        if (avulsoId) {
+          await salvarMetaMapaAvulso(avulsoId, { bounds: novoBounds, viewport: viewportCheio })
+          log('calibração salva no dispositivo ✅')
+        } else {
+          log('calibração aplicada só nesta sessão — esse PDF não foi salvo offline, então ela não fica guardada pra próxima vez que você abrir esse arquivo.')
+        }
+      } else {
+        const { error } = await supabase.from('fazendas').update({
+          mapa_lat_min: novoBounds.latMin, mapa_lat_max: novoBounds.latMax,
+          mapa_lng_min: novoBounds.lngMin, mapa_lng_max: novoBounds.lngMax,
+          mapa_vp_x: viewportCheio.x, mapa_vp_y: viewportCheio.y, mapa_vp_w: viewportCheio.w, mapa_vp_h: viewportCheio.h,
+        }).eq('id', fazenda.id)
+        if (error) throw error
+        log('calibração salva ✅')
+      }
       setBoundsOverride(novoBounds)
       setViewportOverride(viewportCheio)
-      log('calibração salva ✅')
     } catch (e) {
       log(`ERRO ao salvar calibração: ${e?.message || e}`)
       setErro('Não consegui salvar a calibração: ' + (e?.message || 'confira sua conexão.'))
@@ -483,7 +620,9 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
   async function compartilharPontoMira() {
     if (!coordMira) return
     const lat = coordMira.lat.toFixed(6), lng = coordMira.lng.toFixed(6)
-    const texto = `📍 Ponto de Interesse - Fazenda ${fazenda?.nome || ''}\nCoordenadas: ${lat}, ${lng}\nGoogle Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via Orofly Agro 🚀`
+    const texto = modoAvulso
+      ? `📍 Ponto de Interesse — ${nomeArquivoAvulso}\nCoordenadas: ${lat}, ${lng}\nGoogle Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via Orofly Agro 🚀`
+      : `📍 Ponto de Interesse - Fazenda ${fazenda?.nome || ''}\nCoordenadas: ${lat}, ${lng}\nGoogle Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via Orofly Agro 🚀`
     // Copia pra área de transferência de brinde (funciona em qualquer navegador/webview,
     // sem depender do menu nativo abrir) — o compartilhamento continua sendo a ação principal.
     try { await navigator.clipboard?.writeText(texto) } catch { /* sem permissão de clipboard, sem problema */ }
@@ -501,8 +640,8 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         padding:'calc(env(safe-area-inset-top,0px) + 10px) 12px 24px', background:'linear-gradient(rgba(11,18,16,.8),rgba(11,18,16,0))', pointerEvents:'none' }}>
         <button onClick={onClose} style={{ pointerEvents:'auto', width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,.14)', border:'none', color:'#fff', fontSize:18, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>←</button>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ color:'#fff', fontWeight:700, fontSize:14, fontFamily:"'Syne',sans-serif", whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{fazenda?.nome}</div>
-          <div style={{ color:'rgba(255,255,255,.65)', fontSize:11, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{fazenda?.cliente}</div>
+          <div style={{ color:'#fff', fontWeight:700, fontSize:14, fontFamily:"'Syne',sans-serif", whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{modoAvulso ? (avulso?.nome || 'PDF avulso') : fazenda?.nome}</div>
+          <div style={{ color:'rgba(255,255,255,.65)', fontSize:11, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{modoAvulso ? '📄 PDF avulso' : fazenda?.cliente}</div>
         </div>
         {temMapa && !erro && (
           <button onClick={()=>setMenuAberto(v=>!v)} style={{ pointerEvents:'auto', width:36, height:36, borderRadius:'50%', background:'rgba(255,255,255,.14)', border:'none', color:'#fff', fontSize:18, fontWeight:700, cursor:'pointer', flexShrink:0 }}>⋯</button>
@@ -520,10 +659,14 @@ export default function MapaFazendaViewer({ supabase, fazenda, onClose }) {
         </div>
       )}
 
-      {!temMapa ? (
+      {carregando && !temMapa && !erro ? (
+        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ fontSize:13, color:'#9fc2af' }}>Abrindo PDF...</div>
+        </div>
+      ) : !temMapa ? (
         <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
           <div style={{ background:'#fff', borderRadius:18, padding:24, textAlign:'center', fontSize:13, color:'#5c7568', maxWidth:340, width:'100%' }}>
-            Essa fazenda ainda não tem mapa cadastrado.
+            {modoAvulso ? 'Nenhum PDF selecionado.' : 'Essa fazenda ainda não tem mapa cadastrado.'}
             <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
               style={{ display:'block', width:'100%', marginTop:14, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
               {enviando?'Enviando...':'📤 Enviar mapa (PDF)'}

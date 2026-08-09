@@ -183,14 +183,16 @@ export function pixelParaLatLng(x, y, bounds, imgWidth, imgHeight, viewport) {
   }
 }
 
-function base64ParaArrayBuffer(base64) {
+// Exportadas porque o módulo de mapas avulsos (mapasAvulsos.js) precisa das mesmas
+// conversões base64<->arquivo pra salvar/ler PDFs soltos no dispositivo.
+export function base64ParaArrayBuffer(base64) {
   const binario = atob(base64)
   const bytes = new Uint8Array(binario.length)
   for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i)
   return bytes.buffer
 }
 
-function blobParaBase64(blob) {
+export function blobParaBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result).split(',')[1] || '')
