@@ -2644,40 +2644,8 @@ export default function PilotApp({onSwitchMode}) {
               ))}
             </div>
 
-            {/* Gráfico principal da aba ativa */}
-            <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px 8px 8px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6,paddingLeft:8}}>
-                {({temp:'TEMPERATURA MÁX. E MÍN.',chuva:'CHANCE DE CHUVA',vento:'VENTO MÁXIMO E RAJADA',delta:'DELTA T (13H)'})[climaTab]}
-              </div>
-              <ResponsiveContainer width="100%" height={170}>
-                <ComposedChart data={tempoDias.map((d,i)=>({
-                  dia: i===0?'Hoje':new Date(d.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short'}),
-                  temp: Math.round(d.tempMax), tempMin: Math.round(d.tempMin), chuva: Math.round(d.chuvaProb),
-                  vento: Math.round(d.ventoMax), rajada: d.ventoRajadaMax!=null?Math.round(d.ventoRajadaMax):null, delta: d.deltaT!=null?Number(d.deltaT.toFixed(1)):null,
-                }))} margin={{top:5,right:10,left:-20,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                  <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false}/>
-                  <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
-                  {climaTab==='temp' && (
-                    <>
-                      <Line type="monotone" dataKey="temp" stroke="#f2960f" strokeWidth={2.5} dot={{r:3}} name="Máx °C"/>
-                      <Line type="monotone" dataKey="tempMin" stroke="#8fa79a" strokeWidth={2} strokeDasharray="4 3" dot={{r:2}} name="Mín °C"/>
-                    </>
-                  )}
-                  {climaTab==='chuva' && <Bar dataKey="chuva" fill="#2f6fed" radius={[6,6,0,0]} name="Chuva %"/>}
-                  {climaTab==='vento' && (
-                    <>
-                      <Line type="monotone" dataKey="vento" stroke="#2f6fed" strokeWidth={2.5} dot={{r:3}} name="Vento km/h"/>
-                      <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={{r:2}} name="Rajada km/h"/>
-                    </>
-                  )}
-                  {climaTab==='delta' && <Line type="monotone" dataKey="delta" stroke="#0e9f6e" strokeWidth={2.5} dot={{r:3}} name="Delta T"/>}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Gráfico por hora do dia selecionado */}
+            {/* Gráfico por hora do dia selecionado — único gráfico da tela; troca de dia
+                acontece pelos cards logo abaixo (sem view semanal, sem scroll lateral). */}
             {(() => {
               const diaAtivo = diaSelecionado || tempoDias[0].data
               if (!tempoHorario) return null
@@ -2721,23 +2689,25 @@ export default function PilotApp({onSwitchMode}) {
               )
             })()}
 
-            {/* Previsão resumida por dia — clique num dia pra ver o gráfico por hora */}
-            <div style={{display:'flex',gap:8,overflowX:'auto',paddingBottom:4}}>
+            {/* Previsão resumida por dia — clique num dia pra ver o gráfico por hora dele
+                acima. Cards flexíveis (sem scroll lateral): encolhem pra caber todos na
+                largura da tela, em vez de estourar e precisar arrastar. */}
+            <div style={{display:'flex',gap:4}}>
               {tempoDias.map((d,i)=>{
                 const dataObj = new Date(d.data+'T12:00:00')
-                const diaLabel = i===0?'Hoje':dataObj.toLocaleDateString('pt-BR',{weekday:'short'})
+                const diaLabel = i===0?'Hoje':dataObj.toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','')
                 const chuvoso = d.chuvaProb>=60, nublado = d.chuvaProb>=25
                 const WIcon = chuvoso?CloudRain:nublado?Cloud:Sun
                 const wc = chuvoso?'#2f6fed':nublado?'#8fa79a':'#f2960f'
                 const ativo = (diaSelecionado||tempoDias[0].data)===d.data
                 return (
-                  <div key={d.data} onClick={()=>setDiaSelecionado(d.data)} style={{flex:'0 0 auto',minWidth:66,background:ativo?'#e3f7ec':'#fff',borderRadius:16,border:ativo?'1px solid #0e9f6e':'1px solid #dcebe3',padding:'10px 8px',textAlign:'center',cursor:'pointer'}}>
-                    <div style={{fontSize:11,fontWeight:700,textTransform:'capitalize',color:ativo?'#0e9f6e':'#5c7568'}}>{diaLabel}</div>
-                    <WIcon size={22} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'} style={{margin:'6px auto',display:'block'}}/>
-                    {climaTab==='temp' && <div style={{fontSize:13,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.tempMax)}°<span style={{color:'#8fa79a',fontWeight:600}}> {Math.round(d.tempMin)}°</span></div>}
-                    {climaTab==='chuva' && <div style={{fontSize:13,fontWeight:700,color:'#2f6fed',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>}
-                    {climaTab==='vento' && <div style={{fontSize:13,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.ventoMax)} km/h</div>}
-                    {climaTab==='delta' && <div style={{fontSize:13,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>}
+                  <div key={d.data} onClick={()=>setDiaSelecionado(d.data)} style={{flex:'1 1 0',minWidth:0,background:ativo?'#e3f7ec':'#fff',borderRadius:12,border:ativo?'1px solid #0e9f6e':'1px solid #dcebe3',padding:'8px 2px',textAlign:'center',cursor:'pointer'}}>
+                    <div style={{fontSize:9.5,fontWeight:700,textTransform:'capitalize',color:ativo?'#0e9f6e':'#5c7568',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{diaLabel}</div>
+                    <WIcon size={17} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'} style={{margin:'4px auto',display:'block'}}/>
+                    {climaTab==='temp' && <div style={{fontSize:10.5,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif",whiteSpace:'nowrap'}}>{Math.round(d.tempMax)}°<span style={{color:'#8fa79a',fontWeight:600}}>/{Math.round(d.tempMin)}°</span></div>}
+                    {climaTab==='chuva' && <div style={{fontSize:11,fontWeight:700,color:'#2f6fed',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>}
+                    {climaTab==='vento' && <div style={{fontSize:10,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif",whiteSpace:'nowrap'}}>{Math.round(d.ventoMax)}km/h</div>}
+                    {climaTab==='delta' && <div style={{fontSize:11,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>}
                   </div>
                 )
               })}
