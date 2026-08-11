@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { ComposedChart, BarChart, Line, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { ComposedChart, BarChart, Line, Area, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida } from '../lib/pdf'
@@ -2674,6 +2674,12 @@ export default function PilotApp({onSwitchMode}) {
                   </div>
                   <ResponsiveContainer width="100%" height={130}>
                     <ComposedChart data={pontos} margin={{top:5,right:10,left:-20,bottom:0}}>
+                      <defs>
+                        <linearGradient id="ventoGradiente" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2f6fed" stopOpacity={0.35}/>
+                          <stop offset="95%" stopColor="#2f6fed" stopOpacity={0.03}/>
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
                       <XAxis dataKey="hora" tick={{fontSize:9,fill:'#7ba38f'}} tickLine={false} interval={2}/>
                       <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
@@ -2681,7 +2687,7 @@ export default function PilotApp({onSwitchMode}) {
                       {climaTab==='chuva' && <Bar dataKey="chuva" fill={cor} radius={[4,4,0,0]} name="Chuva %"/>}
                       {climaTab==='vento' && (
                         <>
-                          <Line type="monotone" dataKey="vento" stroke={cor} strokeWidth={2.5} dot={{r:2}} name="Vento km/h"/>
+                          <Area type="monotone" dataKey="vento" stroke={cor} strokeWidth={2.5} fill="url(#ventoGradiente)" dot={{r:2}} name="Vento km/h"/>
                           <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Rajada km/h"/>
                         </>
                       )}
@@ -4160,7 +4166,9 @@ function StorageFotoSlot({ supabase, path, height=60 }) {
 // Radar de chuva em tempo real (RainViewer, gratuito, sem chave de API) — mesma técnica
 // dos outros mapas do app (MapaOperacoes, TrajetosKml etc): monta um HTML com Leaflet via
 // CDN e renderiza num iframe sandboxed via Blob URL, em vez de empacotar leaflet como
-// dependência npm (evita dor de cabeça com CSS/ícones do Leaflet no build do CRA).
+// dependência npm (evita dor de cabeça com CSS/ícones do Leaflet no build do CRA). Tema
+// claro nativo do Orofly (fundo branco, detalhe verde-água) — mapa base CartoDB Voyager
+// (mais contraste de relevo/estradas que o Positron puro, mas ainda claro).
 function RadarChuva({ lat, lng }) {
   const [mapUrl, setMapUrl] = useState(null)
   const [frameTime, setFrameTime] = useState(null) // hora (ms) do frame de radar mais recente
@@ -4191,8 +4199,8 @@ function RadarChuva({ lat, lng }) {
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script>
           var map = L.map('map',{zoomControl:true}).setView([${lat},${lng}],7);
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(map);
-          L.tileLayer('${tileUrl}',{opacity:0.75,maxZoom:19}).addTo(map);
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(map);
+          L.tileLayer('${tileUrl}',{opacity:0.70,maxZoom:19}).addTo(map);
           L.circleMarker([${lat},${lng}],{color:'#0e9f6e',fillColor:'#0e9f6e',fillOpacity:0.9,radius:7,weight:2}).addTo(map);
         </script>
       </body></html>`
@@ -4237,10 +4245,10 @@ function RadarChuva({ lat, lng }) {
         <iframe src={mapUrl} style={{width:'100%',height:220,border:'none',display:'block'}} title="Radar de Chuva" sandbox="allow-scripts"/>
       )}
       <div style={{display:'flex',justifyContent:'center',gap:14,padding:'8px 10px',background:'#f9fbfa',fontSize:10,color:'#5c7568',flexWrap:'wrap'}}>
-        <span><span style={{color:'#3fae4a'}}>●</span> Fraca</span>
-        <span><span style={{color:'#e8d838'}}>●</span> Moderada</span>
-        <span><span style={{color:'#f2960f'}}>●</span> Forte</span>
-        <span><span style={{color:'#e5484d'}}>●</span> Intensa</span>
+        <span><span style={{color:'#3fae4a'}}>●</span> Fraca (Verde)</span>
+        <span><span style={{color:'#e8d838'}}>●</span> Moderada (Amarelo)</span>
+        <span><span style={{color:'#f2960f'}}>●</span> Forte (Laranja)</span>
+        <span><span style={{color:'#e5484d'}}>●</span> Intensa (Vermelho)</span>
       </div>
     </div>
   )
