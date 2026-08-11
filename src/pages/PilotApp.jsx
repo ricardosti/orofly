@@ -1281,10 +1281,12 @@ export default function PilotApp({onSwitchMode}) {
   async function buscarPrevisao(lat,lon,local){
     setTempoLoading(true); setTempoErro(''); setTempoDias(null); setDiaSelecionado(null)
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max,windgusts_10m_max&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,windgusts_10m,precipitation_probability&timezone=auto&forecast_days=8`
+      // Chama nosso proxy (api/clima.js), que busca na Meteoblue com a chave guardada no
+      // servidor e devolve os dados já no mesmo formato que o Open-Meteo usava antes.
+      const url = `/api/clima?lat=${lat}&lon=${lon}`
       const res = await fetch(url)
-      if(!res.ok) throw new Error('Falha ao buscar previsão')
       const data = await res.json()
+      if(!res.ok) throw new Error(data?.error || 'Falha ao buscar previsão')
       const dias = (data.daily?.time||[]).map((dataStr,i)=>{
         // Pega temperatura/umidade por volta das 13h (janela típica de aplicação) pra estimar o Delta T do dia
         const idxHora = (data.hourly?.time||[]).findIndex(t=>t.startsWith(dataStr)&&t.endsWith('T13:00'))
@@ -2687,8 +2689,10 @@ export default function PilotApp({onSwitchMode}) {
                       {climaTab==='chuva' && <Bar dataKey="chuva" fill={cor} radius={[4,4,0,0]} name="Chuva %"/>}
                       {climaTab==='vento' && (
                         <>
-                          <Area type="monotone" dataKey="vento" stroke={cor} strokeWidth={2.5} fill="url(#ventoGradiente)" dot={{r:2}} name="Vento km/h"/>
-                          <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Rajada km/h"/>
+                          <Area type="monotone" dataKey="vento" stroke={cor} strokeWidth={2.5} fill="url(#ventoGradiente)" dot={false}
+                            label={{ position:'top', fontSize:10, fontWeight:700, fill:cor, offset:8 }} name="Vento km/h"/>
+                          <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={false}
+                            label={{ position:'top', fontSize:10, fontWeight:700, fill:'#e5484d', offset:8 }} name="Rajada km/h"/>
                         </>
                       )}
                       {(climaTab==='temp'||climaTab==='delta') && <Line type="monotone" dataKey={climaTab==='temp'?'temp':'delta'} stroke={cor} strokeWidth={2.5} dot={{r:2}}/>}
@@ -2724,7 +2728,7 @@ export default function PilotApp({onSwitchMode}) {
 
             <RadarChuva lat={parseFloat(String(tempoLat).replace(',','.'))} lng={parseFloat(String(tempoLng).replace(',','.'))}/>
 
-            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Open-Meteo · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer.</div>
+            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Meteoblue · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer.</div>
           </>
         )}
       </div>
