@@ -48,14 +48,20 @@ async function registrarChamada(sb, provider, sucesso, erro) {
 
 async function buscarMeteoblue(lat, lon) {
   console.log('[Weather API] Fetching from Meteoblue...')
-  const apiKey = process.env.METEOBLUE_API_KEY
+  const apiKey = (process.env.METEOBLUE_API_KEY || '').trim()
   if (!apiKey) {
     console.log('[Weather API] Meteoblue: METEOBLUE_API_KEY ausente')
     throw new Error('API Key ausente')
   }
-  const url = `https://my.meteoblue.com/packages/basic-1h_wind-1h?lat=${lat}&lon=${lon}&apikey=${apiKey}&format=json`
+  // Só o pacote básico (basic-1h) — já traz temperature/windspeed/winddirection/
+  // precipitation/relativehumidity, que é tudo que os gráficos precisam. wind-1h (gust)
+  // e outros pacotes extras (agro-1h, trend-1h) exigem plano pago e causavam HTTP 403
+  // com a conta gratuita/padrão.
+  const url = `https://my.meteoblue.com/packages/basic-1h?lat=${lat}&lon=${lon}&apikey=${apiKey}&format=json`
   const r = await fetchComTimeout(url, TIMEOUT_MS)
   if (!r.ok) {
+    const corpo = await r.text().catch(() => '(não consegui ler o corpo da resposta)')
+    console.error('[Meteoblue Error Details]:', corpo)
     console.log(`[Weather API] Meteoblue respondeu HTTP ${r.status}`)
     throw new Error(`HTTP ${r.status}`)
   }
