@@ -1301,6 +1301,9 @@ export default function PilotApp({onSwitchMode}) {
         }
       })
       setTempoDias(dias); setTempoLocal(local); setTempoHorario(data.hourly||null)
+      // Guarda as coordenadas de onde a previsão atual é (GPS, CEP, fazenda ou manual) —
+      // o card do Radar de Chuva usa isso pra saber onde centralizar o mapa.
+      setTempoLat(String(lat)); setTempoLng(String(lon))
     } catch(e){ setTempoErro('Não foi possível buscar a previsão. Confira sua conexão e tente de novo.') }
     finally { setTempoLoading(false) }
   }
@@ -2713,7 +2716,9 @@ export default function PilotApp({onSwitchMode}) {
               })}
             </div>
 
-            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Open-Meteo · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação</div>
+            <RadarChuva lat={parseFloat(String(tempoLat).replace(',','.'))} lng={parseFloat(String(tempoLng).replace(',','.'))}/>
+
+            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Open-Meteo · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer.</div>
           </>
         )}
       </div>
@@ -4150,6 +4155,95 @@ function StorageFotoSlot({ supabase, path, height=60 }) {
   }, [path, supabase])
   if (!url) return <div style={{fontSize:10,color:'#5c7568',padding:8}}>⏳</div>
   return <img src={url} alt="foto" style={{width:'100%',height,objectFit:'cover',borderRadius:8,display:'block'}} />
+}
+
+// Radar de chuva em tempo real (RainViewer, gratuito, sem chave de API) — mesma técnica
+// dos outros mapas do app (MapaOperacoes, TrajetosKml etc): monta um HTML com Leaflet via
+// CDN e renderiza num iframe sandboxed via Blob URL, em vez de empacotar leaflet como
+// dependência npm (evita dor de cabeça com CSS/ícones do Leaflet no build do CRA).
+function RadarChuva({ lat, lng }) {
+  const [mapUrl, setMapUrl] = useState(null)
+  const [frameTime, setFrameTime] = useState(null) // hora (ms) do frame de radar mais recente
+  const [carregando, setCarregando] = useState(false)
+  const [erro, setErro] = useState('')
+  const [agora, setAgora] = useState(Date.now())
+  const urlRef = useRef(null)
+
+  async function carregar() {
+    if (!lat || !lng) return
+    setCarregando(true)
+    setErro('')
+    try {
+      const res = await fetch('https://api.rainviewer.com/public/weather-maps.json')
+      if (!res.ok) throw new Error('falha ao consultar RainViewer')
+      const data = await res.json()
+      const frames = data?.radar?.past || []
+      const ultimo = frames[frames.length - 1]
+      if (!ultimo) throw new Error('sem frame de radar disponível agora')
+      const tileUrl = `${data.host}${ultimo.path}/256/{z}/{x}/{y}/2/1_1.png`
+      const html = `<!DOCTYPE html><html><head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width,initial-scale=1"/>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+        <style>*{margin:0;padding:0;box-sizing:border-box}html,body,#map{width:100%;height:100%}</style>
+      </head><body>
+        <div id="map"></div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script>
+          var map = L.map('map',{zoomControl:true}).setView([${lat},${lng}],7);
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(map);
+          L.tileLayer('${tileUrl}',{opacity:0.75,maxZoom:19}).addTo(map);
+          L.circleMarker([${lat},${lng}],{color:'#0e9f6e',fillColor:'#0e9f6e',fillOpacity:0.9,radius:7,weight:2}).addTo(map);
+        </script>
+      </body></html>`
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+      const blob = new Blob([html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+      urlRef.current = url
+      setMapUrl(url)
+      setFrameTime(ultimo.time * 1000)
+    } catch (e) {
+      setErro('Não consegui carregar o radar agora.')
+    } finally {
+      setCarregando(false)
+    }
+  }
+
+  useEffect(() => { carregar() }, [lat, lng]) // eslint-disable-line
+  // Recalcula "há X min" a cada 30s sem precisar recarregar o radar inteiro.
+  useEffect(() => { const t = setInterval(() => setAgora(Date.now()), 30000); return () => clearInterval(t) }, [])
+  useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }, [])
+
+  if (!lat || !lng) return null
+  const minAtras = frameTime ? Math.max(0, Math.round((agora - frameTime) / 60000)) : null
+
+  return (
+    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px'}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#26362d'}}>🌧️ Radar de Chuva</div>
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <span style={{fontSize:10.5,color:'#7ba38f'}}>{carregando?'Atualizando...':minAtras!=null?`Atualizado: há ${minAtras} min`:''}</span>
+          <button onClick={carregar} disabled={carregando} title="Atualizar radar"
+            style={{background:'#f1f8f4',border:'none',borderRadius:'50%',width:28,height:28,cursor:'pointer',color:'#0e9f6e',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            <RefreshCw size={14} style={{transform:carregando?'rotate(180deg)':'none',transition:'transform .4s'}}/>
+          </button>
+        </div>
+      </div>
+      {erro ? (
+        <div style={{padding:'30px 16px',textAlign:'center',fontSize:12,color:'#e5484d'}}>{erro}</div>
+      ) : !mapUrl ? (
+        <div style={{height:220,display:'flex',alignItems:'center',justifyContent:'center',color:'#7ba38f',fontSize:12}}>Carregando radar...</div>
+      ) : (
+        <iframe src={mapUrl} style={{width:'100%',height:220,border:'none',display:'block'}} title="Radar de Chuva" sandbox="allow-scripts"/>
+      )}
+      <div style={{display:'flex',justifyContent:'center',gap:14,padding:'8px 10px',background:'#f9fbfa',fontSize:10,color:'#5c7568',flexWrap:'wrap'}}>
+        <span><span style={{color:'#3fae4a'}}>●</span> Fraca</span>
+        <span><span style={{color:'#e8d838'}}>●</span> Moderada</span>
+        <span><span style={{color:'#f2960f'}}>●</span> Forte</span>
+        <span><span style={{color:'#e5484d'}}>●</span> Intensa</span>
+      </div>
+    </div>
+  )
 }
 
 function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
