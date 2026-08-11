@@ -101,6 +101,14 @@ export default function AdminPanel({ onSwitchMode }) {
   const [weatherStatus, setWeatherStatus] = useState(null) // {estado:'ok'|'backup'|'erro', mensagem}
   const [weatherStatusTestando, setWeatherStatusTestando] = useState(false)
   const [weatherLogs, setWeatherLogs] = useState(null) // últimas chamadas (repositório de logs)
+  // Agro Finance — módulo trazido do projeto do Isaque (sócio). Por enquanto o app não usa
+  // rotas de URL (é tudo por `tab`, como o resto do Admin), então "/admin/agro-finance" vira
+  // um item de menu com sub-abas internas, igual o padrão já usado em Usuários/Equipes.
+  const [agroFinanceTab, setAgroFinanceTab] = useState('dashboard')
+  const [calc, setCalc] = useState({
+    cliente: '', cultura: 'Soja', areaTotal: '', tipoServico: 'Pulverização Agrícola', distancia: '', rendimento: '',
+    custoBateriaHora: '', combustivelKm: '', diaria: '', desgasteHora: '', margem: '', precoMercado: '',
+  })
   useEffect(() => {
     if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
   }, [tab]) // eslint-disable-line
@@ -976,6 +984,7 @@ export default function AdminPanel({ onSwitchMode }) {
             ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
             ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
             ['custos', '💰', 'Financeiro', custos.length],
+            ['agrofinance', '💹', 'Agro Finance', ''],
           ]],
           ['CONFIGURAÇÕES', [
             ['pilotos', '👥', 'Usuários', pilotos.length],
@@ -4818,6 +4827,38 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
             </div>
           )}
+
+          {tab === 'agrofinance' && (
+            <div>
+              <div style={{marginBottom:18}}>
+                <div style={{fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210'}}>💹 Agro Finance</div>
+                <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>Módulo financeiro da operação — orçamentos, caixa, custos e DRE.</div>
+              </div>
+              <div style={{display:'flex',gap:4,background:'#eef5f0',borderRadius:14,padding:4,marginBottom:18,maxWidth:640,flexWrap:'wrap'}}>
+                {[
+                  {id:'dashboard',label:'📊 Dashboard'},
+                  {id:'lancamentos',label:'💵 Lançamentos/Caixa'},
+                  {id:'custos',label:'🚁 Custos por Voo/Talhão'},
+                  {id:'relatorios',label:'📑 Relatórios/DRE'},
+                  {id:'calculadora',label:'🧮 Calculadora'},
+                ].map(t=>(
+                  <button key={t.id} onClick={()=>setAgroFinanceTab(t.id)}
+                    style={{flex:'1 1 auto', minWidth:120, background: agroFinanceTab===t.id?'#fff':'transparent', color: agroFinanceTab===t.id?'#0b1210':'#5c7568', border:'none', borderRadius:10, padding:'9px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', boxShadow: agroFinanceTab===t.id?'0 2px 8px rgba(11,18,16,0.08)':'none'}}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {agroFinanceTab==='calculadora' ? (
+                <CalculadoraOrcamento calc={calc} setCalc={setCalc} isMobile={isMobile}/>
+              ) : (
+                <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#a9beb1'}}>
+                  <div style={{fontSize:36,marginBottom:10}}>🚧</div>
+                  <div style={{fontSize:14,fontWeight:700,color:'#5c7568',marginBottom:4}}>{ {dashboard:'Dashboard',lancamentos:'Lançamentos / Caixa',custos:'Custos por Voo / Talhão',relatorios:'Relatórios / DRE'}[agroFinanceTab] }</div>
+                  <div style={{fontSize:12.5}}>Estrutura pronta — é só colar aqui o código dessa tela do projeto original.</div>
+                </div>
+              )}
+            </div>
+          )}
         </main>
       </div>
 
@@ -5100,6 +5141,147 @@ export default function AdminPanel({ onSwitchMode }) {
 
 function SecTitle({ children }) {
   return <div style={{ fontSize:10, fontWeight:700, color:'#00A86B', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:'1px solid #e3f7ec', fontFamily:"'Syne',sans-serif" }}>{children}</div>
+}
+
+// Calculadora de Orçamento de Serviço (Agro Finance) — mesmos campos e fórmulas da
+// ferramenta original do Isaque (chimerical-flan-a7ccc2.netlify.app), só que no visual
+// claro do Orofly. Fórmulas conferidas número a número contra o print de referência:
+// - Baterias = tempoEstimado(h) × custoBateriaHora
+// - Deslocamento = (distância×2, ida e volta) × combustível/km
+// - Diárias = diária × dias (jornada de 8h/dia, arredondado pra cima)
+// - Desgaste = tempoEstimado(h) × desgasteHora
+// - Preço sugerido/ha = custo/ha ÷ (1 - margem%)  [markup sobre o PREÇO, não sobre o custo —
+//   é por isso que 40% de margem em cima de R$18/ha dá R$30/ha, não R$25/ha]
+function CalculadoraOrcamento({ calc, setCalc, isMobile }) {
+  const set = (k) => (e) => setCalc(c => ({ ...c, [k]: e.target.value }))
+  const num = (v) => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n }
+
+  const areaTotal = num(calc.areaTotal)
+  const rendimento = num(calc.rendimento)
+  const distancia = num(calc.distancia)
+  const custoBateriaHora = num(calc.custoBateriaHora)
+  const combustivelKm = num(calc.combustivelKm)
+  const diaria = num(calc.diaria)
+  const desgasteHora = num(calc.desgasteHora)
+  const margem = num(calc.margem)
+  const precoMercado = num(calc.precoMercado)
+
+  const HORAS_POR_DIA = 8 // não veio campo pra isso na ferramenta original — jornada padrão
+  const tempoEstimado = rendimento > 0 ? areaTotal / rendimento : 0
+  const dias = tempoEstimado > 0 ? Math.max(1, Math.ceil(tempoEstimado / HORAS_POR_DIA)) : 0
+
+  const kmIdaVolta = distancia * 2
+  const custoBaterias = tempoEstimado * custoBateriaHora
+  const custoDeslocamento = kmIdaVolta * combustivelKm
+  const custoDiarias = diaria * dias
+  const custoDesgaste = tempoEstimado * desgasteHora
+  const custoTotal = custoBaterias + custoDeslocamento + custoDiarias + custoDesgaste
+  const custoPorHectare = areaTotal > 0 ? custoTotal / areaTotal : 0
+  const margemFrac = Math.min(0.95, Math.max(0, margem / 100))
+  const precoSugeridoHa = margemFrac < 1 ? custoPorHectare / (1 - margemFrac) : 0
+  const precoFinal = precoSugeridoHa * areaTotal
+  const lucroEstimado = precoFinal - custoTotal
+
+  const temDados = areaTotal > 0 && rendimento > 0
+  const competitivo = precoMercado > 0 ? precoSugeridoHa <= precoMercado : null
+  const fmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const inputSt = { width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '9px 11px', fontSize: 13.5, outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box', fontFamily: "'DM Sans',sans-serif" }
+  const labelSt = { fontSize: 10.5, fontWeight: 700, color: '#7ba38f', letterSpacing: .5, marginBottom: 5, display: 'block' }
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 20 }}>
+          <SecTitle>📋 Dados da Aplicação</SecTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={labelSt}>CLIENTE</label><input style={inputSt} value={calc.cliente} onChange={set('cliente')} placeholder="Nome do cliente" /></div>
+            <div><label style={labelSt}>CULTURA</label>
+              <select style={inputSt} value={calc.cultura} onChange={set('cultura')}>
+                {['Soja', 'Milho', 'Algodão', 'Cana-de-açúcar', 'Café', 'Feijão', 'Trigo', 'Outro'].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div><label style={labelSt}>ÁREA TOTAL (HECTARES)</label><input type="number" style={inputSt} value={calc.areaTotal} onChange={set('areaTotal')} placeholder="0" /></div>
+            <div><label style={labelSt}>TIPO DE SERVIÇO</label>
+              <select style={inputSt} value={calc.tipoServico} onChange={set('tipoServico')}>
+                {['Pulverização Agrícola', 'Semeadura / Plantio', 'Mapeamento / Sensoriamento', 'Distribuição de Sólidos', 'Outro'].map(o => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <div><label style={labelSt}>DISTÂNCIA ATÉ O LOCAL (KM)</label><input type="number" style={inputSt} value={calc.distancia} onChange={set('distancia')} placeholder="0" /></div>
+            <div><label style={labelSt}>RENDIMENTO ESPERADO (HA/HORA)</label><input type="number" style={inputSt} value={calc.rendimento} onChange={set('rendimento')} placeholder="0" /></div>
+          </div>
+        </div>
+
+        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 20 }}>
+          <SecTitle>💰 Custos Operacionais</SecTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div><label style={labelSt}>CUSTO BATERIA / HORA (R$)</label><input type="number" style={inputSt} value={calc.custoBateriaHora} onChange={set('custoBateriaHora')} placeholder="0" /></div>
+            <div><label style={labelSt}>COMBUSTÍVEL / KM (R$)</label><input type="number" style={inputSt} value={calc.combustivelKm} onChange={set('combustivelKm')} placeholder="0" /></div>
+            <div><label style={labelSt}>DIÁRIA / ALIMENTAÇÃO (R$)</label><input type="number" style={inputSt} value={calc.diaria} onChange={set('diaria')} placeholder="0" /></div>
+            <div><label style={labelSt}>DESGASTE EQUIPAMENTO / HORA (R$)</label><input type="number" style={inputSt} value={calc.desgasteHora} onChange={set('desgasteHora')} placeholder="0" /></div>
+            <div><label style={labelSt}>MARGEM DE LUCRO DESEJADA (%)</label><input type="number" style={inputSt} value={calc.margem} onChange={set('margem')} placeholder="0" /></div>
+            <div><label style={labelSt}>PREÇO DE MERCADO/HA (R$) REFERÊNCIA</label><input type="number" style={inputSt} value={calc.precoMercado} onChange={set('precoMercado')} placeholder="0" /></div>
+          </div>
+        </div>
+      </div>
+
+      {!temDados ? (
+        <div style={{ background: '#fff', borderRadius: 16, border: '1px dashed #dcebe3', padding: 30, textAlign: 'center', color: '#a9beb1', fontSize: 13 }}>
+          Preencha pelo menos Área Total e Rendimento Esperado pra ver o cálculo.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1fr', gap: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 20 }}>
+            <SecTitle>📊 Composição do Preço</SecTitle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13 }}>
+              {[
+                ['📐 Área total', `${fmt(areaTotal)} ha`],
+                ['⏱️ Tempo estimado', `${tempoEstimado.toFixed(1)}h (${dias} dia${dias === 1 ? '' : 's'})`],
+                ['🔋 Baterias', `R$ ${fmt(custoBaterias)}`],
+                [`🚙 Deslocamento (${fmt(kmIdaVolta)} km)`, `R$ ${fmt(custoDeslocamento)}`],
+                ['🏨 Diárias', `R$ ${fmt(custoDiarias)}`],
+                ['🛠️ Desgaste equipamento', `R$ ${fmt(custoDesgaste)}`],
+              ].map(([l, v]) => (
+                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
+                  <span style={{ color: '#5c7568' }}>{l}</span><span style={{ color: '#0b1210' }}>{v}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', fontWeight: 700 }}>
+                <span style={{ color: '#0b1210' }}>Custo Operacional Total</span><span style={{ color: '#0b1210' }}>R$ {fmt(custoTotal)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
+                <span style={{ color: '#5c7568' }}>💵 Custo / hectare</span><span style={{ color: '#0b1210' }}>R$ {fmt(custoPorHectare)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
+                <span style={{ color: '#5c7568' }}>✅ Margem aplicada</span><span style={{ color: '#0b1210' }}>{margem || 0}%</span>
+              </div>
+              {precoMercado > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
+                  <span style={{ color: '#5c7568' }}>🏷️ Preço mercado (ref.)</span><span style={{ color: '#0b1210' }}>R$ {fmt(precoMercado)}/ha</span>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 2px', borderTop: '2px solid #00A86B', marginTop: 4 }}>
+                <span style={{ fontWeight: 700, color: '#0b1210' }}>💰 PREÇO SUGERIDO / ha</span>
+                <span style={{ fontWeight: 800, color: '#00A86B', fontFamily: "'Syne',sans-serif" }}>R$ {fmt(precoSugeridoHa)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#7ba38f', letterSpacing: 1 }}>PREÇO FINAL SUGERIDO</div>
+            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: isMobile ? 30 : 36, fontWeight: 800, color: '#00A86B', margin: '8px 0' }}>R$ {fmt(precoFinal)}</div>
+            <div style={{ fontSize: 12.5, color: '#5c7568' }}>R$ {fmt(precoSugeridoHa)} / hectare</div>
+            <div style={{ fontSize: 11.5, color: '#7ba38f', marginTop: 4 }}>Lucro estimado: R$ {fmt(lucroEstimado)} ({margem || 0}%)</div>
+            {competitivo !== null && (
+              <div style={{ marginTop: 14, fontSize: 11.5, fontWeight: 700, borderRadius: 20, padding: '6px 14px', background: competitivo ? '#e3f7ec' : '#fff3e0', color: competitivo ? '#00875A' : '#a3690a' }}>
+                {competitivo ? '✅ Competitivo — abaixo ou igual ao mercado' : '⚠️ Acima do preço de mercado — avalie a margem'}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const INCIDENTE_TIPO_LABEL = {drone:'🚁 Drone',veiculo:'🚗 Veículo',pessoal:'🤕 Pessoal',outro:'❓ Outro'}
