@@ -91,6 +91,16 @@ export default function AdminPanel({ onSwitchMode }) {
   const isMobile = useIsMobile()
   const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : 'relatorios')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Configurações do Sistema — hoje só o provedor de clima (Meteoblue/Open-Meteo), mas a
+  // tabela app_settings (chave/valor) e essa tela foram feitas genéricas de propósito pra
+  // caber novas opções no futuro sem precisar de migração de banco nem tela nova.
+  const [weatherProvider, setWeatherProvider] = useState(null)
+  const [weatherProviderCarregando, setWeatherProviderCarregando] = useState(false)
+  const [weatherProviderSalvando, setWeatherProviderSalvando] = useState(false)
+  const [weatherLogStats, setWeatherLogStats] = useState(null)
+  useEffect(() => {
+    if (tab === 'configuracoes' && weatherProvider === null) carregarConfiguracoes()
+  }, [tab]) // eslint-disable-line
   const [relatorios, setRelatorios] = useState([])
   const [pilotos, setPilotos] = useState([])
   const [times, setTimes] = useState([])
@@ -733,6 +743,47 @@ export default function AdminPanel({ onSwitchMode }) {
     showToast('🗑️ Time excluído'); fetchAll()
   }
 
+  // Configurações do Sistema — carrega a preferência de provedor de clima (app_settings)
+  // e um resumo de uso das APIs (weather_api_log), pra dar visibilidade de consumo antes
+  // de bater no limite mensal gratuito da Meteoblue.
+  async function carregarConfiguracoes() {
+    setWeatherProviderCarregando(true)
+    try {
+      const { data } = await supabase.from('app_settings').select('valor').eq('chave','weather_provider').single()
+      setWeatherProvider(data?.valor === 'open_meteo' ? 'open_meteo' : 'meteoblue')
+    } catch { setWeatherProvider('meteoblue') }
+    finally { setWeatherProviderCarregando(false) }
+    carregarWeatherLogStats()
+  }
+
+  async function carregarWeatherLogStats() {
+    try {
+      const agora = new Date()
+      const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString()
+      const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).toISOString()
+      const [{ count: totalMeteoblue }, { count: totalOpenMeteo }, { count: hojeMeteoblue }, { count: falhasMes }] = await Promise.all([
+        supabase.from('weather_api_log').select('id', { count:'exact', head:true }).eq('provider','meteoblue').gte('criado_em', inicioMes),
+        supabase.from('weather_api_log').select('id', { count:'exact', head:true }).eq('provider','open_meteo').gte('criado_em', inicioMes),
+        supabase.from('weather_api_log').select('id', { count:'exact', head:true }).gte('criado_em', inicioHoje),
+        supabase.from('weather_api_log').select('id', { count:'exact', head:true }).eq('sucesso', false).gte('criado_em', inicioMes),
+      ])
+      setWeatherLogStats({ totalMeteoblue: totalMeteoblue||0, totalOpenMeteo: totalOpenMeteo||0, hoje: hojeMeteoblue||0, falhasMes: falhasMes||0 })
+    } catch { setWeatherLogStats(null) }
+  }
+
+  async function salvarProvedorClima(novo) {
+    if (novo === weatherProvider) return
+    setWeatherProviderSalvando(true)
+    try {
+      const { error } = await supabase.from('app_settings')
+        .upsert({ chave:'weather_provider', valor: novo, atualizado_por: profile?.id, atualizado_em: new Date().toISOString() }, { onConflict:'chave' })
+      if (error) throw error
+      setWeatherProvider(novo)
+      showToast(`✅ Provedor de clima: ${novo==='meteoblue'?'Meteoblue':'Open-Meteo'}`)
+    } catch (e) { showToast('Erro: '+e.message, 'error') }
+    finally { setWeatherProviderSalvando(false) }
+  }
+
   async function toggleFazendaTime(fazendaId, timeId) {
     const existente = fazendaTimes.find(ft=>ft.fazenda_id===fazendaId && ft.time_id===timeId)
     if(existente){
@@ -898,6 +949,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ]],
           ['CONFIGURAÇÕES', [
             ['pilotos', '👥', 'Usuários', pilotos.length],
+            ['configuracoes', '⚙️', 'Configurações do Sistema', ''],
           ]],
         ]).map(([secao, itens]) => (
           <div key={secao} style={{marginBottom:14}}>
@@ -4621,6 +4673,76 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               </div>
               )}
+            </div>
+          )}
+
+          {tab === 'configuracoes' && (
+            <div>
+              <div style={{ marginBottom:18 }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>⚙️ Configurações do Sistema</div>
+                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>Opções globais que afetam o app inteiro.</div>
+              </div>
+
+              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
+                <SecTitle>🌦️ Provedor de Dados Meteorológicos</SecTitle>
+                <div style={{ fontSize:12.5, color:'#5c7568', marginBottom:14 }}>
+                  Escolha qual API alimenta os cards e gráficos da tela de Previsão do Tempo (Temperatura, Chuva, Vento e Delta T). Se o provedor escolhido falhar, o sistema tenta o outro automaticamente antes de mostrar erro.
+                </div>
+                {weatherProviderCarregando ? (
+                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Carregando...</div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                    {[
+                      { id:'meteoblue', label:'Meteoblue', desc:'API Principal (paga, mais precisa)' },
+                      { id:'open_meteo', label:'Open-Meteo', desc:'API de Backup (gratuita)' },
+                    ].map(op => (
+                      <label key={op.id} style={{ display:'flex', alignItems:'center', gap:10, background: weatherProvider===op.id?'#e3f7ec':'#f1f8f4', border: weatherProvider===op.id?'1px solid #0e9f6e':'1px solid transparent', borderRadius:12, padding:'11px 14px', cursor: weatherProviderSalvando?'default':'pointer', opacity: weatherProviderSalvando?.6:1 }}>
+                        <input type="radio" name="weatherProvider" checked={weatherProvider===op.id} disabled={weatherProviderSalvando}
+                          onChange={()=>salvarProvedorClima(op.id)} style={{ width:16, height:16, accentColor:'#0e9f6e', flexShrink:0 }}/>
+                        <div>
+                          <div style={{ fontSize:13, fontWeight:700, color:'#0b1210' }}>{op.label}</div>
+                          <div style={{ fontSize:11, color:'#7ba38f' }}>{op.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
+                <SecTitle>📊 Consumo das APIs de Clima (este mês)</SecTitle>
+                {!weatherLogStats ? (
+                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Carregando...</div>
+                ) : (
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div style={{ background:'#f1f8f4', borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', letterSpacing:.5 }}>METEOBLUE</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:'#0b1210' }}>{weatherLogStats.totalMeteoblue}</div>
+                      <div style={{ fontSize:10.5, color:'#7ba38f' }}>chamadas</div>
+                    </div>
+                    <div style={{ background:'#f1f8f4', borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', letterSpacing:.5 }}>OPEN-METEO</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:'#0b1210' }}>{weatherLogStats.totalOpenMeteo}</div>
+                      <div style={{ fontSize:10.5, color:'#7ba38f' }}>chamadas</div>
+                    </div>
+                    <div style={{ background:'#f1f8f4', borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', letterSpacing:.5 }}>HOJE</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:'#0b1210' }}>{weatherLogStats.hoje}</div>
+                      <div style={{ fontSize:10.5, color:'#7ba38f' }}>chamadas</div>
+                    </div>
+                    <div style={{ background: weatherLogStats.falhasMes>0?'#fdeaea':'#f1f8f4', borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color: weatherLogStats.falhasMes>0?'#e5484d':'#7ba38f', letterSpacing:.5 }}>FALHAS</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color: weatherLogStats.falhasMes>0?'#e5484d':'#0b1210' }}>{weatherLogStats.falhasMes}</div>
+                      <div style={{ fontSize:10.5, color: weatherLogStats.falhasMes>0?'#e5484d':'#7ba38f' }}>no mês</div>
+                    </div>
+                  </div>
+                )}
+                <button onClick={carregarWeatherLogStats} style={{ marginTop:12, background:'none', border:'none', color:'#0e9f6e', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0 }}>🔄 Atualizar números</button>
+              </div>
+
+              <div style={{ background:'#f9fbfa', borderRadius:14, border:'1px dashed #dcebe3', padding:18, maxWidth:520, textAlign:'center', color:'#a9beb1', fontSize:12 }}>
+                Mais configurações (idioma, limites globais de vento etc) aparecem aqui conforme forem adicionadas.
+              </div>
             </div>
           )}
         </main>
