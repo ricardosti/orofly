@@ -767,12 +767,12 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
           <div style={{ background:'#fff', borderRadius:18, padding:24, textAlign:'center', fontSize:13, color:'#5c7568', maxWidth:340, width:'100%' }}>
             {modoAvulso ? 'Nenhum PDF selecionado.' : 'Essa fazenda ainda não tem mapa cadastrado.'}
             <button disabled={enviando} onClick={()=>fileInputRef.current?.click()}
-              style={{ display:'block', width:'100%', marginTop:14, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
+              style={{ display:'block', width:'100%', marginTop:14, background:'#00A86B', color:'#fff', border:'none', borderRadius:12, padding:'10px', fontSize:13, fontWeight:600, cursor:'pointer', opacity:enviando?.6:1 }}>
               {enviando?'Enviando...':'📤 Enviar mapa (PDF)'}
             </button>
             {destino && !enviando && (
               <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer"
-                style={{ display:'block', marginTop:12, color:'#0e9f6e', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir localização no Maps</a>
+                style={{ display:'block', marginTop:12, color:'#00A86B', fontWeight:600, textDecoration:'none' }}>🗺️ Abrir localização no Maps</a>
             )}
           </div>
         </div>
@@ -821,7 +821,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                   <div style={{
                     position:'absolute', left:`${(pinPx.x/tamCanvas.width)*100}%`, top:`${(pinPx.y/tamCanvas.height)*100}%`,
                     transform:`translate(-50%,-50%) scale(${1/(escalaBase()*zoom)})`, width:20, height:20, borderRadius:'50%',
-                    background: pinPx.dentro ? '#0e9f6e' : '#e5484d', border:'3px solid #fff',
+                    background: pinPx.dentro ? '#00A86B' : '#e5484d', border:'3px solid #fff',
                     boxShadow:'0 0 0 6px ' + (pinPx.dentro ? 'rgba(14,159,110,.25)' : 'rgba(229,72,77,.25)'),
                   }}/>
                 </>
@@ -830,7 +830,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                 <div key={i} style={{
                   position:'absolute', left:`${(p.px/tamCanvas.width)*100}%`, top:`${(p.py/tamCanvas.height)*100}%`,
                   transform:'translate(-50%,-50%)', width:22, height:22, borderRadius:'50%',
-                  background: i < pontosCalib.length ? '#0e9f6e' : '#ffb020', border:'3px solid #fff',
+                  background: i < pontosCalib.length ? '#00A86B' : '#ffb020', border:'3px solid #fff',
                   display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontSize:11, fontWeight:700,
                   boxShadow:'0 2px 6px rgba(0,0,0,.35)',
                 }}>{i+1}</div>
@@ -864,7 +864,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
             {temMapa && !carregando && !calibrando && (
               <button onClick={alternarBussola} title="Bússola — toque pra girar o mapa seguindo a direção do celular, ou resetar pro norte"
                 style={{ position:'absolute', right:8, top:'calc(env(safe-area-inset-top,0px) + 62px)', width:34, height:34, borderRadius:'50%', padding:0,
-                  background: seguindoBussola ? '#0e9f6e' : 'rgba(11,18,16,.75)', border:'none', cursor:'pointer',
+                  background: seguindoBussola ? '#00A86B' : 'rgba(11,18,16,.75)', border:'none', cursor:'pointer',
                   display:'flex', alignItems:'center', justifyContent:'center' }}>
                 <div style={{ position:'relative', width:14, height:14 }}>
                   <div style={{ position:'absolute', inset:0, transform:`rotate(${-rotacao}deg)`, transition: transicaoSuave ? 'transform .35s ease' : 'none' }}>
@@ -908,7 +908,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
               {coordMira && (
                 <div style={{ display:'flex', gap:6, flexShrink:0 }}>
                   <button onClick={copiarCoordenadaMira} title="Copiar só a coordenada"
-                    style={{ width:34, height:34, borderRadius:'50%', background: coordCopiada ? '#0e9f6e' : 'rgba(255,255,255,.15)', border:'none', color:'#fff', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    style={{ width:34, height:34, borderRadius:'50%', background: coordCopiada ? '#00A86B' : 'rgba(255,255,255,.15)', border:'none', color:'#fff', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
                     {coordCopiada ? '✓' : '📋'}
                   </button>
                   <button onClick={compartilharCoordenadaSimples} title="Compartilhar só a coordenada"
@@ -929,7 +929,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
             <button onClick={alternarSeguirGps} disabled={!pinPx} title="Centralizar na minha localização"
               style={{ position:'absolute', right:14, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 96px)',
                 width:52, height:52, borderRadius:'50%', border:'none', fontSize:21, cursor: pinPx ? 'pointer' : 'default',
-                background: seguindoGps ? '#0e9f6e' : '#fff', color: seguindoGps ? '#fff' : '#0e9f6e',
+                background: seguindoGps ? '#00A86B' : '#fff', color: seguindoGps ? '#fff' : '#00A86B',
                 boxShadow:'0 4px 16px rgba(0,0,0,.4)', opacity: pinPx ? 1 : .5 }}>
               🎯
             </button>
@@ -948,13 +948,13 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                       style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
                   </div>
                   {pos && (
-                    <button onClick={usarGpsAtual} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#0e9f6e', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>
+                    <button onClick={usarGpsAtual} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#00A86B', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>
                       📡 Usar minha localização atual (só se você estiver nesse ponto agora)
                     </button>
                   )}
                   <div style={{ display:'flex', gap:8 }}>
                     <button onClick={()=>setPendente(null)} style={{ flex:1, background:'#fff', color:'#5c7568', border:'1px solid #dcebe3', borderRadius:10, padding:'9px', fontSize:12.5, fontWeight:600, cursor:'pointer' }}>Cancelar ponto</button>
-                    <button onClick={confirmarPonto} disabled={!calibLat||!calibLng} style={{ flex:1, background:'#0e9f6e', color:'#fff', border:'none', borderRadius:10, padding:'9px', fontSize:12.5, fontWeight:600, cursor:'pointer', opacity:(!calibLat||!calibLng)?.5:1 }}>Confirmar ponto</button>
+                    <button onClick={confirmarPonto} disabled={!calibLat||!calibLng} style={{ flex:1, background:'#00A86B', color:'#fff', border:'none', borderRadius:10, padding:'9px', fontSize:12.5, fontWeight:600, cursor:'pointer', opacity:(!calibLat||!calibLng)?.5:1 }}>Confirmar ponto</button>
                   </div>
                 </>
               ) : (
@@ -962,7 +962,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                   <div style={{ fontSize:11.5, color:'#5c7568' }}>
                     🎯 Toque em 2 pontos <strong>bem afastados e em diagonal</strong> no mapa que você reconhece na realidade (ex: canto do talhão, cruzamento de estrada). Pra cada um, informe a coordenada real — se estiver lá agora, é só usar o GPS.
                   </div>
-                  {calibSalvando && <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600 }}>Salvando calibração...</div>}
+                  {calibSalvando && <div style={{ fontSize:11.5, color:'#00A86B', fontWeight:600 }}>Salvando calibração...</div>}
                   <button onClick={cancelarCalibracao} style={{ alignSelf:'flex-start', background:'none', border:'none', color:'#7ba38f', fontSize:11.5, fontWeight:600, cursor:'pointer', padding:0 }}>✕ Cancelar calibração</button>
                 </>
               )}
@@ -981,7 +981,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                 </div>
               )}
               {ocrEncontrou && !ocrRodando && (
-                <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600, background:'#e3f7ec', borderRadius:10, padding:'8px 10px' }}>
+                <div style={{ fontSize:11.5, color:'#00A86B', fontWeight:600, background:'#e3f7ec', borderRadius:10, padding:'8px 10px' }}>
                   ✨ Coordenadas detectadas na foto! Confira se os valores conferem com as bordas do mapa antes de calibrar.
                 </div>
               )}
@@ -999,9 +999,9 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                 <input placeholder="Longitude" value={imgSeLng} onChange={e=>setImgSeLng(e.target.value)} type="number"
                   style={{ flex:1, border:'1px solid #e0ece5', borderRadius:8, padding:'8px 10px', fontSize:12.5 }}/>
               </div>
-              {imgCalibSalvando && <div style={{ fontSize:11.5, color:'#0e9f6e', fontWeight:600 }}>Salvando calibração...</div>}
+              {imgCalibSalvando && <div style={{ fontSize:11.5, color:'#00A86B', fontWeight:600 }}>Salvando calibração...</div>}
               <button onClick={salvarCalibracaoImagem} disabled={!imgNwLat||!imgNwLng||!imgSeLat||!imgSeLng||imgCalibSalvando}
-                style={{ background:'#0e9f6e', color:'#fff', border:'none', borderRadius:10, padding:'10px', fontSize:12.5, fontWeight:600, cursor:'pointer', marginTop:6, opacity:(!imgNwLat||!imgNwLng||!imgSeLat||!imgSeLng)?.5:1 }}>
+                style={{ background:'#00A86B', color:'#fff', border:'none', borderRadius:10, padding:'10px', fontSize:12.5, fontWeight:600, cursor:'pointer', marginTop:6, opacity:(!imgNwLat||!imgNwLng||!imgSeLat||!imgSeLng)?.5:1 }}>
                 Calibrar imagem
               </button>
             </div>

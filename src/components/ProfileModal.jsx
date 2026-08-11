@@ -54,7 +54,7 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
   }
 
   const iniciais = (nome || 'P').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-  const inputStyle = { width: '100%', border: '1px solid #d7e6dc', borderRadius: 12, padding: '10px 12px', fontSize: 14, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#f1f8f4', boxSizing: 'border-box' }
+  const inputStyle = { width: '100%', border: '1px solid #d7e6dc', borderRadius: 12, padding: '10px 12px', fontSize: 14, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box' }
   const labelStyle = { fontSize: 10, fontWeight: 700, color: '#7ba38f', letterSpacing: .5, marginBottom: 5, display: 'block', fontFamily: "'Syne',sans-serif" }
 
   return (
@@ -67,9 +67,9 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
             {avatarPreview ? (
               <img src={avatarPreview} alt="avatar" style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover', display: 'block', border: '3px solid #e3f7ec' }} />
             ) : (
-              <div style={{ width: 84, height: 84, borderRadius: '50%', background: '#e3f7ec', color: '#0e9f6e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 28, border: '3px solid #e3f7ec' }}>{iniciais}</div>
+              <div style={{ width: 84, height: 84, borderRadius: '50%', background: '#e3f7ec', color: '#00A86B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 28, border: '3px solid #e3f7ec' }}>{iniciais}</div>
             )}
-            <span style={{ position: 'absolute', bottom: 0, right: 0, background: '#0e9f6e', color: '#fff', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, border: '2px solid #fff' }}>📷</span>
+            <span style={{ position: 'absolute', bottom: 0, right: 0, background: '#00A86B', color: '#fff', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, border: '2px solid #fff' }}>📷</span>
             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleAvatarFile(e.target.files[0])} />
           </label>
         </div>
@@ -104,8 +104,8 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
         {erro && <div style={{ background: '#fdeaea', color: '#e5484d', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>{erro}</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button style={{ flex: 1, background: '#f1f8f4', color: '#5c7568', border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 600, cursor: 'pointer' }} onClick={onClose}>Cancelar</button>
-          <button style={{ flex: 2, background: '#0e9f6e', color: '#fff', border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? .7 : 1, boxShadow: '0 6px 18px rgba(14,159,110,0.3)' }} disabled={saving} onClick={salvar}>{saving ? 'Salvando...' : '💾 Salvar'}</button>
+          <button style={{ flex: 1, background: '#F4F7F5', color: '#5c7568', border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 600, cursor: 'pointer' }} onClick={onClose}>Cancelar</button>
+          <button style={{ flex: 2, background: '#00A86B', color: '#fff', border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? .7 : 1, boxShadow: '0 6px 18px rgba(14,159,110,0.3)' }} disabled={saving} onClick={salvar}>{saving ? 'Salvando...' : '💾 Salvar'}</button>
         </div>
       </div>
     </div>

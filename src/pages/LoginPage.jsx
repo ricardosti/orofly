@@ -47,11 +47,11 @@ export default function LoginPage() {
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#5c7568', letterSpacing: 1, marginBottom: 6, fontFamily: "'Syne',sans-serif" }}>E-MAIL</div>
-          <input style={{ width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#f1f8f4', boxSizing: 'border-box' }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required autoFocus />
+          <input style={{ width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box' }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required autoFocus />
         </div>
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#5c7568', letterSpacing: 1, marginBottom: 6, fontFamily: "'Syne',sans-serif" }}>SENHA</div>
-          <input style={{ width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#f1f8f4', boxSizing: 'border-box' }} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
+          <input style={{ width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box' }} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
         </div>
         {error && <div style={{ background: '#fef2f2', color: '#e5484d', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>{error}</div>}
         <button style={{ background: '#0b1210', color: '#fff', border: 'none', borderRadius: 20, padding: 14, fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 600, cursor: 'pointer', position: 'relative', overflow: 'hidden', opacity: loading ? .7 : 1 }} type="submit" disabled={loading}>

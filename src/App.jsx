@@ -57,7 +57,7 @@ function Splash() {
       <svg className="of-drone" width="84" height="84" viewBox="0 0 100 100" fill="none">
         {[[22,22],[78,22],[22,78],[78,78]].map(([x,y])=>(
           <g key={`${x}-${y}`}>
-            <line x1="50" y1="50" x2={x} y2={y} stroke="#0e9f6e" strokeWidth="3" strokeLinecap="round"/>
+            <line x1="50" y1="50" x2={x} y2={y} stroke="#00A86B" strokeWidth="3" strokeLinecap="round"/>
             <g className="of-prop">
               <circle cx={x} cy={y} r="11" stroke="rgba(34,196,118,0.4)" strokeWidth="1.5"/>
               <rect x={x-9} y={y-1} width="18" height="2" rx="1" fill="#8fe6b8"/>
@@ -66,7 +66,7 @@ function Splash() {
             <circle cx={x} cy={y} r="3" fill="#0b1210"/>
           </g>
         ))}
-        <rect x="38" y="40" width="24" height="20" rx="6" fill="#0e9f6e"/>
+        <rect x="38" y="40" width="24" height="20" rx="6" fill="#00A86B"/>
         <circle cx="50" cy="63" r="4" fill="#0b1210"/>
       </svg>
       <div className="of-word" style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
