@@ -98,8 +98,11 @@ export default function AdminPanel({ onSwitchMode }) {
   const [weatherProviderCarregando, setWeatherProviderCarregando] = useState(false)
   const [weatherProviderSalvando, setWeatherProviderSalvando] = useState(false)
   const [weatherLogStats, setWeatherLogStats] = useState(null)
+  const [weatherStatus, setWeatherStatus] = useState(null) // {estado:'ok'|'backup'|'erro', mensagem}
+  const [weatherStatusTestando, setWeatherStatusTestando] = useState(false)
+  const [weatherLogs, setWeatherLogs] = useState(null) // últimas chamadas (repositório de logs)
   useEffect(() => {
-    if (tab === 'configuracoes' && weatherProvider === null) carregarConfiguracoes()
+    if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
   }, [tab]) // eslint-disable-line
   const [relatorios, setRelatorios] = useState([])
   const [pilotos, setPilotos] = useState([])
@@ -780,8 +783,35 @@ export default function AdminPanel({ onSwitchMode }) {
       if (error) throw error
       setWeatherProvider(novo)
       showToast(`✅ Provedor de clima: ${novo==='meteoblue'?'Meteoblue':'Open-Meteo'}`)
+      testarConexaoClima()
     } catch (e) { showToast('Erro: '+e.message, 'error') }
     finally { setWeatherProviderSalvando(false) }
+  }
+
+  // Chama o próprio /api/clima com uma coordenada de teste (Ribeirão Preto) só pra ver
+  // qual provedor respondeu de verdade — é a fonte de verdade do badge de status, não
+  // adianta confiar só na preferência salva (a chave pode estar errada, por exemplo).
+  async function testarConexaoClima() {
+    setWeatherStatusTestando(true)
+    try {
+      const r = await fetch('/api/clima?lat=-21.1775&lon=-47.8103')
+      const data = await r.json()
+      if (!r.ok) { setWeatherStatus({ estado:'erro', mensagem: data?.error || `HTTP ${r.status}` }); return }
+      if (data.provider_active === 'meteoblue') setWeatherStatus({ estado:'ok', mensagem:'' })
+      else setWeatherStatus({ estado:'backup', mensagem: data?.erro_provedor_preferido || data?.aviso || '' })
+    } catch (e) {
+      setWeatherStatus({ estado:'erro', mensagem: e.message })
+    } finally {
+      setWeatherStatusTestando(false)
+      carregarWeatherLogs() // o teste em si já gerou uma linha nova no log
+    }
+  }
+
+  async function carregarWeatherLogs() {
+    try {
+      const { data } = await supabase.from('weather_api_log').select('provider,sucesso,erro,criado_em').order('criado_em',{ascending:false}).limit(20)
+      setWeatherLogs(data || [])
+    } catch { setWeatherLogs([]) }
   }
 
   async function toggleFazendaTime(fazendaId, timeId) {
@@ -4707,6 +4737,21 @@ export default function AdminPanel({ onSwitchMode }) {
                     ))}
                   </div>
                 )}
+
+                <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid #eef5f0', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                  {weatherStatusTestando ? (
+                    <span style={{ fontSize:12, color:'#7ba38f' }}>🔍 Testando conexão...</span>
+                  ) : !weatherStatus ? (
+                    <span style={{ fontSize:12, color:'#7ba38f' }}>Status não testado ainda.</span>
+                  ) : weatherStatus.estado==='ok' ? (
+                    <span style={{ fontSize:12, fontWeight:700, color:'#0e9f6e', background:'#e3f7ec', borderRadius:20, padding:'5px 12px' }}>🟢 Meteoblue Conectado (API OK)</span>
+                  ) : weatherStatus.estado==='backup' ? (
+                    <span style={{ fontSize:12, fontWeight:700, color:'#a3690a', background:'#fff3e0', borderRadius:20, padding:'5px 12px' }}>🟡 Usando Open-Meteo (Backup Ativo){weatherStatus.mensagem?` — ${weatherStatus.mensagem}`:''}</span>
+                  ) : (
+                    <span style={{ fontSize:12, fontWeight:700, color:'#e5484d', background:'#fdeaea', borderRadius:20, padding:'5px 12px' }}>🔴 Erro na Chave Meteoblue: {weatherStatus.mensagem}</span>
+                  )}
+                  <button onClick={testarConexaoClima} disabled={weatherStatusTestando} style={{ background:'none', border:'none', color:'#0e9f6e', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0 }}>🔄 Testar novamente</button>
+                </div>
               </div>
 
               <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
@@ -4738,6 +4783,34 @@ export default function AdminPanel({ onSwitchMode }) {
                   </div>
                 )}
                 <button onClick={carregarWeatherLogStats} style={{ marginTop:12, background:'none', border:'none', color:'#0e9f6e', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0 }}>🔄 Atualizar números</button>
+              </div>
+
+              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                  <SecTitle>📜 Repositório de Logs</SecTitle>
+                  <button onClick={carregarWeatherLogs} style={{ background:'none', border:'none', color:'#0e9f6e', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0, marginBottom:8 }}>🔄</button>
+                </div>
+                <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:10 }}>Últimas 20 chamadas às APIs de clima — pra identificar erros sem precisar abrir o painel da Vercel.</div>
+                {weatherLogs===null ? (
+                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Carregando...</div>
+                ) : weatherLogs.length===0 ? (
+                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Nenhuma chamada registrada ainda.</div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:320, overflowY:'auto' }}>
+                    {weatherLogs.map((l,i)=>(
+                      <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, background: l.sucesso?'#f9fbfa':'#fdeaea', borderRadius:10, padding:'8px 10px', fontSize:11.5 }}>
+                        <span style={{ flexShrink:0 }}>{l.sucesso?'✅':'❌'}</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontWeight:700, color:'#0b1210' }}>
+                            {l.provider==='meteoblue'?'Meteoblue':'Open-Meteo'}
+                            <span style={{ fontWeight:400, color:'#7ba38f', marginLeft:6 }}>{new Date(l.criado_em).toLocaleString('pt-BR')}</span>
+                          </div>
+                          {l.erro && <div style={{ color:'#e5484d', marginTop:2, wordBreak:'break-word' }}>{l.erro}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div style={{ background:'#f9fbfa', borderRadius:14, border:'1px dashed #dcebe3', padding:18, maxWidth:520, textAlign:'center', color:'#a9beb1', fontSize:12 }}>

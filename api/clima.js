@@ -1,17 +1,35 @@
 // Proxy de clima com alternador de provedor (Meteoblue / Open-Meteo) — a preferência é
 // definida pelo Admin (tabela app_settings.weather_provider) e cada chamada é registrada
-// em weather_api_log pra dar visibilidade de quanto está sendo consumido de cada API
-// (a Meteoblue tem limite mensal no plano gratuito/inicial). Se o provedor preferido
-// falhar, tenta o outro automaticamente antes de desistir — resiliência de verdade, não
-// só uma preferência estética.
+// em weather_api_log (com o erro capturado, se der errado) pra dar visibilidade de
+// consumo e falhas direto no Admin, sem precisar abrir o painel da Vercel.
+//
+// Se o provedor preferido falhar (chave ausente/errada, HTTP 401/403/429/500, timeout),
+// cai automaticamente pro outro provedor SEM propagar erro pro app do piloto — a tela de
+// clima continua funcionando normal. `provider_active` no JSON de resposta diz qual
+// provedor respondeu de fato, pra debug/Admin.
 //
 // Ambos os provedores são normalizados pro MESMO formato de saída (hourly/daily com os
 // nomes de campo que o Open-Meteo sempre usou), então o resto do app (buscarPrevisao,
 // gráficos, Delta T) funciona igual não importa qual API respondeu.
 const { createClient } = require('@supabase/supabase-js')
 
+const TIMEOUT_MS = 8000
+
 function clienteAdmin() {
   return createClient(process.env.REACT_APP_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+}
+
+async function fetchComTimeout(url, ms) {
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), ms)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`Timeout (${ms}ms)`)
+    throw e
+  } finally {
+    clearTimeout(t)
+  }
 }
 
 async function lerProvedorPreferido(sb) {
@@ -23,19 +41,30 @@ async function lerProvedorPreferido(sb) {
   }
 }
 
-async function registrarChamada(sb, provider, sucesso) {
-  try { await sb.from('weather_api_log').insert({ provider, sucesso }) } catch { /* log é best-effort, não deve derrubar a resposta */ }
+async function registrarChamada(sb, provider, sucesso, erro) {
+  try { await sb.from('weather_api_log').insert({ provider, sucesso, erro: erro ? String(erro).slice(0, 500) : null }) }
+  catch (e) { console.log('[Weather API] falha ao gravar log (não crítico):', e.message) }
 }
 
 async function buscarMeteoblue(lat, lon) {
+  console.log('[Weather API] Fetching from Meteoblue...')
   const apiKey = process.env.METEOBLUE_API_KEY
-  if (!apiKey) throw new Error('METEOBLUE_API_KEY não configurada no servidor')
+  if (!apiKey) {
+    console.log('[Weather API] Meteoblue: METEOBLUE_API_KEY ausente')
+    throw new Error('API Key ausente')
+  }
   const url = `https://my.meteoblue.com/packages/basic-1h_wind-1h?lat=${lat}&lon=${lon}&apikey=${apiKey}&format=json`
-  const r = await fetch(url)
-  if (!r.ok) throw new Error(`Meteoblue respondeu ${r.status}`)
+  const r = await fetchComTimeout(url, TIMEOUT_MS)
+  if (!r.ok) {
+    console.log(`[Weather API] Meteoblue respondeu HTTP ${r.status}`)
+    throw new Error(`HTTP ${r.status}`)
+  }
   const data = await r.json()
   const h = data.data_1h
-  if (!h?.time?.length) throw new Error('resposta da Meteoblue sem dados horários (data_1h)')
+  if (!h?.time?.length) {
+    console.log('[Weather API] Meteoblue: resposta sem data_1h')
+    throw new Error('resposta sem dados horários (data_1h)')
+  }
 
   // Meteoblue usa "YYYY-MM-DD HH:mm" — troca o espaço por "T" pra ficar no formato
   // ISO-ish que o resto do app já espera (ex: comparações tipo .endsWith('T13:00')).
@@ -72,19 +101,29 @@ async function buscarMeteoblue(lat, lon) {
     windgusts_10m: h.gust,
     precipitation_probability: h.precipitation_probability,
   }
-  return { hourly, daily, fonte: 'meteoblue' }
+  console.log('[Weather API] Meteoblue OK')
+  return { hourly, daily }
 }
 
 async function buscarOpenMeteo(lat, lon) {
+  console.log('[Weather API] Fetching from Open-Meteo...')
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max,windgusts_10m_max&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,windgusts_10m,precipitation_probability&timezone=auto&forecast_days=8`
-  const r = await fetch(url)
-  if (!r.ok) throw new Error(`Open-Meteo respondeu ${r.status}`)
+  const r = await fetchComTimeout(url, TIMEOUT_MS)
+  if (!r.ok) {
+    console.log(`[Weather API] Open-Meteo respondeu HTTP ${r.status}`)
+    throw new Error(`HTTP ${r.status}`)
+  }
   const data = await r.json()
-  if (!data.hourly?.time?.length || !data.daily?.time?.length) throw new Error('resposta da Open-Meteo incompleta')
-  return { hourly: data.hourly, daily: data.daily, fonte: 'open_meteo' }
+  if (!data.hourly?.time?.length || !data.daily?.time?.length) {
+    console.log('[Weather API] Open-Meteo: resposta incompleta')
+    throw new Error('resposta incompleta')
+  }
+  console.log('[Weather API] Open-Meteo OK')
+  return { hourly: data.hourly, daily: data.daily }
 }
 
 const BUSCAR_POR_PROVEDOR = { meteoblue: buscarMeteoblue, open_meteo: buscarOpenMeteo }
+const NOME_PROVEDOR = { meteoblue: 'Meteoblue', open_meteo: 'Open-Meteo' }
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -96,24 +135,34 @@ module.exports = async function handler(req, res) {
   const sb = clienteAdmin()
   const preferido = await lerProvedorPreferido(sb)
   const alternativo = preferido === 'meteoblue' ? 'open_meteo' : 'meteoblue'
+  console.log(`[Weather API] Provedor preferido: ${preferido} (lat=${lat}, lon=${lon})`)
 
   try {
     const resultado = await BUSCAR_POR_PROVEDOR[preferido](lat, lon)
-    await registrarChamada(sb, preferido, true)
+    await registrarChamada(sb, preferido, true, null)
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1200')
-    return res.status(200).json(resultado)
+    return res.status(200).json({ ...resultado, provider_active: preferido })
   } catch (erroPrincipal) {
-    await registrarChamada(sb, preferido, false)
-    // Resiliência: se o provedor preferido falhar, tenta o outro automaticamente antes de
-    // devolver erro — uma instabilidade pontual numa API não derruba a previsão do piloto.
+    console.log(`[Weather API] ${NOME_PROVEDOR[preferido]} falhou: ${erroPrincipal.message} — caindo pro backup (${alternativo})`)
+    await registrarChamada(sb, preferido, false, erroPrincipal.message)
+    // Fallback automático: uma instabilidade pontual no provedor preferido não derruba a
+    // previsão do piloto — tenta o outro provedor antes de desistir de vez.
     try {
       const resultado = await BUSCAR_POR_PROVEDOR[alternativo](lat, lon)
-      await registrarChamada(sb, alternativo, true)
+      await registrarChamada(sb, alternativo, true, null)
       res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1200')
-      return res.status(200).json({ ...resultado, aviso: `Provedor preferido (${preferido}) falhou, usando ${alternativo} como backup.` })
+      return res.status(200).json({
+        ...resultado,
+        provider_active: alternativo,
+        aviso: `Provedor preferido (${NOME_PROVEDOR[preferido]}) falhou, usando ${NOME_PROVEDOR[alternativo]} como backup.`,
+        erro_provedor_preferido: erroPrincipal.message,
+      })
     } catch (erroBackup) {
-      await registrarChamada(sb, alternativo, false)
-      return res.status(502).json({ error: `Falha nos dois provedores. ${preferido}: ${erroPrincipal.message} · ${alternativo}: ${erroBackup.message}` })
+      console.log(`[Weather API] ${NOME_PROVEDOR[alternativo]} (backup) também falhou: ${erroBackup.message}`)
+      await registrarChamada(sb, alternativo, false, erroBackup.message)
+      return res.status(502).json({
+        error: `Falha nos dois provedores. ${NOME_PROVEDOR[preferido]}: ${erroPrincipal.message} · ${NOME_PROVEDOR[alternativo]}: ${erroBackup.message}`,
+      })
     }
   }
 }
