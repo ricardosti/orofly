@@ -593,7 +593,8 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoLat,setTempoLat] = useState('')
   const [tempoLng,setTempoLng] = useState('')
   const [tempoHorario,setTempoHorario] = useState(null)
-  const [graficoHora,setGraficoHora] = useState(null)
+  const [climaTab,setClimaTab] = useState('temp')
+  const [diaSelecionado,setDiaSelecionado] = useState(null)
   const toastTimer=useRef(null)
   const retryTimer=useRef(null)
   const pendingPayload=useRef(null)
@@ -681,7 +682,13 @@ export default function PilotApp({onSwitchMode}) {
   // Se o piloto negar ou o GPS falhar, não insiste — ele ainda pode buscar
   // manualmente por GPS ou CEP na tela de Previsão do Tempo.
   useEffect(() => {
-    if (!profile || !navigator.geolocation) return
+    if (!profile) return
+    // Fallback fixo (Região Metropolitana de Ribeirão Preto) usado sempre que o GPS
+    // falha, é negado, ou nem existe no navegador — antes disso a Home ficava presa
+    // em "Buscando previsão do tempo..." pra sempre quando o GPS não respondia (bug
+    // visto em homologação: permissão de localização bloqueada/negada lá).
+    const usarDefault = () => buscarPrevisao(-21.1775, -47.8103, 'Região Metropolitana de Ribeirão Preto - SP (padrão)')
+    if (!navigator.geolocation) { usarDefault(); return }
     navigator.geolocation.getCurrentPosition(
       pos => {
         const lat = pos.coords.latitude, lng = pos.coords.longitude
@@ -697,7 +704,7 @@ export default function PilotApp({onSwitchMode}) {
           })
         })
       },
-      () => {},
+      usarDefault,
       { enableHighAccuracy:true, timeout:10000 }
     )
   }, [profile]) // eslint-disable-line
@@ -1272,9 +1279,9 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   async function buscarPrevisao(lat,lon,local){
-    setTempoLoading(true); setTempoErro(''); setTempoDias(null); setGraficoHora(null)
+    setTempoLoading(true); setTempoErro(''); setTempoDias(null); setDiaSelecionado(null)
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,windgusts_10m,precipitation_probability&timezone=auto&forecast_days=5`
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max,windgusts_10m_max&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,windgusts_10m,precipitation_probability&timezone=auto&forecast_days=8`
       const res = await fetch(url)
       if(!res.ok) throw new Error('Falha ao buscar previsão')
       const data = await res.json()
@@ -1289,7 +1296,7 @@ export default function PilotApp({onSwitchMode}) {
           tempMax: data.daily.temperature_2m_max[i], tempMin: data.daily.temperature_2m_min[i],
           umidade: umidMeioDia,
           chuvaProb: data.daily.precipitation_probability_max[i], chuvaMm: data.daily.precipitation_sum[i],
-          ventoMax: data.daily.windspeed_10m_max[i],
+          ventoMax: data.daily.windspeed_10m_max[i], ventoRajadaMax: data.daily.windgusts_10m_max[i],
           deltaT, deltaTClass: deltaT!=null?classificarClimaParam('delta_t',deltaT.toFixed(1)):null,
         }
       })
@@ -2589,98 +2596,153 @@ export default function PilotApp({onSwitchMode}) {
               <button style={{...s.nowBtn,padding:'6px 12px',fontSize:11}} onClick={()=>{setTempoDias(null);setTempoErro('')}}>Trocar local</button>
             </div>
 
-            {/* Gráfico de tendência dos 5 dias */}
+            {/* Card resumo — leitura atual (não a média do dia) */}
+            {tempoDias[0] && (() => {
+              const hoje = tempoDias[0]
+              const pad2 = n => String(n).padStart(2,'0')
+              const agora = new Date()
+              const horaKeyAgora = `${agora.getFullYear()}-${pad2(agora.getMonth()+1)}-${pad2(agora.getDate())}T${pad2(agora.getHours())}:00`
+              const idxAgora = tempoHorario?.time ? tempoHorario.time.indexOf(horaKeyAgora) : -1
+              const temp = idxAgora>=0 && tempoHorario.temperature_2m?.[idxAgora]!=null ? Math.round(tempoHorario.temperature_2m[idxAgora]) : Math.round(hoje.tempMax)
+              const chuvaAgora = idxAgora>=0 && tempoHorario.precipitation_probability?.[idxAgora]!=null ? tempoHorario.precipitation_probability[idxAgora] : hoje.chuvaProb
+              const umidAgora = idxAgora>=0 && tempoHorario.relativehumidity_2m?.[idxAgora]!=null ? tempoHorario.relativehumidity_2m[idxAgora] : hoje.umidade
+              const ventoAgora = idxAgora>=0 && tempoHorario.windspeed_10m?.[idxAgora]!=null ? tempoHorario.windspeed_10m[idxAgora] : hoje.ventoMax
+              const chuvoso = chuvaAgora>=60, nublado = chuvaAgora>=25
+              const WIcon = chuvoso?CloudRain:nublado?Cloud:Sun
+              const wc = chuvoso?'#2f6fed':nublado?'#8fa79a':'#f2960f'
+              return (
+                <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'20px 22px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:16}}>
+                    <WIcon size={54} color={wc} strokeWidth={1.4} fill={!chuvoso&&!nublado?'#fde68a':'none'}/>
+                    <div>
+                      <div style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:42,color:'#0b1210',lineHeight:1}}>{temp}°C</div>
+                      <div style={{fontSize:14,color:'#5c7568',fontWeight:600,marginTop:5}}>{chuvoso?'Chuvoso':nublado?'Parcialmente nublado':'Ensolarado'}</div>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:10,fontSize:14,color:'#33473d',fontWeight:600}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}><CloudRain size={17} color="#0e9f6e" strokeWidth={1.8}/> Chuva: {Math.round(chuvaAgora)}%</div>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}><Droplets size={17} color="#0e9f6e" strokeWidth={1.8}/> Umidade: {umidAgora!=null?`${Math.round(umidAgora)}%`:'—'}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}><Wind size={17} color="#0e9f6e" strokeWidth={1.8}/> Vento: {Math.round(ventoAgora)} km/h</div>
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Abas */}
+            <div style={{display:'flex',background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:4,gap:2}}>
+              {[
+                {id:'temp',label:'Temperatura'},
+                {id:'chuva',label:'Precipitação'},
+                {id:'vento',label:'Vento'},
+                {id:'delta',label:'Delta T'},
+              ].map(tab=>(
+                <button key={tab.id} onClick={()=>setClimaTab(tab.id)}
+                  style={{flex:1,border:'none',borderRadius:12,padding:'8px 4px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:"'Poppins',sans-serif",
+                    background:climaTab===tab.id?'#e3f7ec':'transparent',color:climaTab===tab.id?'#0e9f6e':'#8fa79a'}}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Gráfico principal da aba ativa */}
             <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'16px 8px 8px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6,paddingLeft:8}}>TEMPERATURA MÁX. E CHANCE DE CHUVA</div>
-              <ResponsiveContainer width="100%" height={160}>
+              <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6,paddingLeft:8}}>
+                {({temp:'TEMPERATURA MÁX. E MÍN.',chuva:'CHANCE DE CHUVA',vento:'VENTO MÁXIMO E RAJADA',delta:'DELTA T (13H)'})[climaTab]}
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
                 <ComposedChart data={tempoDias.map((d,i)=>({
                   dia: i===0?'Hoje':new Date(d.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short'}),
-                  temp: Math.round(d.tempMax), chuva: Math.round(d.chuvaProb),
+                  temp: Math.round(d.tempMax), tempMin: Math.round(d.tempMin), chuva: Math.round(d.chuvaProb),
+                  vento: Math.round(d.ventoMax), rajada: d.ventoRajadaMax!=null?Math.round(d.ventoRajadaMax):null, delta: d.deltaT!=null?Number(d.deltaT.toFixed(1)):null,
                 }))} margin={{top:5,right:10,left:-20,bottom:0}}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
                   <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false}/>
                   <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
                   <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
-                  <Bar dataKey="chuva" fill="#2f6fed" radius={[6,6,0,0]} opacity={0.35} name="Chuva %"/>
-                  <Line type="monotone" dataKey="temp" stroke="#f2960f" strokeWidth={2.5} dot={{r:3}} name="Temp °C"/>
+                  {climaTab==='temp' && (
+                    <>
+                      <Line type="monotone" dataKey="temp" stroke="#f2960f" strokeWidth={2.5} dot={{r:3}} name="Máx °C"/>
+                      <Line type="monotone" dataKey="tempMin" stroke="#8fa79a" strokeWidth={2} strokeDasharray="4 3" dot={{r:2}} name="Mín °C"/>
+                    </>
+                  )}
+                  {climaTab==='chuva' && <Bar dataKey="chuva" fill="#2f6fed" radius={[6,6,0,0]} name="Chuva %"/>}
+                  {climaTab==='vento' && (
+                    <>
+                      <Line type="monotone" dataKey="vento" stroke="#2f6fed" strokeWidth={2.5} dot={{r:3}} name="Vento km/h"/>
+                      <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={{r:2}} name="Rajada km/h"/>
+                    </>
+                  )}
+                  {climaTab==='delta' && <Line type="monotone" dataKey="delta" stroke="#0e9f6e" strokeWidth={2.5} dot={{r:3}} name="Delta T"/>}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
 
-            {tempoDias.map((d,i)=>{
-              const dataObj = new Date(d.data+'T12:00:00')
-              const diaLabel = i===0?'Hoje':dataObj.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})
-              const chuvaAlerta = d.chuvaProb>=50
+            {/* Gráfico por hora do dia selecionado */}
+            {(() => {
+              const diaAtivo = diaSelecionado || tempoDias[0].data
+              if (!tempoHorario) return null
+              const idxs = tempoHorario.time.map((t,i)=>i).filter(i=>tempoHorario.time[i].startsWith(diaAtivo))
+              if (!idxs.length) return null
+              const pontos = idxs.map(i=>({
+                hora: tempoHorario.time[i].slice(11,16),
+                temp: tempoHorario.temperature_2m?.[i]!=null?Math.round(tempoHorario.temperature_2m[i]):null,
+                vento: tempoHorario.windspeed_10m?.[i]!=null?Math.round(tempoHorario.windspeed_10m[i]):null,
+                rajada: tempoHorario.windgusts_10m?.[i]!=null?Math.round(tempoHorario.windgusts_10m[i]):null,
+                chuva: tempoHorario.precipitation_probability?.[i]!=null?Math.round(tempoHorario.precipitation_probability[i]):null,
+                delta: (tempoHorario.temperature_2m?.[i]!=null && tempoHorario.relativehumidity_2m?.[i]!=null) ? Number(calcDeltaT(tempoHorario.temperature_2m[i],tempoHorario.relativehumidity_2m[i])?.toFixed(1)) : null,
+              }))
+              const cor = {temp:'#f2960f',chuva:'#2f6fed',vento:'#2f6fed',delta:'#0e9f6e'}[climaTab]
+              const dSel = tempoDias.find(d=>d.data===diaAtivo) || tempoDias[0]
+              const iSel = tempoDias.indexOf(dSel)
+              const labelDia = iSel===0?'Hoje':new Date(dSel.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})
               return (
-                <div key={d.data} style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                  <div style={{fontSize:14,fontWeight:700,fontFamily:"'Poppins',sans-serif",textTransform:'capitalize',marginBottom:10}}>{diaLabel}</div>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='temp'?'#fdf0dc':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
-                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='temp'?null:{data:d.data,tipo:'temp'})}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>🌡️ TEMPERATURA <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.tempMin)}° / {Math.round(d.tempMax)}°</div>
-                    </div>
-                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='umidade'?'#e3f7ec':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
-                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='umidade'?null:{data:d.data,tipo:'umidade'})}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💧 UMIDADE (13H) <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{d.umidade!=null?`${Math.round(d.umidade)}%`:'—'}</div>
-                    </div>
-                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='vento'?'#e6f1fb':'#f1f8f4',borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
-                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='vento'?null:{data:d.data,tipo:'vento'})}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>💨 VENTO MÁX. <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.ventoMax)} km/h</div>
-                    </div>
-                    <div style={{background:graficoHora?.data===d.data&&graficoHora?.tipo==='chuva'?'#e6f1fb':(chuvaAlerta?'#e6f1fb':'#f1f8f4'),borderRadius:14,padding:'10px 12px',cursor:'pointer'}}
-                      onClick={()=>setGraficoHora(g=>g?.data===d.data&&g?.tipo==='chuva'?null:{data:d.data,tipo:'chuva'})}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>☔ CHUVA <span style={{opacity:.6}}>· ver por hora</span></div>
-                      <div style={{fontSize:16,fontWeight:700,color:chuvaAlerta?'#2f6fed':'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>
-                    </div>
+                <div style={{background:'#f9fbfa',borderRadius:16,padding:'12px 6px 6px',border:'1px solid #eef5f0'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,paddingLeft:10,paddingRight:10}}>
+                    <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>POR HORA</div>
+                    <div style={{fontSize:10,fontWeight:700,color:'#0e9f6e',textTransform:'capitalize'}}>{labelDia}</div>
                   </div>
-
-                  {graficoHora?.data===d.data && tempoHorario && (()=>{
-                    const idxs = tempoHorario.time.map((t,i)=>i).filter(i=>tempoHorario.time[i].startsWith(d.data))
-                    const pontos = idxs.map(i=>({
-                      hora: tempoHorario.time[i].slice(11,16),
-                      temp: tempoHorario.temperature_2m?.[i]!=null?Math.round(tempoHorario.temperature_2m[i]):null,
-                      vento: tempoHorario.windspeed_10m?.[i]!=null?Math.round(tempoHorario.windspeed_10m[i]):null,
-                      rajada: tempoHorario.windgusts_10m?.[i]!=null?Math.round(tempoHorario.windgusts_10m[i]):null,
-                      umidade: tempoHorario.relativehumidity_2m?.[i]!=null?Math.round(tempoHorario.relativehumidity_2m[i]):null,
-                      chuva: tempoHorario.precipitation_probability?.[i]!=null?Math.round(tempoHorario.precipitation_probability[i]):null,
-                    }))
-                    const titulos = {temp:'🌡️ TEMPERATURA POR HORA',vento:'💨 VENTO E RAJADAS POR HORA',umidade:'💧 UMIDADE POR HORA',chuva:'☔ CHANCE DE CHUVA POR HORA'}
-                    return (
-                      <div style={{background:'#f9fbfa',borderRadius:14,padding:'12px 6px 6px',marginBottom:8,border:'1px solid #eef5f0'}}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4,paddingLeft:10}}>{titulos[graficoHora.tipo]}</div>
-                        <ResponsiveContainer width="100%" height={140}>
-                          <ComposedChart data={pontos} margin={{top:5,right:10,left:-20,bottom:0}}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                            <XAxis dataKey="hora" tick={{fontSize:9,fill:'#7ba38f'}} tickLine={false} interval={2}/>
-                            <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                            <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
-                            {graficoHora.tipo==='temp' && <Line type="monotone" dataKey="temp" stroke="#f2960f" strokeWidth={2.5} dot={{r:2}} name="Temp °C"/>}
-                            {graficoHora.tipo==='vento' && (
-                              <>
-                                <Line type="monotone" dataKey="vento" stroke="#2f6fed" strokeWidth={2.5} dot={{r:2}} name="Vento km/h"/>
-                                <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Rajada km/h"/>
-                              </>
-                            )}
-                            {graficoHora.tipo==='umidade' && <Line type="monotone" dataKey="umidade" stroke="#0e9f6e" strokeWidth={2.5} dot={{r:2}} name="Umidade %"/>}
-                            {graficoHora.tipo==='chuva' && <Bar dataKey="chuva" fill="#2f6fed" radius={[4,4,0,0]} name="Chuva %"/>}
-                          </ComposedChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )
-                  })()}
-                  <div style={{background:d.deltaTClass?d.deltaTClass.bg:'#f1f8f4',borderRadius:14,padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>⚖️ DELTA T (13H)</div>
-                      {d.deltaTClass&&<div style={{fontSize:11,color:d.deltaTClass.cor,marginTop:2,fontWeight:600}}>{d.deltaTClass.icon} {d.deltaTClass.label}</div>}
-                    </div>
-                    <div style={{fontSize:20,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>
-                  </div>
+                  <ResponsiveContainer width="100%" height={130}>
+                    <ComposedChart data={pontos} margin={{top:5,right:10,left:-20,bottom:0}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
+                      <XAxis dataKey="hora" tick={{fontSize:9,fill:'#7ba38f'}} tickLine={false} interval={2}/>
+                      <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
+                      <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                      {climaTab==='chuva' && <Bar dataKey="chuva" fill={cor} radius={[4,4,0,0]} name="Chuva %"/>}
+                      {climaTab==='vento' && (
+                        <>
+                          <Line type="monotone" dataKey="vento" stroke={cor} strokeWidth={2.5} dot={{r:2}} name="Vento km/h"/>
+                          <Line type="monotone" dataKey="rajada" stroke="#e5484d" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Rajada km/h"/>
+                        </>
+                      )}
+                      {(climaTab==='temp'||climaTab==='delta') && <Line type="monotone" dataKey={climaTab==='temp'?'temp':'delta'} stroke={cor} strokeWidth={2.5} dot={{r:2}}/>}
+                    </ComposedChart>
+                  </ResponsiveContainer>
                 </div>
               )
-            })}
+            })()}
+
+            {/* Previsão resumida por dia — clique num dia pra ver o gráfico por hora */}
+            <div style={{display:'flex',gap:8,overflowX:'auto',paddingBottom:4}}>
+              {tempoDias.map((d,i)=>{
+                const dataObj = new Date(d.data+'T12:00:00')
+                const diaLabel = i===0?'Hoje':dataObj.toLocaleDateString('pt-BR',{weekday:'short'})
+                const chuvoso = d.chuvaProb>=60, nublado = d.chuvaProb>=25
+                const WIcon = chuvoso?CloudRain:nublado?Cloud:Sun
+                const wc = chuvoso?'#2f6fed':nublado?'#8fa79a':'#f2960f'
+                const ativo = (diaSelecionado||tempoDias[0].data)===d.data
+                return (
+                  <div key={d.data} onClick={()=>setDiaSelecionado(d.data)} style={{flex:'0 0 auto',minWidth:66,background:ativo?'#e3f7ec':'#fff',borderRadius:16,border:ativo?'1px solid #0e9f6e':'1px solid #dcebe3',padding:'10px 8px',textAlign:'center',cursor:'pointer'}}>
+                    <div style={{fontSize:11,fontWeight:700,textTransform:'capitalize',color:ativo?'#0e9f6e':'#5c7568'}}>{diaLabel}</div>
+                    <WIcon size={22} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'} style={{margin:'6px auto',display:'block'}}/>
+                    {climaTab==='temp' && <div style={{fontSize:13,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.tempMax)}°<span style={{color:'#8fa79a',fontWeight:600}}> {Math.round(d.tempMin)}°</span></div>}
+                    {climaTab==='chuva' && <div style={{fontSize:13,fontWeight:700,color:'#2f6fed',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>}
+                    {climaTab==='vento' && <div style={{fontSize:13,fontWeight:700,color:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.ventoMax)} km/h</div>}
+                    {climaTab==='delta' && <div style={{fontSize:13,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:'#0b1210',fontFamily:"'Poppins',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>}
+                  </div>
+                )
+              })}
+            </div>
+
             <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Open-Meteo · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação</div>
           </>
         )}
