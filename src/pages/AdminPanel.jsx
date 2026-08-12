@@ -4550,8 +4550,11 @@ export default function AdminPanel({ onSwitchMode }) {
                     <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.veiculo_id} onChange={e=>setAgendaForm(f=>({...f,veiculo_id:e.target.value}))}>
                       <option value="">Carro (opcional)...</option>
                       {veiculos.filter(v=>v.ativo!==false).map(v=>{
-                        const agendadoOutro = agendaForm.data_prevista && agenda.some(a=>a.status==='pendente' && a.veiculo_id===v.id && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
-                        return <option key={v.id} value={v.id}>🚗 {v.placa}{v.modelo?` — ${v.modelo}`:''}{agendadoOutro?' — ⚠️ já agendado nesse dia':''}</option>
+                        // Um carro dá conta de 2 drones no mesmo dia (leva a equipe toda) — só
+                        // avisa "lotado" a partir do 3º agendamento concorrente.
+                        const qtdOutros = agendaForm.data_prevista ? agenda.filter(a=>a.status==='pendente' && a.veiculo_id===v.id && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id).length : 0
+                        const tag = qtdOutros>=2 ? ' — 🔴 lotado nesse dia (2 já usando)' : qtdOutros===1 ? ' — ⚠️ já tem 1 uso nesse dia' : ''
+                        return <option key={v.id} value={v.id}>🚗 {v.placa}{v.modelo?` — ${v.modelo}`:''}{tag}</option>
                       })}
                     </select>
                   </div>
@@ -4566,12 +4569,17 @@ export default function AdminPanel({ onSwitchMode }) {
                   })()}
 
                   {agendaForm.veiculo_id && agendaForm.data_prevista && (()=>{
-                    const conflito = agenda.find(a=>a.status==='pendente' && a.veiculo_id===agendaForm.veiculo_id && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
-                    return conflito ? (
-                      <div style={{background:'#fff3e0',border:'1px solid #f2960f',borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:'#a3690a'}}>
-                        ⚠️ Esse carro já está agendado pra {conflito.piloto_nome} nesse dia ({conflito.cliente} — {conflito.fazenda}).
+                    // Carro aguenta 2 drones/pilotos no mesmo dia — só bloqueia visualmente
+                    // quando já tem 2 outros agendamentos concorrentes (o 3º não cabe).
+                    const conflitos = agenda.filter(a=>a.status==='pendente' && a.veiculo_id===agendaForm.veiculo_id && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
+                    if(conflitos.length===0) return null
+                    const lotado = conflitos.length>=2
+                    return (
+                      <div style={{background:lotado?'#fdeaea':'#fff3e0',border:`1px solid ${lotado?'#e5484d':'#f2960f'}`,borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:lotado?'#a3221e':'#a3690a'}}>
+                        {lotado?'🔴 Esse carro já está lotado nesse dia (2 outros agendamentos): ':'⚠️ Esse carro já tem 1 outro agendamento nesse dia (ainda cabe mais 1): '}
+                        {conflitos.map(c=>`${c.piloto_nome} (${c.cliente} — ${c.fazenda})`).join(', ')}
                       </div>
-                    ) : null
+                    )
                   })()}
 
                   {agendaForm.fazenda && agendaForm.data_prevista && (

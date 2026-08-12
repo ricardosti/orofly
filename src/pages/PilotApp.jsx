@@ -1760,7 +1760,7 @@ export default function PilotApp({onSwitchMode}) {
     const AI_CHIPS = ['🌦️ Previsão de hoje','📊 Meu resumo da semana','📅 Próximo voo agendado','💡 Vale a pena voar agora?']
     function gerarRespostaAi(pergunta) {
       const q = pergunta.toLowerCase()
-      if(q.includes('previs')||q.includes('clima')||q.includes('tempo')||q.includes('chuva')||q.includes('vento')){
+      if(q.includes('previs')||q.includes('clima')||q.includes('tempo')||q.includes('chuva')||q.includes('vento')||q.includes('temperatura')||q.includes('temp')||q.includes('grau')||q.includes('calor')||q.includes('frio')){
         if(!condDia) return 'Ainda não consegui carregar a previsão — dá uma olhada na aba Clima 🌦️'
         return `Hoje em ${tempoLocal||'sua região'}: ${Math.round(condDia.tempMax)}°/${Math.round(condDia.tempMin)}°C, ${Math.round(chuvaAgora||0)}% de chance de chuva e vento de ${Math.round(ventoAgora||0)} km/h agora. ${(chuvaAgora||0)>=60?'Chuva forte no radar — cuidado.':(ventoAgora||0)>=15?'Vento um pouco alto, fica de olho.':'Condição favorável pra aplicação! ✅'}`
       }
