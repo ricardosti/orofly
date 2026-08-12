@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
@@ -702,10 +703,14 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     const texto = modoAvulso
       ? `📍 Ponto de Interesse — ${nomeArquivoAvulso}\nCoordenadas: ${lat}, ${lng}\nGoogle Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via Orofly Agro 🚀`
       : `📍 Ponto de Interesse - Fazenda ${fazenda?.nome || ''}\nCoordenadas: ${lat}, ${lng}\nGoogle Maps: https://maps.google.com/?q=${lat},${lng}\n\nMapeado via Orofly Agro 🚀`
+    // No desktop (sem Web Share API), o fallback abre uma aba nova pro wa.me — precisa
+    // reservar essa janela AQUI, síncrono dentro do clique, antes de qualquer `await`
+    // (o clipboard abaixo já quebraria isso), senão o navegador bloqueia o pop-up.
+    const janela = !Capacitor.isNativePlatform() && !navigator.share ? window.open('', '_blank') : null
     // Copia pra área de transferência de brinde (funciona em qualquer navegador/webview,
     // sem depender do menu nativo abrir) — o compartilhamento continua sendo a ação principal.
     try { await navigator.clipboard?.writeText(texto) } catch { /* sem permissão de clipboard, sem problema */ }
-    compartilharNativo({ text: texto, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(texto)}` })
+    compartilharNativo({ text: texto, webFallbackUrl: `https://wa.me/?text=${encodeURIComponent(texto)}`, preOpenedWindow: janela })
   }
 
   // Versões simples — só a coordenada crua, sem nome/link/marca, pra quando o piloto só

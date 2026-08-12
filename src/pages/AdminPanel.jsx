@@ -101,13 +101,11 @@ export default function AdminPanel({ onSwitchMode }) {
   const [weatherStatus, setWeatherStatus] = useState(null) // {estado:'ok'|'backup'|'erro', mensagem}
   const [weatherStatusTestando, setWeatherStatusTestando] = useState(false)
   const [weatherLogs, setWeatherLogs] = useState(null) // últimas chamadas (repositório de logs)
-  // Agro Finance — módulo trazido do projeto do Isaque (sócio). Por enquanto o app não usa
-  // rotas de URL (é tudo por `tab`, como o resto do Admin), então "/admin/agro-finance" vira
-  // um item de menu com sub-abas internas, igual o padrão já usado em Usuários/Equipes.
-  const [agroFinanceTab, setAgroFinanceTab] = useState('dashboard')
+  // Agro Finance — módulo trazido do projeto do Isaque (sócio). Só a Calculadora de
+  // Orçamento por enquanto (Dashboard/Caixa/Custos/DRE ficaram de fora a pedido do Ricardo).
   const [calc, setCalc] = useState({
-    cliente: '', cultura: 'Soja', areaTotal: '', tipoServico: 'Pulverização Agrícola', distancia: '', rendimento: '',
-    custoBateriaHora: '', combustivelKm: '', diaria: '', desgasteHora: '', margem: '', precoMercado: '',
+    cliente: 'Sao tomé', cultura: 'Soja', areaTotal: '50', tipoServico: 'Pulverização Agrícola', distancia: '100', rendimento: '12',
+    custoBateriaHora: '85', combustivelKm: '1,20', diaria: '120', desgasteHora: '45', margem: '40', precoMercado: '110',
   })
   useEffect(() => {
     if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
@@ -204,7 +202,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [custosSubTab, setCustosSubTab] = useState('notas')
   const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
   const [agenda, setAgenda] = useState([])
-  const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',drone:'',observacao:''})
+  const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produtos:[{produto:'',dose:''}],drone:'',veiculo_id:'',observacao:''})
   const [agendaSaving, setAgendaSaving] = useState(false)
   const [agendaClima, setAgendaClima] = useState(null)
   const [agendaClimaLoading, setAgendaClimaLoading] = useState(false)
@@ -4312,6 +4310,19 @@ export default function AdminPanel({ onSwitchMode }) {
               setAgendaForm(f=>({...f,talhao:novos.join(', ')}))
             }
 
+            // Área usada pra estimar quanto de produto o piloto precisa levar: soma dos
+            // talhões marcados, ou — se nenhum talhão foi marcado — a fazenda inteira.
+            const areaEstimadaAgenda = talhoesSelecionadosAgenda.length>0
+              ? talhoesDaFazendaAgenda.filter(t=>talhoesSelecionadosAgenda.includes(t.nome)).reduce((a,t)=>a+(parseFloat(t.area_ha)||0),0)
+              : talhoesDaFazendaAgenda.reduce((a,t)=>a+(parseFloat(t.area_ha)||0),0)
+
+            function qtdEstimadaProduto(nomeProduto, dose) {
+              const doseN = parseFloat(String(dose).replace(',','.'))
+              if(!doseN || !areaEstimadaAgenda) return null
+              const unidade = invProdutos.find(p=>p.nome===nomeProduto)?.unidade || 'L'
+              return { qtd: doseN*areaEstimadaAgenda, unidade }
+            }
+
             // Warning de conflito: outro agendamento pendente pra mesma fazenda/talhão
             const conflitosAgenda = agendaForm.cliente && agendaForm.fazenda ? agenda.filter(a=>{
               if(a.status!=='pendente') return false
@@ -4329,17 +4340,23 @@ export default function AdminPanel({ onSwitchMode }) {
               setAgendaSaving(true)
               try {
                 const piloto = pilotos.find(p=>p.id===agendaForm.piloto_id)
+                const produtosValidos = agendaForm.produtos.filter(p=>p.produto).map(p=>{
+                  const est = qtdEstimadaProduto(p.produto, p.dose)
+                  return { produto:p.produto, dose:p.dose||null, qtd_estimada:est?.qtd??null, unidade:est?.unidade??null }
+                })
                 const { error } = await supabase.from('agendamentos').insert({
                   piloto_id: agendaForm.piloto_id, piloto_nome: piloto?.nome||piloto?.email, time_id: piloto?.time_id||null,
                   cliente: agendaForm.cliente, fazenda: agendaForm.fazenda, talhao: agendaForm.talhao||null,
-                  data_prevista: agendaForm.data_prevista, produto: agendaForm.produto||null,
-                  dose: agendaForm.dose||null, drone: agendaForm.drone||null,
+                  data_prevista: agendaForm.data_prevista,
+                  produto: produtosValidos[0]?.produto||null, dose: produtosValidos[0]?.dose||null,
+                  produtos: produtosValidos.length?produtosValidos:null,
+                  drone: agendaForm.drone||null, veiculo_id: agendaForm.veiculo_id||null,
                   observacao: agendaForm.observacao||null, status:'pendente',
                   ordem_servico: gerarOrdemServico(),
                 })
                 if(error) throw error
                 showToast('📅 Agendamento criado!')
-                setAgendaForm({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produto:'',dose:'',drone:'',observacao:''})
+                setAgendaForm({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produtos:[{produto:'',dose:''}],drone:'',veiculo_id:'',observacao:''})
                 fetchAll()
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setAgendaSaving(false) }
             }
@@ -4388,7 +4405,11 @@ export default function AdminPanel({ onSwitchMode }) {
                 itens.forEach(a=>{
                   const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
                   t += `• ${a.piloto_nome} — ${a.cliente} / ${a.fazenda}${a.talhao?` (${a.talhao})`:''}\n`
-                  if(a.produto) t += `   🧪 ${a.produto}${a.dose?` ${a.dose}`:''}\n`
+                  if(a.veiculo_id) t += `   🚗 ${veiculos.find(v=>v.id===a.veiculo_id)?.placa||'—'}\n`
+                  const produtosLista = a.produtos?.length ? a.produtos : (a.produto?[{produto:a.produto,dose:a.dose}]:[])
+                  produtosLista.forEach(p=>{
+                    t += `   🧪 ${p.produto}${p.dose?` ${p.dose}`:''}${p.qtd_estimada?` — leva ≈${Number(p.qtd_estimada).toLocaleString('pt-BR',{maximumFractionDigits:2})} ${p.unidade||''}`:''}\n`
+                  })
                   t += `   ${badge.label}${a.ordem_servico?` · OS ${a.ordem_servico}`:''}\n`
                 })
               })
@@ -4475,21 +4496,44 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
                   )}
 
-                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
-                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.produto} onChange={e=>{
-                      const p = invProdutos.find(x=>x.nome===e.target.value)
-                      setAgendaForm(f=>({...f,produto:e.target.value,dose:p?.dose_padrao?String(p.dose_padrao):f.dose}))
-                    }}>
-                      <option value="">Produto (opcional)...</option>
-                      {invProdutos.filter(p=>p.ativo).map(p=><option key={p.id}>{p.nome}</option>)}
-                    </select>
-                    <input style={{...sG.fi,flex:'1 1 140px'}} placeholder="Dose (ex: 2 L/ha)" value={agendaForm.dose} onChange={e=>setAgendaForm(f=>({...f,dose:e.target.value}))}/>
-                  </div>
+                  {areaEstimadaAgenda>0 && (
+                    <div style={{fontSize:11,color:'#7ba38f',marginBottom:6}}>📐 Área considerada pra estimativa: {areaEstimadaAgenda.toFixed(1)} ha{talhoesSelecionadosAgenda.length===0&&talhoesDaFazendaAgenda.length>0?' (fazenda inteira — nenhum talhão marcado)':''}</div>
+                  )}
+                  {agendaForm.produtos.map((p,i)=>{
+                    const est = qtdEstimadaProduto(p.produto, p.dose)
+                    return (
+                      <div key={i} style={{marginBottom:8}}>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                          <select style={{...sG.fi,flex:'1 1 160px'}} value={p.produto} onChange={e=>{
+                            const prod = invProdutos.find(x=>x.nome===e.target.value)
+                            setAgendaForm(f=>{ const arr=[...f.produtos]; arr[i]={...arr[i],produto:e.target.value,dose:prod?.dose_padrao?String(prod.dose_padrao):arr[i].dose}; return {...f,produtos:arr} })
+                          }}>
+                            <option value="">Produto (opcional)...</option>
+                            {invProdutos.filter(x=>x.ativo).map(x=><option key={x.id}>{x.nome}</option>)}
+                          </select>
+                          <input style={{...sG.fi,flex:'1 1 140px'}} placeholder="Dose (ex: 2 L/ha)" value={p.dose} onChange={e=>setAgendaForm(f=>{ const arr=[...f.produtos]; arr[i]={...arr[i],dose:e.target.value}; return {...f,produtos:arr} })}/>
+                          {agendaForm.produtos.length>1 && (
+                            <button type="button" style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:10,width:36,cursor:'pointer'}}
+                              onClick={()=>setAgendaForm(f=>({...f,produtos:f.produtos.filter((_,idx)=>idx!==i)}))}>✕</button>
+                          )}
+                        </div>
+                        {est && (
+                          <div style={{fontSize:11,color:'#00A86B',fontWeight:600,marginTop:3}}>≈ leva {est.qtd.toLocaleString('pt-BR',{maximumFractionDigits:2})} {est.unidade}</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                  <button type="button" style={{background:'none',border:'1px dashed #c3e0d0',color:'#00A86B',borderRadius:10,padding:'7px 12px',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:8}}
+                    onClick={()=>setAgendaForm(f=>({...f,produtos:[...f.produtos,{produto:'',dose:''}]}))}>+ Adicionar produto</button>
 
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
                     <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.drone} onChange={e=>setAgendaForm(f=>({...f,drone:e.target.value}))}>
                       <option value="">Drone (opcional)...</option>
                       {invDrones.filter(d=>d.ativo!==false).map(d=><option key={d.id} value={d.nome}>{d.nome}</option>)}
+                    </select>
+                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.veiculo_id} onChange={e=>setAgendaForm(f=>({...f,veiculo_id:e.target.value}))}>
+                      <option value="">Carro (opcional)...</option>
+                      {veiculos.filter(v=>v.ativo!==false).map(v=><option key={v.id} value={v.id}>🚗 {v.placa}{v.modelo?` — ${v.modelo}`:''}</option>)}
                     </select>
                   </div>
 
@@ -4832,31 +4876,9 @@ export default function AdminPanel({ onSwitchMode }) {
             <div>
               <div style={{marginBottom:18}}>
                 <div style={{fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210'}}>💹 Agro Finance</div>
-                <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>Módulo financeiro da operação — orçamentos, caixa, custos e DRE.</div>
+                <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>Calcule o preço ideal para cada aplicação.</div>
               </div>
-              <div style={{display:'flex',gap:4,background:'#eef5f0',borderRadius:14,padding:4,marginBottom:18,maxWidth:640,flexWrap:'wrap'}}>
-                {[
-                  {id:'dashboard',label:'📊 Dashboard'},
-                  {id:'lancamentos',label:'💵 Lançamentos/Caixa'},
-                  {id:'custos',label:'🚁 Custos por Voo/Talhão'},
-                  {id:'relatorios',label:'📑 Relatórios/DRE'},
-                  {id:'calculadora',label:'🧮 Calculadora'},
-                ].map(t=>(
-                  <button key={t.id} onClick={()=>setAgroFinanceTab(t.id)}
-                    style={{flex:'1 1 auto', minWidth:120, background: agroFinanceTab===t.id?'#fff':'transparent', color: agroFinanceTab===t.id?'#0b1210':'#5c7568', border:'none', borderRadius:10, padding:'9px 12px', fontSize:12.5, fontWeight:700, cursor:'pointer', boxShadow: agroFinanceTab===t.id?'0 2px 8px rgba(11,18,16,0.08)':'none'}}>
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-              {agroFinanceTab==='calculadora' ? (
-                <CalculadoraOrcamento calc={calc} setCalc={setCalc} isMobile={isMobile}/>
-              ) : (
-                <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#a9beb1'}}>
-                  <div style={{fontSize:36,marginBottom:10}}>🚧</div>
-                  <div style={{fontSize:14,fontWeight:700,color:'#5c7568',marginBottom:4}}>{ {dashboard:'Dashboard',lancamentos:'Lançamentos / Caixa',custos:'Custos por Voo / Talhão',relatorios:'Relatórios / DRE'}[agroFinanceTab] }</div>
-                  <div style={{fontSize:12.5}}>Estrutura pronta — é só colar aqui o código dessa tela do projeto original.</div>
-                </div>
-              )}
+              <CalculadoraOrcamento calc={calc} setCalc={setCalc} isMobile={isMobile}/>
             </div>
           )}
         </main>

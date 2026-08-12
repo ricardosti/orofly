@@ -16,8 +16,18 @@ async function blobToBase64(blob) {
 // Compartilha texto + (opcional) um arquivo. No app nativo abre o menu de compartilhar
 // do Android (permite escolher WhatsApp etc). No navegador comum tenta a Web Share API
 // e, se não suportar, cai no webFallbackUrl (ex: link wa.me só com texto).
-export async function compartilharNativo({ text, file, filename, webFallbackUrl }) {
+//
+// `preOpenedWindow` (opcional): no desktop, se o caller já fez `window.open('', '_blank')`
+// SÍNCRONO dentro do próprio handler de clique (antes de qualquer `await`), passa a
+// referência aqui e a gente só troca o `.location` dela. Isso evita o bloqueio de pop-up:
+// a maioria dos navegadores só deixa `window.open` funcionar quando chamado diretamente
+// na pilha de um gesto do usuário — como esta função é `async` e o caller às vezes já deu
+// um `await` antes (ex: copiar pra área de transferência), abrir a janela só aqui, depois
+// desse `await`, já não conta mais como gesto do usuário e o navegador bloqueia. No app
+// nativo isso nunca foi um problema porque usa o plugin Share, não `window.open`.
+export async function compartilharNativo({ text, file, filename, webFallbackUrl, preOpenedWindow }) {
   if (Capacitor.isNativePlatform()) {
+    preOpenedWindow?.close()
     console.log('[compartilharNativo] iniciando. temArquivo=', !!file, 'filename=', filename)
     try {
       const { Filesystem, Directory } = await import('@capacitor/filesystem')
@@ -46,11 +56,19 @@ export async function compartilharNativo({ text, file, filename, webFallbackUrl 
   }
   try {
     if (navigator.share) {
+      preOpenedWindow?.close()
       if (file && navigator.canShare?.({ files: [file] })) { await navigator.share({ text, files: [file] }); return true }
       await navigator.share({ text }); return true
     }
-  } catch (e) { if (e.name === 'AbortError') return true }
-  if (webFallbackUrl) window.open(webFallbackUrl, '_blank')
+  } catch (e) {
+    if (e.name === 'AbortError') { preOpenedWindow?.close(); return true }
+  }
+  if (webFallbackUrl) {
+    if (preOpenedWindow && !preOpenedWindow.closed) preOpenedWindow.location = webFallbackUrl
+    else window.open(webFallbackUrl, '_blank')
+  } else {
+    preOpenedWindow?.close()
+  }
   return false
 }
 

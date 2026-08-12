@@ -112,6 +112,7 @@ export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFot
   })
   if (rel.tamanho_gota) pdfRow('Tamanho Gota', rel.tamanho_gota, false)
   if (rel.velocidade_drone) pdfRow('Vel. Drone', rel.velocidade_drone, true)
+  if (rel.altura) pdfRow('Altura', rel.altura+' m', false)
   y+=4
 
   // Descrição dos produtos (fabricante / registro MAPA / observação do inventário)
@@ -1166,6 +1167,7 @@ ${gastosProdutosW.length > 0 ? `
   ${gastosProdutosW.map((g,i)=>`<tr><td>Produto ${i+1}</td><td>${g.nome||g.produto}${g.dose!=null?` — ${g.dose} ${g.unidade}/ha`:''}${g.total!=null?` → total ${g.total} ${g.unidade}`:''}</td></tr>`).join('')}
   ${rel.tamanho_gota?`<tr><td>Tamanho da Gota</td><td>${rel.tamanho_gota}</td></tr>`:''}
   ${rel.velocidade_drone?`<tr><td>Velocidade do Drone</td><td>${rel.velocidade_drone}</td></tr>`:''}
+  ${rel.altura?`<tr><td>Altura</td><td>${rel.altura} m</td></tr>`:''}
 </table>`:''}
 
 <h2>Condições de Aplicação</h2>

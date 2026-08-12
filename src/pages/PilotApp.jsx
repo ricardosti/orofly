@@ -11,7 +11,7 @@ import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam } from '../lib/clima'
-import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 import { App as CapApp } from '@capacitor/app'
 
@@ -87,7 +87,7 @@ function initForm(data) {
             return `${parts[0]} - ${dose}`
           })
         : [''],
-      tamanho_gota:data.tamanho_gota||'',velocidade_drone:data.velocidade_drone||'',
+      tamanho_gota:data.tamanho_gota||'',velocidade_drone:data.velocidade_drone||'',altura:data.altura||'',
       localizacao:data.localizacao||'',gps_lat:data.gps_lat,gps_lng:data.gps_lng,
       ...cond,
       dt_inicio_data:ini.data,dt_inicio_hh:ini.hh,dt_inicio_mm:ini.mm,
@@ -103,7 +103,7 @@ function initForm(data) {
   return {
     cultura:'',cliente:'',clienteOutro:'',fazenda:'',produto:'',area_ha:'',talhao:'',qtd_voos:1,tipo_servico:'area_total',
     piloto_nome:'',drone:'',droneOutro:'',
-    produtos:[''],tamanho_gota:'',velocidade_drone:'',
+    produtos:[''],tamanho_gota:'',velocidade_drone:'',altura:'',
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
@@ -897,7 +897,7 @@ export default function PilotApp({onSwitchMode}) {
       area_deduzida:form.area_deduzida?parseFloat(form.area_deduzida):null,
       piloto_nome:profile.nome||profile.email,
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
-      tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,
+      tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,altura:form.altura,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
       obs1:form.obs1,obs2:form.obs2,bordadura:bordaduraTotal||null,bordadura_detalhe:bordaduraDetalhe&&bordaduraDetalhe.length?bordaduraDetalhe:null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
@@ -991,7 +991,7 @@ export default function PilotApp({onSwitchMode}) {
       piloto_nome:nf.piloto_nome||profile.nome,
       drone:nf.drone==='Outros'?nf.droneOutro:nf.drone,
       produtos:nf.produtos.filter(Boolean),
-      tamanho_gota:nf.tamanho_gota,velocidade_drone:nf.velocidade_drone,
+      tamanho_gota:nf.tamanho_gota,velocidade_drone:nf.velocidade_drone,altura:nf.altura,
       localizacao:nf.localizacao,gps_lat:nf.gps_lat,gps_lng:nf.gps_lng,
       obs1:nf.obs1,obs2:nf.obs2,pausas:[],
       dt_inicio:new Date(`${n.data}T${n.hh}:${n.mm}:00`).toISOString(),
@@ -1265,7 +1265,8 @@ export default function PilotApp({onSwitchMode}) {
 
   function iniciarVooAgendado(a){
     limpar()
-    setForm(f=>({...f,cliente:a.cliente,fazenda:a.fazenda,produto:a.produto||''}))
+    const produtosAgendados = a.produtos?.length ? a.produtos.map(p=>p.dose?`${p.produto} - ${p.dose}`:p.produto) : (a.produto?[a.produto]:[''])
+    setForm(f=>({...f,cliente:a.cliente,fazenda:a.fazenda,produtos:produtosAgendados}))
     if(a.ordem_servico) setOsAtual(a.ordem_servico)
     setView('form')
   }
@@ -1778,21 +1779,28 @@ export default function PilotApp({onSwitchMode}) {
           <div onClick={()=>setView('tempo')} style={{position:'relative',display:'flex',alignItems:'stretch',marginTop:8,border:'1px solid #e6f0ea',borderRadius:18,overflow:'hidden',cursor:'pointer',minHeight:106}}>
             {condDia ? (() => {
               const chuvoso = chuvaAgora>=60, nublado = chuvaAgora>=25
+              // Sem fotos noturnas de verdade ainda (só temos sunny/cloudy/rainy tiradas de
+              // dia) — à noite reaproveita a foto mais próxima e escurece com um overlay
+              // azulado + ícone de lua, em vez de mostrar uma foto de dia com "23h" do lado.
+              const horaAgora = new Date().getHours()
+              const noite = horaAgora<6 || horaAgora>=18
               const bgFoto = chuvoso?'weather-rainy.jpg':nublado?'weather-cloudy.jpg':'weather-sunny.jpg'
+              const overlayDia = 'linear-gradient(90deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.8) 34%, rgba(255,255,255,0.28) 60%, rgba(255,255,255,0.05) 78%)'
+              const overlayNoite = 'linear-gradient(90deg, rgba(13,20,30,0.92) 0%, rgba(13,20,30,0.82) 34%, rgba(15,25,38,0.5) 60%, rgba(20,30,45,0.22) 78%)'
               return (
               <>
-                <img src={`${process.env.PUBLIC_URL||''}/${bgFoto}`} alt="Drone pulverizando lavoura" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
-                <div style={{position:'absolute',inset:0,background:'linear-gradient(90deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.8) 34%, rgba(255,255,255,0.28) 60%, rgba(255,255,255,0.05) 78%)'}}/>
+                <img src={`${process.env.PUBLIC_URL||''}/${bgFoto}`} alt="Drone pulverizando lavoura" style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',display:'block',filter:noite?'brightness(0.55) saturate(0.7)':'none'}}/>
+                <div style={{position:'absolute',inset:0,background:noite?overlayNoite:overlayDia}}/>
                 <div style={{position:'relative',flex:1,padding:'14px 6px 14px 16px',display:'flex',flexDirection:'column',justifyContent:'center',gap:11,minWidth:0}}>
                   <div style={{display:'flex',alignItems:'center',gap:10}}>
                     {(() => {
-                      const WIcon = chuvoso?CloudRain:nublado?Cloud:Sun
-                      const wc = chuvoso?'#2f6fed':nublado?'#8fa79a':'#f2960f'
-                      return <WIcon size={30} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'}/>
+                      const WIcon = chuvoso?CloudRain:nublado?(noite?CloudMoon:Cloud):(noite?Moon:Sun)
+                      const wc = chuvoso?(noite?'#7fa3f2':'#2f6fed'):nublado?(noite?'#c3d4e8':'#8fa79a'):(noite?'#e8ecf5':'#f2960f')
+                      return <WIcon size={30} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?(noite?'#e8ecf5':'#fde68a'):'none'}/>
                     })()}
                     <div>
-                      <div><span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:25,color:'#0b1210'}}>{Math.round(condDia.tempMax)}°</span><span style={{fontSize:13,color:'#8fa79a',fontWeight:700}}> / {Math.round(condDia.tempMin)}°</span></div>
-                      <div style={{fontSize:11,color:'#5c7568',fontWeight:600,marginTop:1}}>{chuvoso?'Chuvoso':nublado?'Parcialmente nublado':'Ensolarado'}</div>
+                      <div><span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:25,color:noite?'#fff':'#0b1210'}}>{Math.round(condDia.tempMax)}°</span><span style={{fontSize:13,color:noite?'#a9beb1':'#8fa79a',fontWeight:700}}> / {Math.round(condDia.tempMin)}°</span></div>
+                      <div style={{fontSize:11,color:noite?'#cfe0d6':'#5c7568',fontWeight:600,marginTop:1}}>{chuvoso?'Chuvoso':nublado?'Parcialmente nublado':'Ensolarado'}{noite?' (Noite)':''}</div>
                     </div>
                   </div>
                   <div style={{display:'flex',gap:7}}>
@@ -2403,7 +2411,10 @@ export default function PilotApp({onSwitchMode}) {
             <select style={{...sw.fs,marginBottom:4}} value={notaForm.ordem_servico}
               onChange={e=>{
                 if(e.target.value==='__outro__'){ setOsModo('outro'); setNotaForm(f=>({...f,ordem_servico:''})); return }
-                setNotaForm(f=>({...f,ordem_servico:e.target.value}))
+                // Se essa OS veio de um agendamento com carro já definido pelo admin, associa
+                // automaticamente — o piloto não precisa lembrar/escolher de novo.
+                const agAssociado = minhaAgenda.find(a=>a.ordem_servico===e.target.value && a.veiculo_id)
+                setNotaForm(f=>({...f,ordem_servico:e.target.value,veiculo_id:agAssociado?agAssociado.veiculo_id:f.veiculo_id}))
               }}>
               <option value="">Nenhuma / não vincular a um voo</option>
               {osOpcoes.map(r=>(
@@ -3017,7 +3028,12 @@ export default function PilotApp({onSwitchMode}) {
                 {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
               </div>
               <div style={{fontWeight:700,fontSize:15,fontFamily:"'Poppins',sans-serif"}}>{a.cliente} — {a.fazenda}{a.talhao?<span style={{fontWeight:400,fontSize:12,color:'#7ba38f'}}> ({a.talhao})</span>:''}</div>
-              <div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}{a.produto?` · ${a.produto}`:''}</div>
+              <div style={{fontSize:12,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}{a.produto?` · ${a.produto}`:''}{a.veiculo_id?` · 🚗 ${veiculosDB.find(v=>v.id===a.veiculo_id)?.placa||''}`:''}</div>
+              {(a.produtos?.length>1) && (
+                <div style={{fontSize:11.5,color:'#5c7568',marginTop:4}}>
+                  {a.produtos.map((p,i)=><div key={i}>🧪 {p.produto}{p.dose?` — ${p.dose}`:''}{p.qtd_estimada?` (leva ≈${Number(p.qtd_estimada).toLocaleString('pt-BR',{maximumFractionDigits:1})} ${p.unidade||''})`:''}</div>)}
+                </div>
+              )}
               {a.observacao&&<div style={{fontSize:12,color:'#5c7568',marginTop:6,fontStyle:'italic'}}>{a.observacao}</div>}
               <AgendaClimaBadge fz={fazendasDB.find(fz=>fz.cliente===a.cliente&&fz.nome===a.fazenda)} data={a.data_prevista}/>
               <div style={{marginTop:4}}><DistanciaBadge fz={fazendasDB.find(fz=>fz.cliente===a.cliente&&fz.nome===a.fazenda)}/></div>
@@ -3053,14 +3069,20 @@ export default function PilotApp({onSwitchMode}) {
                 {agendaDetalhe.talhao&&` · Talhão ${agendaDetalhe.talhao}`}
                 {agendaDetalhe.ordem_servico&&` · OS ${agendaDetalhe.ordem_servico}`}
               </div>
-              {agendaDetalhe.produto && (
-                <div style={{background:'#F4F7F5',borderRadius:10,padding:'10px 12px',marginBottom:10,fontSize:13}}>
-                  <strong>🧪 {agendaDetalhe.produto}</strong>{agendaDetalhe.dose&&<span style={{color:'#5c7568'}}> · Dose: {agendaDetalhe.dose}</span>}
+              {(agendaDetalhe.produtos?.length ? agendaDetalhe.produtos : (agendaDetalhe.produto?[{produto:agendaDetalhe.produto,dose:agendaDetalhe.dose}]:[])).map((p,i)=>(
+                <div key={i} style={{background:'#F4F7F5',borderRadius:10,padding:'10px 12px',marginBottom:6,fontSize:13}}>
+                  <strong>🧪 {p.produto}</strong>{p.dose&&<span style={{color:'#5c7568'}}> · Dose: {p.dose}</span>}
+                  {p.qtd_estimada&&<div style={{color:'#00A86B',fontWeight:600,fontSize:12,marginTop:2}}>≈ leve {Number(p.qtd_estimada).toLocaleString('pt-BR',{maximumFractionDigits:2})} {p.unidade||''}</div>}
                 </div>
-              )}
+              ))}
               {agendaDetalhe.drone && (
                 <div style={{background:'#F4F7F5',borderRadius:10,padding:'10px 12px',marginBottom:10,fontSize:13}}>
                   <strong>🚁 Drone:</strong> {agendaDetalhe.drone}
+                </div>
+              )}
+              {agendaDetalhe.veiculo_id && (
+                <div style={{background:'#F4F7F5',borderRadius:10,padding:'10px 12px',marginBottom:10,fontSize:13}}>
+                  <strong>🚗 Carro:</strong> {veiculosDB.find(v=>v.id===agendaDetalhe.veiculo_id)?.placa||'—'}
                 </div>
               )}
               {agendaDetalhe.observacao && (
@@ -3430,6 +3452,7 @@ export default function PilotApp({onSwitchMode}) {
             </div>
 
             <FI label="VELOCIDADE DO DRONE (km/h)" ph="Ex: 25" val={form.velocidade_drone} onChange={e=>setForm(f=>({...f,velocidade_drone:e.target.value}))}/>
+            <FI label="ALTURA (m)" ph="Ex: 3" val={form.altura} onChange={e=>setForm(f=>({...f,altura:e.target.value}))}/>
             <FI label="FAIXA DE APLICAÇÃO (m)" ph="Ex: 5" val={form.faixa_i} onChange={e=>setForm(f=>({...f,faixa_i:e.target.value,faixa_f:e.target.value}))}/>
             <FI label="VAZÃO (L/ha)" ph="Ex: 2" val={form.vazao_i} onChange={e=>setForm(f=>({...f,vazao_i:e.target.value,vazao_f:e.target.value}))}/>
           </div>
@@ -4265,7 +4288,7 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
     ['Qtde de voos',form.qtd_voos&&parseInt(form.qtd_voos)>1?form.qtd_voos:null],
     ['Piloto',form.piloto_nome],['Drone',droneVal],
     ...form.produtos.filter(Boolean).map((p,i)=>['Produto '+(i+1),prodFmt?prodFmt(p):p]),
-    ['Gota',form.tamanho_gota],['Velocidade',form.velocidade_drone],
+    ['Gota',form.tamanho_gota],['Velocidade',form.velocidade_drone],['Altura',form.altura?form.altura+' m':null],
     ['Início',fmt('dt_inicio')],['Fim',fmt('dt_fim')],
     ...(form.pausas||[]).map((p,i)=>['Pausa '+(i+1),p.motivo||'—']),
     ...COND_KEYS.map((k,i)=>[COND_LABELS[i]+' ini',form[k+'_i']]),
@@ -4317,10 +4340,10 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
     })
   }
 
-  if(form.vazao_i||form.tamanho_gota||form.velocidade_drone||form.faixa_i){
+  if(form.vazao_i||form.tamanho_gota||form.velocidade_drone||form.faixa_i||form.altura){
     t += `${linha}\n⚙️ *Parâmetros:*\n`
     t += `* Vazão: ${form.vazao_i||'—'} L/ha | Gota: ${form.tamanho_gota||'—'} µm\n`
-    t += `* Velocidade: ${form.velocidade_drone||'—'} km/h | Faixa: ${form.faixa_i||'—'} m\n`
+    t += `* Velocidade: ${form.velocidade_drone||'—'} km/h | Altura: ${form.altura||'—'} m | Faixa: ${form.faixa_i||'—'} m\n`
   }
 
   const anyIni = ['vento','umidade','temperatura','delta_t'].some(k=>form[k+'_i'])
