@@ -101,15 +101,38 @@ export default function AdminPanel({ onSwitchMode }) {
   const [weatherStatus, setWeatherStatus] = useState(null) // {estado:'ok'|'backup'|'erro', mensagem}
   const [weatherStatusTestando, setWeatherStatusTestando] = useState(false)
   const [weatherLogs, setWeatherLogs] = useState(null) // últimas chamadas (repositório de logs)
-  // Agro Finance — módulo trazido do projeto do Isaque (sócio). Só a Calculadora de
-  // Orçamento por enquanto (Dashboard/Caixa/Custos/DRE ficaram de fora a pedido do Ricardo).
+  // Orçamento (ex-Agro Finance) — agora vive dentro de Financeiro, como sub-aba. Módulo
+  // trazido do projeto do Isaque (sócio); só a Calculadora por enquanto.
   const [calc, setCalc] = useState({
     cliente: 'Sao tomé', cultura: 'Soja', areaTotal: '50', tipoServico: 'Pulverização Agrícola', distancia: '100', rendimento: '12',
     custoBateriaHora: '85', combustivelKm: '1,20', diaria: '120', desgasteHora: '45', margem: '40', precoMercado: '110',
   })
+  // Regras da calculadora que dá pra personalizar (as demais fazem parte da fórmula em si
+  // e não fariam sentido como "configuração"). Persistidas em app_settings, igual o
+  // alternador de clima, pra sobreviver a reload/outros admins.
+  const CALC_CONFIG_PADRAO = { horasPorDia: 8, margemMaxPct: 95, multiplicadorDeslocamento: 2 }
+  const [calcConfig, setCalcConfig] = useState(CALC_CONFIG_PADRAO)
+  const [calcConfigSaving, setCalcConfigSaving] = useState(false)
+  const [calcConfigLoaded, setCalcConfigLoaded] = useState(false)
+  const [custosSubTab, setCustosSubTab] = useState('notas')
+  async function carregarCalcConfig() {
+    try {
+      const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'orcamento_config').single()
+      if (data?.valor) setCalcConfig({ ...CALC_CONFIG_PADRAO, ...JSON.parse(data.valor) })
+    } catch { /* sem linha configurada ainda — mantém o padrão */ }
+  }
+  async function salvarCalcConfig(novaConfig) {
+    setCalcConfigSaving(true)
+    try {
+      await supabase.from('app_settings').upsert({ chave: 'orcamento_config', valor: JSON.stringify(novaConfig), atualizado_em: new Date().toISOString() })
+      setCalcConfig(novaConfig)
+      showToast('✅ Regras do orçamento salvas!')
+    } catch (e) { showToast('Erro ao salvar: ' + e.message, 'error') } finally { setCalcConfigSaving(false) }
+  }
   useEffect(() => {
     if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
-  }, [tab]) // eslint-disable-line
+    if (tab === 'custos' && custosSubTab === 'orcamento' && !calcConfigLoaded) { setCalcConfigLoaded(true); carregarCalcConfig() }
+  }, [tab, custosSubTab]) // eslint-disable-line
   const [relatorios, setRelatorios] = useState([])
   const [pilotos, setPilotos] = useState([])
   const [times, setTimes] = useState([])
@@ -199,7 +222,6 @@ export default function AdminPanel({ onSwitchMode }) {
   const [osSearchCliente, setOsSearchCliente] = useState('')
   const [fotoLightbox, setFotoLightbox] = useState(null)
   const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',clienteFazenda:'',dataIni:'',dataFim:''})
-  const [custosSubTab, setCustosSubTab] = useState('notas')
   const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
   const [agenda, setAgenda] = useState([])
   const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produtos:[{produto:'',dose:''}],drone:'',veiculo_id:'',observacao:''})
@@ -982,7 +1004,6 @@ export default function AdminPanel({ onSwitchMode }) {
             ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
             ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
             ['custos', '💰', 'Financeiro', custos.length],
-            ['agrofinance', '💹', 'Agro Finance', ''],
           ]],
           ['CONFIGURAÇÕES', [
             ['pilotos', '👥', 'Usuários', pilotos.length],
@@ -3776,7 +3797,14 @@ export default function AdminPanel({ onSwitchMode }) {
                     onClick={()=>setCustosSubTab('notas')}>🧾 Notas de Despesa</button>
                   <button style={{flex:1,background:custosSubTab==='veiculos'?'#fff':'transparent',color:custosSubTab==='veiculos'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='veiculos'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setCustosSubTab('veiculos')}>🚗 Veículos</button>
+                  <button style={{flex:1,background:custosSubTab==='orcamento'?'#fff':'transparent',color:custosSubTab==='orcamento'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='orcamento'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                    onClick={()=>setCustosSubTab('orcamento')}>🧮 Orçamento</button>
                 </div>
+
+                {custosSubTab==='orcamento' && (
+                  <RegrasOrcamento config={calcConfig} onSalvar={salvarCalcConfig} saving={calcConfigSaving} isMobile={isMobile}
+                    calc={calc} setCalc={setCalc}/>
+                )}
 
                 {custosSubTab==='notas' && (<>
                 {/* Filtros */}
@@ -4908,15 +4936,6 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           )}
 
-          {tab === 'agrofinance' && (
-            <div>
-              <div style={{marginBottom:18}}>
-                <div style={{fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210'}}>💹 Agro Finance</div>
-                <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>Calcule o preço ideal para cada aplicação.</div>
-              </div>
-              <CalculadoraOrcamento calc={calc} setCalc={setCalc} isMobile={isMobile}/>
-            </div>
-          )}
         </main>
       </div>
 
@@ -5201,6 +5220,66 @@ function SecTitle({ children }) {
   return <div style={{ fontSize:10, fontWeight:700, color:'#00A86B', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:'1px solid #e3f7ec', fontFamily:"'Syne',sans-serif" }}>{children}</div>
 }
 
+// Painel de regras + calculadora, dentro de Financeiro > Orçamento. Explica exatamente como
+// cada linha da calculadora é calculada (pra não virar caixa-preta) e deixa editável tudo
+// que faz sentido variar por operação — jornada de trabalho, teto de margem e multiplicador
+// de deslocamento. As fórmulas em si (o que multiplica o quê) são estruturais e não viram
+// campo de configuração, só os números que podem variar.
+function RegrasOrcamento({ config, onSalvar, saving, isMobile, calc, setCalc }) {
+  const [draft, setDraft] = useState(config)
+  useEffect(() => { setDraft(config) }, [config])
+  const alterado = JSON.stringify(draft) !== JSON.stringify(config)
+  const inputSt = { width:110, border:'1px solid #d7e6dc', borderRadius:8, padding:'6px 9px', fontSize:13, outline:'none', color:'#0b1210', textAlign:'right' }
+
+  const REGRAS = [
+    { label:'🔋 Baterias', formula:'Tempo estimado (área ÷ rendimento) × custo da bateria/hora', config:null },
+    { label:'🚙 Deslocamento', formula:`Distância × ${draft.multiplicadorDeslocamento} (ida${draft.multiplicadorDeslocamento===2?' e volta':''}) × combustível/km`, config:'multiplicadorDeslocamento' },
+    { label:'🏨 Diárias', formula:`Diária × dias, com jornada de ${draft.horasPorDia}h/dia (arredondado pra cima)`, config:'horasPorDia' },
+    { label:'🛠️ Desgaste', formula:'Tempo estimado × desgaste do equipamento/hora', config:null },
+    { label:'💰 Preço sugerido/ha', formula:`Custo/ha ÷ (1 − margem%), com teto de ${draft.margemMaxPct}% de margem`, config:'margemMaxPct' },
+  ]
+
+  return (
+    <div>
+      <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
+        <SecTitle>📖 Como a calculadora calcula cada linha</SecTitle>
+        <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
+          {REGRAS.map(r=>(
+            <div key={r.label} style={{display:'flex',flexDirection:isMobile?'column':'row',justifyContent:'space-between',alignItems:isMobile?'flex-start':'center',gap:isMobile?4:12,padding:'8px 0',borderBottom:'1px solid #f0f5f2'}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:'#0b1210'}}>{r.label}</div>
+                <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{r.formula}</div>
+              </div>
+              {r.config==='multiplicadorDeslocamento' && (
+                <input type="number" style={inputSt} value={draft.multiplicadorDeslocamento} onChange={e=>setDraft(d=>({...d,multiplicadorDeslocamento:parseFloat(e.target.value)||1}))}/>
+              )}
+              {r.config==='horasPorDia' && (
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <input type="number" style={inputSt} value={draft.horasPorDia} onChange={e=>setDraft(d=>({...d,horasPorDia:parseFloat(e.target.value)||1}))}/>
+                  <span style={{fontSize:12,color:'#7ba38f'}}>h/dia</span>
+                </div>
+              )}
+              {r.config==='margemMaxPct' && (
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <input type="number" style={inputSt} value={draft.margemMaxPct} onChange={e=>setDraft(d=>({...d,margemMaxPct:Math.min(99,Math.max(0,parseFloat(e.target.value)||0))}))}/>
+                  <span style={{fontSize:12,color:'#7ba38f'}}>% máx.</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {alterado && (
+          <div style={{display:'flex',gap:8,marginTop:14}}>
+            <button disabled={saving} onClick={()=>onSalvar(draft)} style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:saving?'default':'pointer',opacity:saving?0.7:1}}>{saving?'Salvando...':'💾 Salvar regras'}</button>
+            <button disabled={saving} onClick={()=>setDraft(config)} style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
+          </div>
+        )}
+      </div>
+      <CalculadoraOrcamento calc={calc} setCalc={setCalc} isMobile={isMobile} config={config}/>
+    </div>
+  )
+}
+
 // Calculadora de Orçamento de Serviço (Agro Finance) — mesmos campos e fórmulas da
 // ferramenta original do Isaque (chimerical-flan-a7ccc2.netlify.app), só que no visual
 // claro do Orofly. Fórmulas conferidas número a número contra o print de referência:
@@ -5210,7 +5289,7 @@ function SecTitle({ children }) {
 // - Desgaste = tempoEstimado(h) × desgasteHora
 // - Preço sugerido/ha = custo/ha ÷ (1 - margem%)  [markup sobre o PREÇO, não sobre o custo —
 //   é por isso que 40% de margem em cima de R$18/ha dá R$30/ha, não R$25/ha]
-function CalculadoraOrcamento({ calc, setCalc, isMobile }) {
+function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
   const set = (k) => (e) => setCalc(c => ({ ...c, [k]: e.target.value }))
   const num = (v) => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n }
 
@@ -5224,18 +5303,20 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile }) {
   const margem = num(calc.margem)
   const precoMercado = num(calc.precoMercado)
 
-  const HORAS_POR_DIA = 8 // não veio campo pra isso na ferramenta original — jornada padrão
+  const HORAS_POR_DIA = config?.horasPorDia || 8
+  const MULT_DESLOCAMENTO = config?.multiplicadorDeslocamento || 2
+  const MARGEM_MAX = (config?.margemMaxPct ?? 95) / 100
   const tempoEstimado = rendimento > 0 ? areaTotal / rendimento : 0
   const dias = tempoEstimado > 0 ? Math.max(1, Math.ceil(tempoEstimado / HORAS_POR_DIA)) : 0
 
-  const kmIdaVolta = distancia * 2
+  const kmIdaVolta = distancia * MULT_DESLOCAMENTO
   const custoBaterias = tempoEstimado * custoBateriaHora
   const custoDeslocamento = kmIdaVolta * combustivelKm
   const custoDiarias = diaria * dias
   const custoDesgaste = tempoEstimado * desgasteHora
   const custoTotal = custoBaterias + custoDeslocamento + custoDiarias + custoDesgaste
   const custoPorHectare = areaTotal > 0 ? custoTotal / areaTotal : 0
-  const margemFrac = Math.min(0.95, Math.max(0, margem / 100))
+  const margemFrac = Math.min(MARGEM_MAX, Math.max(0, margem / 100))
   const precoSugeridoHa = margemFrac < 1 ? custoPorHectare / (1 - margemFrac) : 0
   const precoFinal = precoSugeridoHa * areaTotal
   const lucroEstimado = precoFinal - custoTotal
