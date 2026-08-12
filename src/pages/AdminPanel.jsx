@@ -4444,7 +4444,18 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                   <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:12,fontFamily:"'Syne',sans-serif"}}>+ Novo Agendamento</div>
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
-                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.piloto_id} onChange={e=>setAgendaForm(f=>({...f,piloto_id:e.target.value}))}>
+                    <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.piloto_id} onChange={e=>{
+                      const pilotoId = e.target.value
+                      // Sugere o drone e o carro que esse piloto costuma usar (último
+                      // agendamento dele com cada um definido), pra não precisar procurar de
+                      // novo toda vez — só preenche se o admin ainda não escolheu nada.
+                      const ultimoComDrone = [...agenda].filter(a=>a.piloto_id===pilotoId && a.drone).sort((a,b)=>new Date(b.data_prevista)-new Date(a.data_prevista))[0]
+                      const ultimoComCarro = [...agenda].filter(a=>a.piloto_id===pilotoId && a.veiculo_id).sort((a,b)=>new Date(b.data_prevista)-new Date(a.data_prevista))[0]
+                      setAgendaForm(f=>({...f,piloto_id:pilotoId,
+                        drone: f.drone || ultimoComDrone?.drone || '',
+                        veiculo_id: f.veiculo_id || ultimoComCarro?.veiculo_id || '',
+                      }))
+                    }}>
                       <option value="">Piloto...</option>
                       {pilotosAtivos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
                     </select>
@@ -4529,11 +4540,19 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
                     <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.drone} onChange={e=>setAgendaForm(f=>({...f,drone:e.target.value}))}>
                       <option value="">Drone (opcional)...</option>
-                      {invDrones.filter(d=>d.ativo!==false).map(d=><option key={d.id} value={d.nome}>{d.nome}</option>)}
+                      {invDrones.filter(d=>d.ativo!==false).map(d=>{
+                        const voando = relatorios.some(r=>r.status==='em_operacao' && r.drone===d.nome)
+                        const agendadoOutro = agendaForm.data_prevista && agenda.some(a=>a.status==='pendente' && a.drone===d.nome && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
+                        const tag = voando ? ' — 🔴 voando agora' : agendadoOutro ? ' — ⚠️ já agendado nesse dia' : ''
+                        return <option key={d.id} value={d.nome}>{d.nome}{tag}</option>
+                      })}
                     </select>
                     <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.veiculo_id} onChange={e=>setAgendaForm(f=>({...f,veiculo_id:e.target.value}))}>
                       <option value="">Carro (opcional)...</option>
-                      {veiculos.filter(v=>v.ativo!==false).map(v=><option key={v.id} value={v.id}>🚗 {v.placa}{v.modelo?` — ${v.modelo}`:''}</option>)}
+                      {veiculos.filter(v=>v.ativo!==false).map(v=>{
+                        const agendadoOutro = agendaForm.data_prevista && agenda.some(a=>a.status==='pendente' && a.veiculo_id===v.id && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
+                        return <option key={v.id} value={v.id}>🚗 {v.placa}{v.modelo?` — ${v.modelo}`:''}{agendadoOutro?' — ⚠️ já agendado nesse dia':''}</option>
+                      })}
                     </select>
                   </div>
 
@@ -4542,6 +4561,15 @@ export default function AdminPanel({ onSwitchMode }) {
                     return conflito ? (
                       <div style={{background:'#fff3e0',border:'1px solid #f2960f',borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:'#a3690a'}}>
                         ⚠️ Esse drone já está agendado pra {conflito.piloto_nome} nesse dia ({conflito.cliente} — {conflito.fazenda}).
+                      </div>
+                    ) : null
+                  })()}
+
+                  {agendaForm.veiculo_id && agendaForm.data_prevista && (()=>{
+                    const conflito = agenda.find(a=>a.status==='pendente' && a.veiculo_id===agendaForm.veiculo_id && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
+                    return conflito ? (
+                      <div style={{background:'#fff3e0',border:'1px solid #f2960f',borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:'#a3690a'}}>
+                        ⚠️ Esse carro já está agendado pra {conflito.piloto_nome} nesse dia ({conflito.cliente} — {conflito.fazenda}).
                       </div>
                     ) : null
                   })()}
