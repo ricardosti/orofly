@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useTheme } from '../lib/theme'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
@@ -15,8 +16,9 @@ import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
 const API_BASE = 'https://orofly.vercel.app'
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
-const STATUS_COLOR = { rascunho:'#5c7568', em_operacao:'#00A86B', pausado:'#f2960f', pausado_dia:'#1a1a2e', finalizado:'#2f6fed', sos:'#e5484d', sos_resolvido:'#5c7568' }
-const STATUS_BG    = { rascunho:'#F4F7F5', em_operacao:'#e3f7ec', pausado:'#fdf3e0', pausado_dia:'#e8e8f5', finalizado:'#e6f1fb', sos:'#fdeaea', sos_resolvido:'#F4F7F5' }
+// Funções (em vez de objeto fixo) porque as cores dependem do tema atual (claro/escuro)
+const statusColor = (theme) => ({ rascunho:theme.textMuted, em_operacao:'#00A86B', pausado:theme.warningText, pausado_dia:'#1a1a2e', finalizado:'#2f6fed', sos:theme.dangerText, sos_resolvido:theme.textMuted })
+const statusBg    = (theme) => ({ rascunho:theme.bg, em_operacao:theme.successBg, pausado:theme.warningBg2, pausado_dia:'#e8e8f5', finalizado:'#e6f1fb', sos:theme.dangerBg, sos_resolvido:theme.bg })
 const COND_KEYS    = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS  = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
@@ -40,31 +42,32 @@ function useIsMobile() {
 
 // Dropdown flutuante com checkboxes — substitui o <select multiple> nativo (feio e exige ctrl+clique)
 function MultiSelectDropdown({ label, options, selected, onChange }) {
+  const { theme } = useTheme()
   const [open, setOpen] = useState(false)
   const toggle = (opt) => onChange(selected.includes(opt) ? selected.filter(o => o !== opt) : [...selected, opt])
   return (
     <div style={{ position:'relative' }}>
-      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', marginBottom:3 }}>{label.toUpperCase()}</div>
+      <div style={{ fontSize:10, fontWeight:700, color:theme.textFaint2, marginBottom:3 }}>{label.toUpperCase()}</div>
       <div onClick={() => setOpen(o => !o)}
-        style={{ width:'100%', border:'1px solid #d7e6dc', borderRadius:8, padding:'7px 10px', fontSize:12, color:selected.length?'#0b1210':'#aaa', background:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', boxSizing:'border-box' }}>
+        style={{ width:'100%', border:`1px solid ${theme.cardBorder2}`, borderRadius:8, padding:'7px 10px', fontSize:12, color:selected.length?theme.text:'#aaa', background:theme.card, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'space-between', boxSizing:'border-box' }}>
         <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{selected.length ? `${selected.length} selecionado(s)` : 'Todos'}</span>
         <span style={{ color:'#aaa', fontSize:10, marginLeft:4, flexShrink:0 }}>{open ? '▲' : '▼'}</span>
       </div>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position:'fixed', inset:0, zIndex:90 }}/>
-          <div style={{ position:'absolute', top:'100%', left:0, right:0, marginTop:4, background:'#fff', border:'1px solid #d7e6dc', borderRadius:10, boxShadow:'0 10px 30px rgba(0,0,0,.18)', zIndex:91, padding:6, maxHeight:220, overflowY:'auto' }}>
+          <div style={{ position:'absolute', top:'100%', left:0, right:0, marginTop:4, background:theme.card, border:`1px solid ${theme.cardBorder2}`, borderRadius:10, boxShadow:'0 10px 30px rgba(0,0,0,.18)', zIndex:91, padding:6, maxHeight:220, overflowY:'auto' }}>
             {options.length === 0 ? (
               <div style={{ padding:10, fontSize:12, color:'#aaa', textAlign:'center' }}>Sem opções</div>
             ) : options.map(o => {
               const sel = selected.includes(o)
               return (
                 <div key={o} onClick={() => toggle(o)}
-                  style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 8px', cursor:'pointer', borderRadius:6, background:sel?'#e3f7ec':'transparent' }}>
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 8px', cursor:'pointer', borderRadius:6, background:sel?theme.successBg:'transparent' }}>
                   <div style={{ width:15, height:15, borderRadius:4, border:`2px solid ${sel?'#00A86B':'#c3d4c9'}`, background:sel?'#00A86B':'#fff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
                     {sel && <span style={{ color:'#fff', fontSize:9, fontWeight:700 }}>✓</span>}
                   </div>
-                  <span style={{ fontSize:12, color:'#0b1210' }}>{o}</span>
+                  <span style={{ fontSize:12, color:theme.text }}>{o}</span>
                 </div>
               )
             })}
@@ -76,6 +79,7 @@ function MultiSelectDropdown({ label, options, selected, onChange }) {
 }
 
 export default function AdminPanel({ onSwitchMode }) {
+  const { theme } = useTheme()
   const { profile, signOut, refreshProfile } = useAuth()
   const [confirmSair, setConfirmSair] = useState(false)
   const sairComConfirmacao = () => setConfirmSair(true)
@@ -904,7 +908,7 @@ export default function AdminPanel({ onSwitchMode }) {
   // por time (Equipes) quanto na permissão individual por piloto.
   function ChecklistFazendasPorCliente({ chavePrefixo, marcadas, onToggle }) {
     return (
-      <div style={{border:'1px solid #eef5f0',borderRadius:12,overflow:'hidden'}}>
+      <div style={{border:`1px solid ${theme.divider}`,borderRadius:12,overflow:'hidden'}}>
         {[...new Set(invFazendas.map(fz=>fz.cliente))].sort().map(cliente=>{
           const fazendasCli = invFazendas.filter(fz=>fz.cliente===cliente)
           const marcadasCli = fazendasCli.filter(fz=>marcadas.includes(fz.id)).length
@@ -914,16 +918,16 @@ export default function AdminPanel({ onSwitchMode }) {
             <div key={cliente} style={{borderBottom:'1px solid #f0f5f2'}}>
               <div onClick={()=>setEquipeClienteAberto(s=>({...s,[chave]:!aberto}))}
                 style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',cursor:'pointer',background:'#f9fbfa'}}>
-                <span style={{fontSize:12,fontWeight:700,color:'#0b1210'}}>🏢 {cliente}</span>
+                <span style={{fontSize:12,fontWeight:700,color:theme.text}}>🏢 {cliente}</span>
                 <span style={{fontSize:11,color:marcadasCli>0?'#00A86B':'#aaa',fontWeight:600}}>{marcadasCli>0?`${marcadasCli}/${fazendasCli.length} liberada(s)`:`${fazendasCli.length} fazenda(s)`} {aberto?'▲':'▼'}</span>
               </div>
               {aberto && fazendasCli.map(fz=>{
                 const ativo = marcadas.includes(fz.id)
                 return (
                   <div key={fz.id} onClick={()=>onToggle(fz.id)}
-                    style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px 7px 26px',cursor:'pointer',fontSize:12,background:ativo?'#e3f7ec':'#fff',borderTop:'1px solid #f7fbf8'}}>
+                    style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px 7px 26px',cursor:'pointer',fontSize:12,background:ativo?theme.successBg:'#fff',borderTop:'1px solid #f7fbf8'}}>
                     <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${ativo?'#00A86B':'#c3d4c9'}`,background:ativo?'#00A86B':'#fff',flexShrink:0}}/>
-                    <span style={{color:ativo?'#0b1210':'#5c7568',fontWeight:ativo?600:400}}>{fz.nome}</span>
+                    <span style={{color:ativo?theme.text:theme.textMuted,fontWeight:ativo?600:400}}>{fz.nome}</span>
                   </div>
                 )
               })}
@@ -1002,7 +1006,7 @@ export default function AdminPanel({ onSwitchMode }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c476" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
           <span style={{ fontFamily:"'Syne',sans-serif", fontSize: 19, fontWeight: 700, color: '#fff', letterSpacing: -0.5 }}>Orofly<span style={{ color: '#ffb020' }}>.</span></span>
-          <span style={{ background: '#ffb020', color: '#0b1210', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6 }}>ADMIN</span>
+          <span style={{ background: '#ffb020', color: theme.text, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6 }}>ADMIN</span>
         </div>
         <div style={{ fontSize: 10, color: pushAtivo ? '#22c476' : '#4a6e56', letterSpacing: 1 }}>
           {pushAtivo ? '🔔 Notificações ativas' : 'Painel de Administração'}
@@ -1011,7 +1015,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
       {/* ALERTA SOS */}
       {sosAtivos.length > 0 && (
-        <div style={{ margin: '0 12px 8px', background: '#e5484d', borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }} onClick={() => setTab('mapa')}>
+        <div style={{ margin: '0 12px 8px', background: theme.dangerText, borderRadius: 10, padding: '10px 12px', cursor: 'pointer' }} onClick={() => setTab('mapa')}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>🆘 {sosAtivos.length} SOS ATIVO{sosAtivos.length > 1 ? 'S' : ''}</div>
           <div style={{ fontSize: 11, color: '#fcc', marginTop: 2 }}>Toque para ver no mapa</div>
         </div>
@@ -1051,11 +1055,11 @@ export default function AdminPanel({ onSwitchMode }) {
           <div key={secao} style={{marginBottom:14}}>
             <div style={{fontSize:9,fontWeight:700,color:'#4a6e56',letterSpacing:1.2,padding:'0 12px',marginBottom:6}}>{secao}</div>
             {itens.map(([id, icon, lbl, cnt]) => (
-              <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#00A86B,#00875A)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':'#7ba38f', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
+              <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#00A86B,#00875A)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':theme.textFaint2, fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
                 onClick={() => { setTab(id); setSidebarOpen(false) }}>
                 <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{icon}</span>
                 <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
-                {cnt!==''&&<span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?'#0b1210':'#5c7568', fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>}
+                {cnt!==''&&<span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?theme.text:theme.textMuted, fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>}
               </button>
             ))}
           </div>
@@ -1065,8 +1069,8 @@ export default function AdminPanel({ onSwitchMode }) {
       <div style={{ padding:'10px 20px', borderTop:'1px solid #1e3828', borderBottom:'1px solid #1e3828', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4 }}>
         {[
           ['Em voo', relatorios.filter(r=>r.status==='em_operacao').length, '#22c476'],
-          ['Pausados', relatorios.filter(r=>r.status==='pausado').length, '#f2960f'],
-          ['SOS', sosAtivos.length, '#e5484d']
+          ['Pausados', relatorios.filter(r=>r.status==='pausado').length, theme.warningText],
+          ['SOS', sosAtivos.length, theme.dangerText]
         ].map(([lbl,val,cor]) => (
           <div key={lbl} style={{ textAlign:'center' }}>
             <div style={{ fontFamily:"'Syne',sans-serif", fontSize:18, fontWeight:700, color:cor }}>{val}</div>
@@ -1076,9 +1080,9 @@ export default function AdminPanel({ onSwitchMode }) {
       </div>
 
       <div style={{ padding:'14px 20px' }}>
-        <button style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8, background:'transparent', border:'1px solid #1e3828', color:'#7ba38f', borderRadius:16, padding:'8px', fontSize:12, cursor:'pointer', marginBottom:10, position:'relative' }} onClick={()=>setShowNotifs(true)}>
+        <button style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8, background:'transparent', border:'1px solid #1e3828', color:theme.textFaint2, borderRadius:16, padding:'8px', fontSize:12, cursor:'pointer', marginBottom:10, position:'relative' }} onClick={()=>setShowNotifs(true)}>
           🔔 Notificações
-          {notifNaoVistas>0 && <span style={{ background:'#e5484d', color:'#fff', fontSize:10, fontWeight:700, borderRadius:20, minWidth:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
+          {notifNaoVistas>0 && <span style={{ background:theme.dangerText, color:'#fff', fontSize:10, fontWeight:700, borderRadius:20, minWidth:16, height:16, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px' }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
         </button>
         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10, cursor:'pointer' }} onClick={()=>setShowPerfil(true)}>
           <div style={{ width:30, height:30, borderRadius:'50%', background:'#00A86B', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:13, overflow:'hidden', flexShrink:0 }}>
@@ -1086,12 +1090,12 @@ export default function AdminPanel({ onSwitchMode }) {
           </div>
           <div>
             <div style={{ fontSize:12, fontWeight:500, color:'#fff' }}>{profile?.nome}</div>
-            <div style={{ fontSize:10, color:'#7ba38f' }}>Admin</div>
+            <div style={{ fontSize:10, color:theme.textFaint2 }}>Admin</div>
           </div>
         </div>
-        <button style={{ width:'100%', background:'transparent', border:'1px solid #1e3828', color:'#7ba38f', borderRadius:16, padding:'7px', fontSize:12, cursor:'pointer', marginBottom:8 }} onClick={()=>setShowPerfil(true)}>⚙️ Meu Perfil</button>
+        <button style={{ width:'100%', background:'transparent', border:'1px solid #1e3828', color:theme.textFaint2, borderRadius:16, padding:'7px', fontSize:12, cursor:'pointer', marginBottom:8 }} onClick={()=>setShowPerfil(true)}>⚙️ Meu Perfil</button>
         {onSwitchMode && (
-          <button style={{ width:'100%', background:'#ffb020', border:'none', color:'#0b1210', borderRadius:16, padding:'8px', fontSize:12, cursor:'pointer', fontFamily:"'Syne',sans-serif", fontWeight:700, marginBottom:8 }} onClick={onSwitchMode}>
+          <button style={{ width:'100%', background:'#ffb020', border:'none', color:theme.text, borderRadius:16, padding:'8px', fontSize:12, cursor:'pointer', fontFamily:"'Syne',sans-serif", fontWeight:700, marginBottom:8 }} onClick={onSwitchMode}>
             🚁 Modo Piloto
           </button>
         )}
@@ -1102,17 +1106,17 @@ export default function AdminPanel({ onSwitchMode }) {
   )
 
   return (
-    <div style={{ display:'flex', minHeight:'100vh', background:'#F4F7F5', fontFamily:"'DM Sans',sans-serif" }}>
+    <div style={{ display:'flex', minHeight:'100vh', background:theme.bg, fontFamily:"'DM Sans',sans-serif" }}>
 
       {!isMobile && (
-        <aside style={{ width:240, background:'linear-gradient(180deg,#0b1210 0%,#0a1613 100%)', display:'flex', flexDirection:'column', position:'sticky', top:0, height:'100vh', flexShrink:0, overflowY:'auto' }}>
+        <aside style={{ width:240, background:`linear-gradient(180deg,${theme.text} 0%,#0a1613 100%)`, display:'flex', flexDirection:'column', position:'sticky', top:0, height:'100vh', flexShrink:0, overflowY:'auto' }}>
           <NavContent />
         </aside>
       )}
 
       {isMobile && sidebarOpen && (
         <div style={{ position:'fixed', inset:0, zIndex:200, display:'flex' }}>
-          <div style={{ width:260, background:'#0b1210', display:'flex', flexDirection:'column', overflowY:'auto' }}><NavContent /></div>
+          <div style={{ width:260, background:theme.text, display:'flex', flexDirection:'column', overflowY:'auto' }}><NavContent /></div>
           <div style={{ flex:1, background:'rgba(0,0,0,.5)' }} onClick={() => setSidebarOpen(false)} />
         </div>
       )}
@@ -1120,22 +1124,22 @@ export default function AdminPanel({ onSwitchMode }) {
       <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0 }}>
 
         {isMobile && (
-          <div style={{ background:'#0b1210', padding:'11px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:100 }}>
+          <div style={{ background:theme.text, padding:'11px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:100 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <button style={{ background:'transparent', border:'none', color:'#7ba38f', fontSize:22, cursor:'pointer' }} onClick={() => setSidebarOpen(true)}>☰</button>
+              <button style={{ background:'transparent', border:'none', color:theme.textFaint2, fontSize:22, cursor:'pointer' }} onClick={() => setSidebarOpen(true)}>☰</button>
               <span style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, color:'#fff' }}>Orofly<span style={{ color:'#ffb020' }}>.</span></span>
-              {sosAtivos.length > 0 && <span style={{ background:'#e5484d', color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20 }}>🆘 {sosAtivos.length}</span>}
+              {sosAtivos.length > 0 && <span style={{ background:theme.dangerText, color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20 }}>🆘 {sosAtivos.length}</span>}
             </div>
             <div style={{ display:'flex', gap:6 }}>
               {(isSupervisor ? [['agenda','📅'],['pilotos','👥']] : [['relatorios','📋'],['dashboard','📊'],['mapa','🗺️'],['inventario','📦'],['pilotos','👥']]).map(([id,ic]) => (
-                <button key={id} style={{ background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:16, padding:'6px 10px', cursor:'pointer', fontSize:16, color: tab===id?'#fff':'#7ba38f' }} onClick={() => setTab(id)}>{ic}</button>
+                <button key={id} style={{ background: tab===id?'#1a3a22':'transparent', border:'none', borderRadius:16, padding:'6px 10px', cursor:'pointer', fontSize:16, color: tab===id?'#fff':theme.textFaint2 }} onClick={() => setTab(id)}>{ic}</button>
               ))}
               {onSwitchMode && <button style={{ background:'#ffb020', border:'none', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:700 }} onClick={onSwitchMode}>🚁</button>}
-              <button style={{ position:'relative', background:'transparent', border:'1px solid #2d4a38', color:'#7ba38f', borderRadius:16, padding:'5px 10px', fontSize:14, cursor:'pointer' }} onClick={()=>setShowNotifs(true)}>
+              <button style={{ position:'relative', background:'transparent', border:'1px solid #2d4a38', color:theme.textFaint2, borderRadius:16, padding:'5px 10px', fontSize:14, cursor:'pointer' }} onClick={()=>setShowNotifs(true)}>
                 🔔
-                {notifNaoVistas>0 && <span style={{ position:'absolute', top:-4, right:-4, background:'#e5484d', color:'#fff', fontSize:9, fontWeight:700, borderRadius:20, minWidth:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
+                {notifNaoVistas>0 && <span style={{ position:'absolute', top:-4, right:-4, background:theme.dangerText, color:'#fff', fontSize:9, fontWeight:700, borderRadius:20, minWidth:14, height:14, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 3px' }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
               </button>
-              <button style={{ background:'transparent', border:'1px solid #2d4a38', color:'#7ba38f', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer' }} onClick={sairComConfirmacao}>Sair</button>
+              <button style={{ background:'transparent', border:'1px solid #2d4a38', color:theme.textFaint2, borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer' }} onClick={sairComConfirmacao}>Sair</button>
             </div>
           </div>
         )}
@@ -1147,12 +1151,12 @@ export default function AdminPanel({ onSwitchMode }) {
             <div>
               <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-end', flexWrap:'wrap', gap:10 }}>
                 <div>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>Relatórios de Voo</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>Relatórios de Voo</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end' }}>
                   {relatorios.some(r=>r.status==='rascunho') && (
-                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                    <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                       onClick={excluirTodosRascunhos}>🗑️ Excluir todos os rascunhos</button>
                   )}
                   {relatorios.some(r=>r.teste) && (()=>{
@@ -1162,23 +1166,23 @@ export default function AdminPanel({ onSwitchMode }) {
                     const resumo = Object.entries(porStatus).map(([st,n])=>`${STATUS_LABEL[st]||st}: ${n}`).join(' · ')
                     return (
                       <div style={{textAlign:'right'}}>
-                        <button style={{background:'#fff3e0',color:'#a3690a',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                        <button style={{background:theme.warningBg,color:theme.warningText2,border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                           onClick={excluirTodosTestes}>🧪 Excluir todos os testes ({testes.length})</button>
-                        <div style={{fontSize:10,color:'#a3690a',marginTop:3}}>{resumo}</div>
+                        <div style={{fontSize:10,color:theme.warningText2,marginTop:3}}>{resumo}</div>
                       </div>
                     )
                   })()}
                 </div>
               </div>
               {sosAtivos.length > 0 && (
-                <div style={{ background:'#fdeaea', border:'2px solid #e5484d', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:'#e5484d', marginBottom:8 }}>🆘 SOS ATIVOS — {sosAtivos.length} alerta(s)</div>
+                <div style={{ background:theme.dangerBg, border:`2px solid ${theme.dangerText}`, borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:theme.dangerText, marginBottom:8 }}>🆘 SOS ATIVOS — {sosAtivos.length} alerta(s)</div>
                   {sosAtivos.map(r => (
                     <div key={r.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingBottom:8, borderBottom:'1px solid #f5c6c6' }}>
                       <div>
-                        <div style={{ fontSize:13, color:'#0b1210', fontWeight:600 }}>{r.piloto_nome} — {r.cliente||'sem cliente'}</div>
-                        <div style={{ fontSize:11, color:'#e5484d', marginTop:2 }}>{r.obs1}</div>
-                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ fontSize:11, color:'#e5484d', fontWeight:600 }}>📍 Ver localização</a>}
+                        <div style={{ fontSize:13, color:theme.text, fontWeight:600 }}>{r.piloto_nome} — {r.cliente||'sem cliente'}</div>
+                        <div style={{ fontSize:11, color:theme.dangerText, marginTop:2 }}>{r.obs1}</div>
+                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ fontSize:11, color:theme.dangerText, fontWeight:600 }}>📍 Ver localização</a>}
                       </div>
                       <button
                         style={{ background:'#00A86B', color:'#fff', border:'none', borderRadius:16, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }}
@@ -1191,7 +1195,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
 
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d7e6dc', alignItems:'center' }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:theme.card, padding:12, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
                 {[['Cliente','cliente'],['Fazenda','fazenda'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
@@ -1205,47 +1209,47 @@ export default function AdminPanel({ onSwitchMode }) {
                   <option value="rascunho">Rascunho</option>
                 </select>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>De:</span>
+                  <span style={{ fontSize:11, color:theme.textMuted, whiteSpace:'nowrap' }}>De:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>Até:</span>
+                  <span style={{ fontSize:11, color:theme.textMuted, whiteSpace:'nowrap' }}>Até:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
-              {loading ? <div style={{ textAlign:'center', color:'#5c7568', padding:40 }}>Carregando...</div>
-              : filtered.length === 0 ? <div style={{ textAlign:'center', color:'#5c7568', padding:40 }}>Nenhum relatório</div>
+              {loading ? <div style={{ textAlign:'center', color:theme.textMuted, padding:40 }}>Carregando...</div>
+              : filtered.length === 0 ? <div style={{ textAlign:'center', color:theme.textMuted, padding:40 }}>Nenhum relatório</div>
               : isMobile ? (
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   {filtered.map(rel => {
                     const tempo = calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)
                     const isSel = selected?.id === rel.id
                     return (
-                      <div key={rel.id} style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#e5484d':isSel?'#00A86B':'#d7e6dc'}`, overflow:'hidden' }}>
+                      <div key={rel.id} style={{ background:theme.card, borderRadius:12, border:`1px solid ${rel.status==='sos'?theme.dangerText:isSel?'#00A86B':theme.cardBorder2}`, overflow:'hidden' }}>
                         <div style={{ padding:'13px 15px', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
                           <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
-                            <div style={{ fontWeight:600, fontSize:14, color:'#0b1210' }}>{rel.cliente||'—'}</div>
-                            <span style={{ background: STATUS_BG[rel.status]||'#F4F7F5', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                            <div style={{ fontWeight:600, fontSize:14, color:theme.text }}>{rel.cliente||'—'}</div>
+                            <span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                           </div>
-                          <div style={{ fontSize:12, color:'#5c7568' }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}{rel.ordem_servico?` · OS ${rel.ordem_servico}`:''}</div>
+                          <div style={{ fontSize:12, color:theme.textMuted }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}{rel.ordem_servico?` · OS ${rel.ordem_servico}`:''}</div>
                           <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}</div>
                         </div>
                         {isSel && (
-                          <div style={{ padding:'10px 15px', borderTop:'1px solid #eef5f0', background:'#f7fbf8' }}>
+                          <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
                             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: (rel.kml_arquivos?.length > 0) ? 10 : 0 }}>
                               <button style={sG.actBtn('#2f6fed')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
                               <button style={sG.actBtn('#22c476')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢 Cliente</button>
                               <button style={sG.actBtn('#1a5fa5')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝 Word</button>
                               {rel.gps_lat && <a style={{ ...sG.actBtn('#00A86B'), textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer">🗺️</a>}
-                              <button style={sG.actBtn('#e5484d')} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
+                              <button style={sG.actBtn(theme.dangerText)} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
                             </div>
                             {(() => {
                               const totalCustos = custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0)
-                              return totalCustos>0 && <div style={{ fontSize:12, color:'#5c7568', marginBottom:10 }}>💰 Despesas vinculadas: <strong style={{color:'#00A86B'}}>R$ {totalCustos.toFixed(2)}</strong></div>
+                              return totalCustos>0 && <div style={{ fontSize:12, color:theme.textMuted, marginBottom:10 }}>💰 Despesas vinculadas: <strong style={{color:'#00A86B'}}>R$ {totalCustos.toFixed(2)}</strong></div>
                             })()}
                             {/* KML no mobile */}
                             {rel.kml_arquivos?.length > 0 && (
@@ -1258,13 +1262,13 @@ export default function AdminPanel({ onSwitchMode }) {
                   })}
                 </div>
               ) : (
-                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden' }}>
+                <div style={{ background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden' }}>
                   <div style={{ overflowX:'auto' }}>
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead>
-                        <tr style={{ background:'#F4F7F5' }}>
+                        <tr style={{ background:theme.bg }}>
                           {['Cliente','Fazenda','Piloto','Drone','Status','Data','Tempo','Custo','Ações'].map(h => (
-                            <th key={h} style={{ padding:'11px 14px', textAlign:'left', fontSize:11, fontWeight:700, color:'#5c7568', letterSpacing:0.5, borderBottom:'1px solid #d7e6dc', whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>{h}</th>
+                            <th key={h} style={{ padding:'11px 14px', textAlign:'left', fontSize:11, fontWeight:700, color:theme.textMuted, letterSpacing:0.5, borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1274,17 +1278,17 @@ export default function AdminPanel({ onSwitchMode }) {
                           const isSel = selected?.id === rel.id
                           return (
                             <React.Fragment key={rel.id}>
-                              <tr style={{ background: rel.status==='sos'?'#fdeaea':isSel?'#e3f7ec':i%2===0?'#fff':'#f7fbf8', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
+                              <tr style={{ background: rel.status==='sos'?theme.dangerBg:isSel?theme.successBg:i%2===0?'#fff':'#f7fbf8', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
                                 <td style={{ ...sG.td, fontWeight:600 }}>{rel.cliente||'—'}</td>
                                 <td style={sG.td}>
                                   {rel.fazenda||'—'}
                                   {rel.ordem_servico && (
                                     <div>
-                                      <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:'#5c7568',background:'#eef5f0',padding:'1px 6px',borderRadius:20}}>OS {rel.ordem_servico}</span>
+                                      <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>OS {rel.ordem_servico}</span>
                                     </div>
                                   )}
                                   {(rel.tipo_servico||(rel.qtd_voos&&rel.qtd_voos>1)) && (
-                                    <div style={{fontSize:10,color:'#7ba38f',marginTop:1}}>
+                                    <div style={{fontSize:10,color:theme.textFaint2,marginTop:1}}>
                                       {rel.tipo_servico&&(rel.tipo_servico==='catacao'?'Catação':'Área Total')}
                                       {rel.tipo_servico&&rel.qtd_voos>1?' · ':''}
                                       {rel.qtd_voos>1?`${rel.qtd_voos} voos`:''}
@@ -1293,17 +1297,17 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </td>
                                 <td style={sG.td}>{rel.piloto_nome||'—'}</td>
                                 <td style={sG.td}>{rel.drone||'—'}</td>
-                                <td style={sG.td}><span style={{ background: STATUS_BG[rel.status]||'#F4F7F5', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
+                                <td style={sG.td}><span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
                                 <td style={sG.td}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</td>
-                                <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:'#5c7568' }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
-                                <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:'#f2960f'}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
+                                <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:theme.textMuted }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
+                                <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:theme.warningText}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
                                   <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
                                   <button title="Enviar relatório no WhatsApp" style={{...sG.iconBtn,color:'#25D366'}} onClick={e => { e.stopPropagation(); enviarWhatsApp(rel) }}>💬</button>
                                   <button title="PDF Cliente" style={{...sG.iconBtn,color:'#22c476'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
                                   <button title="Word / Google Docs" style={{...sG.iconBtn,color:'#2f6fed'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝</button>
                                   {rel.gps_lat && <a title="Maps" style={{ ...sG.iconBtn, textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>🗺️</a>}
-                                  <button title="Deletar" style={{ ...sG.iconBtn, color:'#e5484d' }} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
+                                  <button title="Deletar" style={{ ...sG.iconBtn, color:theme.dangerText }} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
                                 </td>
                               </tr>
                               {isSel && (() => {
@@ -1312,7 +1316,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 const CAT_ICON = CATEGORIA_ICON
                                 return (
                                 <tr>
-                                  <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:'2px solid #d7e6dc', padding:0 }}>
+                                  <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:`2px solid ${theme.cardBorder2}`, padding:0 }}>
                                     <div style={{ display:'flex', gap:20, padding:'16px 20px', flexWrap:'wrap' }}>
                                       <DetailCol title="Localização" items={[['Local',rel.localizacao],['GPS',rel.gps_lat?`${rel.gps_lat}, ${rel.gps_lng}`:'—']]} />
                                       <DetailCol title="Cond. Início" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_i']])} />
@@ -1322,19 +1326,19 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <div style={{minWidth:200,flex:1}}>
                                         <div style={{fontSize:10,fontWeight:700,color:'#00A86B',letterSpacing:1,marginBottom:5,fontFamily:"'Syne',sans-serif"}}>CUSTO DO VOO</div>
                                         {custosVinculados.length===0 ? (
-                                          <div style={{fontSize:11,color:'#5c7568'}}>—</div>
+                                          <div style={{fontSize:11,color:theme.textMuted}}>—</div>
                                         ) : (
                                           <>
-                                            <div style={{fontSize:11,fontWeight:700,color:'#0b1210',marginBottom:6}}>Total: R$ {totalCustos.toFixed(2)} ({custosVinculados.length})</div>
+                                            <div style={{fontSize:11,fontWeight:700,color:theme.text,marginBottom:6}}>Total: R$ {totalCustos.toFixed(2)} ({custosVinculados.length})</div>
                                             {custosVinculados.map(c=>(
-                                              <div key={c.id} style={{fontSize:11,marginBottom:6,paddingBottom:6,borderBottom:'1px solid #dcebe3',cursor:'pointer'}}
+                                              <div key={c.id} style={{fontSize:11,marginBottom:6,paddingBottom:6,borderBottom:`1px solid ${theme.cardBorder}`,cursor:'pointer'}}
                                                 onClick={()=>{setTab('custos');setCustosSubTab('notas');setCustosFiltros(f=>({...f,piloto:c.piloto_nome||''}))}}>
                                                 <div style={{display:'flex',justifyContent:'space-between'}}>
-                                                  <span style={{color:'#0b1210',fontWeight:600}}>{CAT_ICON[c.categoria]||'🧾'} {c.categoria}</span>
+                                                  <span style={{color:theme.text,fontWeight:600}}>{CAT_ICON[c.categoria]||'🧾'} {c.categoria}</span>
                                                   <span style={{color:'#00A86B',fontWeight:700}}>R$ {parseFloat(c.valor||0).toFixed(2)}</span>
                                                 </div>
-                                                <div style={{color:'#7ba38f',marginTop:2}}>{c.piloto_nome||'—'} · {new Date(c.data).toLocaleDateString('pt-BR')}</div>
-                                                {c.observacao && <div style={{color:'#5c7568',marginTop:2,fontStyle:'italic'}}>{c.observacao}</div>}
+                                                <div style={{color:theme.textFaint2,marginTop:2}}>{c.piloto_nome||'—'} · {new Date(c.data).toLocaleDateString('pt-BR')}</div>
+                                                {c.observacao && <div style={{color:theme.textMuted,marginTop:2,fontStyle:'italic'}}>{c.observacao}</div>}
                                               </div>
                                             ))}
                                           </>
@@ -1543,15 +1547,15 @@ export default function AdminPanel({ onSwitchMode }) {
               })
             })
 
-            const COLORS = ['#00A86B','#22c476','#ffb020','#2f6fed','#8e44ad','#f2960f','#e5484d','#5c7568']
+            const COLORS = ['#00A86B','#22c476','#ffb020','#2f6fed','#8e44ad',theme.warningText,theme.dangerText,theme.textMuted]
 
             const Card = ({title,value,sub,color='#00A86B',icon}) => (
-              <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'18px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                   <div>
-                    <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
+                    <div style={{fontSize:11,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
                     <div style={{fontSize:isMobile?22:28,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{value}</div>
-                    {sub&&<div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>{sub}</div>}
+                    {sub&&<div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>{sub}</div>}
                   </div>
                   {icon&&<div style={{width:44,height:44,borderRadius:14,background:color+'1a',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>{icon}</div>}
                 </div>
@@ -1560,7 +1564,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
             const SecTitle = ({children,action}) => (
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210'}}>{children}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text}}>{children}</div>
                 {action}
               </div>
             )
@@ -1568,59 +1572,59 @@ export default function AdminPanel({ onSwitchMode }) {
             return (
               <div>
                 {/* ── Breadcrumb + título ── */}
-                <div style={{fontSize:11,color:'#7ba38f',fontWeight:600,marginBottom:4}}>Início / Dashboard</div>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#0b1210',marginBottom:16}}>Visão Geral</div>
+                <div style={{fontSize:11,color:theme.textFaint2,fontWeight:600,marginBottom:4}}>Início / Dashboard</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:theme.text,marginBottom:16}}>Visão Geral</div>
 
                 {/* ── RESUMO EXECUTIVO (visão geral ao vivo, independente dos filtros abaixo) ── */}
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
-                  <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
                     <span style={{width:44,height:44,borderRadius:12,background:'#00A86B',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🌱</span>
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>ÁREA PULVERIZADA ESTE ANO</div>
-                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{areaEsteAno.toFixed(1)} ha</div>
+                      <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,letterSpacing:.3}}>ÁREA PULVERIZADA ESTE ANO</div>
+                      <div style={{fontSize:19,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{areaEsteAno.toFixed(1)} ha</div>
                     </div>
                   </div>
-                  <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
                     <span style={{width:44,height:44,borderRadius:12,background:'#2f6fed',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>⏱️</span>
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>TOTAL HORAS VOO ANO</div>
-                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{fmtH(minutosAno)}</div>
+                      <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,letterSpacing:.3}}>TOTAL HORAS VOO ANO</div>
+                      <div style={{fontSize:19,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{fmtH(minutosAno)}</div>
                     </div>
                   </div>
-                  <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                  <div style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
                     <span style={{width:44,height:44,borderRadius:12,background:'#8e44ad',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🧑‍✈️</span>
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>PILOTOS ATIVOS AGORA</div>
-                      <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{pilotosAtivosAgora}</div>
+                      <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,letterSpacing:.3}}>PILOTOS ATIVOS AGORA</div>
+                      <div style={{fontSize:19,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif",fontVariantNumeric:'tabular-nums'}}>{pilotosAtivosAgora}</div>
                     </div>
                   </div>
-                  <div style={{background:'#fff',borderRadius:16,border:`1px solid ${dronesEmManutencao>0?'#f2960f':'#dcebe3'}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
-                    <span style={{width:44,height:44,borderRadius:12,background:dronesEmManutencao>0?'#f2960f':'#5c7568',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔧</span>
+                  <div style={{background:theme.card,borderRadius:16,border:`1px solid ${dronesEmManutencao>0?theme.warningText:theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)',display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{width:44,height:44,borderRadius:12,background:dronesEmManutencao>0?theme.warningText:theme.textMuted,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🔧</span>
                     <div style={{minWidth:0,flex:1}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',letterSpacing:.3}}>DRONES EM MANUTENÇÃO</div>
+                      <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,letterSpacing:.3}}>DRONES EM MANUTENÇÃO</div>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
-                        <div style={{fontSize:19,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{dronesEmManutencao}</div>
-                        {dronesEmManutencao>0&&<span style={{background:'#f2960f',color:'#fff',fontSize:9,fontWeight:700,padding:'2px 8px',borderRadius:20}}>PRIORIDADE</span>}
+                        <div style={{fontSize:19,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>{dronesEmManutencao}</div>
+                        {dronesEmManutencao>0&&<span style={{background:theme.warningText,color:'#fff',fontSize:9,fontWeight:700,padding:'2px 8px',borderRadius:20}}>PRIORIDADE</span>}
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* ── FILTROS ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',marginBottom:16}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,marginBottom:12,color:'#0b1210'}}>🔍 Filtros</div>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'16px',marginBottom:16}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,marginBottom:12,color:theme.text}}>🔍 Filtros</div>
                   {/* Período */}
                   <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
                     {[['hoje','Hoje'],['semana','7 dias'],['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano'],['custom','Personalizado']].map(([v,l])=>(
-                      <button key={v} style={{background:dashPeriodo===v?'#00A86B':'#F4F7F5',color:dashPeriodo===v?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                      <button key={v} style={{background:dashPeriodo===v?'#00A86B':theme.bg,color:dashPeriodo===v?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'5px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                         onClick={()=>setDashPeriodo(v)}>{l}</button>
                     ))}
                   </div>
                   {dashPeriodo==='custom'&&(
                     <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
-                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataIni} onChange={e=>setDashDataIni(e.target.value)}/>
-                      <span style={{alignSelf:'center',color:'#7ba38f'}}>até</span>
-                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataFim} onChange={e=>setDashDataFim(e.target.value)}/>
+                      <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataIni} onChange={e=>setDashDataIni(e.target.value)}/>
+                      <span style={{alignSelf:'center',color:theme.textFaint2}}>até</span>
+                      <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={dashDataFim} onChange={e=>setDashDataFim(e.target.value)}/>
                     </div>
                   )}
                   {/* Multi-select filters */}
@@ -1636,7 +1640,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     ))}
                   </div>
                   {(dashClientes.length||dashPilotos.length||dashDrones.length||dashFazendas.length||dashProdutos.length)>0&&(
-                    <button style={{marginTop:8,background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'4px 12px',fontSize:12,cursor:'pointer'}}
+                    <button style={{marginTop:8,background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'4px 12px',fontSize:12,cursor:'pointer'}}
                       onClick={()=>{setDashClientes([]);setDashPilotos([]);setDashDrones([]);setDashFazendas([]);setDashProdutos([])}}>✕ Limpar filtros</button>
                   )}
                 </div>
@@ -1647,15 +1651,15 @@ export default function AdminPanel({ onSwitchMode }) {
                   <Card title="HORAS VOADAS" value={fmtH(totalMins)} sub={`${eficiencia} ha/h eficiência`} color="#2f6fed" icon="⏱️"/>
                   <Card title="PILOTOS ATIVOS" value={Object.keys(pilotoStats).length} sub="no período" color="#8e44ad" icon="👨‍✈️"/>
                   <Card title="RECEITA (PREÇO CLIENTE)" value={receitaClientes.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})} sub={voosComPreco>0?`${voosComPreco} voo(s) com preço cadastrado`:'nenhum cliente com preço cadastrado'} color="#00A86B" icon="💵"/>
-                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
-                    <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>💰 PREÇO / HA</div>
+                  <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'16px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+                    <div style={{fontSize:11,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:8,fontFamily:"'Syne',sans-serif"}}>💰 PREÇO / HA</div>
                     <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
-                      <span style={{fontSize:13,color:'#5c7568',fontWeight:600}}>R$</span>
+                      <span style={{fontSize:13,color:theme.textMuted,fontWeight:600}}>R$</span>
                       <input
                         type="number"
                         value={precoHa||''}
                         placeholder="0,00"
-                        style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:18,fontWeight:700,color:'#f2960f',outline:'none',textAlign:'right',width:'100%'}}
+                        style={{flex:1,border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 10px',fontSize:18,fontWeight:700,color:theme.warningText,outline:'none',textAlign:'right',width:'100%'}}
                         onChange={e=>{
                           const v=parseFloat(e.target.value)||0
                           setPrecoHa(v)
@@ -1664,7 +1668,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
                     {precoHa>0
                       ? <div style={{fontSize:11,color:'#00A86B',fontWeight:600}}>= {(totalArea*precoHa).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
-                      : <div style={{fontSize:10,color:'#7ba38f'}}>Digite o valor por hectare</div>
+                      : <div style={{fontSize:10,color:theme.textFaint2}}>Digite o valor por hectare</div>
                     }
                   </div>
                 </div>
@@ -1673,15 +1677,15 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
                   <Card title="PROJEÇÃO MÊS" value={projecaoMes+' ha'} sub={`+${projecaoRestante} ha previstos`} color="#22c476" icon="📈"/>
                   <Card title="MÉDIA DIÁRIA" value={ritmoHa.toFixed(1)+' ha/dia'} sub="no período" color="#2f6fed" icon="📅"/>
-                  <Card title="MÉDIA POR VOO" value={totalVoos>0?(totalArea/totalVoos).toFixed(1)+' ha':'—'} sub="eficiência/voo" color="#f2960f" icon="✈️"/>
-                  <Card title="DRONES EM USO" value={Object.keys(droneStats).length} sub={`${relatorios.filter(r=>r.status==='em_operacao').length} voando agora`} color="#e5484d" icon="🚁"/>
+                  <Card title="MÉDIA POR VOO" value={totalVoos>0?(totalArea/totalVoos).toFixed(1)+' ha':'—'} sub="eficiência/voo" color={theme.warningText} icon="✈️"/>
+                  <Card title="DRONES EM USO" value={Object.keys(droneStats).length} sub={`${relatorios.filter(r=>r.status==='em_operacao').length} voando agora`} color={theme.dangerText} icon="🚁"/>
                 </div>
 
 
                 {/* ── GRÁFICO TIMELINE ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>📈 Área Aplicada ao Longo do Tempo (ha)</SecTitle>
-                  {areaTimeline.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                  {areaTimeline.length===0 ? <div style={{color:theme.textFaint2,fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
                     <ResponsiveContainer width="100%" height={200}>
                       <AreaChart data={areaTimeline} margin={{top:5,right:10,left:-20,bottom:5}}>
                         <defs>
@@ -1690,10 +1694,10 @@ export default function AdminPanel({ onSwitchMode }) {
                             <stop offset="95%" stopColor="#00A86B" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                        <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false}/>
-                        <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                        <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                        <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                        <XAxis dataKey="dia" tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false}/>
+                        <YAxis tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false} axisLine={false}/>
+                        <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
                         <Area type="monotone" dataKey="area" stroke="#00A86B" strokeWidth={2} fill="url(#gradArea)"/>
                       </AreaChart>
                     </ResponsiveContainer>
@@ -1702,23 +1706,23 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* ── GRÁFICOS CLIENTES + PRODUTOS ── */}
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16,marginBottom:16}}>
-                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px'}}>
+                  <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px'}}>
                     <SecTitle>🏢 Área por Cliente (ha)</SecTitle>
-                    {topClientes.length===0 ? <div style={{color:'#7ba38f',fontSize:13}}>Sem dados</div> : (
+                    {topClientes.length===0 ? <div style={{color:theme.textFaint2,fontSize:13}}>Sem dados</div> : (
                       <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={topClientes} layout="vertical" margin={{top:0,right:10,left:10,bottom:0}}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0" horizontal={false}/>
-                          <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#5c7568'}} tickLine={false} width={70}/>
-                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke={theme.divider} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false} axisLine={false}/>
+                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:theme.textMuted}} tickLine={false} width={70}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
                           <Bar dataKey="value" fill="#00A86B" radius={[0,6,6,0]}/>
                         </BarChart>
                       </ResponsiveContainer>
                     )}
                   </div>
-                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px'}}>
+                  <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px'}}>
                     <SecTitle>🧪 Produtos Mais Aplicados (ha)</SecTitle>
-                    {topProdutos.length===0 ? <div style={{color:'#7ba38f',fontSize:13}}>Sem dados</div> : (() => {
+                    {topProdutos.length===0 ? <div style={{color:theme.textFaint2,fontSize:13}}>Sem dados</div> : (() => {
                       const totalProdutos = topProdutos.reduce((a,p)=>a+p.value,0)
                       return (
                         <ResponsiveContainer width="100%" height={200}>
@@ -1735,39 +1739,39 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── RANKING FAZENDAS ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>🌾 Área por Fazenda</SecTitle>
-                  {rankingFazendas.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                  {rankingFazendas.length===0 ? <div style={{color:theme.textFaint2,fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
                     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
                       <ResponsiveContainer width="100%" height={220}>
                         <BarChart data={fazendasChart} layout="vertical" margin={{top:0,right:10,left:10,bottom:0}}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0" horizontal={false}/>
-                          <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:'#5c7568'}} tickLine={false} width={90}/>
-                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke={theme.divider} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false} axisLine={false}/>
+                          <YAxis dataKey="name" type="category" tick={{fontSize:10,fill:theme.textMuted}} tickLine={false} width={90}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
                           <Bar dataKey="value" fill="#00A86B" radius={[0,6,6,0]}/>
                         </BarChart>
                       </ResponsiveContainer>
                       <div style={{overflowX:'auto'}}>
                         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                           <thead>
-                            <tr style={{background:'#F4F7F5'}}>
+                            <tr style={{background:theme.bg}}>
                               {['#','Fazenda','Cliente','Voos','ha','% total'].map(h=>(
-                                <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                                <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>{h}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {rankingFazendas.map(([nome,s],i)=>(
                               <tr key={nome} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
-                                <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':'#7ba38f'}}>
+                                <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':theme.textFaint2}}>
                                   {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}
                                 </td>
                                 <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
-                                <td style={{padding:'8px 10px',color:'#5c7568'}}>{s.cliente}</td>
-                                <td style={{padding:'8px 10px',color:'#5c7568'}}>{s.voos}</td>
+                                <td style={{padding:'8px 10px',color:theme.textMuted}}>{s.cliente}</td>
+                                <td style={{padding:'8px 10px',color:theme.textMuted}}>{s.voos}</td>
                                 <td style={{padding:'8px 10px',fontWeight:700,color:'#00A86B'}}>{s.area.toFixed(1)}</td>
-                                <td style={{padding:'8px 10px',color:'#5c7568'}}>{totalArea>0?((s.area/totalArea)*100).toFixed(0):0}%</td>
+                                <td style={{padding:'8px 10px',color:theme.textMuted}}>{totalArea>0?((s.area/totalArea)*100).toFixed(0):0}%</td>
                               </tr>
                             ))}
                           </tbody>
@@ -1778,17 +1782,17 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── RANKING PILOTOS ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>🏆 Performance de Pilotos</SecTitle>
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16}}>
                     <div>
-                      <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>ÁREA VOADA (ha)</div>
+                      <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:10,fontFamily:"'Syne',sans-serif"}}>ÁREA VOADA (ha)</div>
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={pilotosChart} margin={{top:0,right:0,left:-30,bottom:0}}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                          <XAxis dataKey="name" tick={{fontSize:10,fill:'#5c7568'}} tickLine={false}/>
-                          <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                          <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                          <XAxis dataKey="name" tick={{fontSize:10,fill:theme.textMuted}} tickLine={false}/>
+                          <YAxis tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false} axisLine={false}/>
+                          <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={(v)=>[v+' ha','Área']}/>
                           <Bar dataKey="area" radius={[6,6,0,0]}>
                             {pilotosChart.map((_,i)=><Cell key={i} fill={i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':COLORS[0]}/>)}
                           </Bar>
@@ -1798,22 +1802,22 @@ export default function AdminPanel({ onSwitchMode }) {
                     <div style={{overflowX:'auto'}}>
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                         <thead>
-                          <tr style={{background:'#F4F7F5'}}>
+                          <tr style={{background:theme.bg}}>
                             {['#','Piloto','Voos','ha','ha/h'].map(h=>(
-                              <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                              <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {rankingPilotos.map(([nome,st],i)=>(
                             <tr key={nome} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
-                              <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':'#7ba38f'}}>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#ffb020':i===1?'#aaa':i===2?'#cd7f32':theme.textFaint2}}>
                                 {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}
                               </td>
                               <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
-                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.voos}</td>
+                              <td style={{padding:'8px 10px',color:theme.textMuted}}>{st.voos}</td>
                               <td style={{padding:'8px 10px',fontWeight:700,color:'#00A86B'}}>{st.area.toFixed(1)}</td>
-                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.minutos>0?(st.area/(st.minutos/60)).toFixed(1):'—'}</td>
+                              <td style={{padding:'8px 10px',color:theme.textMuted}}>{st.minutos>0?(st.area/(st.minutos/60)).toFixed(1):'—'}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1823,32 +1827,32 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── HEATMAP DIAS DA SEMANA ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8,marginBottom:4}}>
                     <SecTitle>📅 Produtividade por Dia da Semana</SecTitle>
                     <div style={{display:'flex',gap:6}}>
                       {Object.entries(HEAT_METRICA_INFO).map(([key,info])=>(
-                        <button key={key} style={{background:heatMetrica===key?'#00A86B':'#F4F7F5',color:heatMetrica===key?'#fff':'#5c7568',border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                        <button key={key} style={{background:heatMetrica===key?'#00A86B':theme.bg,color:heatMetrica===key?'#fff':theme.textMuted,border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
                           onClick={()=>setHeatMetrica(key)}>{info.label}</button>
                       ))}
                     </div>
                   </div>
                   <ResponsiveContainer width="100%" height={120}>
                     <BarChart data={heatData} margin={{top:5,right:10,left:-30,bottom:5}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                      <XAxis dataKey="dia" tick={{fontSize:11,fill:'#5c7568'}} tickLine={false}/>
-                      <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                      <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={(v)=>[`${v}${HEAT_METRICA_INFO[heatMetrica].unidade?' '+HEAT_METRICA_INFO[heatMetrica].unidade:''}`,HEAT_METRICA_INFO[heatMetrica].label]}/>
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                      <XAxis dataKey="dia" tick={{fontSize:11,fill:theme.textMuted}} tickLine={false}/>
+                      <YAxis tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false} axisLine={false}/>
+                      <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={(v)=>[`${v}${HEAT_METRICA_INFO[heatMetrica].unidade?' '+HEAT_METRICA_INFO[heatMetrica].unidade:''}`,HEAT_METRICA_INFO[heatMetrica].label]}/>
                       <Bar dataKey={heatMetrica} radius={[6,6,0,0]}>
                         {heatData.map((entry,i)=><Cell key={i} fill={entry[heatMetrica]===Math.max(...heatData.map(d=>d[heatMetrica]))?'#ffb020':'#00A86B'}/>)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
-                  <div style={{fontSize:11,color:'#7ba38f',textAlign:'center',marginTop:4}}>⭐ Dia mais produtivo: {heatData.reduce((a,b)=>a[heatMetrica]>b[heatMetrica]?a:b,{[heatMetrica]:0,dia:'—'}).dia}</div>
+                  <div style={{fontSize:11,color:theme.textFaint2,textAlign:'center',marginTop:4}}>⭐ Dia mais produtivo: {heatData.reduce((a,b)=>a[heatMetrica]>b[heatMetrica]?a:b,{[heatMetrica]:0,dia:'—'}).dia}</div>
                 </div>
 
                 {/* ── DRONES + MANUTENÇÃO ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>🚁 Controle de Horas por Drone</SecTitle>
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
                     {Object.entries(droneStats).sort((a,b)=>b[1].minutos-a[1].minutos).map(([drone,st])=>{
@@ -1856,68 +1860,68 @@ export default function AdminPanel({ onSwitchMode }) {
                       const limite=droneHorasLimite[drone]||100
                       const pct=Math.min(100,(horas/limite)*100)
                       const alerta=pct>=90, aviso=pct>=70&&pct<90
-                      const cor=alerta?'#e5484d':aviso?'#f2960f':'#00A86B'
+                      const cor=alerta?theme.dangerText:aviso?theme.warningText:'#00A86B'
                       // Previsão de quando vai bater o limite
                       const horasPorVoo = st.voos>0 ? horas/st.voos : 0
                       const voosRestantes = horasPorVoo>0 ? Math.floor((limite-horas)/horasPorVoo) : null
                       return (
-                        <div key={drone} style={{background:alerta?'#fdeaea':aviso?'#fdf3e0':'#f7fbf8',borderRadius:10,padding:'12px 14px',border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#dcebe3'}`}}>
+                        <div key={drone} style={{background:alerta?theme.dangerBg:aviso?theme.warningBg2:'#f7fbf8',borderRadius:10,padding:'12px 14px',border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':theme.cardBorder}`}}>
                           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,flexWrap:'wrap',gap:6}}>
                             <div>
                               <span style={{fontWeight:600,fontSize:14}}>{drone}</span>
-                              {alerta&&<span style={{marginLeft:8,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
-                              {aviso&&!alerta&&<span style={{marginLeft:8,background:'#f2960f',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
-                              {voosRestantes!==null&&!alerta&&<span style={{marginLeft:8,fontSize:11,color:'#7ba38f'}}>~{voosRestantes} voos para manutenção</span>}
+                              {alerta&&<span style={{marginLeft:8,background:theme.dangerText,color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
+                              {aviso&&!alerta&&<span style={{marginLeft:8,background:theme.warningText,color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
+                              {voosRestantes!==null&&!alerta&&<span style={{marginLeft:8,fontSize:11,color:theme.textFaint2}}>~{voosRestantes} voos para manutenção</span>}
                             </div>
                             <div style={{display:'flex',alignItems:'center',gap:8}}>
                               <span style={{fontWeight:700,color:cor}}>{fmtH(st.minutos)}</span>
-                              <span style={{color:'#7ba38f',fontSize:12}}>/</span>
-                              <input type="number" value={limite} min={1} style={{width:60,border:'1px solid #d7e6dc',borderRadius:6,padding:'3px 6px',fontSize:12,textAlign:'center',outline:'none'}}
+                              <span style={{color:theme.textFaint2,fontSize:12}}>/</span>
+                              <input type="number" value={limite} min={1} style={{width:60,border:`1px solid ${theme.cardBorder2}`,borderRadius:6,padding:'3px 6px',fontSize:12,textAlign:'center',outline:'none'}}
                                 onChange={e=>{const n={...droneHorasLimite,[drone]:parseInt(e.target.value)||100};setDroneHorasLimite(n);localStorage.setItem('orofly_drone_horas',JSON.stringify(n))}}/>
-                              <span style={{fontSize:11,color:'#7ba38f'}}>h</span>
+                              <span style={{fontSize:11,color:theme.textFaint2}}>h</span>
                             </div>
                           </div>
                           <div style={{background:'#e0e0e0',borderRadius:20,height:8,overflow:'hidden'}}>
                             <div style={{background:`linear-gradient(90deg,${cor},${cor}bb)`,height:'100%',borderRadius:20,width:`${pct}%`,transition:'width .5s'}}/>
                           </div>
-                          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#7ba38f',marginTop:4}}>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:theme.textFaint2,marginTop:4}}>
                             <span>{st.voos} voos registrados</span>
                             <span>{pct.toFixed(0)}% do limite</span>
                           </div>
                         </div>
                       )
                     })}
-                    {Object.keys(droneStats).length===0&&<div style={{color:'#7ba38f',fontSize:13}}>Nenhum dado de drone ainda</div>}
+                    {Object.keys(droneStats).length===0&&<div style={{color:theme.textFaint2,fontSize:13}}>Nenhum dado de drone ainda</div>}
                   </div>
                 </div>
 
                 {/* ── WORKING DAYS + FORECAST SEMANAL ── */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'20px',marginBottom:16}}>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>📅 Working Days &amp; Forecast Mensal</SecTitle>
 
                   {/* Config */}
-                  <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16,padding:'12px',background:'#F4F7F5',borderRadius:10}}>
+                  <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:16,padding:'12px',background:theme.bg,borderRadius:10}}>
                     <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                      <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>DIAS ÚTEIS/ANO</label>
-                      <input type="number" value={workingDaysAnual} style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,width:80,outline:'none',textAlign:'center'}}
+                      <label style={{fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>DIAS ÚTEIS/ANO</label>
+                      <input type="number" value={workingDaysAnual} style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 10px',fontSize:13,width:80,outline:'none',textAlign:'center'}}
                         onChange={e=>{const v=parseInt(e.target.value)||144;setWorkingDaysAnual(v);localStorage.setItem('orofly_working_days',v)}}/>
-                      <span style={{fontSize:10,color:'#7ba38f'}}>≈ {workingDaysMes} dias/mês</span>
+                      <span style={{fontSize:10,color:theme.textFaint2}}>≈ {workingDaysMes} dias/mês</span>
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                      <label style={{fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>META MENSAL (ha)</label>
-                      <input type="number" value={metaMensalHa||''} placeholder="Ex: 5000" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,width:100,outline:'none',textAlign:'center'}}
+                      <label style={{fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>META MENSAL (ha)</label>
+                      <input type="number" value={metaMensalHa||''} placeholder="Ex: 5000" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 10px',fontSize:13,width:100,outline:'none',textAlign:'center'}}
                         onChange={e=>{const v=parseFloat(e.target.value)||0;setMetaMensalHa(v);localStorage.setItem('orofly_meta_mensal',v)}}/>
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:4,justifyContent:'flex-end'}}>
-                      <div style={{fontSize:12,color:'#5c7568'}}>Working days decorridos: <strong style={{color:'#00A86B'}}>{workingDaysDecorridos}</strong></div>
-                      <div style={{fontSize:12,color:'#5c7568'}}>Working days restantes: <strong style={{color:'#2f6fed'}}>{workingDaysRestantes}</strong></div>
-                      <div style={{fontSize:12,color:'#5c7568'}}>ha/dia útil: <strong style={{color:'#00A86B'}}>{haPerWorkingDay.toFixed(1)}</strong></div>
+                      <div style={{fontSize:12,color:theme.textMuted}}>Working days decorridos: <strong style={{color:'#00A86B'}}>{workingDaysDecorridos}</strong></div>
+                      <div style={{fontSize:12,color:theme.textMuted}}>Working days restantes: <strong style={{color:'#2f6fed'}}>{workingDaysRestantes}</strong></div>
+                      <div style={{fontSize:12,color:theme.textMuted}}>ha/dia útil: <strong style={{color:'#00A86B'}}>{haPerWorkingDay.toFixed(1)}</strong></div>
                     </div>
                     {taxaAtingimentoMeta && (
                       <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,marginLeft:'auto'}}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>PREVISÃO META</div>
-                        <div style={{fontSize:28,fontWeight:700,color:parseInt(taxaAtingimentoMeta)>=100?'#00A86B':parseInt(taxaAtingimentoMeta)>=70?'#f2960f':'#e5484d',fontFamily:"'Syne',sans-serif"}}>{taxaAtingimentoMeta}%</div>
-                        <div style={{fontSize:10,color:'#7ba38f'}}>{projecaoWorkingDay} / {metaMensalHa} ha</div>
+                        <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>PREVISÃO META</div>
+                        <div style={{fontSize:28,fontWeight:700,color:parseInt(taxaAtingimentoMeta)>=100?'#00A86B':parseInt(taxaAtingimentoMeta)>=70?theme.warningText:theme.dangerText,fontFamily:"'Syne',sans-serif"}}>{taxaAtingimentoMeta}%</div>
+                        <div style={{fontSize:10,color:theme.textFaint2}}>{projecaoWorkingDay} / {metaMensalHa} ha</div>
                       </div>
                     )}
                   </div>
@@ -1926,9 +1930,9 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{overflowX:'auto'}}>
                     <table style={{width:'100%',borderCollapse:'collapse',minWidth:400}}>
                       <thead>
-                        <tr style={{background:'#F4F7F5'}}>
+                        <tr style={{background:theme.bg}}>
                           {['Semana','Período','Realizado (ha)','Planejado (ha)','% Meta','Status'].map(h=>(
-                            <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
+                            <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1936,19 +1940,19 @@ export default function AdminPanel({ onSwitchMode }) {
                         {semanas.map(({s,label,iniSem,fimSem,realizado,planejado,isCurrent,isPast})=>{
                           const pct = planejado>0 ? ((realizado/planejado)*100).toFixed(0) : '—'
                           const pctNum = parseInt(pct)
-                          const corPct = pctNum>=100?'#00A86B':pctNum>=70?'#f2960f':'#e5484d'
+                          const corPct = pctNum>=100?'#00A86B':pctNum>=70?theme.warningText:theme.dangerText
                           const fmtSemData = d => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`
                           return (
-                            <tr key={s} style={{background:isCurrent?'#e3f7ec':s%2===0?'#f7fbf8':'#fff',fontWeight:isCurrent?600:400}}>
+                            <tr key={s} style={{background:isCurrent?theme.successBg:s%2===0?'#f7fbf8':'#fff',fontWeight:isCurrent?600:400}}>
                               <td style={{padding:'9px 10px',fontSize:13}}>
-                                <span style={{background:isCurrent?'#00A86B':isPast?'#d7e6dc':'#F4F7F5',color:isCurrent?'#fff':isPast?'#5c7568':'#7ba38f',padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:700}}>{label}</span>
+                                <span style={{background:isCurrent?'#00A86B':isPast?theme.cardBorder2:theme.bg,color:isCurrent?'#fff':isPast?theme.textMuted:theme.textFaint2,padding:'2px 8px',borderRadius:20,fontSize:11,fontWeight:700}}>{label}</span>
                                 {isCurrent&&<span style={{marginLeft:6,fontSize:10,color:'#00A86B'}}>← atual</span>}
                               </td>
-                              <td style={{padding:'9px 10px',fontSize:12,color:'#5c7568'}}>{fmtSemData(iniSem)} – {fmtSemData(fimSem)}</td>
-                              <td style={{padding:'9px 10px',fontSize:14,fontWeight:700,color:isPast||isCurrent?'#0b1210':'#aaa'}}>
+                              <td style={{padding:'9px 10px',fontSize:12,color:theme.textMuted}}>{fmtSemData(iniSem)} – {fmtSemData(fimSem)}</td>
+                              <td style={{padding:'9px 10px',fontSize:14,fontWeight:700,color:isPast||isCurrent?theme.text:'#aaa'}}>
                                 {isPast||isCurrent ? realizado : <span style={{color:'#ccc'}}>—</span>}
                               </td>
-                              <td style={{padding:'9px 10px',fontSize:13,color:'#5c7568'}}>{planejado}</td>
+                              <td style={{padding:'9px 10px',fontSize:13,color:theme.textMuted}}>{planejado}</td>
                               <td style={{padding:'9px 10px'}}>
                                 {(isPast||isCurrent)&&pct!=='—'&&(
                                   <div>
@@ -1966,11 +1970,11 @@ export default function AdminPanel({ onSwitchMode }) {
                           )
                         })}
                         {/* Total */}
-                        <tr style={{background:'#F4F7F5',fontWeight:700,borderTop:'2px solid #d7e6dc'}}>
-                          <td colSpan={2} style={{padding:'10px',fontSize:12,fontFamily:"'Syne',sans-serif",color:'#0b1210'}}>TOTAL DO MÊS</td>
+                        <tr style={{background:theme.bg,fontWeight:700,borderTop:`2px solid ${theme.cardBorder2}`}}>
+                          <td colSpan={2} style={{padding:'10px',fontSize:12,fontFamily:"'Syne',sans-serif",color:theme.text}}>TOTAL DO MÊS</td>
                           <td style={{padding:'10px',fontSize:14,color:'#00A86B'}}>{totalArea.toFixed(1)}</td>
-                          <td style={{padding:'10px',fontSize:13,color:'#5c7568'}}>{metaMensalHa||projecaoMes}</td>
-                          <td colSpan={2} style={{padding:'10px',fontSize:13,color:taxaAtingimentoMeta&&parseInt(taxaAtingimentoMeta)>=100?'#00A86B':'#f2960f'}}>
+                          <td style={{padding:'10px',fontSize:13,color:theme.textMuted}}>{metaMensalHa||projecaoMes}</td>
+                          <td colSpan={2} style={{padding:'10px',fontSize:13,color:taxaAtingimentoMeta&&parseInt(taxaAtingimentoMeta)>=100?'#00A86B':theme.warningText}}>
                             {taxaAtingimentoMeta ? `Previsão: ${taxaAtingimentoMeta}% da meta` : `Projeção: ${projecaoMes} ha`}
                           </td>
                         </tr>
@@ -1980,7 +1984,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* ── ANÁLISE PREDITIVA ── */}
-                <div style={{background:'linear-gradient(135deg,#0b1210,#00A86B)',borderRadius:14,padding:'20px',marginBottom:16,color:'#fff'}}>
+                <div style={{background:`linear-gradient(135deg,${theme.text},#00A86B)`,borderRadius:14,padding:'20px',marginBottom:16,color:'#fff'}}>
                   <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,marginBottom:14}}>🔮 Análise Preditiva</div>
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:12}}>
                     <div style={{background:'rgba(255,255,255,.08)',borderRadius:10,padding:14}}>
@@ -2087,12 +2091,12 @@ export default function AdminPanel({ onSwitchMode }) {
             ]
 
             const KpiCard = ({title,value,sub,color='#00A86B',icon}) => (
-              <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:'18px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
+              <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'18px',boxShadow:'0 1px 4px rgba(0,0,0,.04)'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                   <div>
-                    <div style={{fontSize:11,fontWeight:600,color:'#7ba38f',letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
+                    <div style={{fontSize:11,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
                     <div style={{fontSize:isMobile?20:24,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1.1}}>{value}</div>
-                    {sub&&<div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>{sub}</div>}
+                    {sub&&<div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>{sub}</div>}
                   </div>
                   {icon&&<div style={{width:40,height:40,borderRadius:12,background:color+'1a',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{icon}</div>}
                 </div>
@@ -2102,7 +2106,7 @@ export default function AdminPanel({ onSwitchMode }) {
             return (
               <div>
                 {/* HERO */}
-                <div style={{background:'linear-gradient(135deg,#0b1210,#00A86B)',borderRadius:20,padding:isMobile?'22px 18px':'28px 26px',marginBottom:20,color:'#fff',position:'relative',overflow:'hidden'}}>
+                <div style={{background:`linear-gradient(135deg,${theme.text},#00A86B)`,borderRadius:20,padding:isMobile?'22px 18px':'28px 26px',marginBottom:20,color:'#fff',position:'relative',overflow:'hidden'}}>
                   <div style={{position:'absolute',top:-40,right:-30,width:180,height:180,borderRadius:'50%',background:'rgba(255,255,255,0.07)'}}/>
                   <div style={{position:'absolute',bottom:-30,left:-20,width:120,height:120,borderRadius:'50%',background:'rgba(255,176,32,0.12)'}}/>
                   <div style={{position:'relative'}}>
@@ -2113,18 +2117,18 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* Filtro de período */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16,marginBottom:16}}>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:16}}>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                     {[['mes','Este mês'],['trimestre','Trimestre'],['ano','Este ano'],['custom','Personalizado']].map(([v,l])=>(
-                      <button key={v} style={{background:sustPeriodo===v?'#00A86B':'#F4F7F5',color:sustPeriodo===v?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'6px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                      <button key={v} style={{background:sustPeriodo===v?'#00A86B':theme.bg,color:sustPeriodo===v?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'6px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                         onClick={()=>setSustPeriodo(v)}>{l}</button>
                     ))}
                   </div>
                   {sustPeriodo==='custom' && (
                     <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
-                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={sustDataIni} onChange={e=>setSustDataIni(e.target.value)}/>
-                      <span style={{alignSelf:'center',color:'#7ba38f'}}>até</span>
-                      <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={sustDataFim} onChange={e=>setSustDataFim(e.target.value)}/>
+                      <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={sustDataIni} onChange={e=>setSustDataIni(e.target.value)}/>
+                      <span style={{alignSelf:'center',color:theme.textFaint2}}>até</span>
+                      <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 10px',fontSize:13,outline:'none'}} value={sustDataFim} onChange={e=>setSustDataFim(e.target.value)}/>
                     </div>
                   )}
                 </div>
@@ -2138,16 +2142,16 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
 
                 {/* Comparativo de consumo por hectare */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:14}}>⛽ Consumo de Combustível por Hectare — Comparativo</div>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:20,marginBottom:16}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:14}}>⛽ Consumo de Combustível por Hectare — Comparativo</div>
                   <ResponsiveContainer width="100%" height={180}>
                     <BarChart data={comparativo} layout="vertical" margin={{top:0,right:30,left:10,bottom:0}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0" horizontal={false}/>
-                      <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}} unit=" L/ha"/>
-                      <YAxis type="category" dataKey="name" width={150} tick={{fontSize:12,fill:'#5c7568'}}/>
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme.divider} horizontal={false}/>
+                      <XAxis type="number" tick={{fontSize:10,fill:theme.textFaint2}} unit=" L/ha"/>
+                      <YAxis type="category" dataKey="name" width={150} tick={{fontSize:12,fill:theme.textMuted}}/>
                       <Tooltip formatter={v=>[v+' L/ha','Consumo']}/>
                       <Bar dataKey="lha" radius={[0,6,6,0]}>
-                        {comparativo.map((c,i)=><Cell key={i} fill={i===0?'#e5484d':i===1?'#f2960f':'#00A86B'}/>)}
+                        {comparativo.map((c,i)=><Cell key={i} fill={i===0?theme.dangerText:i===1?theme.warningText:'#00A86B'}/>)}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -2155,8 +2159,8 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Evolução mensal de CO2 evitado */}
                 {serieMensal.length>0 && (
-                  <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:14}}>📈 CO₂ Evitado ao Longo do Tempo (kg)</div>
+                  <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:20,marginBottom:16}}>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:14}}>📈 CO₂ Evitado ao Longo do Tempo (kg)</div>
                     <ResponsiveContainer width="100%" height={200}>
                       <AreaChart data={serieMensal} margin={{top:5,right:10,left:-20,bottom:5}}>
                         <defs>
@@ -2165,9 +2169,9 @@ export default function AdminPanel({ onSwitchMode }) {
                             <stop offset="95%" stopColor="#00A86B" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                        <XAxis dataKey="mes" tick={{fontSize:10,fill:'#7ba38f'}}/>
-                        <YAxis tick={{fontSize:10,fill:'#7ba38f'}}/>
+                        <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                        <XAxis dataKey="mes" tick={{fontSize:10,fill:theme.textFaint2}}/>
+                        <YAxis tick={{fontSize:10,fill:theme.textFaint2}}/>
                         <Tooltip formatter={v=>[v+' kg','CO₂ evitado']}/>
                         <Area type="monotone" dataKey="co2" stroke="#00A86B" strokeWidth={2} fill="url(#gradCo2)"/>
                       </AreaChart>
@@ -2176,14 +2180,14 @@ export default function AdminPanel({ onSwitchMode }) {
                 )}
 
                 {/* Comparativo secundário: pulverização terrestre */}
-                <div style={{background:'#F4F7F5',borderRadius:14,padding:16,marginBottom:16,fontSize:12,color:'#5c7568'}}>
+                <div style={{background:theme.bg,borderRadius:14,padding:16,marginBottom:16,fontSize:12,color:theme.textMuted}}>
                   Para referência: comparado à <strong>pulverização terrestre</strong> (não à aviação), o drone evitaria aproximadamente <strong style={{color:'#00A86B'}}>{co2TerrestreKg.toLocaleString('pt-BR',{maximumFractionDigits:0})} kg de CO₂</strong> no mesmo período — a pulverização terrestre já é bem mais eficiente que o avião, então essa comparação tende a ser mais conservadora.
                 </div>
 
                 {/* Premissas / metodologia (editável) */}
-                <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
-                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:6}}>⚙️ Premissas do Cálculo (ajustáveis)</div>
-                  <div style={{fontSize:12,color:'#5c7568',marginBottom:14}}>Valores de referência do setor — ajuste se tiver dados mais precisos da sua operação ou de um parecer técnico.</div>
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:20,marginBottom:16}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:6}}>⚙️ Premissas do Cálculo (ajustáveis)</div>
+                  <div style={{fontSize:12,color:theme.textMuted,marginBottom:14}}>Valores de referência do setor — ajuste se tiver dados mais precisos da sua operação ou de um parecer técnico.</div>
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(3,1fr)',gap:14}}>
                     {[
                       ['Avião agrícola (L/ha)', sustAviacaoLha, setSustAviacaoLha, 'orofly_sust_aviacao_lha'],
@@ -2193,8 +2197,8 @@ export default function AdminPanel({ onSwitchMode }) {
                       ['Combustível drone/gerador (L/ha)', sustDroneLha, setSustDroneLha, 'orofly_sust_drone_lha'],
                     ].map(([lbl,val,setVal,key])=>(
                       <div key={key}>
-                        <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4}}>{lbl.toUpperCase()}</div>
-                        <input type="number" step="0.01" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                        <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>{lbl.toUpperCase()}</div>
+                        <input type="number" step="0.01" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                           value={val} onChange={e=>{const v=parseFloat(e.target.value)||0;setVal(v);localStorage.setItem(key,v)}}/>
                       </div>
                     ))}
@@ -2212,21 +2216,21 @@ export default function AdminPanel({ onSwitchMode }) {
             <div>
               <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
                 <div>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>🗺️ Mapa de Voos</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{filtered.filter(r=>r.gps_lat).length} voos com GPS · atualiza a cada 30s</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>🗺️ Mapa de Voos</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{filtered.filter(r=>r.gps_lat).length} voos com GPS · atualiza a cada 30s</div>
                 </div>
               </div>
 
               <div style={{display:'flex',gap:8,marginBottom:16}}>
                 {[['voos','✈️ Voos'],['operacoes','📍 Operações']].map(([id,lbl])=>(
-                  <button key={id} style={{background:mapaSubTab===id?'#00A86B':'#F4F7F5',color:mapaSubTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                  <button key={id} style={{background:mapaSubTab===id?'#00A86B':theme.bg,color:mapaSubTab===id?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                     onClick={()=>setMapaSubTab(id)}>{lbl}</button>
                 ))}
               </div>
 
               {mapaSubTab==='operacoes' && (
                 <div>
-                  <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:'10px 14px',marginBottom:14,fontSize:12,color:'#5c7568'}}>
+                  <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:'10px 14px',marginBottom:14,fontSize:12,color:theme.textMuted}}>
                     Mostra onde os pilotos logaram (azul) e onde iniciaram voos (verde), com um raio de 10km em cada ponto — círculos sobrepostos indicam áreas de operação concentrada.
                   </div>
                   <MapaOperacoes logins={gpsLogins} voos={relatorios.filter(r=>r.gps_lat)} height={isMobile?300:520}/>
@@ -2235,13 +2239,13 @@ export default function AdminPanel({ onSwitchMode }) {
 
               {mapaSubTab==='voos' && (<>
               {sosAtivos.length > 0 && (
-                <div style={{ background:'#fdeaea', border:'2px solid #e5484d', borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
-                  <div style={{ fontSize:14, fontWeight:700, color:'#e5484d', marginBottom:8 }}>🆘 SOS ATIVOS</div>
+                <div style={{ background:theme.dangerBg, border:`2px solid ${theme.dangerText}`, borderRadius:12, padding:'12px 16px', marginBottom:14 }}>
+                  <div style={{ fontSize:14, fontWeight:700, color:theme.dangerText, marginBottom:8 }}>🆘 SOS ATIVOS</div>
                   {sosAtivos.map(r => (
                     <div key={r.id} style={{ fontSize:13, display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, paddingBottom:8, borderBottom:'1px solid #f5c6c6' }}>
                       <div>
                         <div style={{ fontWeight:600 }}>{r.piloto_nome} — {r.obs1}</div>
-                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ color:'#e5484d', fontWeight:600, fontSize:12 }}>📍 Abrir no Maps</a>}
+                        {r.gps_lat && <a href={`https://maps.google.com/?q=${r.gps_lat},${r.gps_lng}`} target="_blank" rel="noreferrer" style={{ color:theme.dangerText, fontWeight:600, fontSize:12 }}>📍 Abrir no Maps</a>}
                       </div>
                       <button style={{ background:'#00A86B', color:'#fff', border:'none', borderRadius:16, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', marginLeft:12 }} onClick={() => resolverSOS(r)}>✅ Resolver</button>
                     </div>
@@ -2249,7 +2253,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
 
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d7e6dc', alignItems:'center' }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:theme.card, padding:12, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
                 {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
@@ -2263,15 +2267,15 @@ export default function AdminPanel({ onSwitchMode }) {
                   <option value="rascunho">Rascunho</option>
                 </select>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>De:</span>
+                  <span style={{ fontSize:11, color:theme.textMuted, whiteSpace:'nowrap' }}>De:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
                 </div>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                  <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>Até:</span>
+                  <span style={{ fontSize:11, color:theme.textMuted, whiteSpace:'nowrap' }}>Até:</span>
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -2285,22 +2289,22 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:16 }}>
                     {filtered.filter(r => r.gps_lat).map(rel => (
                       <div key={rel.id} onClick={()=>setMapaResumo(rel)}
-                        style={{ background:'#fff', borderRadius:12, border:`1px solid ${rel.status==='sos'?'#e5484d':'#d7e6dc'}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}>
+                        style={{ background:theme.card, borderRadius:12, border:`1px solid ${rel.status==='sos'?theme.dangerText:theme.cardBorder2}`, padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer' }}>
                         <div>
-                          <div style={{ fontWeight:600, fontSize:13, color:'#0b1210' }}>{rel.cliente||'—'} — {rel.piloto_nome}</div>
-                          <div style={{ fontSize:11, color:'#5c7568', marginTop:2 }}>{rel.gps_lat}, {rel.gps_lng} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
+                          <div style={{ fontWeight:600, fontSize:13, color:theme.text }}>{rel.cliente||'—'} — {rel.piloto_nome}</div>
+                          <div style={{ fontSize:11, color:theme.textMuted, marginTop:2 }}>{rel.gps_lat}, {rel.gps_lng} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</div>
                         </div>
                         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                          <span style={{ background: STATUS_BG[rel.status]||'#F4F7F5', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                          <span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                           <a href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ background:'#00A86B', color:'#fff', borderRadius:8, padding:'5px 10px', fontSize:12, textDecoration:'none', whiteSpace:'nowrap' }}>📍 Ver</a>
-                          <span style={{ color:'#7ba38f' }}>›</span>
+                          <span style={{ color:theme.textFaint2 }}>›</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </>
               ) : (
-                <div style={{ textAlign:'center', color:'#5c7568', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
+                <div style={{ textAlign:'center', color:theme.textMuted, padding:60, background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}` }}>
                   <div style={{ fontSize:40, marginBottom:12 }}>🗺️</div>
                   <div style={{ fontSize:15, fontWeight:600, marginBottom:8 }}>Nenhum voo com GPS</div>
                   <div style={{ fontSize:13 }}>Os voos aparecerão aqui quando os pilotos capturarem o GPS durante a operação.</div>
@@ -2313,15 +2317,15 @@ export default function AdminPanel({ onSwitchMode }) {
           {/* RESUMO RÁPIDO — clicou num ponto do mapa */}
           {mapaResumo && (
             <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setMapaResumo(null)}>
-              <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:420,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
+              <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:420,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
                   <div>
                     <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>{mapaResumo.cliente||'—'} — {mapaResumo.fazenda||'—'}</div>
-                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>👨‍✈️ {mapaResumo.piloto_nome||'—'}</div>
+                    <div style={{fontSize:12,color:theme.textMuted,marginTop:2}}>👨‍✈️ {mapaResumo.piloto_nome||'—'}</div>
                   </div>
-                  <button style={{background:'none',border:'none',fontSize:18,color:'#7ba38f',cursor:'pointer'}} onClick={()=>setMapaResumo(null)}>✕</button>
+                  <button style={{background:'none',border:'none',fontSize:18,color:theme.textFaint2,cursor:'pointer'}} onClick={()=>setMapaResumo(null)}>✕</button>
                 </div>
-                <span style={{background:STATUS_BG[mapaResumo.status]||'#F4F7F5',color:STATUS_COLOR[mapaResumo.status]||'#5c7568',fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20,display:'inline-block',marginTop:8,marginBottom:14}}>{STATUS_LABEL[mapaResumo.status]||mapaResumo.status}</span>
+                <span style={{background:statusBg(theme)[mapaResumo.status]||theme.bg,color:statusColor(theme)[mapaResumo.status]||theme.textMuted,fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20,display:'inline-block',marginTop:8,marginBottom:14}}>{STATUS_LABEL[mapaResumo.status]||mapaResumo.status}</span>
                 {[
                   ['Talhão', mapaResumo.localizacao],
                   ['Área', mapaResumo.area_ha ? `${mapaResumo.area_ha} ha${mapaResumo.bordadura?` (bordadura ${mapaResumo.bordadura} ha)`:''}` : null],
@@ -2331,13 +2335,13 @@ export default function AdminPanel({ onSwitchMode }) {
                   ['OS', mapaResumo.ordem_servico],
                   ['Observação', mapaResumo.obs1||mapaResumo.obs2],
                 ].filter(([,v])=>v).map(([l,v])=>(
-                  <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:'1px solid #eef5f0',fontSize:13}}>
-                    <span style={{color:'#5c7568',fontWeight:500,minWidth:90}}>{l}</span>
-                    <span style={{color:'#0b1210',textAlign:'right',flex:1,wordBreak:'break-word'}}>{v}</span>
+                  <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'7px 0',borderBottom:`1px solid ${theme.divider}`,fontSize:13}}>
+                    <span style={{color:theme.textMuted,fontWeight:500,minWidth:90}}>{l}</span>
+                    <span style={{color:theme.text,textAlign:'right',flex:1,wordBreak:'break-word'}}>{v}</span>
                   </div>
                 ))}
                 {mapaResumo.gps_lat && mapaResumo.gps_lng && (
-                  <div style={{background:'#eef5f0',borderRadius:10,padding:'10px 12px',marginTop:10,fontSize:12,color:'#5c7568'}}>
+                  <div style={{background:theme.divider,borderRadius:10,padding:'10px 12px',marginTop:10,fontSize:12,color:theme.textMuted}}>
                     📍 {mapaResumo.gps_lat}, {mapaResumo.gps_lng}
                     <a href={`https://maps.google.com/?q=${mapaResumo.gps_lat},${mapaResumo.gps_lng}`} target="_blank" rel="noreferrer" style={{display:'block',marginTop:6,color:'#00A86B',fontWeight:600,textDecoration:'none'}}>🗺️ Abrir no Google Maps</a>
                   </div>
@@ -2356,29 +2360,29 @@ export default function AdminPanel({ onSwitchMode }) {
             return (
               <div>
                 <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>🛰️ Trajetos KML</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{comKml.length} voos com trajeto KML enviado · selecione quais sobrepor no mapa</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>🛰️ Trajetos KML</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{comKml.length} voos com trajeto KML enviado · selecione quais sobrepor no mapa</div>
                 </div>
 
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#fff', padding:12, borderRadius:12, border:'1px solid #d7e6dc', alignItems:'center' }}>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:theme.card, padding:12, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
                   {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                     <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                   ))}
                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                    <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>De:</span>
+                    <span style={{ fontSize:11, color:theme.textMuted, whiteSpace:'nowrap' }}>De:</span>
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataIni} onChange={e => setFilters(f => ({ ...f, dataIni: e.target.value }))} />
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                    <span style={{ fontSize:11, color:'#5c7568', whiteSpace:'nowrap' }}>Até:</span>
+                    <span style={{ fontSize:11, color:theme.textMuted, whiteSpace:'nowrap' }}>Até:</span>
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                   </div>
                   {Object.values(filters).some(Boolean) && (
-                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                   )}
                 </div>
 
                 {comKml.length === 0 ? (
-                  <div style={{ textAlign:'center', color:'#5c7568', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
+                  <div style={{ textAlign:'center', color:theme.textMuted, padding:60, background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}` }}>
                     <div style={{ fontSize:40, marginBottom:12 }}>🛰️</div>
                     <div style={{ fontSize:15, fontWeight:600, marginBottom:8 }}>Nenhum voo com KML</div>
                     <div style={{ fontSize:13 }}>Os trajetos aparecem aqui quando o piloto envia o arquivo KML/KMZ da aeronave no relatório.</div>
@@ -2387,18 +2391,18 @@ export default function AdminPanel({ onSwitchMode }) {
                   <>
                     <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:14 }}>
                       {comKml.map(rel => (
-                        <label key={rel.id} style={{ display:'flex', alignItems:'center', gap:10, background:'#fff', borderRadius:10, border:'1px solid #d7e6dc', padding:'9px 14px', cursor:'pointer', fontSize:13 }}>
+                        <label key={rel.id} style={{ display:'flex', alignItems:'center', gap:10, background:theme.card, borderRadius:10, border:`1px solid ${theme.cardBorder2}`, padding:'9px 14px', cursor:'pointer', fontSize:13 }}>
                           <input type="checkbox" checked={selectedKmlIds.includes(rel.id)} onChange={() => toggleKml(rel.id)} />
-                          <span style={{ fontWeight:600, color:'#0b1210' }}>{rel.cliente||'—'} — {rel.piloto_nome}</span>
-                          <span style={{ color:'#5c7568', fontSize:11 }}>{rel.drone} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</span>
-                          <span style={{ marginLeft:'auto', background: STATUS_BG[rel.status]||'#F4F7F5', color: STATUS_COLOR[rel.status]||'#5c7568', fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                          <span style={{ fontWeight:600, color:theme.text }}>{rel.cliente||'—'} — {rel.piloto_nome}</span>
+                          <span style={{ color:theme.textMuted, fontSize:11 }}>{rel.drone} · {new Date(rel.created_at).toLocaleDateString('pt-BR')}</span>
+                          <span style={{ marginLeft:'auto', background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                         </label>
                       ))}
                     </div>
 
                     {selectedKmlIds.length > 0 && (
                       <div style={{ display:'flex', gap:8, marginBottom:14 }}>
-                        <button style={{ background:'none', border:'1px solid #e0b0a8', color:'#e5484d', borderRadius:18, padding:'9px 14px', fontSize:13, cursor:'pointer' }} onClick={() => setSelectedKmlIds([])}>✕ Limpar seleção</button>
+                        <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:18, padding:'9px 14px', fontSize:13, cursor:'pointer' }} onClick={() => setSelectedKmlIds([])}>✕ Limpar seleção</button>
                       </div>
                     )}
 
@@ -2433,8 +2437,8 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* Header */}
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18,flexWrap:'wrap',gap:10}}>
                   <div>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#0b1210'}}>📦 Inventário</div>
-                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos · {invClientes.length} clientes</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:theme.text}}>📦 Inventário</div>
+                    <div style={{fontSize:12,color:theme.textMuted,marginTop:2}}>{invDrones.length} drones · {invProdutos.length} produtos · {invClientes.length} clientes</div>
                   </div>
                   {['drones','produtos'].includes(invTab) && (
                     <button style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
@@ -2450,7 +2454,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
                   {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['veiculos','🚗 Veículos'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
-                    <button key={id} style={{background:invTab===id?'#00A86B':'#F4F7F5',color:invTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    <button key={id} style={{background:invTab===id?'#00A86B':theme.bg,color:invTab===id?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
                 </div>
@@ -2526,7 +2530,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
 
                       {veiculos.length===0 ? (
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum veículo cadastrado ainda.</div>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:40,textAlign:'center',color:theme.textMuted}}>Nenhum veículo cadastrado ainda.</div>
                       ) : (
                         <div style={{display:'flex',flexDirection:'column',gap:14}}>
                           {veiculos.map(v=>{
@@ -2538,22 +2542,22 @@ export default function AdminPanel({ onSwitchMode }) {
                             const manutVeic = manutencoes.filter(m=>m.veiculo_id===v.id).slice(0,3)
                             const viagensVeic = viagens.filter(vg=>vg.veiculo_id===v.id).slice(0,3)
                             return (
-                              <div key={v.id} style={{background:'#fff',borderRadius:20,border:`1px solid ${alerta?'#f2960f':'#dcebe3'}`,padding:18,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                              <div key={v.id} style={{background:theme.card,borderRadius:20,border:`1px solid ${alerta?theme.warningText:theme.cardBorder}`,padding:18,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:10}}>
                                   <div>
-                                    <div style={{fontWeight:700,fontSize:16,fontFamily:"'Syne',sans-serif"}}>🚗 {v.placa} {alerta&&<span style={{background:'#fff3e0',color:'#f2960f',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,marginLeft:6}}>⚠️ Manutenção próxima</span>}</div>
-                                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{v.marca} {v.modelo}{v.ano?` · ${v.ano}`:''} · {(v.km_atual||0).toLocaleString('pt-BR')} km</div>
+                                    <div style={{fontWeight:700,fontSize:16,fontFamily:"'Syne',sans-serif"}}>🚗 {v.placa} {alerta&&<span style={{background:theme.warningBg,color:theme.warningText,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,marginLeft:6}}>⚠️ Manutenção próxima</span>}</div>
+                                    <div style={{fontSize:12,color:theme.textMuted,marginTop:2}}>{v.marca} {v.modelo}{v.ano?` · ${v.ano}`:''} · {(v.km_atual||0).toLocaleString('pt-BR')} km</div>
                                   </div>
                                   <div style={{display:'flex',gap:6}}>
-                                    <button style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>{setVeiculoForm({placa:v.placa,marca:v.marca||'',modelo:v.modelo||'',ano:v.ano||'',km_atual:v.km_atual||'',proxima_manutencao_km:v.proxima_manutencao_km||'',proxima_manutencao_data:v.proxima_manutencao_data||''});setVeiculoModal(v)}}>✏️</button>
-                                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirVeiculo(v)}>🗑️</button>
+                                    <button style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>{setVeiculoForm({placa:v.placa,marca:v.marca||'',modelo:v.modelo||'',ano:v.ano||'',km_atual:v.km_atual||'',proxima_manutencao_km:v.proxima_manutencao_km||'',proxima_manutencao_data:v.proxima_manutencao_data||''});setVeiculoModal(v)}}>✏️</button>
+                                    <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:14,padding:'5px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirVeiculo(v)}>🗑️</button>
                                   </div>
                                 </div>
 
                                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:14,marginTop:12}}>
                                   {/* Nova viagem */}
                                   <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
-                                    <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🛣️ Registrar Viagem</div>
+                                    <div style={{fontSize:11,fontWeight:700,color:theme.textMuted,marginBottom:8}}>🛣️ Registrar Viagem</div>
                                     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
                                       <input type="date" style={{...sG.fi,flex:'1 1 120px'}} value={vf.data||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,data:e.target.value}}))}/>
                                       <input style={{...sG.fi,flex:'1 1 120px'}} placeholder="Motorista" value={vf.motorista||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,motorista:e.target.value}}))}/>
@@ -2566,9 +2570,9 @@ export default function AdminPanel({ onSwitchMode }) {
                                     <input style={{...sG.fi,width:'100%',marginBottom:8}} placeholder="Ordem de serviço (opcional)" value={vf.ordem_servico||''} onChange={e=>setViagemForm(f=>({...f,[v.id]:{...vf,ordem_servico:e.target.value}}))}/>
                                     <button style={{...sG.btn}} onClick={()=>salvarViagem(v)}>Salvar Viagem</button>
                                     {viagensVeic.length>0 && (
-                                      <div style={{marginTop:10,borderTop:'1px solid #eef5f0',paddingTop:8}}>
+                                      <div style={{marginTop:10,borderTop:`1px solid ${theme.divider}`,paddingTop:8}}>
                                         {viagensVeic.map(vg=>(
-                                          <div key={vg.id} style={{fontSize:11,color:'#5c7568',padding:'3px 0'}}>{new Date(vg.data).toLocaleDateString('pt-BR')} · {vg.destino||'—'} · {((vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km{vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}</div>
+                                          <div key={vg.id} style={{fontSize:11,color:theme.textMuted,padding:'3px 0'}}>{new Date(vg.data).toLocaleDateString('pt-BR')} · {vg.destino||'—'} · {((vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km{vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}</div>
                                         ))}
                                       </div>
                                     )}
@@ -2576,7 +2580,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
                                   {/* Nova manutenção */}
                                   <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
-                                    <div style={{fontSize:11,fontWeight:700,color:'#5c7568',marginBottom:8}}>🔧 Registrar Manutenção</div>
+                                    <div style={{fontSize:11,fontWeight:700,color:theme.textMuted,marginBottom:8}}>🔧 Registrar Manutenção</div>
                                     <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:6}}>
                                       <select style={{...sG.fi,flex:'1 1 120px'}} value={mf.tipo||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,tipo:e.target.value}}))}>
                                         <option value="">Tipo...</option>
@@ -2592,11 +2596,11 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <input type="number" style={{...sG.fi,flex:1}} placeholder="Próxima em (km)" value={mf.proximo_km||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,proximo_km:e.target.value}}))}/>
                                       <input type="date" style={{...sG.fi,flex:1}} placeholder="Próxima data" value={mf.proxima_data||''} onChange={e=>setManutForm(f=>({...f,[v.id]:{...mf,proxima_data:e.target.value}}))}/>
                                     </div>
-                                    <button style={{...sG.btn,background:'#f2960f'}} onClick={()=>salvarManutencao(v)}>Salvar Manutenção</button>
+                                    <button style={{...sG.btn,background:theme.warningText}} onClick={()=>salvarManutencao(v)}>Salvar Manutenção</button>
                                     {manutVeic.length>0 && (
-                                      <div style={{marginTop:10,borderTop:'1px solid #eef5f0',paddingTop:8}}>
+                                      <div style={{marginTop:10,borderTop:`1px solid ${theme.divider}`,paddingTop:8}}>
                                         {manutVeic.map(m=>(
-                                          <div key={m.id} style={{fontSize:11,color:'#5c7568',padding:'3px 0'}}>{new Date(m.data).toLocaleDateString('pt-BR')} · {m.tipo}{m.custo?` · R$ ${parseFloat(m.custo).toFixed(2)}`:''}</div>
+                                          <div key={m.id} style={{fontSize:11,color:theme.textMuted,padding:'3px 0'}}>{new Date(m.data).toLocaleDateString('pt-BR')} · {m.tipo}{m.custo?` · R$ ${parseFloat(m.custo).toFixed(2)}`:''}</div>
                                         ))}
                                       </div>
                                     )}
@@ -2610,7 +2614,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
                       {veiculoModal && (
                         <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setVeiculoModal(null)}>
-                          <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:380,padding:22}} onClick={e=>e.stopPropagation()}>
+                          <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:380,padding:22}} onClick={e=>e.stopPropagation()}>
                             <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>{veiculoModal==='novo'?'🚗 Novo Veículo':'✏️ Editar Veículo'}</div>
                             <div style={{display:'flex',flexDirection:'column',gap:10}}>
                               <input style={sG.fi} placeholder="Placa" value={veiculoForm.placa} onChange={e=>setVeiculoForm(f=>({...f,placa:e.target.value}))}/>
@@ -2622,14 +2626,14 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <input type="number" style={{...sG.fi,flex:1}} placeholder="Ano" value={veiculoForm.ano} onChange={e=>setVeiculoForm(f=>({...f,ano:e.target.value}))}/>
                                 <input type="number" style={{...sG.fi,flex:1}} placeholder="Km atual" value={veiculoForm.km_atual} onChange={e=>setVeiculoForm(f=>({...f,km_atual:e.target.value}))}/>
                               </div>
-                              <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginTop:4}}>PRÓXIMA MANUTENÇÃO (OPCIONAL)</div>
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginTop:4}}>PRÓXIMA MANUTENÇÃO (OPCIONAL)</div>
                               <div style={{display:'flex',gap:8}}>
                                 <input type="number" style={{...sG.fi,flex:1}} placeholder="Km" value={veiculoForm.proxima_manutencao_km} onChange={e=>setVeiculoForm(f=>({...f,proxima_manutencao_km:e.target.value}))}/>
                                 <input type="date" style={{...sG.fi,flex:1}} value={veiculoForm.proxima_manutencao_data} onChange={e=>setVeiculoForm(f=>({...f,proxima_manutencao_data:e.target.value}))}/>
                               </div>
                             </div>
                             <div style={{display:'flex',gap:8,marginTop:20}}>
-                              <button style={{flex:1,background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setVeiculoModal(null)}>Cancelar</button>
+                              <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setVeiculoModal(null)}>Cancelar</button>
                               <button style={{flex:2,...sG.btn,opacity:veicSaving?.6:1}} disabled={veicSaving} onClick={salvarVeiculo}>{veicSaving?'Salvando...':'💾 Salvar'}</button>
                             </div>
                           </div>
@@ -2642,7 +2646,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* ── MOVIMENTOS DE ESTOQUE ── */}
                 {invTab==='movimentos' && (()=>{
                   const TIPO_LABEL = {baixa_relatorio:'📋 Baixa (relatório)',entrada:'📦 Entrada',perda:'⚠️ Perda',ajuste:'🔧 Ajuste'}
-                  const MOV_COLORS = ['#00A86B','#22c476','#ffb020','#2f6fed','#8e44ad','#f2960f','#e5484d','#5c7568']
+                  const MOV_COLORS = ['#00A86B','#22c476','#ffb020','#2f6fed','#8e44ad',theme.warningText,theme.dangerText,theme.textMuted]
 
                   // Join com relatorios pra saber fazenda/cliente das baixas automáticas
                   const relatorioById = {}
@@ -2687,18 +2691,18 @@ export default function AdminPanel({ onSwitchMode }) {
                   return (
                     <div>
                       {/* Filtros */}
-                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:12,border:'1px solid #d7e6dc',alignItems:'center'}}>
-                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:theme.card,padding:12,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,alignItems:'center'}}>
+                        <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
                           value={movFiltros.produto} onChange={e=>setMovFiltros(f=>({...f,produto:e.target.value}))}>
                           <option value="">Todos os produtos</option>
                           {invProdutos.map(p=><option key={p.id} value={p.nome}>{p.nome}</option>)}
                         </select>
-                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                        <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
                           value={movFiltros.fazenda} onChange={e=>setMovFiltros(f=>({...f,fazenda:e.target.value}))}>
                           <option value="">Todas as fazendas</option>
                           {fazendasDisponiveis.map(fz=><option key={fz} value={fz}>{fz}</option>)}
                         </select>
-                        <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 170px'}}
+                        <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 170px'}}
                           value={movFiltros.tipo} onChange={e=>setMovFiltros(f=>({...f,tipo:e.target.value}))}>
                           <option value="">Todos os tipos</option>
                           <option value="baixa_relatorio">📋 Baixa (relatório)</option>
@@ -2707,77 +2711,77 @@ export default function AdminPanel({ onSwitchMode }) {
                           <option value="ajuste">🔧 Ajuste</option>
                         </select>
                         <div style={{display:'flex',alignItems:'center',gap:4}}>
-                          <span style={{fontSize:11,color:'#5c7568'}}>De:</span>
-                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataIni} onChange={e=>setMovFiltros(f=>({...f,dataIni:e.target.value}))}/>
+                          <span style={{fontSize:11,color:theme.textMuted}}>De:</span>
+                          <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataIni} onChange={e=>setMovFiltros(f=>({...f,dataIni:e.target.value}))}/>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:4}}>
-                          <span style={{fontSize:11,color:'#5c7568'}}>Até:</span>
-                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataFim} onChange={e=>setMovFiltros(f=>({...f,dataFim:e.target.value}))}/>
+                          <span style={{fontSize:11,color:theme.textMuted}}>Até:</span>
+                          <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 10px',fontSize:12,outline:'none',minWidth:120}} value={movFiltros.dataFim} onChange={e=>setMovFiltros(f=>({...f,dataFim:e.target.value}))}/>
                         </div>
                         {filtrosAtivos && (
-                          <button style={{background:'none',border:'1px solid #e0b0a8',color:'#e5484d',borderRadius:16,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                          <button style={{background:'none',border:'1px solid #e0b0a8',color:theme.dangerText,borderRadius:16,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
                             onClick={()=>setMovFiltros({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
                         )}
                       </div>
 
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(3,1fr)',gap:12,marginBottom:16}}>
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ENTRADAS (FILTRADO)</div>
+                        <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>ENTRADAS (FILTRADO)</div>
                           <div style={{fontSize:20,fontWeight:700,color:'#00A86B'}}>+{totalEntradas.toFixed(1)}</div>
                         </div>
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>SAÍDAS (FILTRADO)</div>
-                          <div style={{fontSize:20,fontWeight:700,color:'#e5484d'}}>-{totalSaidas.toFixed(1)}</div>
+                        <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>SAÍDAS (FILTRADO)</div>
+                          <div style={{fontSize:20,fontWeight:700,color:theme.dangerText}}>-{totalSaidas.toFixed(1)}</div>
                         </div>
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>PRODUTO MAIS CONSUMIDO</div>
-                          <div style={{fontSize:15,fontWeight:700,color:'#0b1210'}}>{maisConsumido?`${maisConsumido[0]} (${maisConsumido[1].toFixed(1)})`:'—'}</div>
+                        <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                          <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>PRODUTO MAIS CONSUMIDO</div>
+                          <div style={{fontSize:15,fontWeight:700,color:theme.text}}>{maisConsumido?`${maisConsumido[0]} (${maisConsumido[1].toFixed(1)})`:'—'}</div>
                         </div>
                       </div>
 
                       {/* Gráficos */}
                       {movFiltrados.length>0 && (
                         <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1.3fr 1fr',gap:12,marginBottom:16}}>
-                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16}}>
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>📊 Consumo por Produto</div>
-                            {chartProdutos.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem saídas no período</div> : (
+                          <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:16}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:theme.text,marginBottom:10}}>📊 Consumo por Produto</div>
+                            {chartProdutos.length===0 ? <div style={{color:theme.textFaint2,fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem saídas no período</div> : (
                               <ResponsiveContainer width="100%" height={220}>
                                 <BarChart data={chartProdutos} layout="vertical" margin={{left:10,right:10}}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                                  <XAxis type="number" tick={{fontSize:10,fill:'#7ba38f'}}/>
-                                  <YAxis type="category" dataKey="name" width={100} tick={{fontSize:10,fill:'#5c7568'}}/>
-                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                                  <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                                  <XAxis type="number" tick={{fontSize:10,fill:theme.textFaint2}}/>
+                                  <YAxis type="category" dataKey="name" width={100} tick={{fontSize:10,fill:theme.textMuted}}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}}/>
                                   <Bar dataKey="value" fill="#00A86B" radius={[0,6,6,0]}/>
                                 </BarChart>
                               </ResponsiveContainer>
                             )}
                           </div>
-                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16}}>
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>🥧 Por Tipo</div>
-                            {chartTipo.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados</div> : (
+                          <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:16}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:theme.text,marginBottom:10}}>🥧 Por Tipo</div>
+                            {chartTipo.length===0 ? <div style={{color:theme.textFaint2,fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados</div> : (
                               <ResponsiveContainer width="100%" height={220}>
                                 <PieChart>
                                   <Pie data={chartTipo} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label={({name,percent})=>`${(percent*100).toFixed(0)}%`}>
                                     {chartTipo.map((_,i)=><Cell key={i} fill={MOV_COLORS[i%MOV_COLORS.length]}/>)}
                                   </Pie>
-                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}}/>
                                   <Legend wrapperStyle={{fontSize:11}}/>
                                 </PieChart>
                               </ResponsiveContainer>
                             )}
                           </div>
-                          <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16,gridColumn:isMobile?'auto':'1 / -1'}}>
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>📈 Movimentação ao Longo do Tempo</div>
-                            {chartTempo.length===0 ? <div style={{color:'#7ba38f',fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
+                          <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:16,gridColumn:isMobile?'auto':'1 / -1'}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:theme.text,marginBottom:10}}>📈 Movimentação ao Longo do Tempo</div>
+                            {chartTempo.length===0 ? <div style={{color:theme.textFaint2,fontSize:13,textAlign:'center',padding:'20px 0'}}>Sem dados no período</div> : (
                               <ResponsiveContainer width="100%" height={200}>
                                 <BarChart data={chartTempo} margin={{top:5,right:10,left:-20,bottom:5}}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                                  <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false}/>
-                                  <YAxis tick={{fontSize:10,fill:'#7ba38f'}} tickLine={false} axisLine={false}/>
-                                  <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}}/>
+                                  <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                                  <XAxis dataKey="dia" tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false}/>
+                                  <YAxis tick={{fontSize:10,fill:theme.textFaint2}} tickLine={false} axisLine={false}/>
+                                  <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}}/>
                                   <Legend wrapperStyle={{fontSize:11}}/>
                                   <Bar dataKey="entradas" name="Entradas" fill="#00A86B" radius={[4,4,0,0]}/>
-                                  <Bar dataKey="saidas" name="Saídas" fill="#e5484d" radius={[4,4,0,0]}/>
+                                  <Bar dataKey="saidas" name="Saídas" fill={theme.dangerText} radius={[4,4,0,0]}/>
                                 </BarChart>
                               </ResponsiveContainer>
                             )}
@@ -2786,59 +2790,59 @@ export default function AdminPanel({ onSwitchMode }) {
                       )}
 
                       {/* Novo movimento manual */}
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,marginBottom:16}}>
-                        <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Novo Movimento</div>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:16,marginBottom:16}}>
+                        <div style={{fontSize:13,fontWeight:700,color:theme.text,marginBottom:10,fontFamily:"'Syne',sans-serif"}}>+ Novo Movimento</div>
                         <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-                          <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
+                          <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 160px'}}
                             value={movForm.produto} onChange={e=>setMovForm(f=>({...f,produto:e.target.value}))}>
                             <option value="">Produto...</option>
                             {invProdutos.filter(p=>p.ativo).map(p=><option key={p.id}>{p.nome}</option>)}
                           </select>
-                          <select style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 160px'}}
+                          <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 160px'}}
                             value={movForm.tipo} onChange={e=>setMovForm(f=>({...f,tipo:e.target.value}))}>
                             <option value="entrada">📦 Entrada (compra)</option>
                             <option value="perda">⚠️ Perda</option>
                             <option value="ajuste">🔧 Ajuste</option>
                           </select>
-                          <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 120px'}}
+                          <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'0 0 120px'}}
                             type="number" placeholder="Quantidade" value={movForm.quantidade} onChange={e=>setMovForm(f=>({...f,quantidade:e.target.value}))}/>
-                          <input style={{border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 200px'}}
+                          <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',flex:'1 1 200px'}}
                             placeholder="Observação (opcional)" value={movForm.obs} onChange={e=>setMovForm(f=>({...f,obs:e.target.value}))}/>
                           <button style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:16,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:movSaving?'default':'pointer',opacity:movSaving?.6:1}}
                             disabled={movSaving} onClick={salvarMovimento}>{movSaving?'Salvando...':'Salvar'}</button>
                         </div>
-                        <div style={{fontSize:11,color:'#7ba38f',marginTop:8}}>Entrada soma ao estoque · Perda e Ajuste você digita a quantidade a remover (ou negativa, para ajuste que soma).</div>
+                        <div style={{fontSize:11,color:theme.textFaint2,marginTop:8}}>Entrada soma ao estoque · Perda e Ajuste você digita a quantidade a remover (ou negativa, para ajuste que soma).</div>
                       </div>
 
                       {/* Histórico */}
                       {invMovimentos.length===0 ? (
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
+                        <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:40,textAlign:'center',color:theme.textMuted}}>
                           Nenhum movimento ainda.<br/>As baixas aparecem aqui automaticamente quando um relatório é finalizado, ou rode o SQL de setup se a tabela ainda não existir.
                         </div>
                       ) : movFiltrados.length===0 ? (
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:30,textAlign:'center',color:'#5c7568',fontSize:13}}>
+                        <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:30,textAlign:'center',color:theme.textMuted,fontSize:13}}>
                           Nenhum movimento encontrado com esses filtros.
                         </div>
                       ) : (
                         <div style={{overflowX:'auto'}}>
-                          <div style={{fontSize:11,color:'#7ba38f',marginBottom:8}}>{movFiltrados.length} movimento(s)</div>
+                          <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8}}>{movFiltrados.length} movimento(s)</div>
                           <table style={{width:'100%',borderCollapse:'collapse',minWidth:600}}>
                             <thead>
-                              <tr style={{background:'#F4F7F5'}}>
+                              <tr style={{background:theme.bg}}>
                                 {['Data','Produto','Tipo','Fazenda','Quantidade','Obs'].map(h=>(
-                                  <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
+                                  <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
                                 ))}
                               </tr>
                             </thead>
                             <tbody>
                               {movFiltrados.slice(0,200).map((m,i)=>(
                                 <tr key={m.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568',whiteSpace:'nowrap'}}>{new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
-                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:600,color:'#0b1210'}}>{m.produto_nome}</td>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568'}}>{TIPO_LABEL[m.tipo]||m.tipo}</td>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568'}}>{fazendaDoMovimento(m)||'—'}</td>
-                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:700,color:m.quantidade<0?'#e5484d':'#00A86B'}}>{m.quantidade>0?'+':''}{m.quantidade} {m.unidade||''}</td>
-                                  <td style={{padding:'8px 10px',fontSize:12,color:'#5c7568'}}>{m.obs||'—'}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:theme.textMuted,whiteSpace:'nowrap'}}>{new Date(m.created_at).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:600,color:theme.text}}>{m.produto_nome}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:theme.textMuted}}>{TIPO_LABEL[m.tipo]||m.tipo}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:theme.textMuted}}>{fazendaDoMovimento(m)||'—'}</td>
+                                  <td style={{padding:'8px 10px',fontSize:13,fontWeight:700,color:m.quantidade<0?theme.dangerText:'#00A86B'}}>{m.quantidade>0?'+':''}{m.quantidade} {m.unidade||''}</td>
+                                  <td style={{padding:'8px 10px',fontSize:12,color:theme.textMuted}}>{m.obs||'—'}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -2853,7 +2857,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {invTab==='drones' && (
                   <div>
                     {invDrones.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:40,textAlign:'center',color:theme.textMuted}}>
                         Nenhum drone cadastrado ainda.<br/>Clique em "+ Novo Drone" para começar.
                       </div>
                     ) : (
@@ -2863,29 +2867,29 @@ export default function AdminPanel({ onSwitchMode }) {
                           const limite = d.horas_limite || 100
                           const pct = Math.min(100,(horasMin/60/limite)*100)
                           const alerta = pct>=90, aviso = pct>=70&&pct<90
-                          const cor = alerta?'#e5484d':aviso?'#f2960f':'#00A86B'
+                          const cor = alerta?theme.dangerText:aviso?theme.warningText:'#00A86B'
                           return (
-                            <div key={d.id} style={{background:'#fff',borderRadius:12,border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':'#d7e6dc'}`,padding:16,position:'relative'}}>
-                              {!d.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
-                              {alerta && <span style={{position:'absolute',top:12,right:12,background:'#e5484d',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
-                              {aviso && !alerta && <span style={{position:'absolute',top:12,right:12,background:'#f2960f',color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
-                              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:2}}>{d.nome}</div>
-                              <div style={{fontSize:12,color:'#5c7568',marginBottom:10}}>{d.fabricante} {d.modelo} {d.serial?`· S/N: ${d.serial}`:''}</div>
+                            <div key={d.id} style={{background:theme.card,borderRadius:12,border:`1px solid ${alerta?'#f5c6c6':aviso?'#f5e0a0':theme.cardBorder2}`,padding:16,position:'relative'}}>
+                              {!d.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:theme.dangerText,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
+                              {alerta && <span style={{position:'absolute',top:12,right:12,background:theme.dangerText,color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
+                              {aviso && !alerta && <span style={{position:'absolute',top:12,right:12,background:theme.warningText,color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
+                              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:2}}>{d.nome}</div>
+                              <div style={{fontSize:12,color:theme.textMuted,marginBottom:10}}>{d.fabricante} {d.modelo} {d.serial?`· S/N: ${d.serial}`:''}</div>
                               {/* Barra horas */}
                               <div style={{marginBottom:10}}>
                                 <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
-                                  <span style={{color:'#5c7568'}}>Horas voadas</span>
+                                  <span style={{color:theme.textMuted}}>Horas voadas</span>
                                   <span style={{fontWeight:700,color:cor}}>{fmtH(horasMin)} / {limite}h</span>
                                 </div>
-                                <div style={{background:'#eef5f0',borderRadius:20,height:7,overflow:'hidden'}}>
+                                <div style={{background:theme.divider,borderRadius:20,height:7,overflow:'hidden'}}>
                                   <div style={{background:cor,height:'100%',borderRadius:20,width:`${pct}%`,transition:'width .5s'}}/>
                                 </div>
                               </div>
-                              {d.obs && <div style={{fontSize:11,color:'#5c7568',marginBottom:8,fontStyle:'italic'}}>{d.obs}</div>}
+                              {d.obs && <div style={{fontSize:11,color:theme.textMuted,marginBottom:8,fontStyle:'italic'}}>{d.obs}</div>}
                               <div style={{display:'flex',gap:6}}>
-                                <button style={{flex:1,background:'#F4F7F5',color:'#00A86B',border:'none',borderRadius:16,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
+                                <button style={{flex:1,background:theme.bg,color:'#00A86B',border:'none',borderRadius:16,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
                                   onClick={()=>{setDroneForm(initDroneForm(d));setDroneModal(d)}}>✏️ Editar</button>
-                                <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
+                                <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
                                   onClick={()=>deletarDrone(d.id)}>🗑️</button>
                               </div>
                             </div>
@@ -2900,16 +2904,16 @@ export default function AdminPanel({ onSwitchMode }) {
                 {invTab==='produtos' && (
                   <div>
                     {invProdutos.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:40,textAlign:'center',color:theme.textMuted}}>
                         Nenhum produto cadastrado ainda.<br/>Clique em "+ Novo Produto" para começar.
                       </div>
                     ) : (
                       <div style={{overflowX:'auto'}}>
                         <table style={{width:'100%',borderCollapse:'collapse',minWidth:560}}>
                           <thead>
-                            <tr style={{background:'#F4F7F5'}}>
+                            <tr style={{background:theme.bg}}>
                               {['Produto','Fabricante','Estoque','Mínimo','Validade','Registro MAPA',''].map(h=>(
-                                <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:'#5c7568',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                                <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:theme.textMuted,fontFamily:"'Syne',sans-serif"}}>{h}</th>
                               ))}
                             </tr>
                           </thead>
@@ -2922,26 +2926,26 @@ export default function AdminPanel({ onSwitchMode }) {
                               return (
                                 <tr key={p.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
                                   <td style={{padding:'9px 12px'}}>
-                                    <div style={{fontWeight:600,fontSize:13,color:p.ativo?'#0b1210':'#aaa'}}>{p.nome}</div>
-                                    {!p.ativo && <span style={{fontSize:10,color:'#e5484d'}}>inativo</span>}
+                                    <div style={{fontWeight:600,fontSize:13,color:p.ativo?theme.text:'#aaa'}}>{p.nome}</div>
+                                    {!p.ativo && <span style={{fontSize:10,color:theme.dangerText}}>inativo</span>}
                                   </td>
-                                  <td style={{padding:'9px 12px',fontSize:12,color:'#5c7568'}}>{p.fabricante||'—'}</td>
+                                  <td style={{padding:'9px 12px',fontSize:12,color:theme.textMuted}}>{p.fabricante||'—'}</td>
                                   <td style={{padding:'9px 12px'}}>
-                                    <span style={{fontWeight:700,color:baixo?'#e5484d':'#00A86B',fontSize:13}}>{p.estoque_atual} {p.unidade}</span>
-                                    {baixo && <span style={{marginLeft:4,fontSize:10,color:'#e5484d'}}>⚠️ baixo</span>}
+                                    <span style={{fontWeight:700,color:baixo?theme.dangerText:'#00A86B',fontSize:13}}>{p.estoque_atual} {p.unidade}</span>
+                                    {baixo && <span style={{marginLeft:4,fontSize:10,color:theme.dangerText}}>⚠️ baixo</span>}
                                   </td>
-                                  <td style={{padding:'9px 12px',fontSize:12,color:'#5c7568'}}>{p.estoque_minimo} {p.unidade}</td>
+                                  <td style={{padding:'9px 12px',fontSize:12,color:theme.textMuted}}>{p.estoque_minimo} {p.unidade}</td>
                                   <td style={{padding:'9px 12px'}}>
-                                    <span style={{fontSize:12,color:vencido?'#e5484d':vencendo?'#f2960f':'#0b1210',fontWeight:vencido||vencendo?700:400}}>
+                                    <span style={{fontSize:12,color:vencido?theme.dangerText:vencendo?theme.warningText:theme.text,fontWeight:vencido||vencendo?700:400}}>
                                       {fmtData(p.validade)}
                                       {vencido && ' ⛔'}{vencendo && !vencido && ` (${dias}d)`}
                                     </span>
                                   </td>
-                                  <td style={{padding:'9px 12px',fontSize:12,color:'#5c7568'}}>{p.registro_mapa||'—'}</td>
+                                  <td style={{padding:'9px 12px',fontSize:12,color:theme.textMuted}}>{p.registro_mapa||'—'}</td>
                                   <td style={{padding:'9px 12px',whiteSpace:'nowrap'}}>
-                                    <button style={{background:'#F4F7F5',color:'#00A86B',border:'none',borderRadius:14,padding:'4px 8px',fontSize:11,cursor:'pointer',marginRight:4}}
+                                    <button style={{background:theme.bg,color:'#00A86B',border:'none',borderRadius:14,padding:'4px 8px',fontSize:11,cursor:'pointer',marginRight:4}}
                                       onClick={()=>{setProdutoForm(initProdutoForm(p));setProdutoModal(p)}}>✏️</button>
-                                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:14,padding:'4px 8px',fontSize:11,cursor:'pointer'}}
+                                    <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:14,padding:'4px 8px',fontSize:11,cursor:'pointer'}}
                                       onClick={()=>deletarProduto(p.id)}>🗑️</button>
                                   </td>
                                 </tr>
@@ -2957,33 +2961,33 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* MODAL DRONE */}
                 {droneModal && (
                   <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-                    <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',padding:24}} onClick={e=>e.stopPropagation()}>
+                    <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',padding:24}} onClick={e=>e.stopPropagation()}>
                       <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
                         {droneModal==='novo'?'🚁 Novo Drone':'✏️ Editar Drone'}
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                         {[['NOME / IDENTIFICAÇÃO','nome','text','Ex: OROFLY_01'],['FABRICANTE','fabricante','text','DJI'],['MODELO','modelo','text','T70'],['Nº DE SÉRIE','serial','text',''],['ANO DE AQUISIÇÃO','ano_aquisicao','number','2024'],['LIMITE DE HORAS','horas_limite','number','100']].map(([lbl,key,type,ph])=>(
                           <div key={key} style={{gridColumn:key==='nome'?'1/-1':'auto'}}>
-                            <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>{lbl}</div>
-                            <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>{lbl}</div>
+                            <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                               type={type} placeholder={ph} value={droneForm[key]||''}
                               onChange={e=>setDroneForm(f=>({...f,[key]:e.target.value}))} />
                           </div>
                         ))}
                         <div style={{gridColumn:'1/-1'}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
-                          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
                             value={droneForm.obs||''} onChange={e=>setDroneForm(f=>({...f,obs:e.target.value}))} />
                         </div>
                         <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setDroneForm(f=>({...f,ativo:!f.ativo}))}>
-                          <div style={{width:36,height:20,borderRadius:10,background:droneForm.ativo?'#00A86B':'#d7e6dc',position:'relative',transition:'all .2s',flexShrink:0}}>
-                            <div style={{width:14,height:14,borderRadius:7,background:'#fff',position:'absolute',top:3,left:droneForm.ativo?19:3,transition:'all .2s'}}/>
+                          <div style={{width:36,height:20,borderRadius:10,background:droneForm.ativo?'#00A86B':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
+                            <div style={{width:14,height:14,borderRadius:7,background:theme.card,position:'absolute',top:3,left:droneForm.ativo?19:3,transition:'all .2s'}}/>
                           </div>
-                          <span style={{fontSize:13,color:'#0b1210'}}>Drone ativo</span>
+                          <span style={{fontSize:13,color:theme.text}}>Drone ativo</span>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:20}}>
-                        <button style={{flex:1,background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
+                        <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
                           onClick={()=>setDroneModal(null)}>Cancelar</button>
                         <button style={{flex:2,background:'#00A86B',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
                           disabled={invSaving} onClick={salvarDrone}>{invSaving?'Salvando...':'💾 Salvar'}</button>
@@ -2995,64 +2999,64 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* MODAL PRODUTO */}
                 {produtoModal && (
                   <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-                    <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',padding:24}} onClick={e=>e.stopPropagation()}>
+                    <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',padding:24}} onClick={e=>e.stopPropagation()}>
                       <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
                         {produtoModal==='novo'?'🧪 Novo Produto':'✏️ Editar Produto'}
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
                         {[['NOME DO PRODUTO','nome','text','Ex: Triclon'],['FABRICANTE','fabricante','text','Syngenta'],['UNIDADE','unidade','text','L'],['REGISTRO MAPA','registro_mapa','text','BR-00000']].map(([lbl,key,type,ph])=>(
                           <div key={key} style={{gridColumn:key==='nome'?'1/-1':'auto'}}>
-                            <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>{lbl}</div>
-                            <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>{lbl}</div>
+                            <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                               type={type} placeholder={ph} value={produtoForm[key]||''}
                               onChange={e=>setProdutoForm(f=>({...f,[key]:e.target.value}))} />
                           </div>
                         ))}
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>ESTOQUE ATUAL</div>
-                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>ESTOQUE ATUAL</div>
+                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="number" step="0.1" value={produtoForm.estoque_atual||0}
                             onChange={e=>setProdutoForm(f=>({...f,estoque_atual:e.target.value}))} />
                         </div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>ESTOQUE MÍNIMO</div>
-                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>ESTOQUE MÍNIMO</div>
+                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="number" step="0.1" value={produtoForm.estoque_minimo||0}
                             onChange={e=>setProdutoForm(f=>({...f,estoque_minimo:e.target.value}))} />
                         </div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>DOSE PADRÃO ({produtoForm.unidade||'L'}/ha)</div>
-                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>DOSE PADRÃO ({produtoForm.unidade||'L'}/ha)</div>
+                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="number" step="0.001" placeholder="Ex: 0.6" value={produtoForm.dose_padrao??''}
                             onChange={e=>setProdutoForm(f=>({...f,dose_padrao:e.target.value}))} />
                         </div>
                         <div style={{display:'flex',alignItems:'flex-end',paddingBottom:6}}>
-                          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#5c7568',cursor:'pointer'}}>
+                          <label style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:theme.textMuted,cursor:'pointer'}}>
                             <input type="checkbox" checked={produtoForm.dose_auto!==false}
                               onChange={e=>setProdutoForm(f=>({...f,dose_auto:e.target.checked}))}/>
                             Pré-preencher no app
                           </label>
                         </div>
                         <div style={{gridColumn:'1/-1'}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>VALIDADE</div>
-                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>VALIDADE</div>
+                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             type="date" value={produtoForm.validade||''}
                             onChange={e=>setProdutoForm(f=>({...f,validade:e.target.value}))} />
                         </div>
                         <div style={{gridColumn:'1/-1'}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
-                          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
                             value={produtoForm.obs||''} onChange={e=>setProdutoForm(f=>({...f,obs:e.target.value}))} />
                         </div>
                         <div style={{gridColumn:'1/-1',display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setProdutoForm(f=>({...f,ativo:!f.ativo}))}>
-                          <div style={{width:36,height:20,borderRadius:10,background:produtoForm.ativo?'#00A86B':'#d7e6dc',position:'relative',transition:'all .2s',flexShrink:0}}>
-                            <div style={{width:14,height:14,borderRadius:7,background:'#fff',position:'absolute',top:3,left:produtoForm.ativo?19:3,transition:'all .2s'}}/>
+                          <div style={{width:36,height:20,borderRadius:10,background:produtoForm.ativo?'#00A86B':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
+                            <div style={{width:14,height:14,borderRadius:7,background:theme.card,position:'absolute',top:3,left:produtoForm.ativo?19:3,transition:'all .2s'}}/>
                           </div>
-                          <span style={{fontSize:13,color:'#0b1210'}}>Produto ativo</span>
+                          <span style={{fontSize:13,color:theme.text}}>Produto ativo</span>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:20}}>
-                        <button style={{flex:1,background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
+                        <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
                           onClick={()=>setProdutoModal(null)}>Cancelar</button>
                         <button style={{flex:2,background:'#00A86B',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
                           disabled={invSaving} onClick={salvarProduto}>{invSaving?'Salvando...':'💾 Salvar'}</button>
@@ -3194,8 +3198,8 @@ export default function AdminPanel({ onSwitchMode }) {
               <div>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:18,flexWrap:'wrap',gap:10}}>
                   <div>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:'#0b1210'}}>🌾 Fazendas & Clientes</div>
-                    <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{invFazendas.length} fazendas · {invClientes.length} clientes</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:theme.text}}>🌾 Fazendas & Clientes</div>
+                    <div style={{fontSize:12,color:theme.textMuted,marginTop:2}}>{invFazendas.length} fazendas · {invClientes.length} clientes</div>
                   </div>
                   {fzTab==='clientes' && (
                     <button style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
@@ -3214,7 +3218,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
                   {[['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes']].map(([id,lbl])=>(
-                    <button key={id} style={{background:fzTab===id?'#00A86B':'#F4F7F5',color:fzTab===id?'#fff':'#5c7568',border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    <button key={id} style={{background:fzTab===id?'#00A86B':theme.bg,color:fzTab===id?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setFzTab(id)}>{lbl}</button>
                   ))}
                 </div>
@@ -3223,33 +3227,33 @@ export default function AdminPanel({ onSwitchMode }) {
                 {fzTab==='visao' && (
                   <div>
                     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>FAZENDAS CADASTRADAS</div>
-                        <div style={{fontSize:20,fontWeight:700,color:'#0b1210'}}>{invFazendas.length}</div>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>FAZENDAS CADASTRADAS</div>
+                        <div style={{fontSize:20,fontWeight:700,color:theme.text}}>{invFazendas.length}</div>
                       </div>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ÁREA TOTAL CADASTRADA</div>
-                        <div style={{fontSize:20,fontWeight:700,color:'#0b1210'}}>{somaTotal.toFixed(1)} ha</div>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>ÁREA TOTAL CADASTRADA</div>
+                        <div style={{fontSize:20,fontWeight:700,color:theme.text}}>{somaTotal.toFixed(1)} ha</div>
                       </div>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>ÁREA REALIZADA</div>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>ÁREA REALIZADA</div>
                         <div style={{fontSize:20,fontWeight:700,color:'#00A86B'}}>{somaRealizada.toFixed(1)} ha</div>
                       </div>
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
-                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>% CONCLUÍDO (GERAL)</div>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                        <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>% CONCLUÍDO (GERAL)</div>
                         <div style={{fontSize:20,fontWeight:700,color:'#2f6fed'}}>{pctGeral.toFixed(1)}%</div>
                       </div>
                     </div>
 
                     {chartFazendas.length>0 && (
-                      <div style={{background:'#fff',borderRadius:14,border:'1px solid #dcebe3',padding:16,marginBottom:16}}>
-                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:10}}>📊 % Concluído por Fazenda (top 10)</div>
+                      <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:16}}>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:theme.text,marginBottom:10}}>📊 % Concluído por Fazenda (top 10)</div>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart data={chartFazendas} layout="vertical" margin={{left:10,right:20}}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                            <XAxis type="number" domain={[0,100]} tick={{fontSize:10,fill:'#7ba38f'}} unit="%"/>
-                            <YAxis type="category" dataKey="name" width={110} tick={{fontSize:10,fill:'#5c7568'}}/>
-                            <Tooltip contentStyle={{borderRadius:10,border:'1px solid #dcebe3',fontSize:12}} formatter={v=>`${v}%`}/>
+                            <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                            <XAxis type="number" domain={[0,100]} tick={{fontSize:10,fill:theme.textFaint2}} unit="%"/>
+                            <YAxis type="category" dataKey="name" width={110} tick={{fontSize:10,fill:theme.textMuted}}/>
+                            <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={v=>`${v}%`}/>
                             <Bar dataKey="pct" fill="#00A86B" radius={[0,6,6,0]}/>
                           </BarChart>
                         </ResponsiveContainer>
@@ -3257,7 +3261,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     )}
 
                     <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
-                      <input style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
+                      <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
                         placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
                       <div style={{flex:'0 0 200px'}}>
                         <MultiSelectDropdown label="Produto" options={['Inseticida','Herbicida','Fungicida']}
@@ -3268,10 +3272,10 @@ export default function AdminPanel({ onSwitchMode }) {
 
                     <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
                       {[
-                        ['', `Todas (${fazendasBI.length})`, '#5c7568', '#F4F7F5'],
-                        ['concluida', `✅ Concluídas (${qtdConcluidas})`, '#00A86B', '#e3f7ec'],
-                        ['parcial', `🟡 Parciais (${qtdParciais})`, '#a3690a', '#fff3e0'],
-                        ['nao_iniciada', `⬜ Não iniciadas (${qtdNaoIniciadas})`, '#5c7568', '#F4F7F5'],
+                        ['', `Todas (${fazendasBI.length})`, theme.textMuted, theme.bg],
+                        ['concluida', `✅ Concluídas (${qtdConcluidas})`, '#00A86B', theme.successBg],
+                        ['parcial', `🟡 Parciais (${qtdParciais})`, theme.warningText2, theme.warningBg],
+                        ['nao_iniciada', `⬜ Não iniciadas (${qtdNaoIniciadas})`, theme.textMuted, theme.bg],
                       ].map(([val,label,cor,bg])=>(
                         <button key={val} style={{background:fzStatusFiltro===val?cor:bg,color:fzStatusFiltro===val?'#fff':cor,border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                           onClick={()=>setFzStatusFiltro(val)}>{label}</button>
@@ -3279,20 +3283,20 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
 
                     {fazendasBIFiltradas.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:40,textAlign:'center',color:theme.textMuted}}>
                         Nenhuma fazenda encontrada.
                       </div>
                     ) : (
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
                         {fazendasBIFiltradas.map(fz=>(
-                          <div key={fz.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:14}}>
+                          <div key={fz.id} style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
                               <div>
                                 <div style={{fontWeight:700,fontSize:14}}>🌾 {fz.nome}</div>
-                                <div style={{fontSize:11,color:'#5c7568'}}>{fz.cliente}{fz.produto?` · ${fz.produto}`:''}</div>
+                                <div style={{fontSize:11,color:theme.textMuted}}>{fz.cliente}{fz.produto?` · ${fz.produto}`:''}</div>
                               </div>
                               {fz.pct!==null && fz.numVoos>0 && (
-                                <button style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:15,padding:'4px 8px',fontSize:10,cursor:'pointer'}}
+                                <button style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:15,padding:'4px 8px',fontSize:10,cursor:'pointer'}}
                                   onClick={()=>zerarProgresso(fz)}>🔄 Zerar</button>
                               )}
                             </div>
@@ -3300,28 +3304,28 @@ export default function AdminPanel({ onSwitchMode }) {
                               <div style={{fontSize:12,color:'#aaa',fontStyle:'italic'}}>Sem talhões cadastrados com área</div>
                             ) : (
                               <>
-                                <div style={{background:'#eef5f0',borderRadius:20,height:8,overflow:'hidden',marginBottom:6}}>
+                                <div style={{background:theme.divider,borderRadius:20,height:8,overflow:'hidden',marginBottom:6}}>
                                   <div style={{width:`${fz.pct}%`,height:'100%',background:fz.pct>=100?'#00A86B':'#ffb020',borderRadius:20}}/>
                                 </div>
                                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
-                                  <span style={{color:'#5c7568'}}>{fz.areaRealizada.toFixed(1)} / {fz.areaTotal.toFixed(1)} ha</span>
+                                  <span style={{color:theme.textMuted}}>{fz.areaRealizada.toFixed(1)} / {fz.areaTotal.toFixed(1)} ha</span>
                                   <span style={{fontWeight:700,color:'#00A86B'}}>{fz.pct.toFixed(0)}%</span>
                                 </div>
                                 {fz.campanha_inicio && <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Ciclo desde {new Date(fz.campanha_inicio).toLocaleDateString('pt-BR')}</div>}
                                 {fz.rankingPilotos.length>0 && (
-                                  <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid #F4F7F5'}}>
-                                    <div style={{fontSize:9,fontWeight:700,color:'#7ba38f',letterSpacing:.3,marginBottom:4}}>QUEM FEZ</div>
+                                  <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.bg}`}}>
+                                    <div style={{fontSize:9,fontWeight:700,color:theme.textFaint2,letterSpacing:.3,marginBottom:4}}>QUEM FEZ</div>
                                     {fz.rankingPilotos.map(([nome,area])=>(
-                                      <div key={nome} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#5c7568',padding:'2px 0'}}>
+                                      <div key={nome} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:theme.textMuted,padding:'2px 0'}}>
                                         <span>{nome}</span>
-                                        <span style={{fontWeight:600,color:'#0b1210'}}>{area.toFixed(1)} ha</span>
+                                        <span style={{fontWeight:600,color:theme.text}}>{area.toFixed(1)} ha</span>
                                       </div>
                                     ))}
                                   </div>
                                 )}
                               </>
                             )}
-                            <button style={{width:'100%',marginTop:10,background:'#F4F7F5',color:'#00A86B',border:'1px solid #d7e6dc',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                            <button style={{width:'100%',marginTop:10,background:theme.bg,color:'#00A86B',border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                               onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoFz(fz)}}>📄 Relatório do período</button>
                           </div>
                         ))}
@@ -3334,28 +3338,28 @@ export default function AdminPanel({ onSwitchMode }) {
                 {relatorioPeriodoFz && (
                   <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,.7)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}
                     onClick={()=>!relatorioPeriodoLoading && setRelatorioPeriodoFz(null)}>
-                    <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:420,padding:20}} onClick={e=>e.stopPropagation()}>
+                    <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:420,padding:20}} onClick={e=>e.stopPropagation()}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
                         <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>📄 Relatório do Período</div>
-                        <button style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:14,padding:'5px 10px',fontSize:12,cursor:'pointer'}}
+                        <button style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:14,padding:'5px 10px',fontSize:12,cursor:'pointer'}}
                           onClick={()=>setRelatorioPeriodoFz(null)} disabled={!!relatorioPeriodoLoading}>✕</button>
                       </div>
-                      <div style={{fontSize:12,color:'#5c7568',marginBottom:16}}>🌾 {relatorioPeriodoFz.nome} — {relatorioPeriodoFz.cliente}</div>
+                      <div style={{fontSize:12,color:theme.textMuted,marginBottom:16}}>🌾 {relatorioPeriodoFz.nome} — {relatorioPeriodoFz.cliente}</div>
                       <div style={{display:'flex',gap:10,marginBottom:16}}>
                         <div style={{flex:1}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:3}}>DE</div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:3}}>DE</div>
                           <input type="date" style={{...sG.fi,width:'100%',boxSizing:'border-box'}} value={relatorioPeriodoForm.dataIni}
                             onChange={e=>setRelatorioPeriodoForm(f=>({...f,dataIni:e.target.value}))}/>
                         </div>
                         <div style={{flex:1}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:3}}>ATÉ</div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:3}}>ATÉ</div>
                           <input type="date" style={{...sG.fi,width:'100%',boxSizing:'border-box'}} value={relatorioPeriodoForm.dataFim}
                             onChange={e=>setRelatorioPeriodoForm(f=>({...f,dataFim:e.target.value}))}/>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
                         {[['7',7],['30',30],['Mês atual','mes']].map(([lbl,val])=>(
-                          <button key={lbl} style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                          <button key={lbl} style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
                             onClick={()=>{
                               const hoje=new Date()
                               if(val==='mes'){
@@ -3369,7 +3373,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         ))}
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:16}}>
-                        <button style={{flex:1,background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:relatorioPeriodoLoading?.6:1}}
+                        <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:relatorioPeriodoLoading?.6:1}}
                           disabled={!!relatorioPeriodoLoading}
                           onClick={()=>gerarRelatorioPeriodo(relatorioPeriodoFz,relatorioPeriodoForm.dataIni,relatorioPeriodoForm.dataFim,'pdf')}>
                           {relatorioPeriodoLoading==='pdf'?'Gerando...':'📄 Baixar PDF'}
@@ -3388,10 +3392,10 @@ export default function AdminPanel({ onSwitchMode }) {
                 {fzTab==='fazendas' && (
                   <div>
                     {invFazendas.length>0 && (
-                      <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:12,marginBottom:16,display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
+                      <div style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:12,marginBottom:16,display:'flex',gap:10,flexWrap:'wrap',alignItems:'flex-end'}}>
                         <div style={{flex:'2 1 220px'}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:3}}>BUSCAR</div>
-                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:3}}>BUSCAR</div>
+                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             placeholder="🔍 Cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
                         </div>
                         <div style={{flex:'1 1 180px'}}>
@@ -3405,19 +3409,19 @@ export default function AdminPanel({ onSwitchMode }) {
                             onChange={arr=>setFzProdutoFiltro(arr.length?arr[arr.length-1]:'')}/>
                         </div>
                         {(fzSearch||fzClienteFiltro||fzProdutoFiltro) && (
-                          <button style={{background:'none',border:'1px solid #e0b0a8',color:'#e5484d',borderRadius:12,padding:'8px 12px',fontSize:12,cursor:'pointer'}}
+                          <button style={{background:'none',border:'1px solid #e0b0a8',color:theme.dangerText,borderRadius:12,padding:'8px 12px',fontSize:12,cursor:'pointer'}}
                             onClick={()=>{setFzSearch('');setFzClienteFiltro('');setFzProdutoFiltro('')}}>✕ Limpar</button>
                         )}
                       </div>
                     )}
 
                     {invFazendas.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>
+                      <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:40,textAlign:'center',color:theme.textMuted}}>
                         Nenhuma fazenda cadastrada ainda.<br/>Clique em "+ Nova Fazenda" para começar.
                       </div>
                     ) : (()=>{
                       if (q && fazendasFiltradas.length===0) return (
-                        <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:30,textAlign:'center',color:'#5c7568',fontSize:13}}>
+                        <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:30,textAlign:'center',color:theme.textMuted,fontSize:13}}>
                           Nenhuma fazenda encontrada para "{fzSearch}".
                         </div>
                       )
@@ -3430,27 +3434,27 @@ export default function AdminPanel({ onSwitchMode }) {
                             const tf = tlForm[fz.id]||{nome:'',area_ha:''}
                             const aberto = !!fzExpandido[fz.id]
                             return (
-                              <div key={fz.id} style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',marginBottom:8,boxShadow:'0 2px 8px rgba(11,18,16,0.04)',overflow:'hidden'}}>
+                              <div key={fz.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,marginBottom:8,boxShadow:'0 2px 8px rgba(11,18,16,0.04)',overflow:'hidden'}}>
                                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',cursor:'pointer'}}
                                   onClick={()=>setFzExpandido(s=>({...s,[fz.id]:!s[fz.id]}))}>
                                   <span style={{fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8,minWidth:0}}>
                                     🌾 {fz.nome}
-                                    {fz.produto && <span style={{background:'#e6f0ea',color:'#145c38',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,flexShrink:0}}>{fz.produto}</span>}
-                                    <span style={{fontSize:11,color:'#7ba38f',fontWeight:500,flexShrink:0}}>{talhoesFz.length} talhão(ões){areaFz>0?` · ${areaFz.toFixed(1)} ha`:''}</span>
+                                    {fz.produto && <span style={{background:theme.divider2,color:'#145c38',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,flexShrink:0}}>{fz.produto}</span>}
+                                    <span style={{fontSize:11,color:theme.textFaint2,fontWeight:500,flexShrink:0}}>{talhoesFz.length} talhão(ões){areaFz>0?` · ${areaFz.toFixed(1)} ha`:''}</span>
                                   </span>
                                   <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
                                     {fz.mapa_pdf_path && (
-                                      <button style={{background:'#e3f7ec',color:'#00A86B',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                      <button style={{background:theme.successBg,color:'#00A86B',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                         onClick={(e)=>{ e.stopPropagation(); setMapaViewerFazenda(fz) }}>🗺️</button>
                                     )}
-                                    <button style={{background:'#F4F7F5',color:'#00A86B',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                    <button style={{background:theme.bg,color:'#00A86B',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={(e)=>{
                                         e.stopPropagation()
                                         setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',
                                           mapa_lat_min:fz.mapa_lat_min??'',mapa_lat_max:fz.mapa_lat_max??'',mapa_lng_min:fz.mapa_lng_min??'',mapa_lng_max:fz.mapa_lng_max??''})
                                         setFzEditId(fz.id); setFzMapaFile(null); setFzMapaExistente(fz.mapa_pdf_path||null); setFzModal(true)
                                       }}>✏️</button>
-                                    <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                    <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={async(e)=>{
                                         e.stopPropagation()
                                         if(!window.confirm(`Excluir fazenda ${fz.nome} e todos os talhões?`))return
@@ -3461,25 +3465,25 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </div>
                                 {aberto && (
                                   <div style={{padding:'0 16px 16px'}}>
-                                    {(fz.lat&&fz.lng)&&<div style={{fontSize:11,color:'#7ba38f',marginBottom:8}}>📍 {fz.lat}, {fz.lng}{fz.cep?` · CEP ${fz.cep}`:''}</div>}
+                                    {(fz.lat&&fz.lng)&&<div style={{fontSize:11,color:theme.textFaint2,marginBottom:8}}>📍 {fz.lat}, {fz.lng}{fz.cep?` · CEP ${fz.cep}`:''}</div>}
                                     <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
-                                      <div style={{fontSize:10,fontWeight:700,color:'#5c7568',marginBottom:8}}>📐 TALHÕES</div>
+                                      <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,marginBottom:8}}>📐 TALHÕES</div>
                                       {talhoesFz.length===0 && <div style={{fontSize:12,color:'#aaa',fontStyle:'italic',marginBottom:8}}>Nenhum talhão cadastrado ainda</div>}
                                       {talhoesFz.map(t=>(
-                                        <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#fff',border:'1px solid #eef5f0',borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
+                                        <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:theme.card,border:`1px solid ${theme.divider}`,borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
                                           <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#00A86B'}}>· {t.area_ha} ha</strong>:''}</span>
-                                          <button style={{background:'none',border:'none',color:'#e5484d',cursor:'pointer',fontSize:14}}
+                                          <button style={{background:'none',border:'none',color:theme.dangerText,cursor:'pointer',fontSize:14}}
                                             onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
                                         </div>
                                       ))}
                                       <div style={{display:'flex',gap:6,marginTop:8}}>
-                                        <input style={{border:'1px solid #d7e6dc',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
+                                        <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
                                           placeholder="Novo talhão..." value={tf.nome}
                                           onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,nome:e.target.value}}))}/>
-                                        <input style={{border:'1px solid #d7e6dc',borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
+                                        <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
                                           placeholder="Área (ha)" type="number" value={tf.area_ha}
                                           onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,area_ha:e.target.value}}))}/>
-                                        <button style={{background:'#e3f7ec',color:'#00A86B',border:'none',borderRadius:15,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                                        <button style={{background:theme.successBg,color:'#00A86B',border:'none',borderRadius:15,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
                                           onClick={async()=>{
                                             if(!tf.nome){alert('Nome do talhão');return}
                                             const {error}=await supabase.from('talhoes').insert({fazenda_id:fz.id,nome:tf.nome,area_ha:tf.area_ha?parseFloat(tf.area_ha):null,ativo:true})
@@ -3500,62 +3504,62 @@ export default function AdminPanel({ onSwitchMode }) {
                     {/* MODAL NOVA FAZENDA */}
                     {fzModal && (
                       <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setFzModal(false)}>
-                        <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:380,padding:22,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+                        <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:380,padding:22,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
                           <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>{fzEditId?'🌾 Editar Fazenda':'🌾 Nova Fazenda'}</div>
                           <div style={{display:'flex',flexDirection:'column',gap:12}}>
                             <div>
-                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>CLIENTE</div>
-                              <select style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>CLIENTE</div>
+                              <select style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 value={fzForm.cliente} onChange={e=>setFzForm(f=>({...f,cliente:e.target.value}))}>
                                 <option value="">Selecione...</option>
                                 {invClientes.filter(c=>c.ativo).map(c=><option key={c.id}>{c.nome}</option>)}
                               </select>
                             </div>
                             <div>
-                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>NOME DA FAZENDA</div>
-                              <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>NOME DA FAZENDA</div>
+                              <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 placeholder="Ex: Fazenda Jamaica" value={fzForm.nome} onChange={e=>setFzForm(f=>({...f,nome:e.target.value}))}/>
                             </div>
                             <div>
-                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>ID DA FAZENDA (OPCIONAL)</div>
-                              <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>ID DA FAZENDA (OPCIONAL)</div>
+                              <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 placeholder="Preenchimento manual" value={fzForm.id_fazenda} onChange={e=>setFzForm(f=>({...f,id_fazenda:e.target.value}))}/>
                             </div>
                             <div>
-                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>PRODUTO (OPCIONAL)</div>
-                              <select style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>PRODUTO (OPCIONAL)</div>
+                              <select style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 value={fzForm.produto} onChange={e=>setFzForm(f=>({...f,produto:e.target.value}))}>
                                 <option value="">Selecione...</option>
                                 {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
                               </select>
                             </div>
-                            <div style={{borderTop:'1px solid #eef5f0',paddingTop:12}}>
-                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>CEP (OPCIONAL)</div>
+                            <div style={{borderTop:`1px solid ${theme.divider}`,paddingTop:12}}>
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>CEP (OPCIONAL)</div>
                               <div style={{display:'flex',gap:6}}>
-                                <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                <input style={{flex:1,border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                   placeholder="00000-000" value={fzForm.cep} onChange={e=>setFzForm(f=>({...f,cep:e.target.value}))}/>
-                                <button style={{background:'#e3f7ec',color:'#00A86B',border:'none',borderRadius:8,padding:'0 12px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}
+                                <button style={{background:theme.successBg,color:'#00A86B',border:'none',borderRadius:8,padding:'0 12px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}
                                   disabled={fzGeoLoading} onClick={buscarCoordenadasPorCep}>{fzGeoLoading?'...':'🔍 Buscar coord.'}</button>
                               </div>
                               <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Usado pra puxar a previsão do tempo da fazenda na Agenda</div>
                             </div>
                             <div style={{display:'flex',gap:8}}>
                               <div style={{flex:1}}>
-                                <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>LATITUDE</div>
-                                <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>LATITUDE</div>
+                                <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                   type="number" placeholder="Ex: -22.9068" value={fzForm.lat} onChange={e=>setFzForm(f=>({...f,lat:e.target.value}))}/>
                               </div>
                               <div style={{flex:1}}>
-                                <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>LONGITUDE</div>
-                                <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>LONGITUDE</div>
+                                <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                   type="number" placeholder="Ex: -43.1729" value={fzForm.lng} onChange={e=>setFzForm(f=>({...f,lng:e.target.value}))}/>
                               </div>
                             </div>
 
-                            <div style={{borderTop:'1px solid #eef5f0',paddingTop:12}}>
-                              <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>🗺️ MAPA DA FAZENDA (OPCIONAL)</div>
-                              <div style={{fontSize:11,color:'#7ba38f',marginBottom:8}}>PDF do mapa que a fazenda manda — o piloto vê a posição dele em cima desse mapa durante o voo.</div>
-                              <label style={{display:'flex',alignItems:'center',gap:8,border:'1px dashed #d7e6dc',borderRadius:8,padding:'10px 12px',fontSize:12,color:'#5c7568',cursor:'pointer'}}>
+                            <div style={{borderTop:`1px solid ${theme.divider}`,paddingTop:12}}>
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>🗺️ MAPA DA FAZENDA (OPCIONAL)</div>
+                              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8}}>PDF do mapa que a fazenda manda — o piloto vê a posição dele em cima desse mapa durante o voo.</div>
+                              <label style={{display:'flex',alignItems:'center',gap:8,border:`1px dashed ${theme.cardBorder2}`,borderRadius:8,padding:'10px 12px',fontSize:12,color:theme.textMuted,cursor:'pointer'}}>
                                 📄 {fzMapaFile ? fzMapaFile.name : fzMapaExistente ? 'Mapa já cadastrado — escolher outro arquivo' : 'Escolher arquivo PDF...'}
                                 <input type="file" accept="application/pdf" style={{display:'none'}} onChange={e=>setFzMapaFile(e.target.files[0]||null)}/>
                               </label>
@@ -3563,15 +3567,15 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <>
                                   <div style={{fontSize:10,color:'#aaa',margin:'10px 0 6px'}}>Coordenadas dos 4 cantos do mapa (vem no PDF se for georreferenciado, ou peça pra quem gerou o mapa):</div>
                                   <div style={{display:'flex',gap:6,marginBottom:6}}>
-                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                    <input style={{flex:1,border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
                                       type="number" placeholder="Lat mínima (sul)" value={fzForm.mapa_lat_min} onChange={e=>setFzForm(f=>({...f,mapa_lat_min:e.target.value}))}/>
-                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                    <input style={{flex:1,border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
                                       type="number" placeholder="Lat máxima (norte)" value={fzForm.mapa_lat_max} onChange={e=>setFzForm(f=>({...f,mapa_lat_max:e.target.value}))}/>
                                   </div>
                                   <div style={{display:'flex',gap:6}}>
-                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                    <input style={{flex:1,border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
                                       type="number" placeholder="Long mínima (oeste)" value={fzForm.mapa_lng_min} onChange={e=>setFzForm(f=>({...f,mapa_lng_min:e.target.value}))}/>
-                                    <input style={{flex:1,border:'1px solid #d7e6dc',borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
+                                    <input style={{flex:1,border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 9px',fontSize:12,outline:'none',boxSizing:'border-box'}}
                                       type="number" placeholder="Long máxima (leste)" value={fzForm.mapa_lng_max} onChange={e=>setFzForm(f=>({...f,mapa_lng_max:e.target.value}))}/>
                                   </div>
                                 </>
@@ -3579,7 +3583,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             </div>
                           </div>
                           <div style={{display:'flex',gap:8,marginTop:20}}>
-                            <button style={{flex:1,background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setFzModal(false)}>Cancelar</button>
+                            <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setFzModal(false)}>Cancelar</button>
                             <button style={{flex:2,background:'#00A86B',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}} disabled={invSaving} onClick={salvarNovaFazenda}>{fzMapaUploading?'Enviando mapa...':invSaving?'Salvando...':'💾 Salvar'}</button>
                           </div>
                         </div>
@@ -3593,20 +3597,20 @@ export default function AdminPanel({ onSwitchMode }) {
                 {fzTab==='clientes' && (
                   <div>
                     {invClientes.length===0 ? (
-                      <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:40,textAlign:'center',color:theme.textMuted}}>
                         Nenhum cliente cadastrado ainda.<br/>Clique em "+ Novo Cliente" para começar.
                       </div>
                     ) : (
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(260px,1fr))',gap:12}}>
                         {invClientes.map(c=>(
-                          <div key={c.id} style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,position:'relative'}}>
-                            {!c.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
-                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:'#0b1210',marginBottom:4}}>🏢 {c.nome}</div>
-                            {c.obs && <div style={{fontSize:11,color:'#5c7568',marginBottom:8,fontStyle:'italic'}}>{c.obs}</div>}
+                          <div key={c.id} style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:16,position:'relative'}}>
+                            {!c.ativo && <span style={{position:'absolute',top:12,right:12,background:'#fee',color:theme.dangerText,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>INATIVO</span>}
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:4}}>🏢 {c.nome}</div>
+                            {c.obs && <div style={{fontSize:11,color:theme.textMuted,marginBottom:8,fontStyle:'italic'}}>{c.obs}</div>}
                             <div style={{display:'flex',gap:6,marginTop:8}}>
-                              <button style={{flex:1,background:'#F4F7F5',color:'#00A86B',border:'none',borderRadius:16,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
+                              <button style={{flex:1,background:theme.bg,color:'#00A86B',border:'none',borderRadius:16,padding:'6px',fontSize:12,cursor:'pointer',fontWeight:600}}
                                 onClick={()=>{setClienteForm(initClienteForm(c));setClienteModal(c)}}>✏️ Editar</button>
-                              <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
+                              <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'6px 10px',fontSize:12,cursor:'pointer'}}
                                 onClick={()=>deletarCliente(c.id)}>🗑️</button>
                             </div>
                           </div>
@@ -3619,47 +3623,47 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* MODAL CLIENTE */}
                 {clienteModal && (
                   <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-                    <div style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:400,padding:24}} onClick={e=>e.stopPropagation()}>
+                    <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:400,padding:24}} onClick={e=>e.stopPropagation()}>
                       <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
                         {clienteModal==='novo'?'🏢 Novo Cliente':'✏️ Editar Cliente'}
                       </div>
                       <div style={{display:'flex',flexDirection:'column',gap:12}}>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>NOME DO CLIENTE</div>
-                          <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>NOME DO CLIENTE</div>
+                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                             placeholder="Ex: Raizen - Bonfim" value={clienteForm.nome||''}
                             onChange={e=>setClienteForm(f=>({...f,nome:e.target.value}))} />
                         </div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
-                          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
                             value={clienteForm.obs||''} onChange={e=>setClienteForm(f=>({...f,obs:e.target.value}))} />
                         </div>
                         <div>
-                          <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:6}}>PREÇO POR TIPO DE SERVIÇO (R$/ha)</div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:6}}>PREÇO POR TIPO DE SERVIÇO (R$/ha)</div>
                           <div style={{display:'flex',gap:8}}>
                             <div style={{flex:1}}>
-                              <div style={{fontSize:10,color:'#7ba38f',marginBottom:3}}>Catação</div>
-                              <input type="number" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                              <div style={{fontSize:10,color:theme.textFaint2,marginBottom:3}}>Catação</div>
+                              <input type="number" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 placeholder="0,00" value={clienteForm.preco_catacao} onChange={e=>setClienteForm(f=>({...f,preco_catacao:e.target.value}))} />
                             </div>
                             <div style={{flex:1}}>
-                              <div style={{fontSize:10,color:'#7ba38f',marginBottom:3}}>Área Total</div>
-                              <input type="number" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                              <div style={{fontSize:10,color:theme.textFaint2,marginBottom:3}}>Área Total</div>
+                              <input type="number" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 placeholder="0,00" value={clienteForm.preco_area_total} onChange={e=>setClienteForm(f=>({...f,preco_area_total:e.target.value}))} />
                             </div>
                           </div>
-                          <div style={{fontSize:11,color:'#7ba38f',marginTop:4}}>Usado pra calcular a receita quando o piloto marca o tipo de serviço no voo.</div>
+                          <div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>Usado pra calcular a receita quando o piloto marca o tipo de serviço no voo.</div>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
-                          <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#00A86B':'#d7e6dc',position:'relative',transition:'all .2s',flexShrink:0}}>
-                            <div style={{width:14,height:14,borderRadius:7,background:'#fff',position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>
+                          <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#00A86B':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
+                            <div style={{width:14,height:14,borderRadius:7,background:theme.card,position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>
                           </div>
-                          <span style={{fontSize:13,color:'#0b1210'}}>Cliente ativo</span>
+                          <span style={{fontSize:13,color:theme.text}}>Cliente ativo</span>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,marginTop:20}}>
-                        <button style={{flex:1,background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
+                        <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
                           onClick={()=>setClienteModal(null)}>Cancelar</button>
                         <button style={{flex:2,background:'#00A86B',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
                           disabled={invSaving} onClick={salvarCliente}>{invSaving?'Salvando...':'💾 Salvar'}</button>
@@ -3690,42 +3694,42 @@ export default function AdminPanel({ onSwitchMode }) {
             const rankingPiloto = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1]).slice(0,5)
 
             const KpiCard = (label, valor, cor) => (
-              <div style={{background:'#fff',borderRadius:14,border:'1px solid #d7e6dc',padding:'12px 16px'}}>
-                <div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>{label}</div>
-                <div style={{fontSize:20,fontWeight:700,color:cor||'#0b1210',fontFamily:"'Syne',sans-serif"}}>{valor}</div>
+              <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder2}`,padding:'12px 16px'}}>
+                <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>{label}</div>
+                <div style={{fontSize:20,fontWeight:700,color:cor||theme.text,fontFamily:"'Syne',sans-serif"}}>{valor}</div>
               </div>
             )
 
             return (
               <div>
                 <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>⚠️ Incidentes</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>Chamados abertos pelos pilotos — acompanhe, dê andamento e feche</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>⚠️ Incidentes</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>Chamados abertos pelos pilotos — acompanhe, dê andamento e feche</div>
                 </div>
 
                 {incidentes.length>0 && (
                   <>
                     <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:10,marginBottom:16}}>
-                      {KpiCard('ABERTOS', abertos.length, '#a3690a')}
+                      {KpiCard('ABERTOS', abertos.length, theme.warningText2)}
                       {KpiCard('EM TRATATIVA', emTratativa.length, '#2952a3')}
                       {KpiCard('FECHADOS', fechados.length, '#00A86B')}
                       {KpiCard('CUSTO TOTAL', `R$ ${custoTotal.toFixed(2)}`, '#c0392b')}
                     </div>
                     {(Object.keys(porTipo).length>0 || rankingPiloto.length>0) && (
                       <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:18}}>
-                        <div style={{flex:1,minWidth:200,background:'#fff',borderRadius:14,border:'1px solid #d7e6dc',padding:14}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:8}}>POR TIPO</div>
+                        <div style={{flex:1,minWidth:200,background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:8}}>POR TIPO</div>
                           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                             {Object.entries(porTipo).map(([t,n])=>(
-                              <span key={t} style={{fontSize:11,fontWeight:600,background:'#F4F7F5',color:'#5c7568',padding:'4px 10px',borderRadius:20}}>{INCIDENTE_TIPO_LABEL[t]||t}: {n}</span>
+                              <span key={t} style={{fontSize:11,fontWeight:600,background:theme.bg,color:theme.textMuted,padding:'4px 10px',borderRadius:20}}>{INCIDENTE_TIPO_LABEL[t]||t}: {n}</span>
                             ))}
                           </div>
                         </div>
-                        <div style={{flex:1,minWidth:200,background:'#fff',borderRadius:14,border:'1px solid #d7e6dc',padding:14}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:8}}>POR PILOTO</div>
+                        <div style={{flex:1,minWidth:200,background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:8}}>POR PILOTO</div>
                           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                             {rankingPiloto.map(([n,c])=>(
-                              <span key={n} style={{fontSize:11,fontWeight:600,background:'#F4F7F5',color:'#5c7568',padding:'4px 10px',borderRadius:20}}>{n}: {c}</span>
+                              <span key={n} style={{fontSize:11,fontWeight:600,background:theme.bg,color:theme.textMuted,padding:'4px 10px',borderRadius:20}}>{n}: {c}</span>
                             ))}
                           </div>
                         </div>
@@ -3735,7 +3739,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 )}
 
                 {incidentes.length===0 ? (
-                  <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum incidente registrado.</div>
+                  <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:40,textAlign:'center',color:theme.textMuted}}>Nenhum incidente registrado.</div>
                 ) : (
                   <>
                     {abertos.map(inc=><IncidenteCard key={inc.id} inc={inc} focoId={incidenteFocoId} supabase={supabase}
@@ -3746,7 +3750,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       onExcluir={excluirIncidente} onFotoClick={setFotoLightbox}/>)}
                     {fechados.length>0 && (
                       <>
-                        <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',margin:'16px 0 8px'}}>FECHADOS</div>
+                        <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,margin:'16px 0 8px'}}>FECHADOS</div>
                         {fechados.map(inc=><IncidenteCard key={inc.id} inc={inc} focoId={incidenteFocoId} supabase={supabase}
                           onToggleFoco={setIncidenteFocoId} onSalvarDetalhes={salvarDetalhesIncidente} onStatusChange={marcarIncidenteStatus}
                           onExcluir={excluirIncidente} onFotoClick={setFotoLightbox}/>)}
@@ -3808,7 +3812,7 @@ export default function AdminPanel({ onSwitchMode }) {
             const rankingClienteFazenda = Object.entries(porClienteFazenda).sort((a,b)=>b[1].total-a[1].total)
 
             const categoriaChart = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).map(([nome,valor])=>({name:`${CATEGORIA_ICON[nome]||''} ${nome}`,value:parseFloat(valor.toFixed(2))}))
-            const CORES_CAT = ['#00A86B','#f2960f','#2f6fed','#8e44ad','#e5484d']
+            const CORES_CAT = ['#00A86B',theme.warningText,'#2f6fed','#8e44ad',theme.dangerText]
 
             // Evolução diária no período filtrado
             const porDia = {}
@@ -3825,17 +3829,17 @@ export default function AdminPanel({ onSwitchMode }) {
             return (
               <div>
                 <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>💰 Financeiro</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{custos.length} notas registradas</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>💰 Financeiro</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{custos.length} notas registradas</div>
                 </div>
 
                 {/* Sub-abas */}
-                <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:360}}>
-                  <button style={{flex:1,background:custosSubTab==='notas'?'#fff':'transparent',color:custosSubTab==='notas'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='notas'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:360}}>
+                  <button style={{flex:1,background:custosSubTab==='notas'?'#fff':'transparent',color:custosSubTab==='notas'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='notas'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setCustosSubTab('notas')}>🧾 Notas de Despesa</button>
-                  <button style={{flex:1,background:custosSubTab==='veiculos'?'#fff':'transparent',color:custosSubTab==='veiculos'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='veiculos'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                  <button style={{flex:1,background:custosSubTab==='veiculos'?'#fff':'transparent',color:custosSubTab==='veiculos'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='veiculos'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setCustosSubTab('veiculos')}>🚗 Veículos</button>
-                  <button style={{flex:1,background:custosSubTab==='orcamento'?'#fff':'transparent',color:custosSubTab==='orcamento'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='orcamento'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                  <button style={{flex:1,background:custosSubTab==='orcamento'?'#fff':'transparent',color:custosSubTab==='orcamento'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='orcamento'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setCustosSubTab('orcamento')}>🧮 Orçamento</button>
                 </div>
 
@@ -3846,65 +3850,65 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {custosSubTab==='notas' && (<>
                 {/* Filtros */}
-                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:16,border:'1px solid #dcebe3',alignItems:'center'}}>
-                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:theme.card,padding:12,borderRadius:16,border:`1px solid ${theme.cardBorder}`,alignItems:'center'}}>
+                  <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
                     value={custosFiltros.piloto} onChange={e=>setCustosFiltros(f=>({...f,piloto:e.target.value}))}>
                     <option value="">Todos os pilotos</option>
                     {pilotosDisponiveis.map(p=><option key={p} value={p}>{p}</option>)}
                   </select>
-                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 160px'}}
+                  <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 160px'}}
                     value={custosFiltros.categoria} onChange={e=>setCustosFiltros(f=>({...f,categoria:e.target.value}))}>
                     <option value="">Todas categorias</option>
                     {CATEGORIA_DESPESA_OPTS.map(([c])=><option key={c} value={c}>{c}</option>)}
                   </select>
-                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 200px'}}
+                  <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 200px'}}
                     value={custosFiltros.clienteFazenda} onChange={e=>setCustosFiltros(f=>({...f,clienteFazenda:e.target.value}))}>
                     <option value="">Todos clientes/fazendas</option>
                     {clienteFazendaOpcoes.map(cf=><option key={cf} value={cf}>{cf}</option>)}
                   </select>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <span style={{fontSize:11,color:'#5c7568'}}>De:</span>
-                    <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={custosFiltros.dataIni} onChange={e=>setCustosFiltros(f=>({...f,dataIni:e.target.value}))}/>
+                    <span style={{fontSize:11,color:theme.textMuted}}>De:</span>
+                    <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={custosFiltros.dataIni} onChange={e=>setCustosFiltros(f=>({...f,dataIni:e.target.value}))}/>
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <span style={{fontSize:11,color:'#5c7568'}}>Até:</span>
-                    <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={custosFiltros.dataFim} onChange={e=>setCustosFiltros(f=>({...f,dataFim:e.target.value}))}/>
+                    <span style={{fontSize:11,color:theme.textMuted}}>Até:</span>
+                    <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={custosFiltros.dataFim} onChange={e=>setCustosFiltros(f=>({...f,dataFim:e.target.value}))}/>
                   </div>
                   {filtrosAtivos && (
-                    <button style={{background:'none',border:'1px solid #f0b0a8',color:'#e5484d',borderRadius:12,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                    <button style={{background:'none',border:'1px solid #f0b0a8',color:theme.dangerText,borderRadius:12,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
                       onClick={()=>setCustosFiltros({piloto:'',categoria:'',clienteFazenda:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
                   )}
                 </div>
 
                 {/* KPIs */}
                 <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(3,1fr)',gap:12,marginBottom:16}}>
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                    <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>TOTAL (FILTRADO)</div>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>TOTAL (FILTRADO)</div>
                     <div style={{fontSize:22,fontWeight:700,color:'#00A86B',fontFamily:"'Syne',sans-serif"}}>R$ {totalGeral.toFixed(2)}</div>
                   </div>
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                    <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>NOTAS NO PERÍODO</div>
-                    <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{custosFiltrados.length}</div>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>NOTAS NO PERÍODO</div>
+                    <div style={{fontSize:22,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>{custosFiltrados.length}</div>
                   </div>
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                    <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>MAIOR CATEGORIA</div>
-                    <div style={{fontSize:16,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{maiorCategoria?`${CATEGORIA_ICON[maiorCategoria[0]]||''} ${maiorCategoria[0]}`:'—'}</div>
-                    {maiorCategoria&&<div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>R$ {maiorCategoria[1].toFixed(2)}</div>}
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>MAIOR CATEGORIA</div>
+                    <div style={{fontSize:16,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>{maiorCategoria?`${CATEGORIA_ICON[maiorCategoria[0]]||''} ${maiorCategoria[0]}`:'—'}</div>
+                    {maiorCategoria&&<div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>R$ {maiorCategoria[1].toFixed(2)}</div>}
                   </div>
                 </div>
 
                 {/* Ranking por piloto */}
                 {rankingPiloto.length>0 && (
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                     <SecTitle>Total por Piloto</SecTitle>
                     <div style={{overflowX:'auto'}}>
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-                        <thead><tr style={{background:'#F4F7F5'}}>{['Piloto','Notas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                        <thead><tr style={{background:theme.bg}}>{['Piloto','Notas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
                         <tbody>
                           {rankingPiloto.map(([nome,st],i)=>(
                             <tr key={nome} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
                               <td style={{padding:'8px 10px',fontWeight:500}}>{nome}</td>
-                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.qtd}</td>
+                              <td style={{padding:'8px 10px',color:theme.textMuted}}>{st.qtd}</td>
                               <td style={{padding:'8px 10px',fontWeight:700,color:'#00A86B'}}>R$ {st.total.toFixed(2)}</td>
                             </tr>
                           ))}
@@ -3916,17 +3920,17 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Ranking por Cliente/Fazenda */}
                 {rankingClienteFazenda.length>0 && (
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                     <SecTitle>Total por Cliente / Fazenda</SecTitle>
                     <div style={{overflowX:'auto'}}>
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-                        <thead><tr style={{background:'#F4F7F5'}}>{['Cliente / Fazenda','Notas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                        <thead><tr style={{background:theme.bg}}>{['Cliente / Fazenda','Notas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
                         <tbody>
                           {rankingClienteFazenda.map(([nome,st],i)=>(
-                            <tr key={nome} style={{background:custosFiltros.clienteFazenda===nome?'#e3f7ec':i%2===0?'#fff':'#f9fbfa',cursor:'pointer'}}
+                            <tr key={nome} style={{background:custosFiltros.clienteFazenda===nome?theme.successBg:i%2===0?'#fff':'#f9fbfa',cursor:'pointer'}}
                               onClick={()=>setCustosFiltros(f=>({...f,clienteFazenda:f.clienteFazenda===nome?'':nome}))}>
-                              <td style={{padding:'8px 10px',fontWeight:500,color:nome==='Sem voo vinculado'?'#aaa':'#0b1210',fontStyle:nome==='Sem voo vinculado'?'italic':'normal'}}>{nome}</td>
-                              <td style={{padding:'8px 10px',color:'#5c7568'}}>{st.qtd}</td>
+                              <td style={{padding:'8px 10px',fontWeight:500,color:nome==='Sem voo vinculado'?'#aaa':theme.text,fontStyle:nome==='Sem voo vinculado'?'italic':'normal'}}>{nome}</td>
+                              <td style={{padding:'8px 10px',color:theme.textMuted}}>{st.qtd}</td>
                               <td style={{padding:'8px 10px',fontWeight:700,color:'#00A86B'}}>R$ {st.total.toFixed(2)}</td>
                             </tr>
                           ))}
@@ -3939,7 +3943,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {/* Gráficos: categoria + evolução */}
                 {custosFiltrados.length>0 && (
                   <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:16,marginBottom:16}}>
-                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                       <SecTitle>Por Categoria</SecTitle>
                       <ResponsiveContainer width="100%" height={200}>
                         <PieChart>
@@ -3950,21 +3954,21 @@ export default function AdminPanel({ onSwitchMode }) {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                       <SecTitle>Evolução no Período</SecTitle>
                       <ResponsiveContainer width="100%" height={200}>
                         <AreaChart data={evolucaoDiaria} margin={{top:5,right:10,left:-20,bottom:5}}>
                           <defs>
                             <linearGradient id="gradCustos" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#f2960f" stopOpacity={0.3}/>
-                              <stop offset="95%" stopColor="#f2960f" stopOpacity={0}/>
+                              <stop offset="5%" stopColor={theme.warningText} stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor={theme.warningText} stopOpacity={0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#eef5f0"/>
-                          <XAxis dataKey="dia" tick={{fontSize:10,fill:'#7ba38f'}}/>
-                          <YAxis tick={{fontSize:10,fill:'#7ba38f'}}/>
+                          <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                          <XAxis dataKey="dia" tick={{fontSize:10,fill:theme.textFaint2}}/>
+                          <YAxis tick={{fontSize:10,fill:theme.textFaint2}}/>
                           <Tooltip formatter={v=>[`R$ ${v.toFixed(2)}`,'Gasto']}/>
-                          <Area type="monotone" dataKey="valor" stroke="#f2960f" strokeWidth={2} fill="url(#gradCustos)"/>
+                          <Area type="monotone" dataKey="valor" stroke={theme.warningText} strokeWidth={2} fill="url(#gradCustos)"/>
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -3973,15 +3977,15 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Lista de notas */}
                 {custosFiltrados.length===0 ? (
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhuma nota encontrada.</div>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:40,textAlign:'center',color:theme.textMuted}}>Nenhuma nota encontrada.</div>
                 ) : (
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                     <div style={{overflowX:'auto'}}>
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
                         <thead>
-                          <tr style={{background:'#F4F7F5'}}>
+                          <tr style={{background:theme.bg}}>
                             {['Categoria','Piloto','Valor','Data','Voo Vinculado','Foto','Ações'].map(h=>(
-                              <th key={h} style={{padding:'11px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:'#5c7568',letterSpacing:.5,borderBottom:'1px solid #d7e6dc',whiteSpace:'nowrap',fontFamily:"'Syne',sans-serif"}}>{h}</th>
+                              <th key={h} style={{padding:'11px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:theme.textMuted,letterSpacing:.5,borderBottom:`1px solid ${theme.cardBorder2}`,whiteSpace:'nowrap',fontFamily:"'Syne',sans-serif"}}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -3990,28 +3994,28 @@ export default function AdminPanel({ onSwitchMode }) {
                             const rel = relDaNota(c)
                             return (
                               <tr key={c.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
-                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>
                                   <div style={{fontWeight:600}}>{CATEGORIA_ICON[c.categoria]||'🧾'} {c.categoria}</div>
-                                  {c.observacao && <div style={{fontSize:11,color:'#7ba38f',fontStyle:'italic',marginTop:2}}>{c.observacao}</div>}
+                                  {c.observacao && <div style={{fontSize:11,color:theme.textFaint2,fontStyle:'italic',marginTop:2}}>{c.observacao}</div>}
                                 </td>
-                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>{c.piloto_nome||'—'}</td>
-                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',fontWeight:700,color:'#00A86B'}}>R$ {parseFloat(c.valor).toFixed(2)}</td>
-                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',whiteSpace:'nowrap'}}>{new Date(c.data).toLocaleDateString('pt-BR')}</td>
-                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>{c.piloto_nome||'—'}</td>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,fontWeight:700,color:'#00A86B'}}>R$ {parseFloat(c.valor).toFixed(2)}</td>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap'}}>{new Date(c.data).toLocaleDateString('pt-BR')}</td>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>
                                   {c.ordem_servico ? (
-                                    <span style={{fontSize:11,fontWeight:600,color: rel?'#00A86B':'#f2960f'}}>
+                                    <span style={{fontSize:11,fontWeight:600,color: rel?'#00A86B':theme.warningText}}>
                                       {rel?`✅ ${rel.cliente} — ${rel.fazenda}`:`⚠️ OS ${c.ordem_servico} sem voo`}
                                     </span>
                                   ) : <span style={{color:'#c3d4c9'}}>—</span>}
                                 </td>
-                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0'}}>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>
                                   {c.foto_url ? (
                                     <FotoThumb supabase={supabase} path={c.foto_url} bucket="relatorios" onClick={()=>setFotoLightbox(c.foto_url)}/>
-                                  ) : <div style={{width:40,height:40,borderRadius:8,background:'#f7fbf8',border:'1px dashed #dcebe3',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:'#c3d4c9'}}>—</div>}
+                                  ) : <div style={{width:40,height:40,borderRadius:8,background:'#f7fbf8',border:`1px dashed ${theme.cardBorder}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,color:'#c3d4c9'}}>—</div>}
                                 </td>
-                                <td style={{padding:'11px 14px',borderBottom:'1px solid #eef5f0',whiteSpace:'nowrap'}}>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap'}}>
                                   {rel && <button title="Ir para o voo" style={sG.iconBtn} onClick={()=>{setSelected(rel);setTab('relatorios')}}>➡️</button>}
-                                  <button title="Deletar" style={{...sG.iconBtn,color:'#e5484d'}} onClick={()=>setConfirmDeleteDespesa(c)}>🗑️</button>
+                                  <button title="Deletar" style={{...sG.iconBtn,color:theme.dangerText}} onClick={()=>setConfirmDeleteDespesa(c)}>🗑️</button>
                                 </td>
                               </tr>
                             )
@@ -4076,60 +4080,60 @@ export default function AdminPanel({ onSwitchMode }) {
                   return (
                     <div>
                       {/* Filtros */}
-                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:'#fff',padding:12,borderRadius:16,border:'1px solid #dcebe3',alignItems:'center'}}>
-                        <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16,background:theme.card,padding:12,borderRadius:16,border:`1px solid ${theme.cardBorder}`,alignItems:'center'}}>
+                        <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 160px'}}
                           value={veicFiltros.veiculo} onChange={e=>setVeicFiltros(f=>({...f,veiculo:e.target.value}))}>
                           <option value="">Todos os veículos</option>
                           {veiculos.map(v=><option key={v.id} value={v.id}>{v.placa} — {v.marca} {v.modelo}</option>)}
                         </select>
                         <div style={{display:'flex',alignItems:'center',gap:4}}>
-                          <span style={{fontSize:11,color:'#5c7568'}}>De:</span>
-                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={veicFiltros.dataIni} onChange={e=>setVeicFiltros(f=>({...f,dataIni:e.target.value}))}/>
+                          <span style={{fontSize:11,color:theme.textMuted}}>De:</span>
+                          <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={veicFiltros.dataIni} onChange={e=>setVeicFiltros(f=>({...f,dataIni:e.target.value}))}/>
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:4}}>
-                          <span style={{fontSize:11,color:'#5c7568'}}>Até:</span>
-                          <input type="date" style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={veicFiltros.dataFim} onChange={e=>setVeicFiltros(f=>({...f,dataFim:e.target.value}))}/>
+                          <span style={{fontSize:11,color:theme.textMuted}}>Até:</span>
+                          <input type="date" style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={veicFiltros.dataFim} onChange={e=>setVeicFiltros(f=>({...f,dataFim:e.target.value}))}/>
                         </div>
                         {filtrosVeicAtivos && (
-                          <button style={{background:'none',border:'1px solid #f0b0a8',color:'#e5484d',borderRadius:12,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                          <button style={{background:'none',border:'1px solid #f0b0a8',color:theme.dangerText,borderRadius:12,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
                             onClick={()=>setVeicFiltros({veiculo:'',dataIni:'',dataFim:''})}>✕ Limpar</button>
                         )}
                       </div>
 
                       {/* KPIs */}
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:16}}>
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>GASTO TOTAL (FROTA)</div>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>GASTO TOTAL (FROTA)</div>
                           <div style={{fontSize:22,fontWeight:700,color:'#00A86B',fontFamily:"'Syne',sans-serif"}}>R$ {totalGastoFrota.toFixed(2)}</div>
                         </div>
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>MANUTENÇÃO</div>
-                          <div style={{fontSize:22,fontWeight:700,color:'#f2960f',fontFamily:"'Syne',sans-serif"}}>R$ {totalManut.toFixed(2)}</div>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>MANUTENÇÃO</div>
+                          <div style={{fontSize:22,fontWeight:700,color:theme.warningText,fontFamily:"'Syne',sans-serif"}}>R$ {totalManut.toFixed(2)}</div>
                         </div>
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>KM RODADOS</div>
-                          <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>{totalKm.toLocaleString('pt-BR')}</div>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>KM RODADOS</div>
+                          <div style={{fontSize:22,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>{totalKm.toLocaleString('pt-BR')}</div>
                         </div>
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                          <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:4}}>CUSTO / KM</div>
-                          <div style={{fontSize:22,fontWeight:700,color:'#0b1210',fontFamily:"'Syne',sans-serif"}}>R$ {custoPorKm.toFixed(2)}</div>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>CUSTO / KM</div>
+                          <div style={{fontSize:22,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>R$ {custoPorKm.toFixed(2)}</div>
                         </div>
                       </div>
 
                       {/* Ranking por veículo */}
                       {rankingVeiculo.length>0 && (
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                           <SecTitle>Total por Veículo</SecTitle>
                           <div style={{overflowX:'auto'}}>
                             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-                              <thead><tr style={{background:'#F4F7F5'}}>{['Veículo','Km rodados','Manutenção','Despesas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#7ba38f',fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                              <thead><tr style={{background:theme.bg}}>{['Veículo','Km rodados','Manutenção','Despesas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
                               <tbody>
                                 {rankingVeiculo.map(v=>(
-                                  <tr key={v.placa} style={{background:'#fff'}}>
+                                  <tr key={v.placa} style={{background:theme.card}}>
                                     <td style={{padding:'8px 10px',fontWeight:500}}>🚗 {v.placa}</td>
-                                    <td style={{padding:'8px 10px',color:'#5c7568'}}>{v.km.toLocaleString('pt-BR')} km</td>
-                                    <td style={{padding:'8px 10px',color:'#f2960f'}}>R$ {v.manut.toFixed(2)}</td>
-                                    <td style={{padding:'8px 10px',color:'#5c7568'}}>R$ {v.despesa.toFixed(2)}</td>
+                                    <td style={{padding:'8px 10px',color:theme.textMuted}}>{v.km.toLocaleString('pt-BR')} km</td>
+                                    <td style={{padding:'8px 10px',color:theme.warningText}}>R$ {v.manut.toFixed(2)}</td>
+                                    <td style={{padding:'8px 10px',color:theme.textMuted}}>R$ {v.despesa.toFixed(2)}</td>
                                     <td style={{padding:'8px 10px',fontWeight:700,color:'#00A86B'}}>R$ {(v.manut+v.despesa).toFixed(2)}</td>
                                   </tr>
                                 ))}
@@ -4141,16 +4145,16 @@ export default function AdminPanel({ onSwitchMode }) {
 
                       {/* Linha do tempo */}
                       {timeline.length===0 ? (
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum registro de viagem, manutenção ou despesa de veículo encontrado.</div>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:40,textAlign:'center',color:theme.textMuted}}>Nenhum registro de viagem, manutenção ou despesa de veículo encontrado.</div>
                       ) : (
-                        <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:'8px 0',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'8px 0',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                           {timeline.map((ev,i)=>(
                             <div key={ev.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 18px',borderBottom:i<timeline.length-1?'1px solid #f6faf7':'none'}}>
                               <div>
                                 <div style={{fontSize:13,fontWeight:600}}>{ev.detalhe}</div>
-                                <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>🚗 {ev.veiculo} · {new Date(ev.data).toLocaleDateString('pt-BR')}</div>
+                                <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>🚗 {ev.veiculo} · {new Date(ev.data).toLocaleDateString('pt-BR')}</div>
                               </div>
-                              {ev.valor!=null && <div style={{fontWeight:700,fontSize:14,color:ev.tipo==='manutencao'?'#f2960f':'#00A86B',fontFamily:"'Syne',sans-serif"}}>R$ {ev.valor.toFixed(2)}</div>}
+                              {ev.valor!=null && <div style={{fontWeight:700,fontSize:14,color:ev.tipo==='manutencao'?theme.warningText:'#00A86B',fontFamily:"'Syne',sans-serif"}}>R$ {ev.valor.toFixed(2)}</div>}
                             </div>
                           ))}
                         </div>
@@ -4190,86 +4194,86 @@ export default function AdminPanel({ onSwitchMode }) {
               <div key={r.id} onClick={()=>{setOsSearch(r.ordem_servico);setOsSearchCliente('')}}
                 style={{cursor:'pointer',background:'#f7fbf8',borderRadius:10,padding:'8px 12px',display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                 <div style={{fontSize:12}}><b style={{fontFamily:'ui-monospace,monospace'}}>{r.ordem_servico}</b> — {r.cliente} · {r.fazenda}</div>
-                <div style={{fontSize:11,color:'#7ba38f'}}>{r.dt_inicio?new Date(r.dt_inicio).toLocaleDateString('pt-BR'):''}</div>
+                <div style={{fontSize:11,color:theme.textFaint2}}>{r.dt_inicio?new Date(r.dt_inicio).toLocaleDateString('pt-BR'):''}</div>
               </div>
             )
 
             return (
               <div>
                 <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>🔍 Buscar Ordem de Serviço</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>Digite a OS pra ver o voo, as despesas e as viagens vinculadas a ela</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>🔍 Buscar Ordem de Serviço</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>Digite a OS pra ver o voo, as despesas e as viagens vinculadas a ela</div>
                 </div>
 
-                <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:18,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                  <input autoFocus style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:12,padding:'12px 14px',fontSize:15,outline:'none',boxSizing:'border-box',fontFamily:'ui-monospace,monospace'}}
+                <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:18,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <input autoFocus style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'12px 14px',fontSize:15,outline:'none',boxSizing:'border-box',fontFamily:'ui-monospace,monospace'}}
                     placeholder="Ex: wcjvee" value={osSearch} onChange={e=>setOsSearch(e.target.value)} />
                 </div>
 
                 {!q ? (
                   <div style={{display:'flex',flexDirection:'column',gap:16}}>
-                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                       <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:12}}>🕒 Últimas OS</div>
-                      {ultimasOS.length===0 ? <div style={{fontSize:13,color:'#7ba38f'}}>Nenhum voo com OS ainda.</div> : (
+                      {ultimasOS.length===0 ? <div style={{fontSize:13,color:theme.textFaint2}}>Nenhum voo com OS ainda.</div> : (
                         <div style={{display:'flex',flexDirection:'column',gap:6}}>{ultimasOS.map(LinhaOS)}</div>
                       )}
                     </div>
-                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                       <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:10}}>🔎 Buscar por Cliente/Fazenda</div>
-                      <input style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:12,padding:'10px 12px',fontSize:13,outline:'none',boxSizing:'border-box',marginBottom:qCliente?12:0}}
+                      <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'10px 12px',fontSize:13,outline:'none',boxSizing:'border-box',marginBottom:qCliente?12:0}}
                         placeholder="Ex: Fazenda Santa Rita" value={osSearchCliente} onChange={e=>setOsSearchCliente(e.target.value)} />
                       {qCliente && (
                         resultadosClienteFazenda.length===0
-                          ? <div style={{fontSize:13,color:'#7ba38f'}}>Nada encontrado.</div>
+                          ? <div style={{fontSize:13,color:theme.textFaint2}}>Nada encontrado.</div>
                           : <div style={{display:'flex',flexDirection:'column',gap:6}}>{resultadosClienteFazenda.map(LinhaOS)}</div>
                       )}
                     </div>
                   </div>
                 ) : !relEncontrado && despesasOS.length===0 && viagensOS.length===0 ? (
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum voo, despesa ou viagem encontrado com a OS "{osSearch}".</div>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:40,textAlign:'center',color:theme.textMuted}}>Nenhum voo, despesa ou viagem encontrado com a OS "{osSearch}".</div>
                 ) : (
                   <div style={{display:'flex',flexDirection:'column',gap:16}}>
                     {!relEncontrado && (
-                      <div style={{background:'#fff3e0',color:'#7a5200',borderRadius:14,padding:'12px 16px',fontSize:13}}>
+                      <div style={{background:theme.warningBg,color:'#7a5200',borderRadius:14,padding:'12px 16px',fontSize:13}}>
                         ⚠️ Não encontrei nenhum voo com essa OS, mas existem notas/viagens vinculadas a ela (abaixo). Confira se digitou certo.
                       </div>
                     )}
 
                     {relEncontrado && (
-                      <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,flexWrap:'wrap',gap:8}}>
                           <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>{relEncontrado.cliente} — {relEncontrado.fazenda}</div>
-                          <span style={{background:STATUS_BG[relEncontrado.status]||'#F4F7F5',color:STATUS_COLOR[relEncontrado.status]||'#5c7568',fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20}}>{STATUS_LABEL[relEncontrado.status]||relEncontrado.status}</span>
+                          <span style={{background:statusBg(theme)[relEncontrado.status]||theme.bg,color:statusColor(theme)[relEncontrado.status]||theme.textMuted,fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20}}>{STATUS_LABEL[relEncontrado.status]||relEncontrado.status}</span>
                         </div>
                         <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:14}}>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>PILOTO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.piloto_nome||'—'}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>DRONE</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.drone||'—'}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>ÁREA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.area_ha?`${relEncontrado.area_ha} ha`:'—'}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>TEMPO</div><div style={{fontSize:13,fontWeight:600}}>{tempo?.total||'—'}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>DATA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.dt_inicio?new Date(relEncontrado.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>TIPO SERVIÇO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.tipo_servico==='catacao'?'Catação':relEncontrado.tipo_servico==='area_total'?'Área Total':'—'}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>QTDE VOOS</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.qtd_voos||1}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:'#7ba38f'}}>PRODUTOS</div><div style={{fontSize:13,fontWeight:600}}>{(relEncontrado.produtos||[]).join(', ')||'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>PILOTO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.piloto_nome||'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>DRONE</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.drone||'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>ÁREA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.area_ha?`${relEncontrado.area_ha} ha`:'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>TEMPO</div><div style={{fontSize:13,fontWeight:600}}>{tempo?.total||'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>DATA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.dt_inicio?new Date(relEncontrado.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>TIPO SERVIÇO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.tipo_servico==='catacao'?'Catação':relEncontrado.tipo_servico==='area_total'?'Área Total':'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>QTDE VOOS</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.qtd_voos||1}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>PRODUTOS</div><div style={{fontSize:13,fontWeight:600}}>{(relEncontrado.produtos||[]).join(', ')||'—'}</div></div>
                         </div>
                         <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                          <button style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}} onClick={()=>{setSelected(relEncontrado);setTab('relatorios')}}>Ver relatório completo</button>
+                          <button style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}} onClick={()=>{setSelected(relEncontrado);setTab('relatorios')}}>Ver relatório completo</button>
                           <button style={{background:'#22c476',color:'#fff',border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}} onClick={()=>gerarPDF(relEncontrado,null,null,'cliente')}>🟢 PDF Cliente</button>
                         </div>
                       </div>
                     )}
 
-                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
                         <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700}}>💰 Despesas Vinculadas</div>
                         {despesasOS.length>0 && <div style={{fontSize:15,fontWeight:700,color:'#00A86B'}}>Total: R$ {totalDespesas.toFixed(2)}</div>}
                       </div>
-                      {despesasOS.length===0 ? <div style={{fontSize:13,color:'#7ba38f'}}>Nenhuma despesa vinculada a essa OS.</div> : (
+                      {despesasOS.length===0 ? <div style={{fontSize:13,color:theme.textFaint2}}>Nenhuma despesa vinculada a essa OS.</div> : (
                         <div style={{display:'flex',flexDirection:'column',gap:8}}>
                           {despesasOS.map(c=>(
                             <div key={c.id} style={{background:'#f7fbf8',borderRadius:12,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
                               <div>
                                 <div style={{fontSize:13,fontWeight:600}}>{CAT_ICON[c.categoria]||'🧾'} {c.categoria} — {c.piloto_nome||'—'}</div>
-                                <div style={{fontSize:11,color:'#7ba38f'}}>{new Date(c.data).toLocaleDateString('pt-BR')}{c.observacao?` · ${c.observacao}`:''}</div>
+                                <div style={{fontSize:11,color:theme.textFaint2}}>{new Date(c.data).toLocaleDateString('pt-BR')}{c.observacao?` · ${c.observacao}`:''}</div>
                               </div>
                               <div style={{fontSize:14,fontWeight:700,color:'#00A86B'}}>R$ {parseFloat(c.valor).toFixed(2)}</div>
                             </div>
@@ -4278,15 +4282,15 @@ export default function AdminPanel({ onSwitchMode }) {
                       )}
                     </div>
 
-                    <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                       <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:14}}>🚗 Viagens Vinculadas</div>
-                      {viagensOS.length===0 ? <div style={{fontSize:13,color:'#7ba38f'}}>Nenhuma viagem vinculada a essa OS.</div> : (
+                      {viagensOS.length===0 ? <div style={{fontSize:13,color:theme.textFaint2}}>Nenhuma viagem vinculada a essa OS.</div> : (
                         <div style={{display:'flex',flexDirection:'column',gap:8}}>
                           {viagensOS.map(v=>(
                             <div key={v.id} style={{background:'#f7fbf8',borderRadius:12,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
                               <div>
                                 <div style={{fontSize:13,fontWeight:600}}>🚗 {veiculos.find(x=>x.id===v.veiculo_id)?.placa || '—'} — {v.motorista||'—'}</div>
-                                <div style={{fontSize:11,color:'#7ba38f'}}>{new Date(v.data).toLocaleDateString('pt-BR')}{v.destino?` · ${v.destino}`:''}</div>
+                                <div style={{fontSize:11,color:theme.textFaint2}}>{new Date(v.data).toLocaleDateString('pt-BR')}{v.destino?` · ${v.destino}`:''}</div>
                               </div>
                               <div style={{fontSize:14,fontWeight:700,color:'#2f6fed'}}>{Math.max(0,(v.km_final||0)-(v.km_inicial||0)).toFixed(0)} km</div>
                             </div>
@@ -4296,7 +4300,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
 
                     {incidentesOS.length>0 && (
-                      <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                      <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                         <div style={{fontFamily:"'Syne',sans-serif",fontSize:14,fontWeight:700,marginBottom:14}}>⚠️ Incidente Vinculado</div>
                         <div style={{display:'flex',flexDirection:'column',gap:8}}>
                           {incidentesOS.map(inc=>{
@@ -4307,7 +4311,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                   <div style={{fontSize:13,fontWeight:600}}>{INC_TIPO_LABEL[inc.tipo]||inc.tipo} — {inc.piloto_nome}</div>
                                   <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:ST.bg,color:ST.cor}}>{ST.label}</span>
                                 </div>
-                                <div style={{fontSize:12,color:'#5c7568',marginBottom:6}}>{inc.descricao}</div>
+                                <div style={{fontSize:12,color:theme.textMuted,marginBottom:6}}>{inc.descricao}</div>
                                 <button style={{background:'none',border:'none',color:'#00A86B',fontSize:12,fontWeight:600,cursor:'pointer',padding:0}}
                                   onClick={()=>{setIncidenteFocoId(inc.id);setTab('incidentes')}}>Ver incidente completo →</button>
                               </div>
@@ -4444,10 +4448,10 @@ export default function AdminPanel({ onSwitchMode }) {
             })
 
             const STATUS_BADGE = {
-              pendente:{ label:'Pendente', bg:'#fff3e0', cor:'#f2960f' },
-              concluido:{ label:'Concluído', bg:'#e3f7ec', cor:'#00A86B' },
-              cancelado:{ label:'Cancelado', bg:'#fdeaea', cor:'#e5484d' },
-              recusado:{ label:'Recusado pelo piloto', bg:'#fdeaea', cor:'#e5484d' },
+              pendente:{ label:'Pendente', bg:theme.warningBg, cor:theme.warningText },
+              concluido:{ label:'Concluído', bg:theme.successBg, cor:'#00A86B' },
+              cancelado:{ label:'Cancelado', bg:theme.dangerBg, cor:theme.dangerText },
+              recusado:{ label:'Recusado pelo piloto', bg:theme.dangerBg, cor:theme.dangerText },
             }
 
             const filtroLabelAgenda = [
@@ -4502,13 +4506,13 @@ export default function AdminPanel({ onSwitchMode }) {
             return (
               <div>
                 <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>📅 Agenda</div>
-                  <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{agenda.filter(a=>a.status==='pendente').length} pendentes · {agenda.length} no total</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>📅 Agenda</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{agenda.filter(a=>a.status==='pendente').length} pendentes · {agenda.length} no total</div>
                 </div>
 
                 {/* Novo agendamento */}
-                <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-                  <div style={{fontSize:13,fontWeight:700,color:'#0b1210',marginBottom:12,fontFamily:"'Syne',sans-serif"}}>+ Novo Agendamento</div>
+                <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <div style={{fontSize:13,fontWeight:700,color:theme.text,marginBottom:12,fontFamily:"'Syne',sans-serif"}}>+ Novo Agendamento</div>
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
                     <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.piloto_id} onChange={e=>{
                       const pilotoId = e.target.value
@@ -4544,8 +4548,8 @@ export default function AdminPanel({ onSwitchMode }) {
 
                   {talhoesDaFazendaAgenda.length>0 && (
                     <div style={{marginBottom:8}}>
-                      <div style={{fontSize:10,fontWeight:700,color:'#5c7568',letterSpacing:.5,marginBottom:4}}>TALHÕES (OPCIONAL)</div>
-                      <div style={{border:'1px solid #d7e6dc',borderRadius:10,overflow:'hidden',maxHeight:160,overflowY:'auto'}}>
+                      <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>TALHÕES (OPCIONAL)</div>
+                      <div style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,overflow:'hidden',maxHeight:160,overflowY:'auto'}}>
                         {talhoesDaFazendaAgenda.map(t=>{
                           const sel = talhoesSelecionadosAgenda.includes(t.nome)
                           const prog = progressoTalhaoAgenda(t)
@@ -4553,11 +4557,11 @@ export default function AdminPanel({ onSwitchMode }) {
                           const parcial = prog && prog.pct>0 && prog.pct<100
                           return (
                             <div key={t.id} onClick={()=>toggleTalhaoAgenda(t.nome)}
-                              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',cursor:'pointer',fontSize:12,background:sel?'#e3f7ec':finalizado?'#eafaf0':parcial?'#fff8e6':'#fff',borderBottom:'1px solid #f0f5f2'}}>
+                              style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',cursor:'pointer',fontSize:12,background:sel?theme.successBg:finalizado?'#eafaf0':parcial?'#fff8e6':'#fff',borderBottom:'1px solid #f0f5f2'}}>
                               <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${sel?'#00A86B':'#c3d4c9'}`,background:sel?'#00A86B':'#fff',flexShrink:0}}/>
                               <span style={{flex:1}}>{t.nome}
                                 {finalizado&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:'#fff',background:'#00A86B',padding:'1px 6px',borderRadius:20}}>✓ Concluído</span>}
-                                {parcial&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:'#a3690a',background:'#ffe9b8',padding:'1px 6px',borderRadius:20}}>{prog.pct.toFixed(0)}%</span>}
+                                {parcial&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:theme.warningText2,background:'#ffe9b8',padding:'1px 6px',borderRadius:20}}>{prog.pct.toFixed(0)}%</span>}
                               </span>
                               {t.area_ha&&<span style={{color:'#00A86B',fontWeight:600}}>{t.area_ha} ha</span>}
                             </div>
@@ -4568,13 +4572,13 @@ export default function AdminPanel({ onSwitchMode }) {
                   )}
 
                   {conflitosAgenda.length>0 && (
-                    <div style={{background:'#fff3e0',border:'1px solid #f2960f',borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:'#a3690a'}}>
+                    <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText}`,borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:theme.warningText2}}>
                       ⚠️ Já existe agendamento pendente pra essa fazenda/talhão: {conflitosAgenda.map(c=>`${c.piloto_nome} (${new Date(c.data_prevista+'T12:00:00').toLocaleDateString('pt-BR')})`).join(', ')}
                     </div>
                   )}
 
                   {areaEstimadaAgenda>0 && (
-                    <div style={{fontSize:11,color:'#7ba38f',marginBottom:6}}>📐 Área considerada pra estimativa: {areaEstimadaAgenda.toFixed(1)} ha{talhoesSelecionadosAgenda.length===0&&talhoesDaFazendaAgenda.length>0?' (fazenda inteira — nenhum talhão marcado)':''}</div>
+                    <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>📐 Área considerada pra estimativa: {areaEstimadaAgenda.toFixed(1)} ha{talhoesSelecionadosAgenda.length===0&&talhoesDaFazendaAgenda.length>0?' (fazenda inteira — nenhum talhão marcado)':''}</div>
                   )}
                   {agendaForm.produtos.map((p,i)=>{
                     const est = qtdEstimadaProduto(p.produto, p.dose)
@@ -4590,7 +4594,7 @@ export default function AdminPanel({ onSwitchMode }) {
                           </select>
                           <input style={{...sG.fi,flex:'1 1 140px'}} placeholder="Dose (ex: 2 L/ha)" value={p.dose} onChange={e=>setAgendaForm(f=>{ const arr=[...f.produtos]; arr[i]={...arr[i],dose:e.target.value}; return {...f,produtos:arr} })}/>
                           {agendaForm.produtos.length>1 && (
-                            <button type="button" style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:10,width:36,cursor:'pointer'}}
+                            <button type="button" style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:10,width:36,cursor:'pointer'}}
                               onClick={()=>setAgendaForm(f=>({...f,produtos:f.produtos.filter((_,idx)=>idx!==i)}))}>✕</button>
                           )}
                         </div>
@@ -4628,7 +4632,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   {agendaForm.drone && agendaForm.data_prevista && (()=>{
                     const conflito = agenda.find(a=>a.status==='pendente' && a.drone===agendaForm.drone && a.data_prevista===agendaForm.data_prevista && a.piloto_id!==agendaForm.piloto_id)
                     return conflito ? (
-                      <div style={{background:'#fff3e0',border:'1px solid #f2960f',borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:'#a3690a'}}>
+                      <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText}`,borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:theme.warningText2}}>
                         ⚠️ Esse drone já está agendado pra {conflito.piloto_nome} nesse dia ({conflito.cliente} — {conflito.fazenda}).
                       </div>
                     ) : null
@@ -4641,7 +4645,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     if(conflitos.length===0) return null
                     const lotado = conflitos.length>=2
                     return (
-                      <div style={{background:lotado?'#fdeaea':'#fff3e0',border:`1px solid ${lotado?'#e5484d':'#f2960f'}`,borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:lotado?'#a3221e':'#a3690a'}}>
+                      <div style={{background:lotado?theme.dangerBg:theme.warningBg,border:`1px solid ${lotado?theme.dangerText:theme.warningText}`,borderRadius:10,padding:'8px 12px',marginBottom:8,fontSize:12,color:lotado?'#a3221e':theme.warningText2}}>
                         {lotado?'🔴 Esse carro já está lotado nesse dia (2 outros agendamentos): ':'⚠️ Esse carro já tem 1 outro agendamento nesse dia (ainda cabe mais 1): '}
                         {conflitos.map(c=>`${c.piloto_nome} (${c.cliente} — ${c.fazenda})`).join(', ')}
                       </div>
@@ -4650,11 +4654,11 @@ export default function AdminPanel({ onSwitchMode }) {
 
                   {agendaForm.fazenda && agendaForm.data_prevista && (
                     agendaClimaLoading ? (
-                      <div style={{fontSize:12,color:'#7ba38f',marginBottom:12}}>🌦️ Buscando previsão do tempo da fazenda...</div>
+                      <div style={{fontSize:12,color:theme.textFaint2,marginBottom:12}}>🌦️ Buscando previsão do tempo da fazenda...</div>
                     ) : agendaClima?.foraDoAlcance ? (
                       <div style={{fontSize:12,color:'#aaa',marginBottom:12,fontStyle:'italic'}}>Data fora do alcance da previsão (máx. 16 dias)</div>
                     ) : agendaClima ? (
-                      <div style={{background:'#F4F7F5',borderRadius:12,padding:'10px 14px',marginBottom:12,display:'flex',flexDirection:'column',gap:8,fontSize:12,color:'#0b1210'}}>
+                      <div style={{background:theme.bg,borderRadius:12,padding:'10px 14px',marginBottom:12,display:'flex',flexDirection:'column',gap:8,fontSize:12,color:theme.text}}>
                         <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
                           <span>🌦️ <strong>Previsão em {agendaForm.fazenda}:</strong></span>
                           <span>🌡️ {agendaClima.tempMin?.toFixed(0)}° - {agendaClima.tempMax?.toFixed(0)}°C</span>
@@ -4678,11 +4682,11 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Filtros */}
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
-                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={agendaFiltros.piloto} onChange={e=>setAgendaFiltros(f=>({...f,piloto:e.target.value}))}>
+                  <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={agendaFiltros.piloto} onChange={e=>setAgendaFiltros(f=>({...f,piloto:e.target.value}))}>
                     <option value="">Todos os pilotos</option>
                     {pilotosAtivos.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
                   </select>
-                  <select style={{border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={agendaFiltros.status} onChange={e=>setAgendaFiltros(f=>({...f,status:e.target.value}))}>
+                  <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none'}} value={agendaFiltros.status} onChange={e=>setAgendaFiltros(f=>({...f,status:e.target.value}))}>
                     <option value="">Todos os status</option>
                     <option value="pendente">Pendente</option>
                     <option value="concluido">Concluído</option>
@@ -4690,7 +4694,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <option value="recusado">Recusado pelo piloto</option>
                   </select>
                   <div style={{flex:1}}/>
-                  <button style={{background:'#F4F7F5',color:'#00A86B',border:'1px solid #d7e6dc',borderRadius:12,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer',opacity:agendaExportLoading?.6:1}}
+                  <button style={{background:theme.bg,color:'#00A86B',border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer',opacity:agendaExportLoading?.6:1}}
                     disabled={!!agendaExportLoading} onClick={()=>exportarAgenda('pdf')}>
                     {agendaExportLoading==='pdf'?'Gerando...':'📄 Exportar PDF'}
                   </button>
@@ -4702,34 +4706,34 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Lista */}
                 {agendaFiltrada.length===0 ? (
-                  <div style={{background:'#fff',borderRadius:20,border:'1px solid #dcebe3',padding:40,textAlign:'center',color:'#5c7568'}}>Nenhum agendamento encontrado.</div>
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:40,textAlign:'center',color:theme.textMuted}}>Nenhum agendamento encontrado.</div>
                 ) : (
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
                     {agendaFiltrada.map(a=>{
                       const atrasado = a.status==='pendente' && new Date(a.data_prevista)<hoje
                       const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
                       return (
-                        <div key={a.id} style={{background:'#fff',borderRadius:18,border:'1px solid #dcebe3',padding:14,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,boxShadow:'0 4px 14px rgba(11,18,16,0.04)'}}>
+                        <div key={a.id} style={{background:theme.card,borderRadius:18,border:`1px solid ${theme.cardBorder}`,padding:14,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10,boxShadow:'0 4px 14px rgba(11,18,16,0.04)'}}>
                           <div>
                             <div style={{display:'flex',alignItems:'center',gap:8}}>
                               <span style={{fontWeight:700,fontSize:14}}>{a.piloto_nome}</span>
                               <span style={{background:badge.bg,color:badge.cor,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>{badge.label}</span>
-                              {atrasado&&<span style={{background:'#fdeaea',color:'#e5484d',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
-                              {a.ordem_servico&&<span style={{background:'#eef5f0',color:'#5c7568',fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
+                              {atrasado&&<span style={{background:theme.dangerBg,color:theme.dangerText,fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ Atrasado</span>}
+                              {a.ordem_servico&&<span style={{background:theme.divider,color:theme.textMuted,fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:20}}>OS {a.ordem_servico}</span>}
                             </div>
-                            <div style={{fontSize:12,color:'#5c7568',marginTop:3}}>{a.cliente} — {a.fazenda}{a.talhao?` (${a.talhao})`:''}{a.produto?` · ${a.produto}${a.dose?` ${a.dose}`:''}`:''}{a.drone?` · 🚁 ${a.drone}`:''}</div>
-                            <div style={{fontSize:11,color:'#7ba38f',marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</div>
-                            {a.observacao&&<div style={{fontSize:11,color:'#5c7568',marginTop:4,fontStyle:'italic'}}>{a.observacao}</div>}
-                            {a.status==='recusado'&&a.motivo_recusa&&<div style={{fontSize:11,color:'#e5484d',marginTop:4}}>Motivo: {a.motivo_recusa}</div>}
+                            <div style={{fontSize:12,color:theme.textMuted,marginTop:3}}>{a.cliente} — {a.fazenda}{a.talhao?` (${a.talhao})`:''}{a.produto?` · ${a.produto}${a.dose?` ${a.dose}`:''}`:''}{a.drone?` · 🚁 ${a.drone}`:''}</div>
+                            <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>{new Date(a.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</div>
+                            {a.observacao&&<div style={{fontSize:11,color:theme.textMuted,marginTop:4,fontStyle:'italic'}}>{a.observacao}</div>}
+                            {a.status==='recusado'&&a.motivo_recusa&&<div style={{fontSize:11,color:theme.dangerText,marginTop:4}}>Motivo: {a.motivo_recusa}</div>}
                           </div>
                           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                             {a.status==='pendente'&&(
                               <>
-                                <button style={{background:'#e3f7ec',color:'#00A86B',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'concluido')}>✓ Concluído</button>
-                                <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'cancelado')}>Cancelar</button>
+                                <button style={{background:theme.successBg,color:'#00A86B',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'concluido')}>✓ Concluído</button>
+                                <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'cancelado')}>Cancelar</button>
                               </>
                             )}
-                            <button style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirAgendamento(a)}>🗑️</button>
+                            <button style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirAgendamento(a)}>🗑️</button>
                           </div>
                         </div>
                       )
@@ -4744,39 +4748,39 @@ export default function AdminPanel({ onSwitchMode }) {
           {tab === 'pilotos' && (
             <div>
               <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>{isSupervisor?'Equipes':'Gestão de Usuários'}</div>
-                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>{pilotos.length} usuários · {times.length} time(s)</div>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>{isSupervisor?'Equipes':'Gestão de Usuários'}</div>
+                <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{pilotos.length} usuários · {times.length} time(s)</div>
               </div>
 
-              <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4,marginBottom:18,maxWidth:320}}>
-                <button style={{flex:1,background:usuariosSubTab==='usuarios'?'#fff':'transparent',color:usuariosSubTab==='usuarios'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='usuarios'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+              <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4,marginBottom:18,maxWidth:320}}>
+                <button style={{flex:1,background:usuariosSubTab==='usuarios'?'#fff':'transparent',color:usuariosSubTab==='usuarios'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='usuarios'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                   onClick={()=>setUsuariosSubTab('usuarios')}>👥 Usuários</button>
-                <button style={{flex:1,background:usuariosSubTab==='equipes'?'#fff':'transparent',color:usuariosSubTab==='equipes'?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='equipes'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                <button style={{flex:1,background:usuariosSubTab==='equipes'?'#fff':'transparent',color:usuariosSubTab==='equipes'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='equipes'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                   onClick={()=>setUsuariosSubTab('equipes')}>🧑‍🤝‍🧑 Equipes</button>
               </div>
 
               {usuariosSubTab==='equipes' && (
                 <div>
-                  <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:16,marginBottom:16,display:'flex',gap:8,maxWidth:420}}>
+                  <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:16,marginBottom:16,display:'flex',gap:8,maxWidth:420}}>
                     <input style={{...sG.input,flex:1}} placeholder="Nome do novo time (ex: Time Norte)" value={novoTimeNome} onChange={e=>setNovoTimeNome(e.target.value)}/>
                     <button style={{...sG.btn,width:'auto',padding:'0 18px'}} onClick={criarTime}>+ Criar</button>
                   </div>
                   {times.length===0 ? (
-                    <div style={{background:'#fff',borderRadius:12,border:'1px solid #d7e6dc',padding:30,textAlign:'center',color:'#5c7568',fontSize:13}}>Nenhum time cadastrado ainda.</div>
+                    <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:30,textAlign:'center',color:theme.textMuted,fontSize:13}}>Nenhum time cadastrado ainda.</div>
                   ) : (
                     <div style={{display:'flex',flexDirection:'column',gap:12}}>
                       {times.map(t=>{
                         const membros = pilotos.filter(p=>p.time_id===t.id)
                         const fazendasDoTime = fazendaTimes.filter(ft=>ft.time_id===t.id).map(ft=>ft.fazenda_id)
                         return (
-                          <div key={t.id} style={{background:'#fff',borderRadius:16,border:'1px solid #d7e6dc',padding:16}}>
+                          <div key={t.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder2}`,padding:16}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
                               <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700}}>🧑‍🤝‍🧑 {t.nome}</div>
-                              <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirTime(t)}>🗑️ Excluir</button>
+                              <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirTime(t)}>🗑️ Excluir</button>
                             </div>
-                            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>PILOTOS ({membros.length})</div>
-                            <div style={{fontSize:12,color:'#5c7568',marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na aba Usuários.'}</div>
-                            <div style={{fontSize:11,fontWeight:700,color:'#7ba38f',marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
+                            <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>PILOTOS ({membros.length})</div>
+                            <div style={{fontSize:12,color:theme.textMuted,marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na aba Usuários.'}</div>
+                            <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
                             <ChecklistFazendasPorCliente chavePrefixo={t.id} marcadas={fazendasDoTime} onToggle={fzId=>toggleFazendaTime(fzId,t.id)}/>
                             <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo, a menos que o piloto tenha permissão individual — ver aba Usuários).</div>
                           </div>
@@ -4789,7 +4793,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
               {usuariosSubTab==='usuarios' && (
               <div style={{ display:'flex', gap:20, flexDirection: isMobile?'column':'row', alignItems:'flex-start' }}>
-                <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', padding:20, width: isMobile?'100%':280, flexShrink:0 }}>
+                <div style={{ background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, padding:20, width: isMobile?'100%':280, flexShrink:0 }}>
                   <div style={{ fontFamily:"'Syne',sans-serif", fontSize:14, fontWeight:700, marginBottom:16 }}>+ Novo usuário</div>
                   <form onSubmit={criarUsuario} style={{ display:'flex', flexDirection:'column', gap:12 }}>
                     {[['Nome completo','nome','text','João Silva'],['E-mail','email','email','piloto@email.com'],['Senha','senha','password','Mínimo 6 caracteres']].map(([lbl,key,type,ph]) => (
@@ -4810,16 +4814,16 @@ export default function AdminPanel({ onSwitchMode }) {
                   </form>
                 </div>
                 <div style={{ flex:1, overflowX:'auto' }}>
-                  <table style={{ width:'100%', borderCollapse:'collapse', background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden' }}>
-                    <thead><tr style={{ background:'#F4F7F5' }}>{['Usuário','E-mail','Perfil','Time','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'10px 13px', textAlign:'left', fontSize:11, fontWeight:700, color:'#5c7568', borderBottom:'1px solid #d7e6dc', fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
+                  <table style={{ width:'100%', borderCollapse:'collapse', background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden' }}>
+                    <thead><tr style={{ background:theme.bg }}>{['Usuário','E-mail','Perfil','Time','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'10px 13px', textAlign:'left', fontSize:11, fontWeight:700, color:theme.textMuted, borderBottom:`1px solid ${theme.cardBorder2}`, fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {pilotos.map((p, i) => (
                         <tr key={p.id} style={{ background: i%2===0?'#fff':'#f7fbf8', opacity: p.ativo?1:.5 }}>
-                          <td style={sG.td}><div style={{ display:'flex', alignItems:'center', gap:8 }}><div style={{ width:30, height:30, borderRadius:'50%', background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':'#e3f7ec', color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#00A86B', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div><span style={{ fontWeight:500 }}>{p.nome}</span></div></td>
-                          <td style={{ ...sG.td, color:'#5c7568', fontSize:12 }}>{p.email}</td>
+                          <td style={sG.td}><div style={{ display:'flex', alignItems:'center', gap:8 }}><div style={{ width:30, height:30, borderRadius:'50%', background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':theme.successBg, color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#00A86B', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div><span style={{ fontWeight:500 }}>{p.nome}</span></div></td>
+                          <td style={{ ...sG.td, color:theme.textMuted, fontSize:12 }}>{p.email}</td>
                           <td style={sG.td}>
                             {p.id === profile?.id ? (
-                              <span style={{ background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':'#e3f7ec', color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#00875A', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.role==='admin'?'⚙️ Admin':p.role==='supervisor'?'🧑‍🤝‍🧑 Supervisor':'🚁 Piloto'}</span>
+                              <span style={{ background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':theme.successBg, color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#00875A', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.role==='admin'?'⚙️ Admin':p.role==='supervisor'?'🧑‍🤝‍🧑 Supervisor':'🚁 Piloto'}</span>
                             ) : (
                               <select style={{...sG.input,padding:'4px 8px',fontSize:11,width:'auto'}} value={p.role||'piloto'} onChange={e=>toggleRoleTo(p,e.target.value)}>
                                 <option value="piloto">🚁 Piloto</option>
@@ -4836,19 +4840,19 @@ export default function AdminPanel({ onSwitchMode }) {
                               </select>
                               {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
                                 return (
-                                  <button title="Fazendas individuais" style={{background:n>0?'#e3f7ec':'#F4F7F5',color:n>0?'#00A86B':'#5c7568',border:'none',borderRadius:12,padding:'4px 8px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
+                                  <button title="Fazendas individuais" style={{background:n>0?theme.successBg:theme.bg,color:n>0?'#00A86B':theme.textMuted,border:'none',borderRadius:12,padding:'4px 8px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
                                     onClick={()=>setPilotoFazendasModal(p)}>📍{n>0?` ${n}`:''}</button>
                                 )
                               })()}
                             </div>
                           </td>
                           <td style={{ ...sG.td, fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#00A86B', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
-                          <td style={{ ...sG.td }}><span style={{ background: p.ativo?'#e3f7ec':'#fee', color: p.ativo?'#00A86B':'#e5484d', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.ativo?'Ativo':'Inativo'}</span></td>
+                          <td style={{ ...sG.td }}><span style={{ background: p.ativo?theme.successBg:'#fee', color: p.ativo?'#00A86B':theme.dangerText, fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.ativo?'Ativo':'Inativo'}</span></td>
                           <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
-                            <button style={{ background: p.ativo?'#fee':'#e3f7ec', color: p.ativo?'#e5484d':'#00A86B', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
+                            <button style={{ background: p.ativo?'#fee':theme.successBg, color: p.ativo?theme.dangerText:'#00A86B', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
                             <button style={{ background:'#eef2fb', color:'#2952a3', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => resetarSenha(p)}>🔑 Senha</button>
                             {p.id !== profile?.id && (
-                              <button style={{ background:'#fee', color:'#e5484d', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={() => deletarUsuario(p)}>🗑️ Deletar</button>
+                              <button style={{ background:'#fee', color:theme.dangerText, border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={() => deletarUsuario(p)}>🗑️ Deletar</button>
                             )}
                           </td>
                         </tr>
@@ -4864,115 +4868,115 @@ export default function AdminPanel({ onSwitchMode }) {
           {tab === 'configuracoes' && (
             <div>
               <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:'#0b1210' }}>⚙️ Configurações do Sistema</div>
-                <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>Opções globais que afetam o app inteiro.</div>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>⚙️ Configurações do Sistema</div>
+                <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>Opções globais que afetam o app inteiro.</div>
               </div>
 
               {/* Sub-abas */}
-              <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:420,flexWrap:'wrap'}}>
+              <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:420,flexWrap:'wrap'}}>
                 {[
                   {id:'geral',label:'🏢 Geral'},
                   {id:'clima',label:'🌦️ Clima'},
                 ].map(t=>(
-                  <button key={t.id} style={{flex:'1 1 auto',minWidth:110,background:configSubTab===t.id?'#fff':'transparent',color:configSubTab===t.id?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:configSubTab===t.id?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                  <button key={t.id} style={{flex:'1 1 auto',minWidth:110,background:configSubTab===t.id?'#fff':'transparent',color:configSubTab===t.id?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:configSubTab===t.id?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setConfigSubTab(t.id)}>{t.label}</button>
                 ))}
               </div>
 
               {configSubTab==='clima' && (<>
-              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
+              <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:520 }}>
                 <SecTitle>🌦️ Provedor de Dados Meteorológicos</SecTitle>
-                <div style={{ fontSize:12.5, color:'#5c7568', marginBottom:14 }}>
+                <div style={{ fontSize:12.5, color:theme.textMuted, marginBottom:14 }}>
                   Escolha qual API alimenta os cards e gráficos da tela de Previsão do Tempo (Temperatura, Chuva, Vento e Delta T). Se o provedor escolhido falhar, o sistema tenta o outro automaticamente antes de mostrar erro.
                 </div>
                 {weatherProviderCarregando ? (
-                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Carregando...</div>
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Carregando...</div>
                 ) : (
                   <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                     {[
                       { id:'meteoblue', label:'Meteoblue', desc:'API Principal (paga, mais precisa)' },
                       { id:'open_meteo', label:'Open-Meteo', desc:'API de Backup (gratuita)' },
                     ].map(op => (
-                      <label key={op.id} style={{ display:'flex', alignItems:'center', gap:10, background: weatherProvider===op.id?'#e3f7ec':'#F4F7F5', border: weatherProvider===op.id?'1px solid #00A86B':'1px solid transparent', borderRadius:12, padding:'11px 14px', cursor: weatherProviderSalvando?'default':'pointer', opacity: weatherProviderSalvando?.6:1 }}>
+                      <label key={op.id} style={{ display:'flex', alignItems:'center', gap:10, background: weatherProvider===op.id?theme.successBg:theme.bg, border: weatherProvider===op.id?'1px solid #00A86B':'1px solid transparent', borderRadius:12, padding:'11px 14px', cursor: weatherProviderSalvando?'default':'pointer', opacity: weatherProviderSalvando?.6:1 }}>
                         <input type="radio" name="weatherProvider" checked={weatherProvider===op.id} disabled={weatherProviderSalvando}
                           onChange={()=>salvarProvedorClima(op.id)} style={{ width:16, height:16, accentColor:'#00A86B', flexShrink:0 }}/>
                         <div>
-                          <div style={{ fontSize:13, fontWeight:700, color:'#0b1210' }}>{op.label}</div>
-                          <div style={{ fontSize:11, color:'#7ba38f' }}>{op.desc}</div>
+                          <div style={{ fontSize:13, fontWeight:700, color:theme.text }}>{op.label}</div>
+                          <div style={{ fontSize:11, color:theme.textFaint2 }}>{op.desc}</div>
                         </div>
                       </label>
                     ))}
                   </div>
                 )}
 
-                <div style={{ marginTop:14, paddingTop:14, borderTop:'1px solid #eef5f0', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${theme.divider}`, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
                   {weatherStatusTestando ? (
-                    <span style={{ fontSize:12, color:'#7ba38f' }}>🔍 Testando conexão...</span>
+                    <span style={{ fontSize:12, color:theme.textFaint2 }}>🔍 Testando conexão...</span>
                   ) : !weatherStatus ? (
-                    <span style={{ fontSize:12, color:'#7ba38f' }}>Status não testado ainda.</span>
+                    <span style={{ fontSize:12, color:theme.textFaint2 }}>Status não testado ainda.</span>
                   ) : weatherStatus.estado==='ok' ? (
-                    <span style={{ fontSize:12, fontWeight:700, color:'#00A86B', background:'#e3f7ec', borderRadius:20, padding:'5px 12px' }}>🟢 Meteoblue Conectado (API OK)</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:'#00A86B', background:theme.successBg, borderRadius:20, padding:'5px 12px' }}>🟢 Meteoblue Conectado (API OK)</span>
                   ) : weatherStatus.estado==='backup' ? (
-                    <span style={{ fontSize:12, fontWeight:700, color:'#a3690a', background:'#fff3e0', borderRadius:20, padding:'5px 12px' }}>🟡 Usando Open-Meteo (Backup Ativo){weatherStatus.mensagem?` — ${weatherStatus.mensagem}`:''}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:theme.warningText2, background:theme.warningBg, borderRadius:20, padding:'5px 12px' }}>🟡 Usando Open-Meteo (Backup Ativo){weatherStatus.mensagem?` — ${weatherStatus.mensagem}`:''}</span>
                   ) : (
-                    <span style={{ fontSize:12, fontWeight:700, color:'#e5484d', background:'#fdeaea', borderRadius:20, padding:'5px 12px' }}>🔴 Erro na Chave Meteoblue: {weatherStatus.mensagem}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:theme.dangerText, background:theme.dangerBg, borderRadius:20, padding:'5px 12px' }}>🔴 Erro na Chave Meteoblue: {weatherStatus.mensagem}</span>
                   )}
                   <button onClick={testarConexaoClima} disabled={weatherStatusTestando} style={{ background:'none', border:'none', color:'#00A86B', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0 }}>🔄 Testar novamente</button>
                 </div>
               </div>
 
-              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
+              <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:520 }}>
                 <SecTitle>📊 Consumo das APIs de Clima (este mês)</SecTitle>
                 {!weatherLogStats ? (
-                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Carregando...</div>
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Carregando...</div>
                 ) : (
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                    <div style={{ background:'#F4F7F5', borderRadius:12, padding:'12px 14px' }}>
-                      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', letterSpacing:.5 }}>METEOBLUE</div>
-                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:'#0b1210' }}>{weatherLogStats.totalMeteoblue}</div>
-                      <div style={{ fontSize:10.5, color:'#7ba38f' }}>chamadas</div>
+                    <div style={{ background:theme.bg, borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:theme.textFaint2, letterSpacing:.5 }}>METEOBLUE</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:theme.text }}>{weatherLogStats.totalMeteoblue}</div>
+                      <div style={{ fontSize:10.5, color:theme.textFaint2 }}>chamadas</div>
                     </div>
-                    <div style={{ background:'#F4F7F5', borderRadius:12, padding:'12px 14px' }}>
-                      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', letterSpacing:.5 }}>OPEN-METEO</div>
-                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:'#0b1210' }}>{weatherLogStats.totalOpenMeteo}</div>
-                      <div style={{ fontSize:10.5, color:'#7ba38f' }}>chamadas</div>
+                    <div style={{ background:theme.bg, borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:theme.textFaint2, letterSpacing:.5 }}>OPEN-METEO</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:theme.text }}>{weatherLogStats.totalOpenMeteo}</div>
+                      <div style={{ fontSize:10.5, color:theme.textFaint2 }}>chamadas</div>
                     </div>
-                    <div style={{ background:'#F4F7F5', borderRadius:12, padding:'12px 14px' }}>
-                      <div style={{ fontSize:10, fontWeight:700, color:'#7ba38f', letterSpacing:.5 }}>HOJE</div>
-                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:'#0b1210' }}>{weatherLogStats.hoje}</div>
-                      <div style={{ fontSize:10.5, color:'#7ba38f' }}>chamadas</div>
+                    <div style={{ background:theme.bg, borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:theme.textFaint2, letterSpacing:.5 }}>HOJE</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:theme.text }}>{weatherLogStats.hoje}</div>
+                      <div style={{ fontSize:10.5, color:theme.textFaint2 }}>chamadas</div>
                     </div>
-                    <div style={{ background: weatherLogStats.falhasMes>0?'#fdeaea':'#F4F7F5', borderRadius:12, padding:'12px 14px' }}>
-                      <div style={{ fontSize:10, fontWeight:700, color: weatherLogStats.falhasMes>0?'#e5484d':'#7ba38f', letterSpacing:.5 }}>FALHAS</div>
-                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color: weatherLogStats.falhasMes>0?'#e5484d':'#0b1210' }}>{weatherLogStats.falhasMes}</div>
-                      <div style={{ fontSize:10.5, color: weatherLogStats.falhasMes>0?'#e5484d':'#7ba38f' }}>no mês</div>
+                    <div style={{ background: weatherLogStats.falhasMes>0?theme.dangerBg:theme.bg, borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color: weatherLogStats.falhasMes>0?theme.dangerText:theme.textFaint2, letterSpacing:.5 }}>FALHAS</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color: weatherLogStats.falhasMes>0?theme.dangerText:theme.text }}>{weatherLogStats.falhasMes}</div>
+                      <div style={{ fontSize:10.5, color: weatherLogStats.falhasMes>0?theme.dangerText:theme.textFaint2 }}>no mês</div>
                     </div>
                   </div>
                 )}
                 <button onClick={carregarWeatherLogStats} style={{ marginTop:12, background:'none', border:'none', color:'#00A86B', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0 }}>🔄 Atualizar números</button>
               </div>
 
-              <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
+              <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:520 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
                   <SecTitle>📜 Repositório de Logs</SecTitle>
                   <button onClick={carregarWeatherLogs} style={{ background:'none', border:'none', color:'#00A86B', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0, marginBottom:8 }}>🔄</button>
                 </div>
-                <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:10 }}>Últimas 20 chamadas às APIs de clima — pra identificar erros sem precisar abrir o painel da Vercel.</div>
+                <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:10 }}>Últimas 20 chamadas às APIs de clima — pra identificar erros sem precisar abrir o painel da Vercel.</div>
                 {weatherLogs===null ? (
-                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Carregando...</div>
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Carregando...</div>
                 ) : weatherLogs.length===0 ? (
-                  <div style={{ fontSize:12.5, color:'#7ba38f' }}>Nenhuma chamada registrada ainda.</div>
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Nenhuma chamada registrada ainda.</div>
                 ) : (
                   <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:320, overflowY:'auto' }}>
                     {weatherLogs.map((l,i)=>(
-                      <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, background: l.sucesso?'#f9fbfa':'#fdeaea', borderRadius:10, padding:'8px 10px', fontSize:11.5 }}>
+                      <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, background: l.sucesso?'#f9fbfa':theme.dangerBg, borderRadius:10, padding:'8px 10px', fontSize:11.5 }}>
                         <span style={{ flexShrink:0 }}>{l.sucesso?'✅':'❌'}</span>
                         <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontWeight:700, color:'#0b1210' }}>
+                          <div style={{ fontWeight:700, color:theme.text }}>
                             {l.provider==='meteoblue'?'Meteoblue':'Open-Meteo'}
-                            <span style={{ fontWeight:400, color:'#7ba38f', marginLeft:6 }}>{new Date(l.criado_em).toLocaleString('pt-BR')}</span>
+                            <span style={{ fontWeight:400, color:theme.textFaint2, marginLeft:6 }}>{new Date(l.criado_em).toLocaleString('pt-BR')}</span>
                           </div>
-                          {l.erro && <div style={{ color:'#e5484d', marginTop:2, wordBreak:'break-word' }}>{l.erro}</div>}
+                          {l.erro && <div style={{ color:theme.dangerText, marginTop:2, wordBreak:'break-word' }}>{l.erro}</div>}
                         </div>
                       </div>
                     ))}
@@ -4985,7 +4989,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 <ConfigGeralPainel config={configGeral} onSalvar={salvarConfigGeral} saving={configGeralSaving}/>
               )}
 
-              <div style={{ background:'#f9fbfa', borderRadius:14, border:'1px dashed #dcebe3', padding:18, maxWidth:520, textAlign:'center', color:'#a9beb1', fontSize:12 }}>
+              <div style={{ background:'#f9fbfa', borderRadius:14, border:`1px dashed ${theme.cardBorder}`, padding:18, maxWidth:520, textAlign:'center', color:'#a9beb1', fontSize:12 }}>
                 Mais configurações aparecem aqui conforme forem adicionadas.
               </div>
             </div>
@@ -4999,12 +5003,12 @@ export default function AdminPanel({ onSwitchMode }) {
         const marcadas = pilotoFazendas.filter(pf=>pf.piloto_id===pilotoFazendasModal.id).map(pf=>pf.fazenda_id)
         return (
           <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setPilotoFazendasModal(null)}>
-            <div style={{background:'#fff',borderRadius:20,width:'100%',maxWidth:460,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
+            <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:460,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
                 <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>📍 Fazendas de {pilotoFazendasModal.nome}</div>
-                <button style={{background:'none',border:'none',fontSize:18,color:'#7ba38f',cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>✕</button>
+                <button style={{background:'none',border:'none',fontSize:18,color:theme.textFaint2,cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>✕</button>
               </div>
-              <p style={{fontSize:12,color:'#5c7568',marginBottom:14,lineHeight:1.5}}>Permissão individual — se marcar alguma fazenda aqui, esse piloto passa a ver <strong>só</strong> essas, ignorando a permissão do time dele. Sem nenhuma marcada, vale a regra do time (ou tudo, se não tiver time).</p>
+              <p style={{fontSize:12,color:theme.textMuted,marginBottom:14,lineHeight:1.5}}>Permissão individual — se marcar alguma fazenda aqui, esse piloto passa a ver <strong>só</strong> essas, ignorando a permissão do time dele. Sem nenhuma marcada, vale a regra do time (ou tudo, se não tiver time).</p>
               <ChecklistFazendasPorCliente chavePrefixo={'piloto-'+pilotoFazendasModal.id} marcadas={marcadas} onToggle={fzId=>toggleFazendaPiloto(fzId,pilotoFazendasModal.id)}/>
               <button style={{width:'100%',marginTop:16,background:'#00A86B',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:700,cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>Pronto</button>
             </div>
@@ -5015,10 +5019,10 @@ export default function AdminPanel({ onSwitchMode }) {
       {/* MODAL EDITAR */}
       {editModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems: isMobile?'flex-end':'center', justifyContent:'center', padding: isMobile?0:24 }}>
-          <div style={{ background:'#fff', borderRadius: isMobile?'20px 20px 0 0':16, width:'100%', maxWidth: isMobile?'100%':920, maxHeight: isMobile?'95vh':'90vh', display:'flex', flexDirection:'column' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'15px 20px', borderBottom:'1px solid #eef5f0', flexShrink:0 }}>
+          <div style={{ background:theme.card, borderRadius: isMobile?'20px 20px 0 0':16, width:'100%', maxWidth: isMobile?'100%':920, maxHeight: isMobile?'95vh':'90vh', display:'flex', flexDirection:'column' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'15px 20px', borderBottom:`1px solid ${theme.divider}`, flexShrink:0 }}>
               <span style={{ fontFamily:"'Syne',sans-serif", fontSize:16, fontWeight:700 }}>✏️ Editar Relatório</span>
-              <button style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:'#5c7568' }} onClick={resetEdit}>✕</button>
+              <button style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:theme.textMuted }} onClick={resetEdit}>✕</button>
             </div>
             <div style={{ padding:'16px 20px', overflowY:'auto', flex:1 }}>
               <SecTitle>IDENTIFICAÇÃO</SecTitle>
@@ -5050,7 +5054,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
                     <div style={sG.label}>MAPA</div>
                     {(editFotoMapa || editModal.foto_mapa_url) && (
-                      <button style={{ background:'none', border:'none', color:'#e5484d', fontSize:11, cursor:'pointer', padding:'2px 6px' }}
+                      <button style={{ background:'none', border:'none', color:theme.dangerText, fontSize:11, cursor:'pointer', padding:'2px 6px' }}
                         onClick={async () => {
                           if (editModal.foto_mapa_url && !editFotoMapaFile) {
                             await supabase.storage.from('relatorios').remove([editModal.foto_mapa_url])
@@ -5061,11 +5065,11 @@ export default function AdminPanel({ onSwitchMode }) {
                         }}>🗑️ Remover</button>
                     )}
                   </div>
-                  <label style={{ display:'block', border:'1.5px dashed #d7e6dc', borderRadius:10, padding:10, textAlign:'center', cursor:'pointer', marginTop:4 }}>
+                  <label style={{ display:'block', border:`1.5px dashed ${theme.cardBorder2}`, borderRadius:10, padding:10, textAlign:'center', cursor:'pointer', marginTop:4 }}>
                     <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => { const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>setEditFotoMapa(ev.target.result); r.readAsDataURL(f); setEditFotoMapaFile(f) }} />
                     {editFotoMapa ? <img src={editFotoMapa} alt="mapa" style={{ width:'100%', maxHeight:120, objectFit:'cover', borderRadius:8 }} />
                       : editModal.foto_mapa_url ? <StoragePhoto supabase={supabase} path={editModal.foto_mapa_url} bucket="relatorios" />
-                      : <div style={{ padding:'16px 0', fontSize:12, color:'#5c7568' }}>🗺️ Clique para adicionar</div>}
+                      : <div style={{ padding:'16px 0', fontSize:12, color:theme.textMuted }}>🗺️ Clique para adicionar</div>}
                   </label>
                 </div>
                 <div>
@@ -5073,14 +5077,14 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ display:'flex', gap:8, marginTop:4 }}>
                     {[0,1,2].map(i => (
                       <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
-                        <label style={{ border:'1.5px dashed #d7e6dc', borderRadius:10, padding:8, textAlign:'center', cursor:'pointer', minHeight:70, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                        <label style={{ border:`1.5px dashed ${theme.cardBorder2}`, borderRadius:10, padding:8, textAlign:'center', cursor:'pointer', minHeight:70, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
                           <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => { const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{const a=[...editObsFotos];a[i]=ev.target.result;setEditObsFotos(a)}; r.readAsDataURL(f); const a=[...editObsFotoFiles];a[i]=f;setEditObsFotoFiles(a) }} />
                           {editObsFotos[i] ? <img src={editObsFotos[i]} alt="" style={{ width:'100%', height:60, objectFit:'cover', borderRadius:6 }} />
                             : editModal.obs_fotos_urls?.[i] ? <StoragePhoto supabase={supabase} path={editModal.obs_fotos_urls[i]} bucket="relatorios" small />
                             : <span style={{ fontSize:18 }}>📷</span>}
                         </label>
                         {(editObsFotos[i] || editModal.obs_fotos_urls?.[i]) && (
-                          <button style={{ background:'#fdeaea', color:'#e5484d', border:'none', borderRadius:14, padding:'3px', fontSize:10, cursor:'pointer', width:'100%' }}
+                          <button style={{ background:theme.dangerBg, color:theme.dangerText, border:'none', borderRadius:14, padding:'3px', fontSize:10, cursor:'pointer', width:'100%' }}
                             onClick={async () => {
                               if (editModal.obs_fotos_urls?.[i] && !editObsFotoFiles[i]) {
                                 await supabase.storage.from('relatorios').remove([editModal.obs_fotos_urls[i]])
@@ -5105,7 +5109,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {(editModal.kml_arquivos||[]).length > 0 && (
                   <div style={{ marginBottom:8 }}>
                     {(editModal.kml_arquivos||[]).map((nome, i) => (
-                      <div key={i} style={{ display:'flex', alignItems:'center', gap:8, background:'#F4F7F5', borderRadius:8, padding:'8px 12px', marginBottom:6, border:'1px solid #d7e6dc' }}>
+                      <div key={i} style={{ display:'flex', alignItems:'center', gap:8, background:theme.bg, borderRadius:8, padding:'8px 12px', marginBottom:6, border:`1px solid ${theme.cardBorder2}` }}>
                         <span>📄</span>
                         <span style={{ flex:1, fontSize:13, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{nome}</span>
                         {editModal.kml_paths?.[i] && (
@@ -5118,7 +5122,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               }
                             }}>⬇</button>
                         )}
-                        <button style={{ background:'#fdeaea', color:'#e5484d', border:'none', borderRadius:14, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
+                        <button style={{ background:theme.dangerBg, color:theme.dangerText, border:'none', borderRadius:14, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
                           onClick={async () => {
                             // Remove do Storage se tiver path
                             if (editModal.kml_paths?.[i]) {
@@ -5133,7 +5137,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     ))}
                   </div>
                 )}
-                <label style={{ display:'flex', alignItems:'center', gap:8, border:'1.5px dashed #d7e6dc', borderRadius:10, padding:'10px 14px', cursor:'pointer', fontSize:13, color:'#5c7568' }}>
+                <label style={{ display:'flex', alignItems:'center', gap:8, border:`1.5px dashed ${theme.cardBorder2}`, borderRadius:10, padding:'10px 14px', cursor:'pointer', fontSize:13, color:theme.textMuted }}>
                   <input type="file" accept=".kml,.kmz" multiple style={{ display:'none' }} onChange={async e => {
                     const files = Array.from(e.target.files)
                     if (!files.length) return
@@ -5153,10 +5157,10 @@ export default function AdminPanel({ onSwitchMode }) {
                 </label>
               </div>
             </div>
-            <div style={{ borderTop:'1px solid #eef5f0', flexShrink:0 }}>
+            <div style={{ borderTop:`1px solid ${theme.divider}`, flexShrink:0 }}>
               {/* Linha de exportação */}
               <div style={{ display:'flex', gap:6, padding:'10px 20px 0', flexWrap:'wrap' }}>
-                <div style={{ fontSize:11, color:'#5c7568', width:'100%', marginBottom:4, fontWeight:600 }}>EXPORTAR:</div>
+                <div style={{ fontSize:11, color:theme.textMuted, width:'100%', marginBottom:4, fontWeight:600 }}>EXPORTAR:</div>
                 {[
                   ['🟢 PDF Cliente', '#22c476', 'cliente'],
                   ['📝 Word / Docs', '#2f6fed', 'word'],
@@ -5189,7 +5193,7 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
               {/* Linha de ação */}
               <div style={{ display:'flex', gap:8, padding:'10px 20px 12px' }}>
-                <button style={{ ...sG.btn, background:'#F4F7F5', color:'#5c7568', flex:1 }} onClick={resetEdit}>Cancelar</button>
+                <button style={{ ...sG.btn, background:theme.bg, color:theme.textMuted, flex:1 }} onClick={resetEdit}>Cancelar</button>
                 <button style={{ ...sG.btn, flex:2, opacity:saving?.6:1 }} disabled={saving} onClick={salvarEdicao}>{saving?'Salvando...':'💾 Salvar'}</button>
               </div>
             </div>
@@ -5200,21 +5204,21 @@ export default function AdminPanel({ onSwitchMode }) {
       {showNotifs && (
         <>
           <div style={{ position:'fixed', inset:0, zIndex:490 }} onClick={fecharNotificacoes} />
-          <div style={{ position:'fixed', top:isMobile?58:20, right:isMobile?10:20, left:isMobile?10:'auto', width:isMobile?'auto':360, maxHeight:460, overflowY:'auto', background:'#fff', borderRadius:16, boxShadow:'0 12px 40px rgba(0,0,0,.25)', zIndex:500, border:'1px solid #d7e6dc' }}>
-            <div style={{ padding:'14px 16px', borderBottom:'1px solid #eef5f0', display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, background:'#fff', borderRadius:'16px 16px 0 0' }}>
+          <div style={{ position:'fixed', top:isMobile?58:20, right:isMobile?10:20, left:isMobile?10:'auto', width:isMobile?'auto':360, maxHeight:460, overflowY:'auto', background:theme.card, borderRadius:16, boxShadow:'0 12px 40px rgba(0,0,0,.25)', zIndex:500, border:`1px solid ${theme.cardBorder2}` }}>
+            <div style={{ padding:'14px 16px', borderBottom:`1px solid ${theme.divider}`, display:'flex', justifyContent:'space-between', alignItems:'center', position:'sticky', top:0, background:theme.card, borderRadius:'16px 16px 0 0' }}>
               <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14 }}>🔔 Notificações</div>
-              <button onClick={fecharNotificacoes} style={{ background:'transparent', border:'none', fontSize:16, cursor:'pointer', color:'#7ba38f' }}>✕</button>
+              <button onClick={fecharNotificacoes} style={{ background:'transparent', border:'none', fontSize:16, cursor:'pointer', color:theme.textFaint2 }}>✕</button>
             </div>
             {notificacoes.length===0 ? (
-              <div style={{ padding:24, textAlign:'center', color:'#7ba38f', fontSize:13 }}>Nenhuma notificação ainda</div>
+              <div style={{ padding:24, textAlign:'center', color:theme.textFaint2, fontSize:13 }}>Nenhuma notificação ainda</div>
             ) : notificacoes.map(n=>{
               const naoVista = !notifVisto || new Date(n.ts) > new Date(notifVisto)
               return (
                 <div key={n.id} onClick={()=>{n.onClick();fecharNotificacoes()}} style={{ padding:'12px 16px', borderBottom:'1px solid #f6faf7', cursor:'pointer', background:naoVista?'#f0faf5':'#fff', display:'flex', gap:10, alignItems:'flex-start' }}>
                   <span style={{ fontSize:16, flexShrink:0 }}>{n.icone}</span>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:12.5, color:'#0b1210', fontWeight:naoVista?600:400 }}>{n.texto}</div>
-                    <div style={{ fontSize:10, color:'#7ba38f', marginTop:2 }}>{new Date(n.ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
+                    <div style={{ fontSize:12.5, color:theme.text, fontWeight:naoVista?600:400 }}>{n.texto}</div>
+                    <div style={{ fontSize:10, color:theme.textFaint2, marginTop:2 }}>{new Date(n.ts).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</div>
                   </div>
                   {naoVista && <span style={{ width:8, height:8, borderRadius:'50%', background:'#00A86B', flexShrink:0, marginTop:5 }}/>}
                 </div>
@@ -5226,12 +5230,12 @@ export default function AdminPanel({ onSwitchMode }) {
 
       {confirmSair && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
+          <div style={{ background:theme.card, borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
             <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, marginBottom:10 }}>Sair da conta?</div>
-            <p style={{ fontSize:14, marginBottom:18, color:'#5c7568' }}>Você vai precisar entrar de novo com seu e-mail e senha.</p>
+            <p style={{ fontSize:14, marginBottom:18, color:theme.textMuted }}>Você vai precisar entrar de novo com seu e-mail e senha.</p>
             <div style={{ display:'flex', gap:10 }}>
-              <button style={{ ...sG.btn, background:'#F4F7F5', color:'#5c7568', flex:1 }} onClick={() => setConfirmSair(false)}>Cancelar</button>
-              <button style={{ ...sG.btn, background:'#e5484d', flex:1 }} onClick={signOut}>Sair</button>
+              <button style={{ ...sG.btn, background:theme.bg, color:theme.textMuted, flex:1 }} onClick={() => setConfirmSair(false)}>Cancelar</button>
+              <button style={{ ...sG.btn, background:theme.dangerText, flex:1 }} onClick={signOut}>Sair</button>
             </div>
           </div>
         </div>
@@ -5239,13 +5243,13 @@ export default function AdminPanel({ onSwitchMode }) {
 
       {confirmDelete && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
+          <div style={{ background:theme.card, borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
             <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, marginBottom:10 }}>🗑️ Confirmar exclusão</div>
             <p style={{ fontSize:14, marginBottom:6 }}>Deletar relatório de <strong>{confirmDelete.cliente}</strong>?</p>
-            <p style={{ fontSize:12, color:'#e5484d', marginBottom:18 }}>Esta ação não pode ser desfeita.</p>
+            <p style={{ fontSize:12, color:theme.dangerText, marginBottom:18 }}>Esta ação não pode ser desfeita.</p>
             <div style={{ display:'flex', gap:10 }}>
-              <button style={{ ...sG.btn, background:'#F4F7F5', color:'#5c7568', flex:1 }} onClick={() => setConfirmDelete(null)}>Cancelar</button>
-              <button style={{ ...sG.btn, background:'#e5484d', flex:1 }} onClick={() => deletarRelatorio(confirmDelete.id)}>Deletar</button>
+              <button style={{ ...sG.btn, background:theme.bg, color:theme.textMuted, flex:1 }} onClick={() => setConfirmDelete(null)}>Cancelar</button>
+              <button style={{ ...sG.btn, background:theme.dangerText, flex:1 }} onClick={() => deletarRelatorio(confirmDelete.id)}>Deletar</button>
             </div>
           </div>
         </div>
@@ -5253,26 +5257,27 @@ export default function AdminPanel({ onSwitchMode }) {
 
       {confirmDeleteDespesa && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-          <div style={{ background:'#fff', borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
+          <div style={{ background:theme.card, borderRadius:16, width:'100%', maxWidth:380, padding:24 }}>
             <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, marginBottom:10 }}>🗑️ Confirmar exclusão</div>
             <p style={{ fontSize:14, marginBottom:6 }}>Deletar despesa de <strong>{confirmDeleteDespesa.categoria} — R$ {parseFloat(confirmDeleteDespesa.valor).toFixed(2)}</strong>?</p>
-            <p style={{ fontSize:12, color:'#e5484d', marginBottom:18 }}>Esta ação não pode ser desfeita.</p>
+            <p style={{ fontSize:12, color:theme.dangerText, marginBottom:18 }}>Esta ação não pode ser desfeita.</p>
             <div style={{ display:'flex', gap:10 }}>
-              <button style={{ ...sG.btn, background:'#F4F7F5', color:'#5c7568', flex:1 }} onClick={() => setConfirmDeleteDespesa(null)}>Cancelar</button>
-              <button style={{ ...sG.btn, background:'#e5484d', flex:1 }} onClick={() => deletarDespesa(confirmDeleteDespesa.id)}>Deletar</button>
+              <button style={{ ...sG.btn, background:theme.bg, color:theme.textMuted, flex:1 }} onClick={() => setConfirmDeleteDespesa(null)}>Cancelar</button>
+              <button style={{ ...sG.btn, background:theme.dangerText, flex:1 }} onClick={() => deletarDespesa(confirmDeleteDespesa.id)}>Deletar</button>
             </div>
           </div>
         </div>
       )}
 
-      {toast && <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', background: toast.type==='error'?'#e5484d':'#0b1210', color:'#fff', padding:'12px 24px', borderRadius:100, fontSize:13, fontWeight:500, zIndex:400, whiteSpace:'nowrap', borderBottom:'3px solid #ffb020', boxShadow:'0 4px 20px rgba(0,0,0,.2)' }}>{toast.msg}</div>}
+      {toast && <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', background: toast.type==='error'?theme.dangerText:theme.text, color:'#fff', padding:'12px 24px', borderRadius:100, fontSize:13, fontWeight:500, zIndex:400, whiteSpace:'nowrap', borderBottom:'3px solid #ffb020', boxShadow:'0 4px 20px rgba(0,0,0,.2)' }}>{toast.msg}</div>}
       {showPerfil && <ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
     </div>
   )
 }
 
 function SecTitle({ children }) {
-  return <div style={{ fontSize:10, fontWeight:700, color:'#00A86B', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:'1px solid #e3f7ec', fontFamily:"'Syne',sans-serif" }}>{children}</div>
+  const { theme } = useTheme()
+  return <div style={{ fontSize:10, fontWeight:700, color:'#00A86B', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:`1px solid ${theme.successBg}`, fontFamily:"'Syne',sans-serif" }}>{children}</div>
 }
 
 // Painel de regras + calculadora, dentro de Financeiro > Orçamento. Explica exatamente como
@@ -5281,10 +5286,11 @@ function SecTitle({ children }) {
 // de deslocamento. As fórmulas em si (o que multiplica o quê) são estruturais e não viram
 // campo de configuração, só os números que podem variar.
 function RegrasOrcamento({ config, onSalvar, saving, isMobile, calc, setCalc }) {
+  const { theme } = useTheme()
   const [draft, setDraft] = useState(config)
   useEffect(() => { setDraft(config) }, [config])
   const alterado = JSON.stringify(draft) !== JSON.stringify(config)
-  const inputSt = { width:110, border:'1px solid #d7e6dc', borderRadius:8, padding:'6px 9px', fontSize:13, outline:'none', color:'#0b1210', textAlign:'right' }
+  const inputSt = { width:110, border:`1px solid ${theme.cardBorder2}`, borderRadius:8, padding:'6px 9px', fontSize:13, outline:'none', color:theme.text, textAlign:'right' }
 
   const REGRAS = [
     { label:'🔋 Baterias', formula:'Tempo estimado (área ÷ rendimento) × custo da bateria/hora', config:null },
@@ -5296,14 +5302,14 @@ function RegrasOrcamento({ config, onSalvar, saving, isMobile, calc, setCalc }) 
 
   return (
     <div>
-      <div style={{background:'#fff',borderRadius:16,border:'1px solid #dcebe3',padding:20,marginBottom:16}}>
+      <div style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:20,marginBottom:16}}>
         <SecTitle>📖 Como a calculadora calcula cada linha</SecTitle>
         <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:8}}>
           {REGRAS.map(r=>(
             <div key={r.label} style={{display:'flex',flexDirection:isMobile?'column':'row',justifyContent:'space-between',alignItems:isMobile?'flex-start':'center',gap:isMobile?4:12,padding:'8px 0',borderBottom:'1px solid #f0f5f2'}}>
               <div>
-                <div style={{fontSize:13,fontWeight:700,color:'#0b1210'}}>{r.label}</div>
-                <div style={{fontSize:12,color:'#5c7568',marginTop:2}}>{r.formula}</div>
+                <div style={{fontSize:13,fontWeight:700,color:theme.text}}>{r.label}</div>
+                <div style={{fontSize:12,color:theme.textMuted,marginTop:2}}>{r.formula}</div>
               </div>
               {r.config==='multiplicadorDeslocamento' && (
                 <input type="number" style={inputSt} value={draft.multiplicadorDeslocamento} onChange={e=>setDraft(d=>({...d,multiplicadorDeslocamento:parseFloat(e.target.value)||1}))}/>
@@ -5311,13 +5317,13 @@ function RegrasOrcamento({ config, onSalvar, saving, isMobile, calc, setCalc }) 
               {r.config==='horasPorDia' && (
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <input type="number" style={inputSt} value={draft.horasPorDia} onChange={e=>setDraft(d=>({...d,horasPorDia:parseFloat(e.target.value)||1}))}/>
-                  <span style={{fontSize:12,color:'#7ba38f'}}>h/dia</span>
+                  <span style={{fontSize:12,color:theme.textFaint2}}>h/dia</span>
                 </div>
               )}
               {r.config==='margemMaxPct' && (
                 <div style={{display:'flex',alignItems:'center',gap:6}}>
                   <input type="number" style={inputSt} value={draft.margemMaxPct} onChange={e=>setDraft(d=>({...d,margemMaxPct:Math.min(99,Math.max(0,parseFloat(e.target.value)||0))}))}/>
-                  <span style={{fontSize:12,color:'#7ba38f'}}>% máx.</span>
+                  <span style={{fontSize:12,color:theme.textFaint2}}>% máx.</span>
                 </div>
               )}
             </div>
@@ -5326,7 +5332,7 @@ function RegrasOrcamento({ config, onSalvar, saving, isMobile, calc, setCalc }) 
         {alterado && (
           <div style={{display:'flex',gap:8,marginTop:14}}>
             <button disabled={saving} onClick={()=>onSalvar(draft)} style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:saving?'default':'pointer',opacity:saving?0.7:1}}>{saving?'Salvando...':'💾 Salvar regras'}</button>
-            <button disabled={saving} onClick={()=>setDraft(config)} style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
+            <button disabled={saving} onClick={()=>setDraft(config)} style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
           </div>
         )}
       </div>
@@ -5339,18 +5345,19 @@ function RegrasOrcamento({ config, onSalvar, saving, isMobile, calc, setCalc }) 
 // padrão do wizard. Um único registro em app_settings (config_geral), editado em bloco
 // com "Salvar" só aparecendo quando algo muda — mesmo padrão do RegrasOrcamento.
 function ConfigGeralPainel({ config, onSalvar, saving }) {
+  const { theme } = useTheme()
   const [draft, setDraft] = useState(config)
   useEffect(() => { setDraft(config) }, [config])
   const alterado = JSON.stringify(draft) !== JSON.stringify(config)
-  const inputSt = { width:'100%', border:'1px solid #d7e6dc', borderRadius:10, padding:'8px 11px', fontSize:13, outline:'none', color:'#0b1210', boxSizing:'border-box' }
-  const labelSt = { fontSize:10.5, fontWeight:700, color:'#7ba38f', letterSpacing:.5, marginBottom:5, display:'block' }
+  const inputSt = { width:'100%', border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'8px 11px', fontSize:13, outline:'none', color:theme.text, boxSizing:'border-box' }
+  const labelSt = { fontSize:10.5, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:5, display:'block' }
   const grid2 = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16, marginBottom:16 }}>
-      <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, maxWidth:520 }}>
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
         <SecTitle>🏢 Dados da Empresa</SecTitle>
-        <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:12 }}>Usados no rodapé dos PDFs de relatório/orçamento. O logo continua fixo por enquanto.</div>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Usados no rodapé dos PDFs de relatório/orçamento. O logo continua fixo por enquanto.</div>
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           <div><label style={labelSt}>NOME</label><input style={inputSt} value={draft.empresa.nome} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,nome:e.target.value}}))}/></div>
           <div style={grid2}>
@@ -5361,9 +5368,9 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
         </div>
       </div>
 
-      <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, maxWidth:520 }}>
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
         <SecTitle>🌬️ Limites de Alerta Climático</SecTitle>
-        <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:12 }}>Faixas que classificam vento e Delta T como Apto/Atenção/Não Conforme nas telas de clima do piloto.</div>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Faixas que classificam vento e Delta T como Apto/Atenção/Não Conforme nas telas de clima do piloto.</div>
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
           <div style={grid2}>
             <div><label style={labelSt}>VENTO MÍN. (km/h)</label><input type="number" style={inputSt} value={draft.limitesClima.ventoMin} onChange={e=>setDraft(d=>({...d,limitesClima:{...d.limitesClima,ventoMin:parseFloat(e.target.value)||0}}))}/></div>
@@ -5377,9 +5384,9 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
         </div>
       </div>
 
-      <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, maxWidth:520 }}>
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
         <SecTitle>🚁 Valores Padrão do Wizard de Voo</SecTitle>
-        <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:12 }}>Pré-preenche o Passo 2 (Aplicação) de todo novo voo — o piloto pode sempre alterar. Deixe em branco pra não sugerir nada.</div>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Pré-preenche o Passo 2 (Aplicação) de todo novo voo — o piloto pode sempre alterar. Deixe em branco pra não sugerir nada.</div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
           <div><label style={labelSt}>VELOCIDADE (km/h)</label><input style={inputSt} placeholder="Ex: 25" value={draft.wizardDefaults.velocidadeDrone} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,velocidadeDrone:e.target.value}}))}/></div>
           <div><label style={labelSt}>ALTURA (m)</label><input style={inputSt} placeholder="Ex: 3" value={draft.wizardDefaults.altura} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,altura:e.target.value}}))}/></div>
@@ -5390,7 +5397,7 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
       {alterado && (
         <div style={{display:'flex',gap:8,maxWidth:520}}>
           <button disabled={saving} onClick={()=>onSalvar(draft)} style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:saving?'default':'pointer',opacity:saving?0.7:1}}>{saving?'Salvando...':'💾 Salvar configurações'}</button>
-          <button disabled={saving} onClick={()=>setDraft(config)} style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
+          <button disabled={saving} onClick={()=>setDraft(config)} style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
         </div>
       )}
     </div>
@@ -5407,6 +5414,7 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
 // - Preço sugerido/ha = custo/ha ÷ (1 - margem%)  [markup sobre o PREÇO, não sobre o custo —
 //   é por isso que 40% de margem em cima de R$18/ha dá R$30/ha, não R$25/ha]
 function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
+  const { theme } = useTheme()
   const set = (k) => (e) => setCalc(c => ({ ...c, [k]: e.target.value }))
   const num = (v) => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n }
 
@@ -5442,13 +5450,13 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
   const competitivo = precoMercado > 0 ? precoSugeridoHa <= precoMercado : null
   const fmt = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const inputSt = { width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '9px 11px', fontSize: 13.5, outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box', fontFamily: "'DM Sans',sans-serif" }
-  const labelSt = { fontSize: 10.5, fontWeight: 700, color: '#7ba38f', letterSpacing: .5, marginBottom: 5, display: 'block' }
+  const inputSt = { width: '100%', border: `1px solid ${theme.cardBorder2}`, borderRadius: 10, padding: '9px 11px', fontSize: 13.5, outline: 'none', color: theme.text, background: theme.bg, boxSizing: 'border-box', fontFamily: "'DM Sans',sans-serif" }
+  const labelSt = { fontSize: 10.5, fontWeight: 700, color: theme.textFaint2, letterSpacing: .5, marginBottom: 5, display: 'block' }
 
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 20 }}>
+        <div style={{ background:theme.card, borderRadius: 16, border: `1px solid ${theme.cardBorder}`, padding: 20 }}>
           <SecTitle>📋 Dados da Aplicação</SecTitle>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><label style={labelSt}>CLIENTE</label><input style={inputSt} value={calc.cliente} onChange={set('cliente')} placeholder="Nome do cliente" /></div>
@@ -5468,7 +5476,7 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
           </div>
         </div>
 
-        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 20 }}>
+        <div style={{ background:theme.card, borderRadius: 16, border: `1px solid ${theme.cardBorder}`, padding: 20 }}>
           <SecTitle>💰 Custos Operacionais</SecTitle>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div><label style={labelSt}>CUSTO BATERIA / HORA (R$)</label><input type="number" style={inputSt} value={calc.custoBateriaHora} onChange={set('custoBateriaHora')} placeholder="0" /></div>
@@ -5482,12 +5490,12 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
       </div>
 
       {!temDados ? (
-        <div style={{ background: '#fff', borderRadius: 16, border: '1px dashed #dcebe3', padding: 30, textAlign: 'center', color: '#a9beb1', fontSize: 13 }}>
+        <div style={{ background:theme.card, borderRadius: 16, border: `1px dashed ${theme.cardBorder}`, padding: 30, textAlign: 'center', color: '#a9beb1', fontSize: 13 }}>
           Preencha pelo menos Área Total e Rendimento Esperado pra ver o cálculo.
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1fr', gap: 16 }}>
-          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 20 }}>
+          <div style={{ background:theme.card, borderRadius: 16, border: `1px solid ${theme.cardBorder}`, padding: 20 }}>
             <SecTitle>📊 Composição do Preço</SecTitle>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 13 }}>
               {[
@@ -5498,38 +5506,38 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
                 ['🏨 Diárias', `R$ ${fmt(custoDiarias)}`],
                 ['🛠️ Desgaste equipamento', `R$ ${fmt(custoDesgaste)}`],
               ].map(([l, v]) => (
-                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
-                  <span style={{ color: '#5c7568' }}>{l}</span><span style={{ color: '#0b1210' }}>{v}</span>
+                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${theme.divider}` }}>
+                  <span style={{ color: theme.textMuted }}>{l}</span><span style={{ color: theme.text }}>{v}</span>
                 </div>
               ))}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', fontWeight: 700 }}>
-                <span style={{ color: '#0b1210' }}>Custo Operacional Total</span><span style={{ color: '#0b1210' }}>R$ {fmt(custoTotal)}</span>
+                <span style={{ color: theme.text }}>Custo Operacional Total</span><span style={{ color: theme.text }}>R$ {fmt(custoTotal)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
-                <span style={{ color: '#5c7568' }}>💵 Custo / hectare</span><span style={{ color: '#0b1210' }}>R$ {fmt(custoPorHectare)}</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${theme.divider}` }}>
+                <span style={{ color: theme.textMuted }}>💵 Custo / hectare</span><span style={{ color: theme.text }}>R$ {fmt(custoPorHectare)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
-                <span style={{ color: '#5c7568' }}>✅ Margem aplicada</span><span style={{ color: '#0b1210' }}>{margem || 0}%</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${theme.divider}` }}>
+                <span style={{ color: theme.textMuted }}>✅ Margem aplicada</span><span style={{ color: theme.text }}>{margem || 0}%</span>
               </div>
               {precoMercado > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #eef5f0' }}>
-                  <span style={{ color: '#5c7568' }}>🏷️ Preço mercado (ref.)</span><span style={{ color: '#0b1210' }}>R$ {fmt(precoMercado)}/ha</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${theme.divider}` }}>
+                  <span style={{ color: theme.textMuted }}>🏷️ Preço mercado (ref.)</span><span style={{ color: theme.text }}>R$ {fmt(precoMercado)}/ha</span>
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 2px', borderTop: '2px solid #00A86B', marginTop: 4 }}>
-                <span style={{ fontWeight: 700, color: '#0b1210' }}>💰 PREÇO SUGERIDO / ha</span>
+                <span style={{ fontWeight: 700, color: theme.text }}>💰 PREÇO SUGERIDO / ha</span>
                 <span style={{ fontWeight: 800, color: '#00A86B', fontFamily: "'Syne',sans-serif" }}>R$ {fmt(precoSugeridoHa)}</span>
               </div>
             </div>
           </div>
 
-          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #dcebe3', padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#7ba38f', letterSpacing: 1 }}>PREÇO FINAL SUGERIDO</div>
+          <div style={{ background:theme.card, borderRadius: 16, border: `1px solid ${theme.cardBorder}`, padding: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: theme.textFaint2, letterSpacing: 1 }}>PREÇO FINAL SUGERIDO</div>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: isMobile ? 30 : 36, fontWeight: 800, color: '#00A86B', margin: '8px 0' }}>R$ {fmt(precoFinal)}</div>
-            <div style={{ fontSize: 12.5, color: '#5c7568' }}>R$ {fmt(precoSugeridoHa)} / hectare</div>
-            <div style={{ fontSize: 11.5, color: '#7ba38f', marginTop: 4 }}>Lucro estimado: R$ {fmt(lucroEstimado)} ({margem || 0}%)</div>
+            <div style={{ fontSize: 12.5, color: theme.textMuted }}>R$ {fmt(precoSugeridoHa)} / hectare</div>
+            <div style={{ fontSize: 11.5, color: theme.textFaint2, marginTop: 4 }}>Lucro estimado: R$ {fmt(lucroEstimado)} ({margem || 0}%)</div>
             {competitivo !== null && (
-              <div style={{ marginTop: 14, fontSize: 11.5, fontWeight: 700, borderRadius: 20, padding: '6px 14px', background: competitivo ? '#e3f7ec' : '#fff3e0', color: competitivo ? '#00875A' : '#a3690a' }}>
+              <div style={{ marginTop: 14, fontSize: 11.5, fontWeight: 700, borderRadius: 20, padding: '6px 14px', background: competitivo ? theme.successBg : theme.warningBg, color: competitivo ? '#00875A' : theme.warningText2 }}>
                 {competitivo ? '✅ Competitivo — abaixo ou igual ao mercado' : '⚠️ Acima do preço de mercado — avalie a margem'}
               </div>
             )}
@@ -5542,9 +5550,9 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
 
 const INCIDENTE_TIPO_LABEL = {drone:'🚁 Drone',veiculo:'🚗 Veículo',pessoal:'🤕 Pessoal',outro:'❓ Outro'}
 const INCIDENTE_STATUS = {
-  aberto: { label:'Aberto', bg:'#fff3e0', cor:'#a3690a' },
+  aberto: { label:'Aberto', bg:theme.warningBg, cor:theme.warningText2 },
   em_tratativa: { label:'Em Tratativa', bg:'#e6f1fb', cor:'#2952a3' },
-  fechado: { label:'Fechado', bg:'#e3f7ec', cor:'#00A86B' },
+  fechado: { label:'Fechado', bg:theme.successBg, cor:'#00A86B' },
 }
 function normIncidenteStatus(s) { return s==='resolvido' ? 'fechado' : (s||'aberto') } // compat com status antigo, antes da migração
 
@@ -5552,28 +5560,29 @@ function normIncidenteStatus(s) { return s==='resolvido' ? 'fechado' : (s||'aber
 // dentro da aba, qualquer re-render do painel (polling etc.) trocava a identidade da
 // função e resetava o estado local (expandido/rascunho) do card no meio do uso.
 function IncidenteCard({ inc, focoId, supabase, onToggleFoco, onSalvarDetalhes, onStatusChange, onExcluir, onFotoClick }) {
+  const { theme } = useTheme()
   const [expandido, setExpandido] = useState(inc.id===focoId)
   const [resolucao, setResolucao] = useState(inc.resolucao||'')
   const [custo, setCusto] = useState(inc.custo!=null?String(inc.custo):'')
   const norm = normIncidenteStatus
   const ST = INCIDENTE_STATUS[norm(inc.status)] || INCIDENTE_STATUS.aberto
   return (
-    <div id={`incidente-${inc.id}`} style={{background:'#fff',borderRadius:16,border:inc.id===focoId?'2px solid #00A86B':'1px solid #d7e6dc',padding:16,marginBottom:10}}>
+    <div id={`incidente-${inc.id}`} style={{background:theme.card,borderRadius:16,border:inc.id===focoId?'2px solid #00A86B':`1px solid ${theme.cardBorder2}`,padding:16,marginBottom:10}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10,marginBottom:8}}>
         <div>
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2,flexWrap:'wrap'}}>
             <span style={{fontSize:13,fontWeight:700}}>{INCIDENTE_TIPO_LABEL[inc.tipo]||inc.tipo}</span>
             <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:ST.bg,color:ST.cor}}>{ST.label}</span>
             {inc.custo!=null && parseFloat(inc.custo)>0 && (
-              <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:'#fdeaea',color:'#c0392b'}}>R$ {parseFloat(inc.custo).toFixed(2)}</span>
+              <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,background:theme.dangerBg,color:'#c0392b'}}>R$ {parseFloat(inc.custo).toFixed(2)}</span>
             )}
           </div>
-          <div style={{fontSize:12,color:'#5c7568'}}>{inc.piloto_nome} · {new Date(inc.created_at).toLocaleString('pt-BR')}{inc.ordem_servico?` · OS ${inc.ordem_servico}`:''}</div>
+          <div style={{fontSize:12,color:theme.textMuted}}>{inc.piloto_nome} · {new Date(inc.created_at).toLocaleString('pt-BR')}{inc.ordem_servico?` · OS ${inc.ordem_servico}`:''}</div>
         </div>
-        <button style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:16,padding:'5px 10px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}
+        <button style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:16,padding:'5px 10px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}
           onClick={()=>{ setExpandido(e=>!e); if(focoId===inc.id) onToggleFoco(null) }}>{expandido?'▲ Fechar':'Detalhes ▼'}</button>
       </div>
-      <div style={{fontSize:13,color:'#0b1210',marginBottom:(inc.foto1_url||inc.foto2_url||inc.gps_lat)?10:0}}>{inc.descricao}</div>
+      <div style={{fontSize:13,color:theme.text,marginBottom:(inc.foto1_url||inc.foto2_url||inc.gps_lat)?10:0}}>{inc.descricao}</div>
       {(inc.foto1_url||inc.foto2_url) && (
         <div style={{display:'flex',gap:8,marginBottom:inc.gps_lat?10:0}}>
           {[inc.foto1_url,inc.foto2_url].filter(Boolean).map((path,i)=>(
@@ -5585,16 +5594,16 @@ function IncidenteCard({ inc, focoId, supabase, onToggleFoco, onSalvarDetalhes, 
         <a href={`https://maps.google.com/?q=${inc.gps_lat},${inc.gps_lng}`} target="_blank" rel="noreferrer" style={{fontSize:12,color:'#00A86B',fontWeight:600,textDecoration:'none'}}>📍 Ver localização no Maps</a>
       )}
       {!expandido && inc.resolucao && (
-        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #f0f5f2',fontSize:12,color:'#5c7568'}}><b style={{color:'#7ba38f'}}>Resolução:</b> {inc.resolucao}</div>
+        <div style={{marginTop:10,paddingTop:10,borderTop:'1px solid #f0f5f2',fontSize:12,color:theme.textMuted}}><b style={{color:theme.textFaint2}}>Resolução:</b> {inc.resolucao}</div>
       )}
       {expandido && (
         <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid #f0f5f2'}}>
-          <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4}}>RESOLUÇÃO / ANDAMENTO</div>
-          <textarea style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:8,fontSize:12,minHeight:60,marginBottom:10,boxSizing:'border-box',fontFamily:'inherit'}}
+          <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>RESOLUÇÃO / ANDAMENTO</div>
+          <textarea style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:8,fontSize:12,minHeight:60,marginBottom:10,boxSizing:'border-box',fontFamily:'inherit'}}
             value={resolucao} onChange={e=>setResolucao(e.target.value)} placeholder="O que foi feito / observações..." />
           <div style={{maxWidth:160,marginBottom:12}}>
-            <div style={{fontSize:10,fontWeight:700,color:'#7ba38f',marginBottom:4}}>CUSTO (R$)</div>
-            <input type="number" step="0.01" style={{width:'100%',border:'1px solid #d7e6dc',borderRadius:8,padding:8,fontSize:12,boxSizing:'border-box'}}
+            <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>CUSTO (R$)</div>
+            <input type="number" step="0.01" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:8,fontSize:12,boxSizing:'border-box'}}
               value={custo} onChange={e=>setCusto(e.target.value)} placeholder="0,00" />
           </div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
@@ -5605,14 +5614,14 @@ function IncidenteCard({ inc, focoId, supabase, onToggleFoco, onSalvarDetalhes, 
                 onClick={()=>onStatusChange(inc,'em_tratativa')}>▶️ Iniciar Tratativa</button>
             )}
             {norm(inc.status)!=='fechado' && (
-              <button style={{background:'#e3f7ec',color:'#00A86B',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+              <button style={{background:theme.successBg,color:'#00A86B',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
                 onClick={()=>onStatusChange(inc,'fechado')}>✅ Fechar</button>
             )}
             {norm(inc.status)==='fechado' && (
-              <button style={{background:'#fff3e0',color:'#a3690a',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+              <button style={{background:theme.warningBg,color:theme.warningText2,border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer'}}
                 onClick={()=>onStatusChange(inc,'aberto')}>🔄 Reabrir</button>
             )}
-            <button style={{background:'#fdeaea',color:'#e5484d',border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',marginLeft:'auto'}}
+            <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',marginLeft:'auto'}}
               onClick={()=>onExcluir(inc)}>🗑️ Excluir</button>
           </div>
         </div>
@@ -5622,6 +5631,7 @@ function IncidenteCard({ inc, focoId, supabase, onToggleFoco, onSalvarDetalhes, 
 }
 
 function FotoThumb({ supabase, path, bucket, onClick }) {
+  const { theme } = useTheme()
   const [url, setUrl] = useState(null)
   useEffect(() => {
     if (!path) return
@@ -5629,11 +5639,12 @@ function FotoThumb({ supabase, path, bucket, onClick }) {
       if (data?.signedUrl) setUrl(data.signedUrl)
     })
   }, [path, bucket, supabase])
-  if (!url) return <div style={{ width:40, height:40, borderRadius:8, background:'#F4F7F5', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#7ba38f' }}>⏳</div>
-  return <img src={url} alt="foto" onClick={onClick} style={{ width:40, height:40, objectFit:'cover', borderRadius:8, display:'block', cursor:'pointer', border:'1px solid #dcebe3' }} />
+  if (!url) return <div style={{ width:40, height:40, borderRadius:8, background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:theme.textFaint2 }}>⏳</div>
+  return <img src={url} alt="foto" onClick={onClick} style={{ width:40, height:40, objectFit:'cover', borderRadius:8, display:'block', cursor:'pointer', border:`1px solid ${theme.cardBorder}` }} />
 }
 
 function FotoLightbox({ supabase, path, bucket, onClose }) {
+  const { theme } = useTheme()
   const [url, setUrl] = useState(null)
   useEffect(() => {
     setUrl(null)
@@ -5666,10 +5677,10 @@ function FotoLightbox({ supabase, path, bucket, onClose }) {
           <button style={{background:'rgba(255,255,255,0.15)',color:'#fff',border:'none',borderRadius:20,width:32,height:32,cursor:'pointer',fontSize:16}} onClick={onClose}>✕</button>
         </div>
         {!url ? (
-          <div style={{background:'#fff',borderRadius:12,padding:30,textAlign:'center',color:'#5c7568'}}>⏳ Carregando...</div>
+          <div style={{background:theme.card,borderRadius:12,padding:30,textAlign:'center',color:theme.textMuted}}>⏳ Carregando...</div>
         ) : (
           <>
-            <img src={url} alt="foto" style={{width:'100%',maxHeight:'70vh',objectFit:'contain',borderRadius:8,display:'block',background:'#fff'}} onClick={e=>e.stopPropagation()} />
+            <img src={url} alt="foto" style={{width:'100%',maxHeight:'70vh',objectFit:'contain',borderRadius:8,display:'block',background:theme.card}} onClick={e=>e.stopPropagation()} />
             <div style={{display:'flex',gap:8,marginTop:10}}>
               <button style={{flex:1,background:'rgba(255,255,255,0.15)',color:'#fff',border:'none',borderRadius:14,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer'}} onClick={onClose}>Fechar</button>
               <button style={{flex:1,background:'#2f6fed',color:'#fff',border:'none',borderRadius:14,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer'}} onClick={baixar}>⬇ Baixar</button>
@@ -5682,6 +5693,7 @@ function FotoLightbox({ supabase, path, bucket, onClose }) {
 }
 
 function StoragePhoto({ supabase, path, bucket, small }) {
+  const { theme } = useTheme()
   const [url, setUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   useEffect(() => {
@@ -5691,8 +5703,8 @@ function StoragePhoto({ supabase, path, bucket, small }) {
       setLoading(false)
     })
   }, [path, bucket, supabase])
-  if (loading) return <div style={{ fontSize:10, color:'#5c7568', padding:'8px 0' }}>⏳ carregando...</div>
-  if (!url) return <div style={{ fontSize:10, color:'#e5484d', padding:'8px 0' }}>⚠️ Foto não encontrada</div>
+  if (loading) return <div style={{ fontSize:10, color:theme.textMuted, padding:'8px 0' }}>⏳ carregando...</div>
+  if (!url) return <div style={{ fontSize:10, color:theme.dangerText, padding:'8px 0' }}>⚠️ Foto não encontrada</div>
 
   async function baixar(e) {
     e.stopPropagation()
@@ -5710,7 +5722,7 @@ function StoragePhoto({ supabase, path, bucket, small }) {
       <img src={url} alt="foto" style={{ width:'100%', height:60, objectFit:'cover', borderRadius:6, display:'block' }} />
       <div style={{ display:'flex', gap:4, marginTop:4 }}>
         <a href={url} target="_blank" rel="noreferrer"
-          style={{ flex:1, background:'#e3f7ec', color:'#00A86B', borderRadius:5, padding:'3px', fontSize:10, textDecoration:'none', textAlign:'center', fontWeight:500 }}
+          style={{ flex:1, background:theme.successBg, color:'#00A86B', borderRadius:5, padding:'3px', fontSize:10, textDecoration:'none', textAlign:'center', fontWeight:500 }}
           onClick={e => e.stopPropagation()}>🔍</a>
         <button style={{ flex:1, background:'#2f6fed', color:'#fff', border:'none', borderRadius:5, padding:'3px', fontSize:10, cursor:'pointer', fontWeight:500 }} onClick={baixar}>⬇</button>
       </div>
@@ -5722,7 +5734,7 @@ function StoragePhoto({ supabase, path, bucket, small }) {
       <img src={url} alt="foto" style={{ width:'100%', maxHeight:130, objectFit:'cover', borderRadius:8, display:'block' }} />
       <div style={{ display:'flex', gap:6, marginTop:6 }}>
         <a href={url} target="_blank" rel="noreferrer"
-          style={{ flex:1, background:'#e3f7ec', color:'#00A86B', borderRadius:6, padding:'6px', fontSize:11, textDecoration:'none', textAlign:'center', fontWeight:500 }}
+          style={{ flex:1, background:theme.successBg, color:'#00A86B', borderRadius:6, padding:'6px', fontSize:11, textDecoration:'none', textAlign:'center', fontWeight:500 }}
           onClick={e => e.stopPropagation()}>
           🔍 Ver
         </a>
@@ -5730,13 +5742,14 @@ function StoragePhoto({ supabase, path, bucket, small }) {
           ⬇ Baixar
         </button>
       </div>
-      <div style={{ fontSize:10, color:'#5c7568', marginTop:4 }}>Clique na área acima para trocar</div>
+      <div style={{ fontSize:10, color:theme.textMuted, marginTop:4 }}>Clique na área acima para trocar</div>
     </div>
   )
 }
 
 // Mapa Leaflet com todos os pontos GPS dos voos
 function MapaLeaflet({ relatorios, height = 400, onPontoClick }) {
+  const { theme } = useTheme()
   const [mapUrl, setMapUrl] = useState(null)
   const urlRef = useRef(null)
 
@@ -5754,7 +5767,7 @@ function MapaLeaflet({ relatorios, height = 400, onPontoClick }) {
     if (pontos.length === 0) return
 
     const markers = pontos.map(r => {
-      const cor = r.status === 'sos' ? '#e5484d' : r.status === 'em_operacao' ? '#00A86B' : r.status === 'pausado' ? '#f2960f' : '#2f6fed'
+      const cor = r.status === 'sos' ? theme.dangerText : r.status === 'em_operacao' ? '#00A86B' : r.status === 'pausado' ? theme.warningText : '#2f6fed'
       const label = `${(r.cliente||'—').replace(/'/g,"\\'")} — ${(r.piloto_nome||'').replace(/'/g,"\\'")} — ${new Date(r.created_at).toLocaleDateString('pt-BR')}`
       return `L.circleMarker([${r.gps_lat},${r.gps_lng}],{color:'${cor}',fillColor:'${cor}',fillOpacity:0.85,radius:9,weight:2}).bindPopup('${label}').on('click',function(){window.parent.postMessage({oroflyMapClick:'${r.id}'},'*')}).addTo(map)`
     }).join(';\n')
@@ -5792,25 +5805,25 @@ function MapaLeaflet({ relatorios, height = 400, onPontoClick }) {
   }, [])
 
   if (!mapUrl) return (
-    <div style={{ height, background:'#F4F7F5', borderRadius:12, border:'1px solid #d7e6dc', display:'flex', alignItems:'center', justifyContent:'center', color:'#5c7568', flexDirection:'column', gap:8 }}>
+    <div style={{ height, background:theme.bg, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, display:'flex', alignItems:'center', justifyContent:'center', color:theme.textMuted, flexDirection:'column', gap:8 }}>
       <div style={{ fontSize:24 }}>🗺️</div>
       <div style={{ fontSize:13 }}>Carregando mapa...</div>
     </div>
   )
 
   return (
-    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden', marginBottom:16 }}>
       <iframe
         src={mapUrl}
         style={{ width:'100%', height, border:'none', display:'block' }}
         title="Mapa de Voos Orofly"
         sandbox="allow-scripts"
       />
-      <div style={{ padding:'8px 14px', background:'#F4F7F5', fontSize:11, color:'#5c7568', display:'flex', gap:16, flexWrap:'wrap' }}>
+      <div style={{ padding:'8px 14px', background:theme.bg, fontSize:11, color:theme.textMuted, display:'flex', gap:16, flexWrap:'wrap' }}>
         <span><span style={{ color:'#2f6fed' }}>●</span> Finalizado</span>
         <span><span style={{ color:'#00A86B' }}>●</span> Em voo</span>
-        <span><span style={{ color:'#f2960f' }}>●</span> Pausado</span>
-        <span><span style={{ color:'#e5484d' }}>●</span> SOS</span>
+        <span><span style={{ color:theme.warningText }}>●</span> Pausado</span>
+        <span><span style={{ color:theme.dangerText }}>●</span> SOS</span>
         <span style={{ marginLeft:'auto' }}>{relatorios.filter(r=>r.gps_lat).length} voos plotados</span>
       </div>
     </div>
@@ -5820,6 +5833,7 @@ function MapaLeaflet({ relatorios, height = 400, onPontoClick }) {
 // Mapa de Operações: onde os pilotos logaram (azul) e onde iniciaram voos (verde),
 // cada ponto com um círculo de 10km — sobreposição indica área de operação concentrada
 function MapaOperacoes({ logins, voos, height = 400 }) {
+  const { theme } = useTheme()
   const [mapUrl, setMapUrl] = useState(null)
   const urlRef = useRef(null)
 
@@ -5877,7 +5891,7 @@ function MapaOperacoes({ logins, voos, height = 400 }) {
   const pontosVoo = (voos||[]).filter(v => v.gps_lat && v.gps_lng)
 
   if (pontosLogin.length + pontosVoo.length === 0) return (
-    <div style={{ textAlign:'center', color:'#5c7568', padding:60, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
+    <div style={{ textAlign:'center', color:theme.textMuted, padding:60, background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}` }}>
       <div style={{ fontSize:40, marginBottom:12 }}>📍</div>
       <div style={{ fontSize:15, fontWeight:600, marginBottom:8 }}>Nenhum dado de operação ainda</div>
       <div style={{ fontSize:13 }}>Aparece aqui assim que os pilotos fizerem login com GPS habilitado.</div>
@@ -5885,21 +5899,21 @@ function MapaOperacoes({ logins, voos, height = 400 }) {
   )
 
   if (!mapUrl) return (
-    <div style={{ height, background:'#F4F7F5', borderRadius:12, border:'1px solid #d7e6dc', display:'flex', alignItems:'center', justifyContent:'center', color:'#5c7568', flexDirection:'column', gap:8 }}>
+    <div style={{ height, background:theme.bg, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, display:'flex', alignItems:'center', justifyContent:'center', color:theme.textMuted, flexDirection:'column', gap:8 }}>
       <div style={{ fontSize:24 }}>🗺️</div>
       <div style={{ fontSize:13 }}>Carregando mapa...</div>
     </div>
   )
 
   return (
-    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden', marginBottom:16 }}>
       <iframe
         src={mapUrl}
         style={{ width:'100%', height, border:'none', display:'block' }}
         title="Mapa de Operações Orofly"
         sandbox="allow-scripts"
       />
-      <div style={{ padding:'8px 14px', background:'#F4F7F5', fontSize:11, color:'#5c7568', display:'flex', gap:16, flexWrap:'wrap' }}>
+      <div style={{ padding:'8px 14px', background:theme.bg, fontSize:11, color:theme.textMuted, display:'flex', gap:16, flexWrap:'wrap' }}>
         <span><span style={{ color:'#2f6fed' }}>●</span> Login ({pontosLogin.length})</span>
         <span><span style={{ color:'#00A86B' }}>●</span> Início de voo ({pontosVoo.length})</span>
         <span style={{ marginLeft:'auto' }}>Círculos = raio de 10km</span>
@@ -5930,10 +5944,11 @@ function parseKmlMeta(text) {
 }
 
 function MapaTrajetosKml({ voos, supabase, height = 500 }) {
+  const { theme } = useTheme()
   const [mapUrl, setMapUrl] = useState(null)
   const [carregando, setCarregando] = useState(true)
   const urlRef = useRef(null)
-  const CORES = ['#e74c3c','#00A86B','#2f6fed','#f2960f','#8e44ad','#16a085','#d35400','#2c3e50','#e5484d','#27ae60']
+  const CORES = ['#e74c3c','#00A86B','#2f6fed',theme.warningText,'#8e44ad','#16a085','#d35400','#2c3e50',theme.dangerText,'#27ae60']
 
   useEffect(() => {
     let cancelado = false
@@ -5995,22 +6010,22 @@ function MapaTrajetosKml({ voos, supabase, height = 500 }) {
   useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current) }, [])
 
   if (carregando) return (
-    <div style={{ height, background:'#F4F7F5', borderRadius:12, border:'1px solid #d7e6dc', display:'flex', alignItems:'center', justifyContent:'center', color:'#5c7568', flexDirection:'column', gap:8 }}>
+    <div style={{ height, background:theme.bg, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, display:'flex', alignItems:'center', justifyContent:'center', color:theme.textMuted, flexDirection:'column', gap:8 }}>
       <div style={{ fontSize:24 }}>🛰️</div>
       <div style={{ fontSize:13 }}>Carregando trajetos KML...</div>
     </div>
   )
 
   if (!mapUrl) return (
-    <div style={{ textAlign:'center', color:'#5c7568', padding:40, background:'#fff', borderRadius:12, border:'1px solid #d7e6dc' }}>
+    <div style={{ textAlign:'center', color:theme.textMuted, padding:40, background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}` }}>
       Nenhum trajeto válido nos KMLs selecionados.
     </div>
   )
 
   return (
-    <div style={{ background:'#fff', borderRadius:12, border:'1px solid #d7e6dc', overflow:'hidden', marginBottom:16 }}>
+    <div style={{ background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden', marginBottom:16 }}>
       <iframe src={mapUrl} style={{ width:'100%', height, border:'none', display:'block' }} title="Trajetos KML Orofly" sandbox="allow-scripts" />
-      <div style={{ padding:'10px 14px', background:'#F4F7F5', fontSize:11, color:'#5c7568', display:'flex', gap:12, flexWrap:'wrap' }}>
+      <div style={{ padding:'10px 14px', background:theme.bg, fontSize:11, color:theme.textMuted, display:'flex', gap:12, flexWrap:'wrap' }}>
         {voos.map((v, i) => (
           <span key={v.id}><span style={{ color: CORES[i % CORES.length] }}>●</span> {v.cliente||'—'} — {v.piloto_nome} ({new Date(v.created_at).toLocaleDateString('pt-BR')})</span>
         ))}
@@ -6020,6 +6035,7 @@ function MapaTrajetosKml({ voos, supabase, height = 500 }) {
 }
 
 function KmlViewer({ rel, supabase }) {
+  const { theme } = useTheme()
   const [kmlData, setKmlData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -6099,24 +6115,24 @@ function KmlViewer({ rel, supabase }) {
     <div style={{ marginTop:8 }}>
       <div style={{ fontSize:10, fontWeight:700, color:'#00A86B', letterSpacing:1, marginBottom:8, fontFamily:"'Syne',sans-serif" }}>ARQUIVOS KML</div>
       {nomes.map((nome, i) => (
-        <div key={i} style={{ background:'#fff', border:'1px solid #d7e6dc', borderRadius:10, overflow:'hidden', marginBottom:8 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', cursor:'pointer', background: expanded&&i===0?'#e3f7ec':'#fff' }}
+        <div key={i} style={{ background:theme.card, border:`1px solid ${theme.cardBorder2}`, borderRadius:10, overflow:'hidden', marginBottom:8 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', cursor:'pointer', background: expanded&&i===0?theme.successBg:'#fff' }}
             onClick={() => i === 0 && carregarKml()}>
             <span>📄</span>
-            <span style={{ flex:1, fontSize:13, fontWeight:500, color:'#0b1210' }}>{nome}</span>
-            {loading && i===0 && <span style={{ fontSize:11, color:'#5c7568' }}>⏳ carregando...</span>}
+            <span style={{ flex:1, fontSize:13, fontWeight:500, color:theme.text }}>{nome}</span>
+            {loading && i===0 && <span style={{ fontSize:11, color:theme.textMuted }}>⏳ carregando...</span>}
             {i===0 && !loading && <span style={{ fontSize:11, color:'#00A86B' }}>{expanded ? '▲ Fechar' : '▼ Ver trajeto'}</span>}
           </div>
 
           {expanded && i === 0 && kmlData && (
-            <div style={{ borderTop:'1px solid #e3f7ec' }}>
+            <div style={{ borderTop:`1px solid ${theme.successBg}` }}>
               {/* META */}
               {kmlData.meta && Object.values(kmlData.meta).some(Boolean) && (
-                <div style={{ display:'flex', gap:14, flexWrap:'wrap', padding:'10px 14px', background:'#f7fbf8', borderBottom:'1px solid #eef5f0' }}>
+                <div style={{ display:'flex', gap:14, flexWrap:'wrap', padding:'10px 14px', background:'#f7fbf8', borderBottom:`1px solid ${theme.divider}` }}>
                   {[['✈️ Aeronave', kmlData.meta.aeronave], ['👤 Piloto', kmlData.meta.piloto], ['📐 Área', kmlData.meta.area ? parseFloat(kmlData.meta.area).toFixed(2)+' ha' : null], ['⚡', kmlData.meta.velocidade ? kmlData.meta.velocidade+' m/s' : null], ['↕️', kmlData.meta.altura ? kmlData.meta.altura+' m' : null], ['↔️', kmlData.meta.espacamento ? kmlData.meta.espacamento+' m' : null]].filter(([,v])=>v).map(([l,v])=>(
-                    <span key={l} style={{ fontSize:12 }}><span style={{ color:'#5c7568' }}>{l} </span><strong>{v}</strong></span>
+                    <span key={l} style={{ fontSize:12 }}><span style={{ color:theme.textMuted }}>{l} </span><strong>{v}</strong></span>
                   ))}
-                  <span style={{ fontSize:12, color:'#5c7568' }}>📍 {kmlData.coords.length} pontos</span>
+                  <span style={{ fontSize:12, color:theme.textMuted }}>📍 {kmlData.coords.length} pontos</span>
                 </div>
               )}
 
@@ -6152,6 +6168,7 @@ function KmlViewer({ rel, supabase }) {
 }
 
 function DetailCol({ title, items }) {
+  const { theme } = useTheme()
   const valid = items.filter(([,v]) => v && v !== '—')
   if (!valid.length) return null
   return (
@@ -6159,8 +6176,8 @@ function DetailCol({ title, items }) {
       <div style={{ fontSize:10, fontWeight:700, color:'#00A86B', letterSpacing:1, marginBottom:5, fontFamily:"'Syne',sans-serif" }}>{title.toUpperCase()}</div>
       {valid.map(([l,v]) => (
         <div key={l} style={{ display:'flex', gap:4, marginBottom:3, fontSize:11 }}>
-          <span style={{ color:'#5c7568', minWidth:65, flexShrink:0 }}>{l}:</span>
-          <span style={{ color:'#0b1210', wordBreak:'break-word' }}>{v}</span>
+          <span style={{ color:theme.textMuted, minWidth:65, flexShrink:0 }}>{l}:</span>
+          <span style={{ color:theme.text, wordBreak:'break-word' }}>{v}</span>
         </div>
       ))}
     </div>
@@ -6168,11 +6185,11 @@ function DetailCol({ title, items }) {
 }
 
 const sG = {
-  td: { padding:'11px 14px', fontSize:13, color:'#0b1210', borderBottom:'1px solid #eef5f0', verticalAlign:'middle' },
+  td: { padding:'11px 14px', fontSize:13, color:theme.text, borderBottom:`1px solid ${theme.divider}`, verticalAlign:'middle' },
   iconBtn: { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'3px 4px', borderRadius:10 },
-  label: { fontSize:11, fontWeight:600, color:'#5c7568', letterSpacing:.5, marginBottom:4, fontFamily:"'Syne',sans-serif" },
-  input: { width:'100%', border:'1px solid #d7e6dc', borderRadius:12, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#F4F7F5', appearance:'none', WebkitAppearance:'none' },
+  label: { fontSize:11, fontWeight:600, color:theme.textMuted, letterSpacing:.5, marginBottom:4, fontFamily:"'Syne',sans-serif" },
+  input: { width:'100%', border:`1px solid ${theme.cardBorder2}`, borderRadius:12, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:theme.text, background:theme.bg, appearance:'none', WebkitAppearance:'none' },
   btn: { background:'#00A86B', color:'#fff', border:'none', borderRadius:100, padding:'11px', fontFamily:"'Syne',sans-serif", fontSize:13, fontWeight:600, cursor:'pointer', width:'100%', boxShadow:'0 4px 14px rgba(14,159,110,0.3)' },
-  fi: { border:'1px solid #d7e6dc', borderRadius:12, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#F4F7F5', minWidth:110, appearance:'none' },
+  fi: { border:`1px solid ${theme.cardBorder2}`, borderRadius:12, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:theme.text, background:theme.bg, minWidth:110, appearance:'none' },
   actBtn: (bg) => ({ color:'#fff', background:bg, border:'none', borderRadius:16, padding:'6px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }),
 }

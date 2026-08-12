@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { useTheme } from '../lib/theme'
 
 function useIsMobile() {
   const [m, setM] = useState(() => window.innerWidth < 860)
@@ -20,6 +21,7 @@ const Logo = ({ size = 34 }) => (
 )
 
 export default function LoginPage() {
+  const { theme } = useTheme()
   const { signIn } = useAuth()
   const isMobile = useIsMobile()
   const [email, setEmail] = useState('')
@@ -41,19 +43,19 @@ export default function LoginPage() {
   }
 
   const Card = (
-    <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #d7e6dc', padding: isMobile ? '30px 24px' : '36px 32px', width: '100%', maxWidth: 380, boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}>
-      <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 700, color: '#0b1210', marginBottom: 4 }}>Entrar</div>
-      <div style={{ fontSize: 13, color: '#5c7568', marginBottom: 26 }}>Pilotos e administradores</div>
+    <div style={{ background: theme.card, borderRadius: 20, border: `1px solid ${theme.cardBorder2}`, padding: isMobile ? '30px 24px' : '36px 32px', width: '100%', maxWidth: 380, boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}>
+      <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 700, color: theme.text, marginBottom: 4 }}>Entrar</div>
+      <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 26 }}>Pilotos e administradores</div>
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#5c7568', letterSpacing: 1, marginBottom: 6, fontFamily: "'Syne',sans-serif" }}>E-MAIL</div>
-          <input style={{ width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box' }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required autoFocus />
+          <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, letterSpacing: 1, marginBottom: 6, fontFamily: "'Syne',sans-serif" }}>E-MAIL</div>
+          <input style={{ width: '100%', border: `1px solid ${theme.inputBorder}`, borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: theme.text, background: theme.bg, boxSizing: 'border-box' }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="seu@email.com" required autoFocus />
         </div>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#5c7568', letterSpacing: 1, marginBottom: 6, fontFamily: "'Syne',sans-serif" }}>SENHA</div>
-          <input style={{ width: '100%', border: '1px solid #d7e6dc', borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box' }} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
+          <div style={{ fontSize: 11, fontWeight: 600, color: theme.textMuted, letterSpacing: 1, marginBottom: 6, fontFamily: "'Syne',sans-serif" }}>SENHA</div>
+          <input style={{ width: '100%', border: `1px solid ${theme.inputBorder}`, borderRadius: 10, padding: '12px 14px', fontSize: 15, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: theme.text, background: theme.bg, boxSizing: 'border-box' }} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
         </div>
-        {error && <div style={{ background: '#fef2f2', color: '#e5484d', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>{error}</div>}
+        {error && <div style={{ background: theme.dangerBg, color: theme.dangerText, borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>{error}</div>}
         <button style={{ background: '#0b1210', color: '#fff', border: 'none', borderRadius: 20, padding: 14, fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 600, cursor: 'pointer', position: 'relative', overflow: 'hidden', opacity: loading ? .7 : 1 }} type="submit" disabled={loading}>
           {loading ? 'Entrando...' : 'Entrar'}
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, background: '#ffb020' }} />

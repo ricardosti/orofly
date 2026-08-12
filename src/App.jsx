@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './hooks/useAuth'
+import { ThemeProvider } from './lib/theme'
 import LoginPage from './pages/LoginPage'
 import PilotApp from './pages/PilotApp'
 import AdminPanel from './pages/AdminPanel'
@@ -92,5 +93,5 @@ function Bloqueado() {
 }
 
 export default function App() {
-  return <AuthProvider><AppRouter /></AuthProvider>
+  return <ThemeProvider><AuthProvider><AppRouter /></AuthProvider></ThemeProvider>
 }

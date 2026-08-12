@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useTheme } from '../lib/theme'
 
 export default function ProfileModal({ profile, onClose, onSaved }) {
+  const { theme, themeName, toggleTheme } = useTheme()
   const [nome, setNome] = useState(profile?.nome || '')
   const [telefone, setTelefone] = useState(profile?.telefone || '')
   const [avatarPreview, setAvatarPreview] = useState(null)
@@ -54,22 +56,22 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
   }
 
   const iniciais = (nome || 'P').split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase()
-  const inputStyle = { width: '100%', border: '1px solid #d7e6dc', borderRadius: 12, padding: '10px 12px', fontSize: 14, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: '#0b1210', background: '#F4F7F5', boxSizing: 'border-box' }
-  const labelStyle = { fontSize: 10, fontWeight: 700, color: '#7ba38f', letterSpacing: .5, marginBottom: 5, display: 'block', fontFamily: "'Syne',sans-serif" }
+  const inputStyle = { width: '100%', border: `1px solid ${theme.inputBorder}`, borderRadius: 12, padding: '10px 12px', fontSize: 14, fontFamily: "'DM Sans',sans-serif", outline: 'none', color: theme.text, background: theme.bg, boxSizing: 'border-box' }
+  const labelStyle = { fontSize: 10, fontWeight: 700, color: theme.textFaint2, letterSpacing: .5, marginBottom: 5, display: 'block', fontFamily: "'Syne',sans-serif" }
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(11,18,16,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 24, width: '100%', maxWidth: 400, maxHeight: '90vh', overflowY: 'auto', padding: 24 }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, color: '#0b1210', marginBottom: 20 }}>👤 Meu Perfil</div>
+      <div style={{ background: theme.card, borderRadius: 24, width: '100%', maxWidth: 400, maxHeight: '90vh', overflowY: 'auto', padding: 24 }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, color: theme.text, marginBottom: 20 }}>👤 Meu Perfil</div>
 
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
           <label style={{ position: 'relative', cursor: 'pointer' }}>
             {avatarPreview ? (
-              <img src={avatarPreview} alt="avatar" style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover', display: 'block', border: '3px solid #e3f7ec' }} />
+              <img src={avatarPreview} alt="avatar" style={{ width: 84, height: 84, borderRadius: '50%', objectFit: 'cover', display: 'block', border: `3px solid ${theme.successBg}` }} />
             ) : (
-              <div style={{ width: 84, height: 84, borderRadius: '50%', background: '#e3f7ec', color: '#00A86B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 28, border: '3px solid #e3f7ec' }}>{iniciais}</div>
+              <div style={{ width: 84, height: 84, borderRadius: '50%', background: theme.successBg, color: theme.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: 28, border: `3px solid ${theme.successBg}` }}>{iniciais}</div>
             )}
-            <span style={{ position: 'absolute', bottom: 0, right: 0, background: '#00A86B', color: '#fff', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, border: '2px solid #fff' }}>📷</span>
+            <span style={{ position: 'absolute', bottom: 0, right: 0, background: theme.primary, color: '#fff', width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, border: `2px solid ${theme.card}` }}>📷</span>
             <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleAvatarFile(e.target.files[0])} />
           </label>
         </div>
@@ -84,11 +86,36 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
         </div>
         <div style={{ marginBottom: 12 }}>
           <div style={labelStyle}>E-MAIL</div>
-          <input style={{ ...inputStyle, color: '#7ba38f', background: '#f6f9f7' }} value={profile?.email || ''} disabled />
+          <input style={{ ...inputStyle, color: theme.textFaint2, background: theme.divider }} value={profile?.email || ''} disabled />
         </div>
 
-        <div style={{ borderTop: '1px solid #eef5f0', margin: '16px 0', paddingTop: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#0b1210', marginBottom: 10, fontFamily: "'Syne',sans-serif" }}>Trocar senha (opcional)</div>
+        <div style={{ borderTop: `1px solid ${theme.divider}`, margin: '16px 0', paddingTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, marginBottom: 10, fontFamily: "'Syne',sans-serif" }}>Aparência</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: theme.bg, border: `1px solid ${theme.cardBorder}`, borderRadius: 12, padding: '10px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: theme.text, fontFamily: "'DM Sans',sans-serif" }}>
+              <span style={{ fontSize: 16 }}>{themeName === 'dark' ? '🌙' : '☀️'}</span>
+              Modo {themeName === 'dark' ? 'escuro' : 'claro'}
+            </div>
+            <button
+              onClick={toggleTheme}
+              aria-label="Alternar modo escuro"
+              style={{
+                width: 44, height: 24, borderRadius: 100, border: 'none', cursor: 'pointer',
+                background: themeName === 'dark' ? theme.primary : theme.cardBorder,
+                position: 'relative', transition: 'background .2s', padding: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 2, left: themeName === 'dark' ? 22 : 2,
+                width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+              }} />
+            </button>
+          </div>
+        </div>
+
+        <div style={{ borderTop: `1px solid ${theme.divider}`, margin: '16px 0', paddingTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, marginBottom: 10, fontFamily: "'Syne',sans-serif" }}>Trocar senha (opcional)</div>
           <div style={{ marginBottom: 10 }}>
             <div style={labelStyle}>NOVA SENHA</div>
             <input type="password" style={inputStyle} placeholder="Deixe em branco pra manter a atual" value={novaSenha} onChange={e => setNovaSenha(e.target.value)} />
@@ -101,11 +128,11 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
           )}
         </div>
 
-        {erro && <div style={{ background: '#fdeaea', color: '#e5484d', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>{erro}</div>}
+        {erro && <div style={{ background: theme.dangerBg, color: theme.dangerText, borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12 }}>{erro}</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-          <button style={{ flex: 1, background: '#F4F7F5', color: '#5c7568', border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 600, cursor: 'pointer' }} onClick={onClose}>Cancelar</button>
-          <button style={{ flex: 2, background: '#00A86B', color: '#fff', border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? .7 : 1, boxShadow: '0 6px 18px rgba(14,159,110,0.3)' }} disabled={saving} onClick={salvar}>{saving ? 'Salvando...' : '💾 Salvar'}</button>
+          <button style={{ flex: 1, background: theme.bg, color: theme.textMuted, border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 600, cursor: 'pointer' }} onClick={onClose}>Cancelar</button>
+          <button style={{ flex: 2, background: theme.primary, color: '#fff', border: 'none', borderRadius: 100, padding: 13, fontSize: 14, fontWeight: 700, cursor: 'pointer', opacity: saving ? .7 : 1, boxShadow: '0 6px 18px rgba(14,159,110,0.3)' }} disabled={saving} onClick={salvar}>{saving ? 'Salvando...' : '💾 Salvar'}</button>
         </div>
       </div>
     </div>
