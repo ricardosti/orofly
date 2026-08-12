@@ -12,13 +12,21 @@ export function calcDeltaT(tempC, umidadePercent) {
   return Math.max(0, t - tw)
 }
 
+// Limites usados na classificação — configuráveis pelo Admin (Configurações do Sistema,
+// vento e Delta T; umidade/temperatura seguem fixas por serem faixas agronômicas mais
+// consensuais). `setLimitesClima` é chamado quando o app carrega a config do Supabase.
+export const LIMITES_PADRAO = { ventoMin: 3, ventoMax: 15, deltaTMin: 2, deltaTIdealMax: 7, deltaTAlertaMax: 8 }
+export let LIMITES_CLIMA = { ...LIMITES_PADRAO }
+export function setLimitesClima(cfg) { LIMITES_CLIMA = { ...LIMITES_PADRAO, ...cfg } }
+
 // Classifica cada parâmetro climático
 export function classificarClimaParam(key, valor) {
   const v = parseFloat(valor)
   if (isNaN(v)) return null
+  const L = LIMITES_CLIMA
   if (key === 'vento') {
-    if (v < 3) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Calmaria: risco de inversão térmica' }
-    if (v <= 15) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Condição ideal para aplicação' }
+    if (v < L.ventoMin) return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Calmaria: risco de inversão térmica' }
+    if (v <= L.ventoMax) return { status: 'apta', label: 'Apta', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Condição ideal para aplicação' }
     return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Vento forte: deriva severa' }
   }
   if (key === 'umidade') {
@@ -32,10 +40,10 @@ export function classificarClimaParam(key, valor) {
     return { status: 'nao_conforme', label: 'Não Conforme', cor: '#e5484d', bg: '#fdeaea', icon: '⚠️', diag: 'Estresse térmico: fechamento estomático' }
   }
   if (key === 'delta_t') {
-    if (v < 2) return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: 'Cerração/neblina: escorrimento e inversão térmica. Não aplicar.' }
-    if (v <= 7) return { status: 'apta', label: 'Ideal', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
-    if (v < 8) return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
-    return { status: 'nao_conforme', label: 'Não Pode Voar', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: 'Delta T ≥ 8: evaporação excessiva. Interromper a aplicação.' }
+    if (v < L.deltaTMin) return { status: 'nao_conforme', label: 'Não Recomendado', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: 'Cerração/neblina: escorrimento e inversão térmica. Não aplicar.' }
+    if (v <= L.deltaTIdealMax) return { status: 'apta', label: 'Ideal', cor: '#0e9f6e', bg: '#e3f7ec', icon: '✅', diag: 'Janela de ouro: deposição perfeita. Aplicação recomendada.' }
+    if (v < L.deltaTAlertaMax) return { status: 'alerta', label: 'Atenção', cor: '#f2960f', bg: '#fdf3e0', icon: '⚡', diag: 'Limite: só gotas grossas, adjuvantes antideriva ou óleos.' }
+    return { status: 'nao_conforme', label: 'Não Pode Voar', cor: '#e5484d', bg: '#fdeaea', icon: '🚫', diag: `Delta T ≥ ${L.deltaTAlertaMax}: evaporação excessiva. Interromper a aplicação.` }
   }
   return null
 }

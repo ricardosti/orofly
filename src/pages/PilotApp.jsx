@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { ComposedChart, BarChart, Line, Area, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida } from '../lib/pdf'
+import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida, setEmpresaConfig } from '../lib/pdf'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
@@ -10,7 +10,7 @@ import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
-import { calcDeltaT, classificarClimaParam } from '../lib/clima'
+import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 import { App as CapApp } from '@capacitor/app'
@@ -301,6 +301,20 @@ export default function PilotApp({onSwitchMode}) {
   const [calcArea,setCalcArea] = useState('')
   const [calcVazao,setCalcVazao] = useState('')
   const [calcProdutos,setCalcProdutos] = useState([{nome:'',dose:'',unidade:'L/ha',custom:false}])
+  // Config geral definida pelo Admin: dados da empresa (rodapé do PDF), limites de alerta
+  // climático (vento/Delta T) e valores padrão do wizard de voo. Carrega uma vez ao abrir
+  // o app — sem linha configurada ainda, os módulos já têm seus próprios padrões internos.
+  const [wizardDefaults, setWizardDefaults] = useState({ velocidadeDrone:'', altura:'', faixa:'' })
+  useEffect(() => {
+    supabase.from('app_settings').select('valor').eq('chave','config_geral').single()
+      .then(({data}) => {
+        if (!data?.valor) return
+        const cfg = JSON.parse(data.valor)
+        if (cfg.empresa) setEmpresaConfig(cfg.empresa)
+        if (cfg.limitesClima) setLimitesClima(cfg.limitesClima)
+        if (cfg.wizardDefaults) setWizardDefaults(d => ({ ...d, ...cfg.wizardDefaults }))
+      }).catch(() => {})
+  }, []) // eslint-disable-line
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
     supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data,error})=>{
@@ -1602,7 +1616,8 @@ export default function PilotApp({onSwitchMode}) {
 
   function limpar(silent=false){
     try{localStorage.removeItem(LS_KEY)}catch{}
-    setForm(initForm());setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
+    setForm({...initForm(), velocidade_drone:wizardDefaults.velocidadeDrone, altura:wizardDefaults.altura, faixa_i:wizardDefaults.faixa, faixa_f:wizardDefaults.faixa})
+    setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
     setObsFotos([null,null,null]);setObsFotoFiles([null,null,null])
     setFotoMapa(null);setFotoMapaFile(null)
     setStorageFotoMapa(null);setStorageObsFotos([null,null,null])

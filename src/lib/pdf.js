@@ -57,6 +57,15 @@ export function calcularGastoProdutos(produtos, areaHa) {
   })
 }
 
+// Dados da empresa usados nos rodapés dos PDFs/Word — configuráveis pelo Admin
+// (Configurações do Sistema). `setEmpresaConfig` é chamado assim que o app carrega essa
+// config do Supabase; até lá (ou se nunca foi configurado), usa os valores padrão atuais.
+// O logo continua fixo (imagem embutida em base64) — trocar isso exigiria upload de
+// arquivo e replumbing considerável em todas as chamadas de addImage, fora de escopo aqui.
+export const EMPRESA_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br' }
+export let EMPRESA = { ...EMPRESA_PADRAO }
+export function setEmpresaConfig(cfg) { EMPRESA = { ...EMPRESA_PADRAO, ...cfg } }
+
 export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFotoMapa } = {}) {
   const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
   const pw = 210, margin = 14
@@ -529,9 +538,9 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   // Rodapé col1
   doc.setFillColor(...G);doc.rect(C1,PH-M-8,CW,9,'F')
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
-  doc.text('www.orofly.com.br',C1+4,PH-M-3)
-  doc.text('contato@orofly.com.br',C1+46,PH-M-3)
-  doc.text('(16) 98262-3711',C1+96,PH-M-3)
+  doc.text(EMPRESA.site,C1+4,PH-M-3)
+  doc.text(EMPRESA.email,C1+46,PH-M-3)
+  doc.text(EMPRESA.telefone,C1+96,PH-M-3)
 
   // Separador
   doc.setDrawColor(200,230,215);doc.setLineWidth(0.5);doc.line(C2-2,M,C2-2,PH-M)
@@ -772,7 +781,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
       // Rodapé
       doc.setFillColor(...G);doc.rect(C1,PH-M-8,PW-M-C1,9,'F')
       doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
-      doc.text('www.orofly.com.br',C1+4,PH-M-3)
+      doc.text(EMPRESA.site,C1+4,PH-M-3)
       doc.text('Orofly — Tecnologia que protege, resultados que voam.',PW/2,PH-M-3,{align:'center'})
       doc.text(`Página ${ti+2} de ${trechos.length+1}`,PW-M-4,PH-M-3,{align:'right'})
     }
@@ -900,9 +909,9 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, 
   // Rodapé col1
   doc.setFillColor(...G);doc.rect(C1,PH-M-8,CW,9,'F')
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
-  doc.text('www.orofly.com.br',C1+4,PH-M-3)
-  doc.text('contato@orofly.com.br',C1+46,PH-M-3)
-  doc.text('(16) 98262-3711',C1+96,PH-M-3)
+  doc.text(EMPRESA.site,C1+4,PH-M-3)
+  doc.text(EMPRESA.email,C1+46,PH-M-3)
+  doc.text(EMPRESA.telefone,C1+96,PH-M-3)
 
   // ═══ COL 2 — tabela com cada voo do período (pagina sozinha se precisar) ═══
   const rodapeY = PH-M-8
@@ -1028,7 +1037,7 @@ export function gerarPDFAgenda(agendamentos, { filtroLabel } = {}) {
     doc.setDrawColor(220,235,225);doc.setLineWidth(0.3);doc.line(M,rodapeY,PW-M,rodapeY)
     doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
     doc.text('Orofly — Tecnologia que protege, resultados que voam.',M,rodapeY+5)
-    doc.text('www.orofly.com.br',PW-M,rodapeY+5,{align:'right'})
+    doc.text(EMPRESA.site,PW-M,rodapeY+5,{align:'right'})
   }
 
   let pagina=1
@@ -1202,7 +1211,7 @@ ${obsValidas.length?`
 </div>`:''}
 
 <div class="footer">
-  <span>Orofly Aplicações Aéreas &nbsp;|&nbsp; orofly.com.br</span>
+  <span>${EMPRESA.nome} Aplicações Aéreas &nbsp;|&nbsp; ${EMPRESA.site}</span>
   <span>Gerado em ${new Date().toLocaleString('pt-BR')}</span>
 </div>
 

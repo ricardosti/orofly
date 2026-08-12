@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFCliente, gerarWordCliente, gerarPDFFazendaPeriodo, gerarPDFAgenda, areaLiquida } from '../lib/pdf'
+import { gerarPDFCliente, gerarWordCliente, gerarPDFFazendaPeriodo, gerarPDFAgenda, areaLiquida, setEmpresaConfig } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { pedirPermissaoNotificacaoLocal, notificarLocal } from '../lib/localNotify'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
-import { calcDeltaT, classificarClimaParam } from '../lib/clima'
+import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -115,6 +115,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [calcConfigSaving, setCalcConfigSaving] = useState(false)
   const [calcConfigLoaded, setCalcConfigLoaded] = useState(false)
   const [custosSubTab, setCustosSubTab] = useState('notas')
+  const [configSubTab, setConfigSubTab] = useState('geral')
   async function carregarCalcConfig() {
     try {
       const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'orcamento_config').single()
@@ -129,6 +130,43 @@ export default function AdminPanel({ onSwitchMode }) {
       showToast('✅ Regras do orçamento salvas!')
     } catch (e) { showToast('Erro ao salvar: ' + e.message, 'error') } finally { setCalcConfigSaving(false) }
   }
+  // Config geral: dados da empresa (rodapé de PDF/WhatsApp), limites de alerta climático
+  // (vento/Delta T) e valores padrão do wizard de voo. Um único registro em app_settings
+  // (chave 'config_geral') pra não multiplicar linhas na tabela. Carregada uma vez ao abrir
+  // o app (não só na tela de Configurações), porque empresa/limites afetam PDF e telas de
+  // clima usadas em qualquer lugar do Admin.
+  const EMPRESA_CFG_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br' }
+  const LIMITES_CFG_PADRAO = { ventoMin: 3, ventoMax: 15, deltaTMin: 2, deltaTIdealMax: 7, deltaTAlertaMax: 8 }
+  const WIZARD_CFG_PADRAO = { velocidadeDrone: '', altura: '', faixa: '' }
+  const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO })
+  const [configGeralSaving, setConfigGeralSaving] = useState(false)
+  const [configGeralLoaded, setConfigGeralLoaded] = useState(false)
+  async function carregarConfigGeral() {
+    try {
+      const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'config_geral').single()
+      const cfg = data?.valor ? JSON.parse(data.valor) : {}
+      const nova = {
+        empresa: { ...EMPRESA_CFG_PADRAO, ...cfg.empresa },
+        limitesClima: { ...LIMITES_CFG_PADRAO, ...cfg.limitesClima },
+        wizardDefaults: { ...WIZARD_CFG_PADRAO, ...cfg.wizardDefaults },
+      }
+      setConfigGeral(nova)
+      setEmpresaConfig(nova.empresa)
+      setLimitesClima(nova.limitesClima)
+    } catch { setEmpresaConfig(EMPRESA_CFG_PADRAO); setLimitesClima(LIMITES_CFG_PADRAO) }
+  }
+  async function salvarConfigGeral(nova) {
+    setConfigGeralSaving(true)
+    try {
+      await supabase.from('app_settings').upsert({ chave: 'config_geral', valor: JSON.stringify(nova), atualizado_em: new Date().toISOString() })
+      setConfigGeral(nova)
+      setEmpresaConfig(nova.empresa)
+      setLimitesClima(nova.limitesClima)
+      showToast('✅ Configurações salvas!')
+    } catch (e) { showToast('Erro ao salvar: ' + e.message, 'error') } finally { setConfigGeralSaving(false) }
+  }
+  useEffect(() => { if (!configGeralLoaded) { setConfigGeralLoaded(true); carregarConfigGeral() } }, [configGeralLoaded]) // eslint-disable-line
+
   useEffect(() => {
     if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
     if (tab === 'custos' && custosSubTab === 'orcamento' && !calcConfigLoaded) { setCalcConfigLoaded(true); carregarCalcConfig() }
@@ -4830,6 +4868,18 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{ fontSize:12, color:'#5c7568', marginTop:2 }}>Opções globais que afetam o app inteiro.</div>
               </div>
 
+              {/* Sub-abas */}
+              <div style={{display:'flex',background:'#eef5f0',borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:420,flexWrap:'wrap'}}>
+                {[
+                  {id:'geral',label:'🏢 Geral'},
+                  {id:'clima',label:'🌦️ Clima'},
+                ].map(t=>(
+                  <button key={t.id} style={{flex:'1 1 auto',minWidth:110,background:configSubTab===t.id?'#fff':'transparent',color:configSubTab===t.id?'#0b1210':'#5c7568',border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:configSubTab===t.id?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                    onClick={()=>setConfigSubTab(t.id)}>{t.label}</button>
+                ))}
+              </div>
+
+              {configSubTab==='clima' && (<>
               <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, marginBottom:16, maxWidth:520 }}>
                 <SecTitle>🌦️ Provedor de Dados Meteorológicos</SecTitle>
                 <div style={{ fontSize:12.5, color:'#5c7568', marginBottom:14 }}>
@@ -4929,9 +4979,14 @@ export default function AdminPanel({ onSwitchMode }) {
                   </div>
                 )}
               </div>
+              </>)}
+
+              {configSubTab==='geral' && (
+                <ConfigGeralPainel config={configGeral} onSalvar={salvarConfigGeral} saving={configGeralSaving}/>
+              )}
 
               <div style={{ background:'#f9fbfa', borderRadius:14, border:'1px dashed #dcebe3', padding:18, maxWidth:520, textAlign:'center', color:'#a9beb1', fontSize:12 }}>
-                Mais configurações (idioma, limites globais de vento etc) aparecem aqui conforme forem adicionadas.
+                Mais configurações aparecem aqui conforme forem adicionadas.
               </div>
             </div>
           )}
@@ -5276,6 +5331,68 @@ function RegrasOrcamento({ config, onSalvar, saving, isMobile, calc, setCalc }) 
         )}
       </div>
       <CalculadoraOrcamento calc={calc} setCalc={setCalc} isMobile={isMobile} config={config}/>
+    </div>
+  )
+}
+
+// Configurações do Sistema > dados da empresa, limites de alerta climático e valores
+// padrão do wizard. Um único registro em app_settings (config_geral), editado em bloco
+// com "Salvar" só aparecendo quando algo muda — mesmo padrão do RegrasOrcamento.
+function ConfigGeralPainel({ config, onSalvar, saving }) {
+  const [draft, setDraft] = useState(config)
+  useEffect(() => { setDraft(config) }, [config])
+  const alterado = JSON.stringify(draft) !== JSON.stringify(config)
+  const inputSt = { width:'100%', border:'1px solid #d7e6dc', borderRadius:10, padding:'8px 11px', fontSize:13, outline:'none', color:'#0b1210', boxSizing:'border-box' }
+  const labelSt = { fontSize:10.5, fontWeight:700, color:'#7ba38f', letterSpacing:.5, marginBottom:5, display:'block' }
+  const grid2 = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16, marginBottom:16 }}>
+      <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, maxWidth:520 }}>
+        <SecTitle>🏢 Dados da Empresa</SecTitle>
+        <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:12 }}>Usados no rodapé dos PDFs de relatório/orçamento. O logo continua fixo por enquanto.</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <div><label style={labelSt}>NOME</label><input style={inputSt} value={draft.empresa.nome} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,nome:e.target.value}}))}/></div>
+          <div style={grid2}>
+            <div><label style={labelSt}>TELEFONE</label><input style={inputSt} value={draft.empresa.telefone} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,telefone:e.target.value}}))}/></div>
+            <div><label style={labelSt}>SITE</label><input style={inputSt} value={draft.empresa.site} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,site:e.target.value}}))}/></div>
+          </div>
+          <div><label style={labelSt}>E-MAIL</label><input style={inputSt} value={draft.empresa.email} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,email:e.target.value}}))}/></div>
+        </div>
+      </div>
+
+      <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, maxWidth:520 }}>
+        <SecTitle>🌬️ Limites de Alerta Climático</SecTitle>
+        <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:12 }}>Faixas que classificam vento e Delta T como Apto/Atenção/Não Conforme nas telas de clima do piloto.</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <div style={grid2}>
+            <div><label style={labelSt}>VENTO MÍN. (km/h)</label><input type="number" style={inputSt} value={draft.limitesClima.ventoMin} onChange={e=>setDraft(d=>({...d,limitesClima:{...d.limitesClima,ventoMin:parseFloat(e.target.value)||0}}))}/></div>
+            <div><label style={labelSt}>VENTO MÁX. (km/h)</label><input type="number" style={inputSt} value={draft.limitesClima.ventoMax} onChange={e=>setDraft(d=>({...d,limitesClima:{...d.limitesClima,ventoMax:parseFloat(e.target.value)||0}}))}/></div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+            <div><label style={labelSt}>DELTA T MÍN.</label><input type="number" style={inputSt} value={draft.limitesClima.deltaTMin} onChange={e=>setDraft(d=>({...d,limitesClima:{...d.limitesClima,deltaTMin:parseFloat(e.target.value)||0}}))}/></div>
+            <div><label style={labelSt}>DELTA T IDEAL ATÉ</label><input type="number" style={inputSt} value={draft.limitesClima.deltaTIdealMax} onChange={e=>setDraft(d=>({...d,limitesClima:{...d.limitesClima,deltaTIdealMax:parseFloat(e.target.value)||0}}))}/></div>
+            <div><label style={labelSt}>DELTA T LIMITE</label><input type="number" style={inputSt} value={draft.limitesClima.deltaTAlertaMax} onChange={e=>setDraft(d=>({...d,limitesClima:{...d.limitesClima,deltaTAlertaMax:parseFloat(e.target.value)||0}}))}/></div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background:'#fff', borderRadius:14, border:'1px solid #dcebe3', padding:20, maxWidth:520 }}>
+        <SecTitle>🚁 Valores Padrão do Wizard de Voo</SecTitle>
+        <div style={{ fontSize:11.5, color:'#7ba38f', marginBottom:12 }}>Pré-preenche o Passo 2 (Aplicação) de todo novo voo — o piloto pode sempre alterar. Deixe em branco pra não sugerir nada.</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
+          <div><label style={labelSt}>VELOCIDADE (km/h)</label><input style={inputSt} placeholder="Ex: 25" value={draft.wizardDefaults.velocidadeDrone} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,velocidadeDrone:e.target.value}}))}/></div>
+          <div><label style={labelSt}>ALTURA (m)</label><input style={inputSt} placeholder="Ex: 3" value={draft.wizardDefaults.altura} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,altura:e.target.value}}))}/></div>
+          <div><label style={labelSt}>FAIXA (m)</label><input style={inputSt} placeholder="Ex: 5" value={draft.wizardDefaults.faixa} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,faixa:e.target.value}}))}/></div>
+        </div>
+      </div>
+
+      {alterado && (
+        <div style={{display:'flex',gap:8,maxWidth:520}}>
+          <button disabled={saving} onClick={()=>onSalvar(draft)} style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:saving?'default':'pointer',opacity:saving?0.7:1}}>{saving?'Salvando...':'💾 Salvar configurações'}</button>
+          <button disabled={saving} onClick={()=>setDraft(config)} style={{background:'#F4F7F5',color:'#5c7568',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
+        </div>
+      )}
     </div>
   )
 }
