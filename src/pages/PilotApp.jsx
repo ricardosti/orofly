@@ -493,6 +493,10 @@ export default function PilotApp({onSwitchMode}) {
   const [continuarModalOpen,setContinuarModalOpen] = useState(false)
   const [continuarLoading,setContinuarLoading] = useState(false)
   const [confirmDialog,setConfirmDialog] = useState(null) // {message, onConfirm}
+  const [aiChatOpen,setAiChatOpen] = useState(false)
+  const [aiMessages,setAiMessages] = useState(null) // null = ainda não abriu (mostra saudação na abertura)
+  const [aiInput,setAiInput] = useState('')
+  const [aiDigitando,setAiDigitando] = useState(false)
   const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
   function addItemViagem(categoria){
     setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
@@ -1749,6 +1753,43 @@ export default function PilotApp({onSwitchMode}) {
     const idxAgora = tempoHorario?.time ? tempoHorario.time.indexOf(horaKeyAgora) : -1
     const chuvaAgora = idxAgora>=0 && tempoHorario.precipitation_probability?.[idxAgora]!=null ? tempoHorario.precipitation_probability[idxAgora] : condDia?.chuvaProb
     const ventoAgora = idxAgora>=0 && tempoHorario.windspeed_10m?.[idxAgora]!=null ? tempoHorario.windspeed_10m[idxAgora] : condDia?.ventoMax
+
+    // Assistente da Home — visual/demonstrativo por enquanto: respostas fixas geradas a
+    // partir de dados reais que o app já tem (clima, agenda, resumo de voos), não é um LLM
+    // de verdade ainda. A ideia é mostrar o caminho antes de plugar uma IA de fato.
+    const AI_CHIPS = ['🌦️ Previsão de hoje','📊 Meu resumo da semana','📅 Próximo voo agendado','💡 Vale a pena voar agora?']
+    function gerarRespostaAi(pergunta) {
+      const q = pergunta.toLowerCase()
+      if(q.includes('previs')||q.includes('clima')||q.includes('tempo')||q.includes('chuva')||q.includes('vento')){
+        if(!condDia) return 'Ainda não consegui carregar a previsão — dá uma olhada na aba Clima 🌦️'
+        return `Hoje em ${tempoLocal||'sua região'}: ${Math.round(condDia.tempMax)}°/${Math.round(condDia.tempMin)}°C, ${Math.round(chuvaAgora||0)}% de chance de chuva e vento de ${Math.round(ventoAgora||0)} km/h agora. ${(chuvaAgora||0)>=60?'Chuva forte no radar — cuidado.':(ventoAgora||0)>=15?'Vento um pouco alto, fica de olho.':'Condição favorável pra aplicação! ✅'}`
+      }
+      if(q.includes('resumo')||q.includes('semana')||q.includes('área')||q.includes('area')||q.includes('produtividade')){
+        return `Nos últimos 7 dias você fez ${voos7d.length} voo${voos7d.length===1?'':'s'}, cobrindo ${area7d.toFixed(1)} ha em ${talhoes7d} talhõe${talhoes7d===1?'':'s'}${horas7d>0?`, com ${horas7d.toFixed(1)}h de operação`:''}. ${voos7d.length===0?'Bora começar a semana! 🚁':'Mandou bem! 💪'}`
+      }
+      if(q.includes('voo')||q.includes('agenda')||q.includes('próximo')||q.includes('proximo')){
+        const proximo = minhaAgenda.filter(a=>a.status==='pendente').sort((a,b)=>new Date(a.data_prevista)-new Date(b.data_prevista))[0]
+        if(!proximo) return 'Você não tem nenhum voo agendado pelo admin no momento. Pode iniciar um voo avulso quando quiser 👍'
+        return `Seu próximo voo agendado é em ${proximo.cliente} — ${proximo.fazenda}, no dia ${new Date(proximo.data_prevista+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})}${proximo.produto?`. Produto: ${proximo.produto}`:''}${proximo.veiculo_id?`. 🚗 Carro já reservado.`:''}`
+      }
+      if(q.includes('vale a pena')||q.includes('posso voar')||q.includes('aplicar')){
+        if(!condDia) return 'Preciso da previsão do tempo carregada pra responder isso — abre a aba Clima 🌦️'
+        const favoravel = (chuvaAgora||0)<25 && (ventoAgora||0)<15
+        return favoravel ? '✅ Pelas condições atuais (pouca chuva, vento tranquilo), tá favorável pra aplicar. Confirma o Delta T na aba Clima antes de começar.' : '⚠️ Condição não tá ideal agora (chuva ou vento alto) — eu esperaria um pouco ou conferia a previsão por hora na aba Clima.'
+      }
+      return 'Ainda tô aprendendo esse tipo de pergunta 🤓 — por enquanto respondo bem sobre previsão do tempo, seu resumo da semana e próximo voo agendado. Em breve isso vira uma IA de verdade!'
+    }
+    function enviarPerguntaAi(texto) {
+      const pergunta = texto.trim()
+      if(!pergunta) return
+      setAiMessages(m=>[...(m||[]),{de:'piloto',texto:pergunta}])
+      setAiInput('')
+      setAiDigitando(true)
+      setTimeout(()=>{
+        setAiMessages(m=>[...(m||[]),{de:'ia',texto:gerarRespostaAi(pergunta)}])
+        setAiDigitando(false)
+      }, 500+Math.random()*500)
+    }
     return (
       <div ref={ptrContainerRef} style={{...s.wrap,position:'relative'}}>
         <div style={{position:'absolute',top:0,left:0,right:0,display:'flex',justifyContent:'center',height:0,overflow:'visible',zIndex:5,pointerEvents:'none'}}>
@@ -1967,6 +2008,56 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           )}
         </div>
+
+        {/* Botão flutuante do Assistente Orofly */}
+        {!aiChatOpen && (
+          <button onClick={()=>{ setAiChatOpen(true); if(aiMessages===null) setAiMessages([{de:'ia',texto:`Oi, ${primeiroNome}! 👋 Sou o Assistente Orofly (beta) — posso te ajudar com previsão do tempo, seu resumo de voos e agenda. O que você quer saber?`}]) }}
+            style={{position:'fixed',right:16,bottom:86,zIndex:60,width:56,height:56,borderRadius:'50%',background:'linear-gradient(135deg,#00A86B,#00875A)',border:'none',boxShadow:'0 8px 20px rgba(0,168,107,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,cursor:'pointer'}}>
+            🤖
+          </button>
+        )}
+
+        {/* Painel de chat — visual/demonstrativo: respostas geradas a partir de dados reais
+            do app (regras fixas), ainda não é um LLM de verdade. Serve pra validar a
+            experiência antes de plugar uma IA de fato. */}
+        {aiChatOpen && (
+          <div style={{position:'fixed',inset:0,zIndex:70,background:'rgba(11,18,16,0.35)',display:'flex',alignItems:'flex-end'}} onClick={()=>setAiChatOpen(false)}>
+            <div onClick={e=>e.stopPropagation()} style={{background:'#fff',width:'100%',maxHeight:'78vh',borderRadius:'24px 24px 0 0',display:'flex',flexDirection:'column',boxShadow:'0 -8px 30px rgba(11,18,16,0.2)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,padding:'16px 18px',borderBottom:'1px solid #eef5f0'}}>
+                <div style={{width:38,height:38,borderRadius:'50%',background:'linear-gradient(135deg,#00A86B,#00875A)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:19,flexShrink:0}}>🤖</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:700,fontSize:14,fontFamily:"'Poppins',sans-serif",color:'#0b1210'}}>Assistente Orofly</div>
+                  <div style={{fontSize:10.5,color:'#00A86B',fontWeight:700}}>● Beta — respostas baseadas nos seus dados</div>
+                </div>
+                <button onClick={()=>setAiChatOpen(false)} style={{background:'#F4F7F5',border:'none',width:30,height:30,borderRadius:'50%',color:'#5c7568',fontSize:15,cursor:'pointer'}}>✕</button>
+              </div>
+
+              <div style={{flex:1,overflowY:'auto',padding:'14px 16px',display:'flex',flexDirection:'column',gap:10,minHeight:180}}>
+                {(aiMessages||[]).map((m,i)=>(
+                  <div key={i} style={{alignSelf:m.de==='piloto'?'flex-end':'flex-start',maxWidth:'82%',background:m.de==='piloto'?'#00A86B':'#F4F7F5',color:m.de==='piloto'?'#fff':'#0b1210',padding:'10px 14px',borderRadius:m.de==='piloto'?'16px 16px 4px 16px':'16px 16px 16px 4px',fontSize:13,lineHeight:1.45}}>
+                    {m.texto}
+                  </div>
+                ))}
+                {aiDigitando && (
+                  <div style={{alignSelf:'flex-start',background:'#F4F7F5',color:'#8fa79a',padding:'10px 14px',borderRadius:'16px 16px 16px 4px',fontSize:13}}>digitando...</div>
+                )}
+              </div>
+
+              <div style={{display:'flex',gap:6,padding:'0 16px 10px',overflowX:'auto'}}>
+                {AI_CHIPS.map(c=>(
+                  <button key={c} onClick={()=>enviarPerguntaAi(c)} style={{flexShrink:0,background:'#e3f7ec',color:'#00875A',border:'none',borderRadius:20,padding:'7px 12px',fontSize:11.5,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>{c}</button>
+                ))}
+              </div>
+
+              <div style={{display:'flex',gap:8,padding:'10px 16px calc(env(safe-area-inset-bottom,0px) + 14px)',borderTop:'1px solid #eef5f0'}}>
+                <input value={aiInput} onChange={e=>setAiInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') enviarPerguntaAi(aiInput)}}
+                  placeholder="Pergunte algo..." style={{flex:1,border:'1px solid #d7e6dc',borderRadius:20,padding:'10px 16px',fontSize:13,outline:'none'}}/>
+                <button onClick={()=>enviarPerguntaAi(aiInput)} style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:'50%',width:40,height:40,fontSize:16,cursor:'pointer',flexShrink:0}}>➤</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <BottomNav/>
         {toast&&<div style={s.toast}>{toast}</div>}
         {showPerfil&&<ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
