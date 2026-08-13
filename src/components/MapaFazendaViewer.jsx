@@ -500,13 +500,25 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     setSeguindoBussola(true)
     log('bússola ativada — mapa gira seguindo pra onde o celular aponta')
   }
-  function onMapaWheel(e) {
+  // Zoom com a roda do mouse (desktop). Precisa ser um listener nativo com {passive:false} —
+  // o onWheel do React é passivo por padrão, então e.preventDefault() dentro dele só gera o
+  // aviso "Unable to preventDefault inside passive event listener invocation" no console e
+  // não impede o scroll da página por baixo.
+  const onMapaWheelRef = useRef(null)
+  onMapaWheelRef.current = function onMapaWheel(e) {
     if (calibrando) return
     e.preventDefault()
     const novoZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom * (e.deltaY < 0 ? 1.15 : 0.87)))
     setZoom(novoZoom)
     setPan(p => limitarPan(novoZoom, p))
   }
+  useEffect(() => {
+    const box = mapBoxRef.current
+    if (!box) return
+    const handler = e => onMapaWheelRef.current(e)
+    box.addEventListener('wheel', handler, { passive: false })
+    return () => box.removeEventListener('wheel', handler)
+  }, [carregando, temMapa, erro]) // a div só monta depois que o PDF termina de carregar
 
   // HUD da tela cheia — menu de opções (⋯) e o drawer de log, escondido por padrão.
   const [menuAberto, setMenuAberto] = useState(false)
@@ -818,7 +830,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
               cursor: calibrando ? 'crosshair' : 'grab', userSelect:'none' }}
             onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
             onMouseDown={onMapaMouseDown} onMouseMove={onMapaMouseMove} onMouseUp={onMapaMouseUp} onMouseLeave={onMapaMouseUp}
-            onDoubleClick={resetZoom} onWheel={onMapaWheel} onClick={onMapaClickCalibrar}>
+            onDoubleClick={resetZoom} onClick={onMapaClickCalibrar}>
             {carregando && <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#9fc2af' }}>Abrindo mapa...</div>}
             {/* O canvas precisa ficar sempre montado (mesmo com tamCanvas ainda 0/0) — é nele
                 que o useEffect de carregamento renderiza o PDF via canvasRef.current; se isso
