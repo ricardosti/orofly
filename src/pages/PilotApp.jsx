@@ -4,6 +4,7 @@ import { ComposedChart, BarChart, Line, Area, Bar, Cell, XAxis, YAxis, Cartesian
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida, setEmpresaConfig } from '../lib/pdf'
+import { resolverTemplate, montarTextoWhatsapp } from '../lib/reportTemplates'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
@@ -846,7 +847,34 @@ export default function PilotApp({onSwitchMode}) {
   async function compartilharWhatsApp(){
     const fzMatch = fazendasDB.find(fz=>fz.cliente===form.cliente && fz.nome===form.fazenda)
     const formComPiloto = {...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||'', id_fazenda: fzMatch?.id_fazenda||''}
-    const texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade,opState==='paused_day')
+    let texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade,opState==='paused_day')
+    // Se o cliente tiver um template de WhatsApp personalizado (ou existir um padrão global),
+    // usa o texto config-driven — mas só quando a operação NÃO é parcial (o construtor
+    // config-driven ainda não modela o modo "parcial/🌙", então nesse caso mantém o texto padrão).
+    if (opState!=='paused_day') {
+      try {
+        const tpl = await resolverTemplate(supabase, clienteVal)
+        if (tpl?.whatsapp_config && Object.keys(tpl.whatsapp_config).length) {
+          const dtIniIso = form.dt_inicio_data ? new Date(`${form.dt_inicio_data}T${form.dt_inicio_hh||'00'}:${form.dt_inicio_mm||'00'}:00`).toISOString() : null
+          const dtFimIso = form.dt_fim_data ? new Date(`${form.dt_fim_data}T${form.dt_fim_hh||'00'}:${form.dt_fim_mm||'00'}:00`).toISOString() : null
+          const relLike = {
+            cliente: clienteVal, fazenda: form.fazenda, localizacao: form.talhao,
+            piloto_nome: formComPiloto.piloto_nome, drone: droneVal,
+            dt_inicio: dtIniIso, dt_fim: dtFimIso,
+            area_ha: form.area_ha, bordadura: bordaduraAtual(form),
+            produtos: form.produtos.filter(Boolean).map(produtoComUnidade),
+            vazao_i: form.vazao_i, vazao_f: form.vazao_f,
+            velocidade_drone: form.velocidade_drone, altura: form.altura,
+            vento_i: form.vento_i, vento_f: form.vento_f,
+            umidade_i: form.umidade_i, umidade_f: form.umidade_f,
+            temperatura_i: form.temperatura_i, temperatura_f: form.temperatura_f,
+            delta_t_i: form.delta_t_i, delta_t_f: form.delta_t_f,
+            obs1: form.obs1,
+          }
+          texto = montarTextoWhatsapp(relLike, tpl.whatsapp_config)
+        }
+      } catch(e) { console.warn('Falha ao resolver template de WhatsApp, usando texto padrão:', e) }
+    }
     let file = fotoMapaFile
     console.log('[compartilharWhatsApp] fotoMapaFile=',!!fotoMapaFile,'storageFotoMapa=',storageFotoMapa)
     if (!file && storageFotoMapa) {

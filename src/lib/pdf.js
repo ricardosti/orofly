@@ -62,7 +62,7 @@ export function calcularGastoProdutos(produtos, areaHa) {
 // config do Supabase; até lá (ou se nunca foi configurado), usa os valores padrão atuais.
 // O logo continua fixo (imagem embutida em base64) — trocar isso exigiria upload de
 // arquivo e replumbing considerável em todas as chamadas de addImage, fora de escopo aqui.
-export const EMPRESA_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br' }
+export const EMPRESA_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br', logo_url: '' }
 export let EMPRESA = { ...EMPRESA_PADRAO }
 export function setEmpresaConfig(cfg) { EMPRESA = { ...EMPRESA_PADRAO, ...cfg } }
 
@@ -332,6 +332,17 @@ const IC_FAIXA  = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4CAYAAAC
 const IC_GOTA   = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4CAYAAACohjseAAAABmJLR0QA/wD/AP+gvaeTAAAEdklEQVRoge2aS2xUVRjHf9+ZB1CKgUVBZgpptCqEBK01KApaFhqdgmlIujIYYtSwwYQYpQ81o9IWlyTqxigiYeFGjJRKfKUBggiJENyArYowLUh8IS2Wy8z9XOAKbTzn3nNHE/lt53v8//OdO3fuuQeucY1r/G+oK7bU1hVbaqvZ01Sxl2SCmjczQc12isWq9U1Vq1G+q9ALrAMW1FZK6bF9w59Vo29VDOa7W9sVtgACIMjy2nsbh8f2DX+VdG9JusHcjtZmMboXqLnqowkRXTHS8+HBJPsnanDesw/nKunyISA/SfezUF4y2vPR6aQ0JHax129on1bJlPuZzByAcj2kdzYUW6YmpSMxg2HN+GsoTf8YqDQHl2teTUpHIj8yua7C48ALDim3z1jeePrCvuEjvrV4vwbrux5cHGIOAtMcUycgdc9o764vferxukQbim0zQ8x7uJsDmArhuw3Ftpk+Nfk0KEEQvA3cGL2ENgbBpbd8CQKP12C+u7AOeDp+JVlYu6xxdGz/sJel6uUanNPRekPK6FFgho96wLgxpqm0qX8obqH4S7TYkk4Z3YE/cwDTw7Cyjfb22CsstsFcUNMN3BW3zl+RpfmbLnbErhInOb9x5a2aCg8DmbhCJiEwKe4ovTwQ+U95nAkKqXALyZkDyIYVeZ0Yg4hsMNdZWKtwX9R8e3RZvuuhNVGzI30z8ztaZ5VFjyPMjtrYCeVcWmXBqc27f3FNjTTBsvBS1cwBCLPLJnwxWqojue4H5qHpIWBKlIYxCFS4+UzPwPcuSc4TVE13U31zAFlRnnFNcppgbuOq+aQqQ0DWtZEnnKfoNEEx5Q38e+YAsqKy3iXB2uCiYntWRR5x1+QZ1TXNTzZb33utDf586eJKoC6SKJ8Is8/UzSnYhlsbFNHIN1vfiPKobaydwStb7S0R9XhHYYXt9r9VUD44tBjwupUQk1n1lUOLbALtJqi6NJacBKiUudsmzs6gMfWx1CSBwUqTlUH9L/x6Xo3aabKbYKhVfWlpgyjX2cRZLlEuxlKTBEbGrMKsiqn+GEtMAoilJtsb/dcxtCSDygmbMCuDgnh9X+ADkYrVixorgyPZJcdAf4onySPKuVLvHqudNtu/aiHIzliiPKLCTkBtYu2fB0W2RhXkG6Nmm3WsbeBoz+4DIPujSfLKgZG+/s9tg52e6I2R57FcGgmhKnS6JDgZLG3qHxTY4abJHwrbz/QM7HXJcd5Vy2Sz64HvXPM88M20SvCUa5KzwZPF938VWA385pobg/OGcPW3r3xy3jUx0s72SO/AUUHagPEo+W7ImDGmrdS751ik7Dit6zsLd4bwQYLb+D+EYbjq7OY9h6MWiPUCtNQ38EWqkm5S1cE4df4e+TRDpSmOOfB3TkZynYW1GHqvHM+Kg46Kmq6Rvt3v4OGW5PUgUEOxZWpwefpjqD4B3Oao5IiE+kZmyu9bTxYHJ3xpSuy04dznWheK6v2oLkXkFlTng/x5UEEvIHIK1RNgDqDm49G+XceT0PEHWNdGCoubIJcAAAAASUVORK5CYII='
 const IC_VELOC  = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADgAAAA4CAYAAACohjseAAAABmJLR0QA/wD/AP+gvaeTAAAFFklEQVRoge2ZXWwUVRTH/+fOslVaJEiBdrtgQhBMCIkGC0l9MoHa3aKAoSGEYnkTxD4QP+huqY7B3dbUqIkCxhc1foQEgkg/tkUpvoixVUmM+qBgAra7LQSI2hZsO/f4UKvbmdnuzuyMfZnf25577jn/k7tz75m5gIeHh4eHh4eHh4eHh4cJNNsCAo3VFZC8/Q459sKvr3z+u9PxZ7fAmholsHKkD4wHAL7OoEMp/7o3oarSqRTCqUB2CNw7smeyOACghQS8ERjrPeVkjlkrcIlauRjAIZOhbifzzFqByrivBcCCaUbCheQvhW87mWdWCixpqCoHo05nZpJiH44f15zM9f8XqKpCEeKwMTe9O9Dc/pXT6XxOBzQj2LhpnWTtcTCtxdjXSxm0SudyU/OPR9zI7WqBK+pDBaNFeFmy3A+QMnkopZ1M/O/PpiH1zFU3NLha4Og8EQP4mYwOBID5avJikaMbSzquPYPBSHg9wPuzOhIVB1feWuuWDtcKlMRbc4wvmOUWt3S4t4sy5bwqDDzolgzDMxhoDG8GY1q7xMS1qVjiI7dE2KE0Wl1L4A+mGZk2J5s7TqebDCtIxH/qbQI0z7IC4m9zdgW+sRpesDRoIoKJdj2SbhhMQJllAaScBJBLV6JpUn5iNT6IlhpM0K4bdOgNY/7Ri5g8of6D6T6r+ftj7b1gfj0H19cGW7r6rMYHoG8WeHxMXtI7GQq8pn4xDKA/3UaQFTYEYO4wDgJohflKagBaF/gLD9oITUzQa/pt6NUzIwZHs9mBSPgYCNvTbZJ59WBz4icbYhBs3LSOWW6Z2i2JqE/TtFM2Vw7BpvAaqeF7nfnjZLxzp97XtJNhQT3EPK1AErQDQJMdQf2x9l4AvXbmmsEadpiYz5n5mp6Dfp5og+5vRYzdq9Uaf/7y8mNFfaiAgSd05okJ+NrM/E0LvBzvToHwmc4cvPnX6C4nRObDyF2iDsZdvftq/PSQmf8MnQwfMZiIXyp+/jHrZ6JDLD+wYT4xq3q7YGnUOjWWaSAZS7QDhge5zK9ocdsK8+SW4m8BUDrdyt/1N3clMs2ZqRdlwdL4Ekq8r7Rx01abGm1TFgltI2CPYUAiAv25nUbW76KBaOgkQPqCRkG0MRnrOG9ZqQ1KGqrKhVB6AC5KtzPoRCreUTPT3KxvE3Mg9wHQP8BzwfxpSUNVuXW51ghGwuuFoIS+OBAGJ8a5Ptv8rAVejnenAOyCsRspFkLpcfPvWhYJbZOEswAt1A1pRLzzWmvnYLYYOX+6L2sM72HGUZMhBnDktp+jN9TEH7nGm4nlBzbMv60UNAO812yciZ5MxTreySWWpbuJ0mg4QkCGXZSTzFDvLih6/0f1+JiVuFOsqA8VjBTRbiK8CMNuOZUGkWRzZ0uuMS1fvvyzkm8BUDK4DDD4PQlxbCje8UMuMYNN4TWsYQeD6wAKZHDTmOipXFduClu3S4FoeCMYH4KwOItrioDzAH4G4YrE5Mu0AM0DYxmAVUyoAKMki8pBYlk7EO86a1Wr7euze6KPlI5DHDY5QhyFQSc0KE9nasWykff9YEk0FBKgOID78401DcIFaNyQbEmcyS+MQ3LKIuFqKWgvMVfC/gflCQDdBDo6EO/oxAwdSs7C8g2gZ9Fz4RKfjx8l0MMgPARg2QzuDOAKgC8BnJuAr83uXzETrl9hL3m2snDOnb7lzLyINVEEAKTIYSK6JhXlUlJtG3Vbg4eHx+zxN6nXp93+251yAAAAAElFTkSuQmCC'
 
+// Converte hex ('#00A86B') pra [r,g,b] jsPDF-friendly. Só usado como override opcional da
+// cor de destaque vinda de um template (pdfConfig.corDestaque) — se o hex vier inválido,
+// cai no verde padrão em vez de quebrar a geração do PDF.
+function hexToRgb(hex, fallback = [26,122,74]) {
+  if (!hex || typeof hex !== 'string') return fallback
+  const m = hex.replace('#','').match(/^([0-9a-fA-F]{6})$/)
+  if (!m) return fallback
+  const n = parseInt(m[1], 16)
+  return [(n>>16)&255, (n>>8)&255, n&255]
+}
+
 // Helper: trunca texto para caber em largura máxima (jsPDF)
 function truncFit(doc, txt, maxW) {
   let s = String(txt)
@@ -341,10 +352,17 @@ function truncFit(doc, txt, maxW) {
   return s === String(txt) ? s : s.slice(0,-2)+'..'
 }
 
-export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoMapa, trechos=[] } = {}) {
+// `pdfConfig` (opcional) vem de report_templates.pdf_config, resolvido via resolverTemplate.
+// Quando ausente/null, o comportamento é IDÊNTICO ao de antes (sem pdfConfig): todas as
+// seções aparecem e a cor de destaque é o verde padrão. Reordenação de seções (pdfConfig.ordem)
+// NÃO é aplicada aqui — o layout de 2 colunas com posicionamento absoluto não comporta um fluxo
+// sequencial reordenável com segurança; só show/hide por seção e a cor de destaque são aplicados.
+export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoMapa, trechos=[], pdfConfig=null } = {}) {
   const doc = new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
   const PW=297, PH=210, C1=8, CW=136, C2=157, M=8
-  const G=[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
+  const sec_ = pdfConfig?.secoes || {}
+  const showSec = (k) => sec_[k] !== false // sem pdfConfig, ou sem a chave, = mostrar (padrão atual)
+  const G=hexToRgb(pdfConfig?.corDestaque), DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
   const fmt  = v => v ? new Date(v).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
   const fmtD = v => v ? new Date(v).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'
@@ -371,30 +389,33 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   let y=M
 
   // Cabeçalho
-  try{doc.addImage(LOGO_B64,'PNG',C1+1,y+1,48,27)}catch(e){
-    doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C1+4,y+18)
+  if (showSec('cabecalho')) {
+    try{doc.addImage(LOGO_B64,'PNG',C1+1,y+1,48,27)}catch(e){
+      doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C1+4,y+18)
+    }
+    doc.setFontSize(12);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+    doc.text('RELATÓRIO DE',C1+77,y+10,{align:'center'})
+    doc.text('OPERAÇÃO DE DRONE',C1+77,y+16.5,{align:'center'})
+    doc.setDrawColor(...G);doc.setLineWidth(0.3)
+    doc.line(C1+54,y+18.5,C1+100,y+18.5)
+    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
+    doc.text('PULVERIZAÇÃO AGRÍCOLA',C1+77,y+23.5,{align:'center'})
+    doc.setDrawColor(...G);doc.setLineWidth(0.5)
+    doc.roundedRect(C1+108,y+2,28,24,2,2,'S')
+    doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
+    doc.text('DATA DA OPERAÇÃO',C1+122,y+6,{align:'center'})
+    doc.setDrawColor(180,220,200);doc.line(C1+110,y+7.5,C1+134,y+7.5)
+    doc.setFontSize(11);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+    doc.text(fmtD(rel.dt_inicio),C1+122,y+15,{align:'center'})
+    doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
+    doc.text(fmtH(rel.dt_inicio),C1+122,y+21,{align:'center'})
+    y+=29
   }
-  doc.setFontSize(12);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-  doc.text('RELATÓRIO DE',C1+77,y+10,{align:'center'})
-  doc.text('OPERAÇÃO DE DRONE',C1+77,y+16.5,{align:'center'})
-  doc.setDrawColor(...G);doc.setLineWidth(0.3)
-  doc.line(C1+54,y+18.5,C1+100,y+18.5)
-  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
-  doc.text('PULVERIZAÇÃO AGRÍCOLA',C1+77,y+23.5,{align:'center'})
-  doc.setDrawColor(...G);doc.setLineWidth(0.5)
-  doc.roundedRect(C1+108,y+2,28,24,2,2,'S')
-  doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
-  doc.text('DATA DA OPERAÇÃO',C1+122,y+6,{align:'center'})
-  doc.setDrawColor(180,220,200);doc.line(C1+110,y+7.5,C1+134,y+7.5)
-  doc.setFontSize(11);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-  doc.text(fmtD(rel.dt_inicio),C1+122,y+15,{align:'center'})
-  doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
-  doc.text(fmtH(rel.dt_inicio),C1+122,y+21,{align:'center'})
-  y+=29
 
   doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C1,y,C1+CW,y);y+=2
 
   // Cliente/Fazenda/Piloto
+  if (showSec('dadosOperacionais')) {
   doc.setFillColor(245,251,247);doc.roundedRect(C1,y,CW,12,1.5,1.5,'F')
   doc.setDrawColor(200,235,215);doc.roundedRect(C1,y,CW,12,1.5,1.5,'S')
   const tw3=CW/3
@@ -418,6 +439,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.text(partsC.join('    ·    '),C1+3,y+4)
     y+=8
   }
+  }
 
   function sec(num,title){
     doc.setFillColor(240,248,243);doc.roundedRect(C1,y,CW,7,1.5,1.5,'F')
@@ -428,6 +450,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   }
 
   // 1 RESUMO
+  if (showSec('dadosOperacionais')) {
   sec(1,'RESUMO DA OPERAÇÃO')
   const resumo=[['ÁREA APLICADA',area?area.toFixed(2):'—','ha',IC_AREA],['VOLUME APLICADO',volTotal||'—','L',IC_VOLUME],['VAZÃO',rel.vazao_i||rel.vazao_f||'—','L/ha',IC_VAZAO],['TEMPO OPERAÇÃO',tempo?.efetivo||tempo?.total||'—','',IC_TEMPO]]
   const rW=CW/4-1.5
@@ -458,9 +481,12 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.text(v,C1+(i+0.5)*CW/3,y+5.5,{align:'center'})
   })
   y+=10
+  }
 
   // 3+4
   const hW=(CW-3)/2, yBase=y
+  let yP=yBase
+  if (showSec('insumos')) {
   doc.setFillColor(240,248,243);doc.roundedRect(C1,y,hW,7,1.5,1.5,'F')
   doc.setFillColor(...G);doc.circle(C1+4.5,y+3.5,3.5,'F')
   doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W);doc.text('3',C1+4.5,y+4.8,{align:'center'})
@@ -486,9 +512,11 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.text(truncFit(doc,totalTxt,hW*0.3-4),C1+hW-3,y+5,{align:'right'})
     y+=7
   })
-  const yP=y
+  yP=y
+  }
 
   let yc=yBase; const cx=C1+hW+3
+  if (showSec('condicoesClimaticas')) {
   doc.setFillColor(240,248,243);doc.roundedRect(cx,yc,hW,7,1.5,1.5,'F')
   doc.setFillColor(...G);doc.circle(cx+4.5,yc+3.5,3.5,'F')
   doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W);doc.text('4',cx+4.5,yc+4.8,{align:'center'})
@@ -506,6 +534,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.text(truncFit(doc,rel[key+'_f']?rel[key+'_f']+' '+unit:'—',hW*0.20),cx+hW*0.80,yc+5)
     yc+=7
   })
+  }
   y=Math.max(yP,yc)+3
 
   // 5 DRONE — ícone em cima, label, valor. Garante que não invade o rodapé.
@@ -536,11 +565,13 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   y+=21
 
   // Rodapé col1
+  if (showSec('rodape')) {
   doc.setFillColor(...G);doc.rect(C1,PH-M-8,CW,9,'F')
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
   doc.text(EMPRESA.site,C1+4,PH-M-3)
   doc.text(EMPRESA.email,C1+46,PH-M-3)
   doc.text(EMPRESA.telefone,C1+96,PH-M-3)
+  }
 
   // Separador
   doc.setDrawColor(200,230,215);doc.setLineWidth(0.5);doc.line(C2-2,M,C2-2,PH-M)
@@ -557,6 +588,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C2,y2,C2+CW,y2);y2+=3
 
   // 1 MAPA
+  if (showSec('fotos')) {
   doc.setFillColor(240,248,243);doc.roundedRect(C2,y2,CW,7,1.5,1.5,'F')
   doc.setFillColor(...G);doc.circle(C2+4.5,y2+3.5,3.5,'F')
   doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W);doc.text('1',C2+4.5,y2+4.8,{align:'center'})
@@ -580,6 +612,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     doc.setFontSize(9);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
     doc.text('Sem foto de mapa',C2+CW/2,y2+32,{align:'center'})
     y2+=63
+  }
   }
 
   // Bordadura — logo após o mapa, só se preenchida: mostra total, bordadura e líquido
@@ -644,18 +677,22 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   }
 
   // Assinatura (centralizada na faixa de 55mm)
+  if (showSec('assinatura')) {
   const sigX=C2+CW-55
   const sigMidX=sigX+27.5
   doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',sigMidX,y2+4,{align:'center'})
   doc.setFontSize(10);doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigMidX,y2+12,{align:'center'})
   doc.setDrawColor(...GR);doc.setLineWidth(0.3);doc.line(sigX,y2+13.5,C2+CW,y2+13.5)
   doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigMidX,y2+19,{align:'center'})
+  }
 
   // Rodapé col2
+  if (showSec('rodape')) {
   doc.setFillColor(...G);doc.rect(C2,PH-M-8,CW,9,'F')
   doc.setFillColor(45,155,75);doc.circle(C2+5,PH-M-3.5,3,'F')
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
   doc.text('Orofly — Tecnologia que protege, resultados que voam.',C2+11,PH-M-3)
+  }
 
   // ═══ PÁGINAS DE TRECHOS (voo compartilhado) ═══
   if (trechos && trechos.length > 0) {

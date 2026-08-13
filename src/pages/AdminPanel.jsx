@@ -11,6 +11,7 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
+import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT_PDF_CONFIG, MOCK_RELATORIO } from '../lib/reportTemplates'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -139,7 +140,7 @@ export default function AdminPanel({ onSwitchMode }) {
   // (chave 'config_geral') pra não multiplicar linhas na tabela. Carregada uma vez ao abrir
   // o app (não só na tela de Configurações), porque empresa/limites afetam PDF e telas de
   // clima usadas em qualquer lugar do Admin.
-  const EMPRESA_CFG_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br' }
+  const EMPRESA_CFG_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br', logo_url: '' }
   const LIMITES_CFG_PADRAO = { ventoMin: 3, ventoMax: 15, deltaTMin: 2, deltaTIdealMax: 7, deltaTAlertaMax: 8 }
   const WIZARD_CFG_PADRAO = { velocidadeDrone: '', altura: '', faixa: '' }
   const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO })
@@ -170,6 +171,63 @@ export default function AdminPanel({ onSwitchMode }) {
     } catch (e) { showToast('Erro ao salvar: ' + e.message, 'error') } finally { setConfigGeralSaving(false) }
   }
   useEffect(() => { if (!configGeralLoaded) { setConfigGeralLoaded(true); carregarConfigGeral() } }, [configGeralLoaded]) // eslint-disable-line
+
+  // Personalização de Relatórios — templates de WhatsApp/PDF por cliente (ou globais).
+  // Carregado só quando o admin entra na sub-aba, igual ao padrão dos outros loaders.
+  const [reportTemplates, setReportTemplates] = useState([])
+  const [reportTemplatesLoading, setReportTemplatesLoading] = useState(false)
+  const [reportTemplatesLoaded, setReportTemplatesLoaded] = useState(false)
+  const [templateEditor, setTemplateEditor] = useState(null) // template sendo criado/editado, ou null
+  async function carregarReportTemplates() {
+    setReportTemplatesLoading(true)
+    try {
+      const { data, error } = await supabase.from('report_templates').select('*').order('nome')
+      if (error) throw error
+      setReportTemplates(data || [])
+    } catch (e) { showToast('Erro ao carregar templates: ' + e.message, 'error') } finally { setReportTemplatesLoading(false) }
+  }
+  useEffect(() => {
+    if (tab === 'configuracoes' && configSubTab === 'personalizacao' && !reportTemplatesLoaded) {
+      setReportTemplatesLoaded(true); carregarReportTemplates()
+    }
+  }, [tab, configSubTab]) // eslint-disable-line
+  async function excluirReportTemplate(tpl) {
+    if (!window.confirm(`Excluir o template "${tpl.nome}"? Essa ação não pode ser desfeita.`)) return
+    try {
+      const { error } = await supabase.from('report_templates').delete().eq('id', tpl.id)
+      if (error) throw error
+      showToast('🗑️ Template excluído'); carregarReportTemplates()
+    } catch (e) { showToast('Erro ao excluir: ' + e.message, 'error') }
+  }
+  async function definirTemplatePadrao(tpl) {
+    try {
+      // O índice único parcial só permite UM is_default=true por cliente_nome (ou por "global"
+      // quando cliente_nome é null) — por isso zera os outros do mesmo grupo ANTES de marcar
+      // este como padrão, senão o upsert final é rejeitado pelo banco.
+      let q = supabase.from('report_templates').update({ is_default: false }).eq('is_default', true)
+      q = tpl.cliente_nome ? q.eq('cliente_nome', tpl.cliente_nome) : q.is('cliente_nome', null)
+      await q
+      const { error } = await supabase.from('report_templates').update({ is_default: true }).eq('id', tpl.id)
+      if (error) throw error
+      showToast('⭐ Template definido como padrão'); carregarReportTemplates()
+    } catch (e) { showToast('Erro ao definir padrão: ' + e.message, 'error') }
+  }
+  async function salvarReportTemplate(draft) {
+    try {
+      const payload = {
+        nome: draft.nome, cliente_nome: draft.cliente_nome || null, logo_url: draft.logo_url || null,
+        whatsapp_config: draft.whatsapp_config || {}, pdf_config: draft.pdf_config || {},
+      }
+      if (draft.id) {
+        const { error } = await supabase.from('report_templates').update(payload).eq('id', draft.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('report_templates').insert(payload)
+        if (error) throw error
+      }
+      showToast('✅ Template salvo!'); setTemplateEditor(null); carregarReportTemplates()
+    } catch (e) { showToast('Erro ao salvar template: ' + e.message, 'error') }
+  }
 
   useEffect(() => {
     if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
@@ -717,7 +775,16 @@ export default function AdminPanel({ onSwitchMode }) {
   // app Android empacotado ou em navegador mobile com Web Share API de arquivos — desktop
   // não tem como anexar arquivo num link wa.me, cai só no texto (limitação do WhatsApp Web).
   async function enviarWhatsApp(rel) {
-    const texto = buildTxtAdmin(rel)
+    // Se existir um template personalizado (por cliente ou padrão global) com config de
+    // WhatsApp, usa o texto config-driven; senão mantém o texto padrão de sempre (comportamento
+    // inalterado pra quem nunca configurou nada em Personalização de Relatórios).
+    let texto = buildTxtAdmin(rel)
+    try {
+      const tpl = await resolverTemplate(supabase, rel.cliente)
+      if (tpl?.whatsapp_config && Object.keys(tpl.whatsapp_config).length) {
+        texto = montarTextoWhatsapp(rel, tpl.whatsapp_config)
+      }
+    } catch (e) { console.warn('Falha ao resolver template de WhatsApp, usando texto padrão:', e) }
     let file = null
     if (rel.foto_mapa_url) {
       try {
@@ -997,7 +1064,14 @@ export default function AdminPanel({ onSwitchMode }) {
           const { data: t } = await supabase.from('relatorio_trechos').select('*').eq('relatorio_id', relFinal.id).order('created_at')
           if (t) trechos = t
         }
-        const doc = await gerarPDFCliente(relFinal, { ...opts, trechos })
+        // Resolve template do cliente (se houver) e passa o pdf_config adiante — se não
+        // houver template nenhum, pdfConfig fica undefined e o PDF sai idêntico ao de sempre.
+        let pdfConfig
+        try {
+          const tpl = await resolverTemplate(supabase, relFinal.cliente)
+          if (tpl?.pdf_config && Object.keys(tpl.pdf_config).length) pdfConfig = tpl.pdf_config
+        } catch (e) { console.warn('Falha ao resolver template de PDF, usando padrão:', e) }
+        const doc = await gerarPDFCliente(relFinal, { ...opts, trechos, pdfConfig })
         await salvarOuCompartilharPdf(doc, `relatorio-cliente-${nomeBase}.pdf`)
       }
       showToast('✅ ' + (tipo==='word'?'Word':'PDF Cliente') + ' baixado!')
@@ -4898,6 +4972,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 {[
                   {id:'geral',label:'🏢 Geral'},
                   {id:'clima',label:'🌦️ Clima'},
+                  {id:'personalizacao',label:'📄 Personalização de Relatórios'},
                 ].map(t=>(
                   <button key={t.id} style={{flex:'1 1 auto',minWidth:110,background:configSubTab===t.id?'#fff':'transparent',color:configSubTab===t.id?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:configSubTab===t.id?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setConfigSubTab(t.id)}>{t.label}</button>
@@ -5006,13 +5081,22 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
               </>)}
 
-              {configSubTab==='geral' && (
+              {configSubTab==='geral' && (<>
                 <ConfigGeralPainel config={configGeral} onSalvar={salvarConfigGeral} saving={configGeralSaving}/>
-              )}
+                <div style={{ background:'#f9fbfa', borderRadius:14, border:`1px dashed ${theme.cardBorder}`, padding:18, maxWidth:520, textAlign:'center', color:'#a9beb1', fontSize:12 }}>
+                  Mais configurações aparecem aqui conforme forem adicionadas.
+                </div>
+              </>)}
 
-              <div style={{ background:'#f9fbfa', borderRadius:14, border:`1px dashed ${theme.cardBorder}`, padding:18, maxWidth:520, textAlign:'center', color:'#a9beb1', fontSize:12 }}>
-                Mais configurações aparecem aqui conforme forem adicionadas.
-              </div>
+              {configSubTab==='personalizacao' && (
+                <PersonalizacaoRelatorios
+                  configGeral={configGeral} onSalvarConfigGeral={salvarConfigGeral} configGeralSaving={configGeralSaving}
+                  templates={reportTemplates} templatesLoading={reportTemplatesLoading}
+                  onExcluir={excluirReportTemplate} onDefinirPadrao={definirTemplatePadrao}
+                  editor={templateEditor} setEditor={setTemplateEditor} onSalvarTemplate={salvarReportTemplate}
+                  invClientes={invClientes} isMobile={isMobile} showToast={showToast}
+                />
+              )}
             </div>
           )}
 
@@ -5377,19 +5461,6 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16, marginBottom:16 }}>
       <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
-        <SecTitle>🏢 Dados da Empresa</SecTitle>
-        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Usados no rodapé dos PDFs de relatório/orçamento. O logo continua fixo por enquanto.</div>
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          <div><label style={labelSt}>NOME</label><input style={inputSt} value={draft.empresa.nome} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,nome:e.target.value}}))}/></div>
-          <div style={grid2}>
-            <div><label style={labelSt}>TELEFONE</label><input style={inputSt} value={draft.empresa.telefone} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,telefone:e.target.value}}))}/></div>
-            <div><label style={labelSt}>SITE</label><input style={inputSt} value={draft.empresa.site} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,site:e.target.value}}))}/></div>
-          </div>
-          <div><label style={labelSt}>E-MAIL</label><input style={inputSt} value={draft.empresa.email} onChange={e=>setDraft(d=>({...d,empresa:{...d.empresa,email:e.target.value}}))}/></div>
-        </div>
-      </div>
-
-      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
         <SecTitle>🌬️ Limites de Alerta Climático</SecTitle>
         <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Faixas que classificam vento e Delta T como Apto/Atenção/Não Conforme nas telas de clima do piloto.</div>
         <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
@@ -5421,6 +5492,307 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
           <button disabled={saving} onClick={()=>setDraft(config)} style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ============================================================
+// Configurações > Personalização de Relatórios — dados da empresa + logo (movidos de
+// ConfigGeralPainel) e o CRUD/editor de templates de WhatsApp/PDF por cliente.
+// ============================================================
+
+// Upload simples de imagem (logo) pro bucket 'relatorios' — mesmo padrão do avatar em
+// ProfileModal.jsx: guarda o PATH no banco, resolve a URL de exibição via createSignedUrl.
+function LogoUploader({ path, onChange, pastaPrefixo }) {
+  const { theme } = useTheme()
+  const [preview, setPreview] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef(null)
+  useEffect(() => {
+    if (!path) { setPreview(null); return }
+    let ativo = true
+    supabase.storage.from('relatorios').createSignedUrl(path, 3600).then(({ data }) => {
+      if (ativo && data?.signedUrl) setPreview(data.signedUrl)
+    })
+    return () => { ativo = false }
+  }, [path])
+  async function handleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase()
+      const novoPath = `${pastaPrefixo}-${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('relatorios').upload(novoPath, file, { upsert: true })
+      if (error) throw error
+      onChange(novoPath)
+    } catch (e2) { window.alert('Erro ao enviar logo: ' + e2.message) } finally { setUploading(false); if (inputRef.current) inputRef.current.value = '' }
+  }
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+      <div style={{ width:64, height:64, borderRadius:10, border:`1px solid ${theme.cardBorder2}`, background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', flexShrink:0 }}>
+        {preview ? <img src={preview} alt="logo" style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain' }}/> : <span style={{ fontSize:22 }}>🖼️</span>}
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        <label style={{ fontSize:11.5, fontWeight:700, color:'#00A86B', cursor:'pointer' }}>
+          {uploading ? 'Enviando...' : (path ? 'Trocar logo' : '📤 Enviar logo')}
+          <input ref={inputRef} type="file" accept="image/png,image/jpeg" onChange={handleFile} disabled={uploading} style={{ display:'none' }}/>
+        </label>
+        {path && <button onClick={()=>onChange('')} style={{ background:'none', border:'none', color:theme.dangerText, fontSize:11, fontWeight:700, cursor:'pointer', padding:0, textAlign:'left' }}>Remover</button>}
+      </div>
+    </div>
+  )
+}
+
+// Switch verde simples — mesmo padrão de cor de "ativo" (#00A86B) usado no resto do app.
+function ToggleRow({ label, checked, onChange }) {
+  const { theme } = useTheme()
+  return (
+    <label style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, padding:'8px 0', cursor:'pointer' }}>
+      <span style={{ fontSize:12.5, color:theme.text }}>{label}</span>
+      <span onClick={()=>onChange(!checked)} style={{ width:38, height:22, borderRadius:12, background: checked?'#00A86B':theme.divider, position:'relative', flexShrink:0, transition:'background .15s' }}>
+        <span style={{ position:'absolute', top:2, left: checked?18:2, width:18, height:18, borderRadius:'50%', background:'#fff', boxShadow:'0 1px 3px rgba(0,0,0,0.3)', transition:'left .15s' }}/>
+      </span>
+    </label>
+  )
+}
+
+const PDF_CORES_PRESET = [
+  { label:'Verde Esmeralda', cor:'#00A86B' },
+  { label:'Azul Institucional', cor:'#2f6fed' },
+  { label:'Laranja', cor:'#f2960f' },
+  { label:'Roxo', cor:'#8e44ad' },
+  { label:'Vermelho', cor:'#e5484d' },
+]
+
+const PDF_SECOES_LABELS = {
+  cabecalho: '🏷️ Cabeçalho (logo/empresa)',
+  dadosOperacionais: '📋 Dados Operacionais',
+  condicoesClimaticas: '🌤️ Condições Climáticas',
+  insumos: '🧪 Insumos/Produtos',
+  fotos: '🖼️ Fotos do Talhão',
+  grafico: '📈 Gráfico de Parâmetros',
+  assinatura: '✍️ Bloco de Assinatura',
+  rodape: '📎 Rodapé (contato)',
+}
+// Cabeçalho e Rodapé ficam fixos no layout (topo/base de cada coluna) — não fazem parte do
+// fluxo vertical sequencial das outras seções, então não entram na lista reordenável.
+const PDF_SECOES_REORDENAVEIS = ['dadosOperacionais', 'condicoesClimaticas', 'insumos', 'fotos', 'grafico', 'assinatura']
+
+function PersonalizacaoRelatorios({ configGeral, onSalvarConfigGeral, configGeralSaving, templates, templatesLoading, onExcluir, onDefinirPadrao, editor, setEditor, onSalvarTemplate, invClientes, isMobile, showToast }) {
+  const { theme } = useTheme()
+  const [draftEmpresa, setDraftEmpresa] = useState(configGeral.empresa)
+  useEffect(() => { setDraftEmpresa(configGeral.empresa) }, [configGeral.empresa])
+  const alteradoEmpresa = JSON.stringify(draftEmpresa) !== JSON.stringify(configGeral.empresa)
+  const inputSt = { width:'100%', border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'8px 11px', fontSize:13, outline:'none', color:theme.text, boxSizing:'border-box' }
+  const labelSt = { fontSize:10.5, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:5, display:'block' }
+  const grid2 = { display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16, marginBottom:16 }}>
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
+        <SecTitle>🏢 Dados da Empresa</SecTitle>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Usados no rodapé dos PDFs de relatório/orçamento.</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <div>
+            <label style={labelSt}>LOGO DA EMPRESA/PRESTADOR</label>
+            <LogoUploader path={draftEmpresa.logo_url} onChange={p=>setDraftEmpresa(d=>({...d,logo_url:p}))} pastaPrefixo="logos/empresa"/>
+          </div>
+          <div><label style={labelSt}>NOME</label><input style={inputSt} value={draftEmpresa.nome} onChange={e=>setDraftEmpresa(d=>({...d,nome:e.target.value}))}/></div>
+          <div style={grid2}>
+            <div><label style={labelSt}>TELEFONE</label><input style={inputSt} value={draftEmpresa.telefone} onChange={e=>setDraftEmpresa(d=>({...d,telefone:e.target.value}))}/></div>
+            <div><label style={labelSt}>SITE</label><input style={inputSt} value={draftEmpresa.site} onChange={e=>setDraftEmpresa(d=>({...d,site:e.target.value}))}/></div>
+          </div>
+          <div><label style={labelSt}>E-MAIL</label><input style={inputSt} value={draftEmpresa.email} onChange={e=>setDraftEmpresa(d=>({...d,email:e.target.value}))}/></div>
+        </div>
+        {alteradoEmpresa && (
+          <div style={{display:'flex',gap:8,marginTop:14}}>
+            <button disabled={configGeralSaving} onClick={()=>onSalvarConfigGeral({...configGeral,empresa:draftEmpresa})} style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer',opacity:configGeralSaving?0.7:1}}>{configGeralSaving?'Salvando...':'💾 Salvar'}</button>
+            <button disabled={configGeralSaving} onClick={()=>setDraftEmpresa(configGeral.empresa)} style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>Cancelar</button>
+          </div>
+        )}
+      </div>
+
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8, marginBottom:4 }}>
+          <SecTitle>📄 Templates de Relatório</SecTitle>
+          <button onClick={()=>setEditor({ nome:'', cliente_nome:null, logo_url:'', whatsapp_config:{...DEFAULT_WHATSAPP_CONFIG}, pdf_config:JSON.parse(JSON.stringify(DEFAULT_PDF_CONFIG)) })}
+            style={{ background:'#00A86B', color:'#fff', border:'none', borderRadius:10, padding:'8px 14px', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>+ Novo Template</button>
+        </div>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Controle o que aparece no WhatsApp e no PDF, por cliente ou como padrão global.</div>
+        {templatesLoading ? (
+          <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Carregando...</div>
+        ) : templates.length===0 ? (
+          <div style={{ fontSize:12.5, color:theme.textFaint2, background:theme.bg, borderRadius:10, padding:16, textAlign:'center' }}>Nenhum template criado ainda — os relatórios usam o formato padrão do sistema.</div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {templates.map(tpl => (
+              <div key={tpl.id} style={{ display:'flex', flexDirection:isMobile?'column':'row', alignItems:isMobile?'flex-start':'center', justifyContent:'space-between', gap:8, background:theme.bg, borderRadius:12, padding:'12px 14px' }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:700, color:theme.text, display:'flex', alignItems:'center', gap:6 }}>
+                    {tpl.nome}
+                    {tpl.is_default && <span style={{ fontSize:10, fontWeight:700, color:'#a67c00', background:'#fff3cd', borderRadius:20, padding:'2px 8px' }}>⭐ Padrão</span>}
+                  </div>
+                  <div style={{ fontSize:11.5, color:theme.textFaint2, marginTop:2 }}>{tpl.cliente_nome || 'Todos / Padrão'}</div>
+                </div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  {!tpl.is_default && <button onClick={()=>onDefinirPadrao(tpl)} style={{ background:'none', border:`1px solid ${theme.cardBorder2}`, borderRadius:8, padding:'6px 10px', fontSize:11.5, fontWeight:700, color:theme.textMuted, cursor:'pointer' }}>Definir como Padrão</button>}
+                  <button onClick={()=>setEditor({ ...tpl, whatsapp_config:{...DEFAULT_WHATSAPP_CONFIG,...(tpl.whatsapp_config||{})}, pdf_config:{...JSON.parse(JSON.stringify(DEFAULT_PDF_CONFIG)),...(tpl.pdf_config||{}),secoes:{...DEFAULT_PDF_CONFIG.secoes,...(tpl.pdf_config?.secoes||{})}} })} style={{ background:'none', border:`1px solid ${theme.cardBorder2}`, borderRadius:8, padding:'6px 10px', fontSize:11.5, fontWeight:700, color:theme.textMuted, cursor:'pointer' }}>Editar</button>
+                  <button onClick={()=>onExcluir(tpl)} style={{ background:'none', border:`1px solid ${theme.dangerText}`, borderRadius:8, padding:'6px 10px', fontSize:11.5, fontWeight:700, color:theme.dangerText, cursor:'pointer' }}>Excluir</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {editor && (
+        <TemplateEditorModal template={editor} onClose={()=>setEditor(null)} onSalvar={onSalvarTemplate} invClientes={invClientes} isMobile={isMobile} showToast={showToast}/>
+      )}
+    </div>
+  )
+}
+
+function TemplateEditorModal({ template, onClose, onSalvar, invClientes, isMobile, showToast }) {
+  const { theme } = useTheme()
+  const [draft, setDraft] = useState(template)
+  const [subTab, setSubTab] = useState('whatsapp')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const inputSt = { width:'100%', border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'8px 11px', fontSize:13, outline:'none', color:theme.text, boxSizing:'border-box' }
+  const labelSt = { fontSize:10.5, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:5, display:'block' }
+
+  const setWa = (k,v) => setDraft(d=>({...d, whatsapp_config:{...d.whatsapp_config,[k]:v}}))
+  const setSecao = (k,v) => setDraft(d=>({...d, pdf_config:{...d.pdf_config, secoes:{...d.pdf_config.secoes,[k]:v}}}))
+  const moverOrdem = (idx, dir) => setDraft(d=>{
+    const ordem=[...d.pdf_config.ordem]; const alvo=idx+dir
+    if(alvo<0||alvo>=ordem.length) return d
+    ;[ordem[idx],ordem[alvo]]=[ordem[alvo],ordem[idx]]
+    return {...d, pdf_config:{...d.pdf_config, ordem}}
+  })
+
+  const previewTexto = montarTextoWhatsapp(MOCK_RELATORIO, draft.whatsapp_config)
+
+  async function visualizarPdf() {
+    setPreviewLoading(true)
+    try {
+      const doc = await gerarPDFCliente(MOCK_RELATORIO, { pdfConfig: draft.pdf_config })
+      await salvarOuCompartilharPdf(doc, 'preview-template.pdf')
+    } catch (e) { showToast('Erro ao gerar prévia: ' + e.message, 'error') } finally { setPreviewLoading(false) }
+  }
+
+  const WA_GRUPOS = [
+    { titulo:'Cabeçalho & Identificação', itens:[['areaFazendaTalhao','Nome do Cliente/Fazenda/Talhão'],['dataHorario','Data e Horário da Operação'],['piloto','Nome do Piloto/Operador']] },
+    { titulo:'Dados do Voo & Clima', itens:[['area','Área Aplicada (ha)'],['tempoVoo','Tempo Total de Voo'],['alturaVelocidade','Altura do Drone (m) e Velocidade (km/h)'],['climaBasico','Temperatura/Umidade/Vento'],['deltaT','Delta T']] },
+    { titulo:'Insumos & Calda', itens:[['produtos','Produtos e Dosagens'],['volumeTotal','Volume Total Aplicado (L)']] },
+    { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['linkPdf','Link para o PDF no app']] },
+  ]
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(11,18,16,0.5)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:14 }} onClick={onClose}>
+      <div style={{ background:theme.card, borderRadius:16, maxWidth:920, width:'100%', maxHeight:'92vh', overflowY:'auto', padding:isMobile?16:24 }} onClick={e=>e.stopPropagation()}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:18, fontWeight:700, color:theme.text }}>{template.id?'Editar Template':'Novo Template'}</div>
+          <button onClick={onClose} style={{ background:'none', border:'none', fontSize:22, cursor:'pointer', color:theme.textMuted }}>×</button>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr':'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
+          <div><label style={labelSt}>NOME DO TEMPLATE</label><input style={inputSt} value={draft.nome} onChange={e=>setDraft(d=>({...d,nome:e.target.value}))} placeholder="Ex: Fazenda São José"/></div>
+          <div><label style={labelSt}>CLIENTE VINCULADO</label>
+            <select style={inputSt} value={draft.cliente_nome||''} onChange={e=>setDraft(d=>({...d,cliente_nome:e.target.value||null}))}>
+              <option value="">Todos / Padrão</option>
+              {invClientes.filter(c=>c.ativo).map(c=><option key={c.id} value={c.nome}>{c.nome}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelSt}>LOGO CUSTOMIZADO (OPCIONAL)</label>
+            <LogoUploader path={draft.logo_url} onChange={p=>setDraft(d=>({...d,logo_url:p}))} pastaPrefixo={`logos/template-${template.id||'novo'}`}/>
+          </div>
+        </div>
+
+        <div style={{display:'flex',background:theme.divider,borderRadius:12,padding:4,gap:4,marginBottom:16,maxWidth:280}}>
+          {[{id:'whatsapp',label:'📱 WhatsApp'},{id:'pdf',label:'📄 PDF'}].map(t=>(
+            <button key={t.id} style={{flex:1,background:subTab===t.id?'#fff':'transparent',color:subTab===t.id?theme.text:theme.textMuted,border:'none',borderRadius:9,padding:'8px 6px',fontSize:12.5,fontWeight:700,cursor:'pointer'}} onClick={()=>setSubTab(t.id)}>{t.label}</button>
+          ))}
+        </div>
+
+        {subTab==='whatsapp' && (
+          <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr':'1fr 1fr', gap:16 }}>
+            <div>
+              {WA_GRUPOS.map(g=>(
+                <div key={g.titulo} style={{ marginBottom:14 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:2, textTransform:'uppercase' }}>{g.titulo}</div>
+                  <div style={{ borderTop:`1px solid ${theme.divider}` }}>
+                    {g.itens.map(([k,lbl])=>(
+                      <div key={k} style={{ borderBottom:`1px solid ${theme.divider}` }}>
+                        <ToggleRow label={lbl} checked={!!draft.whatsapp_config[k]} onChange={v=>setWa(k,v)}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <div style={{ fontSize:11, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:8 }}>📱 PREVIEW AO VIVO</div>
+              <div style={{ background:'#dcf0d8', borderRadius:14, padding:14, fontFamily:"'DM Sans',sans-serif" }}>
+                <div style={{ background:'#fff', borderRadius:10, padding:12, fontSize:12, whiteSpace:'pre-wrap', color:'#111', maxHeight:420, overflowY:'auto', wordBreak:'break-word' }}>{previewTexto}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {subTab==='pdf' && (
+          <div>
+            <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr':'1fr 1fr', gap:16, marginBottom:16 }}>
+              <div>
+                <div style={{ fontSize:11, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:2 }}>SEÇÕES DO PDF</div>
+                <div style={{ borderTop:`1px solid ${theme.divider}` }}>
+                  {Object.keys(PDF_SECOES_LABELS).map(k=>(
+                    <div key={k} style={{ borderBottom:`1px solid ${theme.divider}` }}>
+                      <ToggleRow label={PDF_SECOES_LABELS[k]} checked={draft.pdf_config.secoes[k]!==false} onChange={v=>setSecao(k,v)}/>
+                    </div>
+                  ))}
+                </div>
+                {draft.pdf_config.secoes.grafico!==false && (
+                  <div style={{ fontSize:10.5, color:theme.textFaint2, marginTop:6 }}>* O PDF ainda não tem um bloco de gráfico — esse toggle fica reservado pra quando existir.</div>
+                )}
+              </div>
+              <div>
+                <div style={{ fontSize:11, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:2 }}>ORDEM DAS SEÇÕES</div>
+                <div style={{ fontSize:10.5, color:theme.textFaint2, marginBottom:6 }}>Cabeçalho e Rodapé são fixos (topo/base) e não entram aqui. As demais seções usam layout de 2 colunas fixo — a ordem abaixo é salva, mas ainda não é aplicada visualmente no PDF (ver observação no editor).</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                  {draft.pdf_config.ordem.filter(k=>PDF_SECOES_REORDENAVEIS.includes(k)).map((k,i,arr)=>(
+                    <div key={k} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:theme.bg, borderRadius:8, padding:'6px 10px' }}>
+                      <span style={{ fontSize:12, color:theme.text }}>{PDF_SECOES_LABELS[k]||k}</span>
+                      <span style={{ display:'flex', gap:4 }}>
+                        <button disabled={i===0} onClick={()=>moverOrdem(i,-1)} style={{ background:'none', border:'none', cursor:i===0?'default':'pointer', opacity:i===0?0.3:1, fontSize:13 }}>▲</button>
+                        <button disabled={i===arr.length-1} onClick={()=>moverOrdem(i,1)} style={{ background:'none', border:'none', cursor:i===arr.length-1?'default':'pointer', opacity:i===arr.length-1?0.3:1, fontSize:13 }}>▼</button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:theme.textFaint2, letterSpacing:.5, marginBottom:8 }}>COR DE DESTAQUE</div>
+              <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                <input type="color" value={draft.pdf_config.corDestaque||'#00A86B'} onChange={e=>setDraft(d=>({...d,pdf_config:{...d.pdf_config,corDestaque:e.target.value}}))} style={{ width:40, height:32, border:'none', borderRadius:6, cursor:'pointer', background:'none' }}/>
+                {PDF_CORES_PRESET.map(p=>(
+                  <button key={p.cor} title={p.label} onClick={()=>setDraft(d=>({...d,pdf_config:{...d.pdf_config,corDestaque:p.cor}}))}
+                    style={{ width:26, height:26, borderRadius:'50%', background:p.cor, border: draft.pdf_config.corDestaque===p.cor?`2px solid ${theme.text}`:'2px solid transparent', cursor:'pointer' }}/>
+                ))}
+              </div>
+            </div>
+
+            <button onClick={visualizarPdf} disabled={previewLoading} style={{ background:theme.bg, color:theme.text, border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'9px 16px', fontSize:12.5, fontWeight:700, cursor:previewLoading?'default':'pointer' }}>{previewLoading?'Gerando...':'👁️ Visualizar Prévia do PDF'}</button>
+          </div>
+        )}
+
+        <div style={{ display:'flex', gap:8, marginTop:20, paddingTop:16, borderTop:`1px solid ${theme.divider}` }}>
+          <button disabled={!draft.nome} onClick={()=>onSalvar(draft)} style={{ background:'#00A86B', color:'#fff', border:'none', borderRadius:10, padding:'10px 18px', fontSize:13, fontWeight:700, cursor:draft.nome?'pointer':'default', opacity:draft.nome?1:0.6 }}>💾 Salvar Template</button>
+          <button onClick={onClose} style={{ background:theme.bg, color:theme.textMuted, border:'none', borderRadius:10, padding:'10px 18px', fontSize:13, fontWeight:700, cursor:'pointer' }}>Cancelar</button>
+        </div>
+      </div>
     </div>
   )
 }
