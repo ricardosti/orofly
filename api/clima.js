@@ -1,19 +1,22 @@
-// Proxy de clima com alternador de provedor (Meteoblue / Open-Meteo) — a preferência é
-// definida pelo Admin (tabela app_settings.weather_provider) e cada chamada é registrada
-// em weather_api_log (com o erro capturado, se der errado) pra dar visibilidade de
-// consumo e falhas direto no Admin, sem precisar abrir o painel da Vercel.
+// Proxy de clima com fallback em cascata configurável (Meteoblue / Tomorrow.io / Open-Meteo)
+// — a ORDEM de prioridade é definida pelo Admin (tabela app_settings.weather_provider, agora
+// guardando um array JSON, ex: ["meteoblue","tomorrow","open_meteo"]) e cada chamada é
+// registrada em weather_api_log (com o erro capturado, se der errado) pra dar visibilidade
+// de consumo e falhas direto no Admin, sem precisar abrir o painel da Vercel.
 //
-// Se o provedor preferido falhar (chave ausente/errada, HTTP 401/403/429/500, timeout),
-// cai automaticamente pro outro provedor SEM propagar erro pro app do piloto — a tela de
-// clima continua funcionando normal. `provider_active` no JSON de resposta diz qual
-// provedor respondeu de fato, pra debug/Admin.
+// Tenta os provedores na ordem configurada; se um falhar (chave ausente/errada, HTTP
+// 401/403/429/500, timeout), cai pro próximo automaticamente SEM propagar erro pro app do
+// piloto — a tela de clima continua funcionando normal enquanto pelo menos 1 provedor
+// responder. `provider_active` no JSON de resposta diz qual provedor respondeu de fato.
 //
-// Ambos os provedores são normalizados pro MESMO formato de saída (hourly/daily com os
-// nomes de campo que o Open-Meteo sempre usou), então o resto do app (buscarPrevisao,
-// gráficos, Delta T) funciona igual não importa qual API respondeu.
+// Os 3 provedores são normalizados pro MESMO formato de saída (hourly/daily com os nomes de
+// campo que o Open-Meteo sempre usou), então o resto do app (buscarPrevisao, gráficos,
+// Delta T) funciona igual não importa qual API respondeu.
 const { createClient } = require('@supabase/supabase-js')
 
 const TIMEOUT_MS = 8000
+const TODOS_PROVEDORES = ['meteoblue', 'tomorrow', 'open_meteo']
+const NOME_PROVEDOR = { meteoblue: 'Meteoblue', tomorrow: 'Tomorrow.io', open_meteo: 'Open-Meteo' }
 
 function clienteAdmin() {
   return createClient(process.env.REACT_APP_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
@@ -32,18 +35,51 @@ async function fetchComTimeout(url, ms) {
   }
 }
 
-async function lerProvedorPreferido(sb) {
+// Lê a ordem de prioridade configurada pelo Admin. Formato novo: JSON array (`["tomorrow",
+// "meteoblue","open_meteo"]`). Formato antigo (de antes da 3ª API): string simples
+// ("meteoblue"/"open_meteo") — convertida automaticamente pra não quebrar quem configurou
+// antes dessa mudança. Provedores que faltarem na lista salva são completados no final, na
+// ordem padrão, então a lista sempre tem os 3.
+async function lerOrdemProvedores(sb) {
   try {
-    const { data } = await sb.from('app_settings').select('valor').eq('chave', 'weather_provider').single()
-    return data?.valor === 'open_meteo' ? 'open_meteo' : 'meteoblue'
+    const { data } = await sb.from('app_settings').select('valor').eq('chave', 'weather_provider').maybeSingle()
+    if (!data?.valor) return TODOS_PROVEDORES
+    let ordem
+    try { ordem = JSON.parse(data.valor) } catch { ordem = [data.valor] }
+    if (!Array.isArray(ordem)) ordem = [ordem]
+    ordem = ordem.filter(p => TODOS_PROVEDORES.includes(p))
+    TODOS_PROVEDORES.forEach(p => { if (!ordem.includes(p)) ordem.push(p) })
+    return ordem
   } catch {
-    return 'meteoblue' // sem tabela/linha configurada ainda -> mantém o padrão atual
+    return TODOS_PROVEDORES
   }
 }
 
 async function registrarChamada(sb, provider, sucesso, erro) {
   try { await sb.from('weather_api_log').insert({ provider, sucesso, erro: erro ? String(erro).slice(0, 500) : null }) }
   catch (e) { console.log('[Weather API] falha ao gravar log (não crítico):', e.message) }
+}
+
+// Agrupa uma série horária (já em ISO "YYYY-MM-DDTHH:mm") por dia calendário e monta os
+// agregados diários (máx/mín/soma) — mesma lógica pros 3 provedores, já que nenhum deles
+// devolve o resumo diário pronto no formato que o app espera.
+function agregarPorDia(timeIso, temperature, relativehumidity, windspeed, windgusts, precipitation, precipitation_probability) {
+  const porDia = {}
+  timeIso.forEach((t, i) => { const dia = t.slice(0, 10); (porDia[dia] = porDia[dia] || []).push(i) })
+  const dias = Object.keys(porDia).sort()
+  const valores = (arr, d) => porDia[d].map(i => arr?.[i]).filter(v => v != null)
+  const maxDe = (arr, d) => { const vs = valores(arr, d); return vs.length ? Math.max(...vs) : null }
+  const minDe = (arr, d) => { const vs = valores(arr, d); return vs.length ? Math.min(...vs) : null }
+  const somaDe = (arr, d) => valores(arr, d).reduce((a, v) => a + v, 0)
+  return {
+    time: dias,
+    temperature_2m_max: dias.map(d => maxDe(temperature, d)),
+    temperature_2m_min: dias.map(d => minDe(temperature, d)),
+    precipitation_probability_max: dias.map(d => maxDe(precipitation_probability, d)),
+    precipitation_sum: dias.map(d => somaDe(precipitation, d)),
+    windspeed_10m_max: dias.map(d => maxDe(windspeed, d)),
+    windgusts_10m_max: dias.map(d => maxDe(windgusts, d)),
+  }
 }
 
 async function buscarMeteoblue(lat, lon) {
@@ -75,30 +111,7 @@ async function buscarMeteoblue(lat, lon) {
   // Meteoblue usa "YYYY-MM-DD HH:mm" — troca o espaço por "T" pra ficar no formato
   // ISO-ish que o resto do app já espera (ex: comparações tipo .endsWith('T13:00')).
   const timeIso = h.time.map(t => t.replace(' ', 'T'))
-
-  // O pacote horário não vem com resumo por dia pronto — agrupa as horas por dia
-  // calendário pra montar os agregados diários (máx/mín de temperatura, soma de
-  // chuva etc) que os cards e o carrossel de dias da tela precisam.
-  const porDia = {}
-  timeIso.forEach((t, i) => {
-    const dia = t.slice(0, 10)
-    ;(porDia[dia] = porDia[dia] || []).push(i)
-  })
-  const dias = Object.keys(porDia).sort()
-  const valores = (arr, d) => porDia[d].map(i => arr?.[i]).filter(v => v != null)
-  const maxDe = (arr, d) => { const vs = valores(arr, d); return vs.length ? Math.max(...vs) : null }
-  const minDe = (arr, d) => { const vs = valores(arr, d); return vs.length ? Math.min(...vs) : null }
-  const somaDe = (arr, d) => valores(arr, d).reduce((a, v) => a + v, 0)
-
-  const daily = {
-    time: dias,
-    temperature_2m_max: dias.map(d => maxDe(h.temperature, d)),
-    temperature_2m_min: dias.map(d => minDe(h.temperature, d)),
-    precipitation_probability_max: dias.map(d => maxDe(h.precipitation_probability, d)),
-    precipitation_sum: dias.map(d => somaDe(h.precipitation, d)),
-    windspeed_10m_max: dias.map(d => maxDe(h.windspeed, d)),
-    windgusts_10m_max: dias.map(d => maxDe(h.gust, d)),
-  }
+  const daily = agregarPorDia(timeIso, h.temperature, h.relativehumidity, h.windspeed, h.gust, h.precipitation, h.precipitation_probability)
   const hourly = {
     time: timeIso,
     temperature_2m: h.temperature,
@@ -108,6 +121,49 @@ async function buscarMeteoblue(lat, lon) {
     precipitation_probability: h.precipitation_probability,
   }
   console.log('[Weather API] Meteoblue OK')
+  return { hourly, daily }
+}
+
+// Tomorrow.io v4/weather/forecast — `units=metric` já devolve temperatura em °C, vento em
+// km/h e precipitação em mm/h, então não precisa de conversão manual. A timeline diária da
+// própria API não é usada — os agregados são recalculados a partir da horária (agregarPorDia),
+// pra garantir consistência com os outros 2 provedores.
+async function buscarTomorrow(lat, lon) {
+  console.log('[Weather API] Fetching from Tomorrow.io...')
+  const apiKey = (process.env.TOMORROW_API_KEY || '').trim()
+  if (!apiKey) {
+    console.log('[Weather API] Tomorrow.io: TOMORROW_API_KEY ausente')
+    throw new Error('API Key ausente')
+  }
+  const url = `https://api.tomorrow.io/v4/weather/forecast?location=${lat},${lon}&units=metric&apikey=${apiKey}`
+  const r = await fetchComTimeout(url, TIMEOUT_MS)
+  if (!r.ok) {
+    const corpo = await r.text().catch(() => '(não consegui ler o corpo da resposta)')
+    console.error('[Tomorrow.io Error Details]:', corpo)
+    console.log(`[Weather API] Tomorrow.io respondeu HTTP ${r.status}`)
+    throw new Error(`HTTP ${r.status}`)
+  }
+  const data = await r.json()
+  const horas = data?.timelines?.hourly
+  if (!Array.isArray(horas) || !horas.length) {
+    console.log('[Weather API] Tomorrow.io: resposta sem timeline horária')
+    throw new Error('resposta sem timeline horária')
+  }
+
+  // "2026-08-13T14:00:00Z" -> "2026-08-13T14:00" (mesmo formato ISO-ish do Meteoblue/Open-Meteo)
+  const timeIso = horas.map(h => String(h.time).replace('Z', '').slice(0, 16))
+  const temperature = horas.map(h => h.values?.temperature ?? null)
+  const relativehumidity = horas.map(h => h.values?.humidity ?? null)
+  const windspeed = horas.map(h => h.values?.windSpeed ?? null)
+  const windgusts = horas.map(h => h.values?.windGust ?? null)
+  const precipitation_probability = horas.map(h => h.values?.precipitationProbability ?? null)
+  // Testado direto contra a API real: o campo se chama `rainIntensity`, não
+  // `precipitationIntensity` (que não existe na resposta) — evita ficar com chuva sempre 0.
+  const precipitation = horas.map(h => h.values?.rainIntensity ?? null)
+
+  const daily = agregarPorDia(timeIso, temperature, relativehumidity, windspeed, windgusts, precipitation, precipitation_probability)
+  const hourly = { time: timeIso, temperature_2m: temperature, relativehumidity_2m: relativehumidity, windspeed_10m: windspeed, windgusts_10m: windgusts, precipitation_probability }
+  console.log('[Weather API] Tomorrow.io OK')
   return { hourly, daily }
 }
 
@@ -128,8 +184,7 @@ async function buscarOpenMeteo(lat, lon) {
   return { hourly: data.hourly, daily: data.daily }
 }
 
-const BUSCAR_POR_PROVEDOR = { meteoblue: buscarMeteoblue, open_meteo: buscarOpenMeteo }
-const NOME_PROVEDOR = { meteoblue: 'Meteoblue', open_meteo: 'Open-Meteo' }
+const BUSCAR_POR_PROVEDOR = { meteoblue: buscarMeteoblue, tomorrow: buscarTomorrow, open_meteo: buscarOpenMeteo }
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -139,36 +194,42 @@ module.exports = async function handler(req, res) {
   if (!lat || !lon) return res.status(400).json({ error: 'lat e lon são obrigatórios' })
 
   const sb = clienteAdmin()
-  const preferido = await lerProvedorPreferido(sb)
-  const alternativo = preferido === 'meteoblue' ? 'open_meteo' : 'meteoblue'
-  console.log(`[Weather API] Provedor preferido: ${preferido} (lat=${lat}, lon=${lon})`)
 
-  try {
-    const resultado = await BUSCAR_POR_PROVEDOR[preferido](lat, lon)
-    await registrarChamada(sb, preferido, true, null)
-    res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1200')
-    return res.status(200).json({ ...resultado, provider_active: preferido })
-  } catch (erroPrincipal) {
-    console.log(`[Weather API] ${NOME_PROVEDOR[preferido]} falhou: ${erroPrincipal.message} — caindo pro backup (${alternativo})`)
-    await registrarChamada(sb, preferido, false, erroPrincipal.message)
-    // Fallback automático: uma instabilidade pontual no provedor preferido não derruba a
-    // previsão do piloto — tenta o outro provedor antes de desistir de vez.
+  // Modo diagnóstico (usado pelo Admin pra mostrar status individual de cada provedor) —
+  // testa os 3 de forma independente, sem parar no primeiro que funcionar, e SEM gravar no
+  // repositório de logs (é um teste manual do admin, não uma chamada real do app do piloto).
+  if (req.query.diagnostico === '1') {
+    const resultados = {}
+    for (const p of TODOS_PROVEDORES) {
+      try { await BUSCAR_POR_PROVEDOR[p](lat, lon); resultados[p] = { ok: true } }
+      catch (e) { resultados[p] = { ok: false, erro: e.message } }
+    }
+    return res.status(200).json({ diagnostico: resultados })
+  }
+
+  const ordem = await lerOrdemProvedores(sb)
+  console.log(`[Weather API] Ordem de provedores: ${ordem.join(' → ')} (lat=${lat}, lon=${lon})`)
+
+  const erros = {}
+  for (let i = 0; i < ordem.length; i++) {
+    const provedor = ordem[i]
     try {
-      const resultado = await BUSCAR_POR_PROVEDOR[alternativo](lat, lon)
-      await registrarChamada(sb, alternativo, true, null)
+      const resultado = await BUSCAR_POR_PROVEDOR[provedor](lat, lon)
+      await registrarChamada(sb, provedor, true, null)
       res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1200')
-      return res.status(200).json({
-        ...resultado,
-        provider_active: alternativo,
-        aviso: `Provedor preferido (${NOME_PROVEDOR[preferido]}) falhou, usando ${NOME_PROVEDOR[alternativo]} como backup.`,
-        erro_provedor_preferido: erroPrincipal.message,
-      })
-    } catch (erroBackup) {
-      console.log(`[Weather API] ${NOME_PROVEDOR[alternativo]} (backup) também falhou: ${erroBackup.message}`)
-      await registrarChamada(sb, alternativo, false, erroBackup.message)
-      return res.status(502).json({
-        error: `Falha nos dois provedores. ${NOME_PROVEDOR[preferido]}: ${erroPrincipal.message} · ${NOME_PROVEDOR[alternativo]}: ${erroBackup.message}`,
-      })
+      const payload = { ...resultado, provider_active: provedor }
+      if (i > 0) {
+        payload.aviso = `Provedor(es) anterior(es) falharam (${Object.keys(erros).map(p => NOME_PROVEDOR[p]).join(', ')}), usando ${NOME_PROVEDOR[provedor]} como backup.`
+        payload.erros_anteriores = erros
+      }
+      return res.status(200).json(payload)
+    } catch (e) {
+      console.log(`[Weather API] ${NOME_PROVEDOR[provedor]} falhou: ${e.message}${i < ordem.length - 1 ? ' — caindo pro próximo' : ''}`)
+      await registrarChamada(sb, provedor, false, e.message)
+      erros[provedor] = e.message
     }
   }
+  return res.status(502).json({
+    error: `Falha em todos os provedores. ${Object.entries(erros).map(([p, m]) => `${NOME_PROVEDOR[p]}: ${m}`).join(' · ')}`,
+  })
 }

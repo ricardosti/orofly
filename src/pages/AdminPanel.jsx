@@ -96,15 +96,18 @@ export default function AdminPanel({ onSwitchMode }) {
   const isMobile = useIsMobile()
   const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : 'relatorios')
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  // Configurações do Sistema — hoje só o provedor de clima (Meteoblue/Open-Meteo), mas a
-  // tabela app_settings (chave/valor) e essa tela foram feitas genéricas de propósito pra
-  // caber novas opções no futuro sem precisar de migração de banco nem tela nova.
-  const [weatherProvider, setWeatherProvider] = useState(null)
+  // Configurações do Sistema — Clima (Meteoblue/Tomorrow.io/Open-Meteo) usa app_settings
+  // (chave/valor) genérica de propósito, pra caber novas opções no futuro sem precisar de
+  // migração de banco nem tela nova.
+  const PROVEDORES_CLIMA_PADRAO = ['meteoblue', 'tomorrow', 'open_meteo']
+  const [weatherProviderOrdem, setWeatherProviderOrdem] = useState(PROVEDORES_CLIMA_PADRAO)
   const [weatherProviderCarregando, setWeatherProviderCarregando] = useState(false)
   const [weatherProviderSalvando, setWeatherProviderSalvando] = useState(false)
   const [weatherLogStats, setWeatherLogStats] = useState(null)
   const [weatherStatus, setWeatherStatus] = useState(null) // {estado:'ok'|'backup'|'erro', mensagem}
   const [weatherStatusTestando, setWeatherStatusTestando] = useState(false)
+  const [weatherDiagnostico, setWeatherDiagnostico] = useState(null) // {meteoblue:{ok,erro}, tomorrow:{...}, open_meteo:{...}}
+  const [weatherDiagnosticoTestando, setWeatherDiagnosticoTestando] = useState(false)
   const [weatherLogs, setWeatherLogs] = useState(null) // últimas chamadas (repositório de logs)
   // Orçamento (ex-Agro Finance) — agora vive dentro de Financeiro, como sub-aba. Módulo
   // trazido do projeto do Isaque (sócio); só a Calculadora por enquanto.
@@ -236,7 +239,7 @@ export default function AdminPanel({ onSwitchMode }) {
   }
 
   useEffect(() => {
-    if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
+    if (tab === 'configuracoes' && weatherLogStats === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
     if (tab === 'custos' && custosSubTab === 'orcamento' && !calcConfigLoaded) { setCalcConfigLoaded(true); carregarCalcConfig() }
     if (tab === 'arquivos' && !arquivosLoaded) { setArquivosLoaded(true); carregarArquivos() }
   }, [tab, custosSubTab]) // eslint-disable-line
@@ -984,9 +987,16 @@ export default function AdminPanel({ onSwitchMode }) {
   async function carregarConfiguracoes() {
     setWeatherProviderCarregando(true)
     try {
-      const { data } = await supabase.from('app_settings').select('valor').eq('chave','weather_provider').single()
-      setWeatherProvider(data?.valor === 'open_meteo' ? 'open_meteo' : 'meteoblue')
-    } catch { setWeatherProvider('meteoblue') }
+      const { data } = await supabase.from('app_settings').select('valor').eq('chave','weather_provider').maybeSingle()
+      let ordem = PROVEDORES_CLIMA_PADRAO
+      if (data?.valor) {
+        try { ordem = JSON.parse(data.valor) } catch { ordem = [data.valor] } // compat com formato antigo (string simples)
+        if (!Array.isArray(ordem)) ordem = [ordem]
+        ordem = ordem.filter(p => PROVEDORES_CLIMA_PADRAO.includes(p))
+        PROVEDORES_CLIMA_PADRAO.forEach(p => { if (!ordem.includes(p)) ordem.push(p) })
+      }
+      setWeatherProviderOrdem(ordem)
+    } catch { setWeatherProviderOrdem(PROVEDORES_CLIMA_PADRAO) }
     finally { setWeatherProviderCarregando(false) }
     carregarWeatherLogStats()
   }
@@ -996,46 +1006,69 @@ export default function AdminPanel({ onSwitchMode }) {
       const agora = new Date()
       const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString()
       const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate()).toISOString()
-      const [{ count: totalMeteoblue }, { count: totalOpenMeteo }, { count: hojeMeteoblue }, { count: falhasMes }] = await Promise.all([
+      const [{ count: totalMeteoblue }, { count: totalTomorrow }, { count: totalOpenMeteo }, { count: hojeChamadas }, { count: falhasMes }] = await Promise.all([
         supabase.from('weather_api_log').select('id', { count:'exact', head:true }).eq('provider','meteoblue').gte('criado_em', inicioMes),
+        supabase.from('weather_api_log').select('id', { count:'exact', head:true }).eq('provider','tomorrow').gte('criado_em', inicioMes),
         supabase.from('weather_api_log').select('id', { count:'exact', head:true }).eq('provider','open_meteo').gte('criado_em', inicioMes),
         supabase.from('weather_api_log').select('id', { count:'exact', head:true }).gte('criado_em', inicioHoje),
         supabase.from('weather_api_log').select('id', { count:'exact', head:true }).eq('sucesso', false).gte('criado_em', inicioMes),
       ])
-      setWeatherLogStats({ totalMeteoblue: totalMeteoblue||0, totalOpenMeteo: totalOpenMeteo||0, hoje: hojeMeteoblue||0, falhasMes: falhasMes||0 })
+      setWeatherLogStats({ totalMeteoblue: totalMeteoblue||0, totalTomorrow: totalTomorrow||0, totalOpenMeteo: totalOpenMeteo||0, hoje: hojeChamadas||0, falhasMes: falhasMes||0 })
     } catch { setWeatherLogStats(null) }
   }
 
-  async function salvarProvedorClima(novo) {
-    if (novo === weatherProvider) return
+  async function salvarOrdemProvedores(novaOrdem) {
     setWeatherProviderSalvando(true)
     try {
       const { error } = await supabase.from('app_settings')
-        .upsert({ chave:'weather_provider', valor: novo, atualizado_por: profile?.id, atualizado_em: new Date().toISOString() }, { onConflict:'chave' })
+        .upsert({ chave:'weather_provider', valor: JSON.stringify(novaOrdem), atualizado_por: profile?.id, atualizado_em: new Date().toISOString() }, { onConflict:'chave' })
       if (error) throw error
-      setWeatherProvider(novo)
-      showToast(`✅ Provedor de clima: ${novo==='meteoblue'?'Meteoblue':'Open-Meteo'}`)
+      setWeatherProviderOrdem(novaOrdem)
+      showToast('✅ Ordem de prioridade do clima salva!')
       testarConexaoClima()
     } catch (e) { showToast('Erro: '+e.message, 'error') }
     finally { setWeatherProviderSalvando(false) }
   }
+  function moverProvedor(idx, direcao) {
+    const novaOrdem = [...weatherProviderOrdem]
+    const alvo = idx + direcao
+    if (alvo < 0 || alvo >= novaOrdem.length) return
+    ;[novaOrdem[idx], novaOrdem[alvo]] = [novaOrdem[alvo], novaOrdem[idx]]
+    salvarOrdemProvedores(novaOrdem)
+  }
 
   // Chama o próprio /api/clima com uma coordenada de teste (Ribeirão Preto) só pra ver
   // qual provedor respondeu de verdade — é a fonte de verdade do badge de status, não
-  // adianta confiar só na preferência salva (a chave pode estar errada, por exemplo).
+  // adianta confiar só na ordem salva (uma chave pode estar errada, por exemplo).
   async function testarConexaoClima() {
     setWeatherStatusTestando(true)
     try {
       const r = await fetch('/api/clima?lat=-21.1775&lon=-47.8103')
       const data = await r.json()
       if (!r.ok) { setWeatherStatus({ estado:'erro', mensagem: data?.error || `HTTP ${r.status}` }); return }
-      if (data.provider_active === 'meteoblue') setWeatherStatus({ estado:'ok', mensagem:'' })
-      else setWeatherStatus({ estado:'backup', mensagem: data?.erro_provedor_preferido || data?.aviso || '' })
+      if (data.provider_active === weatherProviderOrdem[0]) setWeatherStatus({ estado:'ok', mensagem:'' })
+      else setWeatherStatus({ estado:'backup', provedorAtivo: data.provider_active, mensagem: data?.aviso || '' })
     } catch (e) {
       setWeatherStatus({ estado:'erro', mensagem: e.message })
     } finally {
       setWeatherStatusTestando(false)
       carregarWeatherLogs() // o teste em si já gerou uma linha nova no log
+    }
+  }
+
+  // Testa os 3 provedores de forma INDEPENDENTE (não é a cascata real — cada um é testado
+  // isoladamente), pra mostrar no painel se cada API está "funcional" ou não agora mesmo.
+  // Não conta como chamada de verdade no repositório de logs (o backend não grava nesse modo).
+  async function testarDiagnosticoProvedores() {
+    setWeatherDiagnosticoTestando(true)
+    try {
+      const r = await fetch('/api/clima?lat=-21.1775&lon=-47.8103&diagnostico=1')
+      const data = await r.json()
+      setWeatherDiagnostico(data?.diagnostico || null)
+    } catch (e) {
+      setWeatherDiagnostico(null)
+    } finally {
+      setWeatherDiagnosticoTestando(false)
     }
   }
 
@@ -5056,27 +5089,28 @@ export default function AdminPanel({ onSwitchMode }) {
 
               {configSubTab==='clima' && (<>
               <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:520 }}>
-                <SecTitle>🌦️ Provedor de Dados Meteorológicos</SecTitle>
+                <SecTitle>🌦️ Prioridade dos Provedores de Clima</SecTitle>
                 <div style={{ fontSize:12.5, color:theme.textMuted, marginBottom:14 }}>
-                  Escolha qual API alimenta os cards e gráficos da tela de Previsão do Tempo (Temperatura, Chuva, Vento e Delta T). Se o provedor escolhido falhar, o sistema tenta o outro automaticamente antes de mostrar erro.
+                  O sistema tenta o 1º da lista; se falhar, cai pro 2º, e assim por diante — sem propagar erro pro app do piloto. Usa as setas pra reordenar.
                 </div>
                 {weatherProviderCarregando ? (
                   <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Carregando...</div>
                 ) : (
                   <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                    {[
-                      { id:'meteoblue', label:'Meteoblue', desc:'API Principal (paga, mais precisa)' },
-                      { id:'open_meteo', label:'Open-Meteo', desc:'API de Backup (gratuita)' },
-                    ].map(op => (
-                      <label key={op.id} style={{ display:'flex', alignItems:'center', gap:10, background: weatherProvider===op.id?theme.successBg:theme.bg, border: weatherProvider===op.id?'1px solid #00A86B':'1px solid transparent', borderRadius:12, padding:'11px 14px', cursor: weatherProviderSalvando?'default':'pointer', opacity: weatherProviderSalvando?.6:1 }}>
-                        <input type="radio" name="weatherProvider" checked={weatherProvider===op.id} disabled={weatherProviderSalvando}
-                          onChange={()=>salvarProvedorClima(op.id)} style={{ width:16, height:16, accentColor:'#00A86B', flexShrink:0 }}/>
-                        <div>
-                          <div style={{ fontSize:13, fontWeight:700, color:theme.text }}>{op.label}</div>
-                          <div style={{ fontSize:11, color:theme.textFaint2 }}>{op.desc}</div>
+                    {weatherProviderOrdem.map((id,idx) => {
+                      const info = { meteoblue:{ label:'Meteoblue', desc:'Principal (paga, mais precisa)' }, tomorrow:{ label:'Tomorrow.io', desc:'API de Alta Precisão (backup premium)' }, open_meteo:{ label:'Open-Meteo', desc:'Backup gratuito, sem limite' } }[id]
+                      return (
+                        <div key={id} style={{ display:'flex', alignItems:'center', gap:10, background: idx===0?theme.successBg:theme.bg, border: idx===0?'1px solid #00A86B':'1px solid transparent', borderRadius:12, padding:'11px 14px' }}>
+                          <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, color:theme.textFaint2, fontSize:13, width:16 }}>{idx+1}º</span>
+                          <div style={{ flex:1 }}>
+                            <div style={{ fontSize:13, fontWeight:700, color:theme.text }}>{info?.label||id}</div>
+                            <div style={{ fontSize:11, color:theme.textFaint2 }}>{info?.desc}</div>
+                          </div>
+                          <button disabled={weatherProviderSalvando||idx===0} onClick={()=>moverProvedor(idx,-1)} style={{ background:'none', border:'none', fontSize:16, cursor: idx===0?'default':'pointer', opacity: idx===0?.3:1, color:theme.textMuted }}>▲</button>
+                          <button disabled={weatherProviderSalvando||idx===weatherProviderOrdem.length-1} onClick={()=>moverProvedor(idx,1)} style={{ background:'none', border:'none', fontSize:16, cursor: idx===weatherProviderOrdem.length-1?'default':'pointer', opacity: idx===weatherProviderOrdem.length-1?.3:1, color:theme.textMuted }}>▼</button>
                         </div>
-                      </label>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
 
@@ -5086,14 +5120,40 @@ export default function AdminPanel({ onSwitchMode }) {
                   ) : !weatherStatus ? (
                     <span style={{ fontSize:12, color:theme.textFaint2 }}>Status não testado ainda.</span>
                   ) : weatherStatus.estado==='ok' ? (
-                    <span style={{ fontSize:12, fontWeight:700, color:'#00A86B', background:theme.successBg, borderRadius:20, padding:'5px 12px' }}>🟢 Meteoblue Conectado (API OK)</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:'#00A86B', background:theme.successBg, borderRadius:20, padding:'5px 12px' }}>🟢 {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[weatherProviderOrdem[0]]} Conectado (API OK)</span>
                   ) : weatherStatus.estado==='backup' ? (
-                    <span style={{ fontSize:12, fontWeight:700, color:theme.warningText2, background:theme.warningBg, borderRadius:20, padding:'5px 12px' }}>🟡 Usando Open-Meteo (Backup Ativo){weatherStatus.mensagem?` — ${weatherStatus.mensagem}`:''}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:theme.warningText2, background:theme.warningBg, borderRadius:20, padding:'5px 12px' }}>🟡 Usando {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[weatherStatus.provedorAtivo]||'backup'} (Backup Ativo){weatherStatus.mensagem?` — ${weatherStatus.mensagem}`:''}</span>
                   ) : (
-                    <span style={{ fontSize:12, fontWeight:700, color:theme.dangerText, background:theme.dangerBg, borderRadius:20, padding:'5px 12px' }}>🔴 Erro na Chave Meteoblue: {weatherStatus.mensagem}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:theme.dangerText, background:theme.dangerBg, borderRadius:20, padding:'5px 12px' }}>🔴 {weatherStatus.mensagem}</span>
                   )}
                   <button onClick={testarConexaoClima} disabled={weatherStatusTestando} style={{ background:'none', border:'none', color:'#00A86B', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0 }}>🔄 Testar novamente</button>
                 </div>
+              </div>
+
+              <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:520 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                  <SecTitle>🩺 Status Individual de Cada Provedor</SecTitle>
+                </div>
+                <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Testa os 3 de forma independente (não é a cascata real) — mostra se cada API está funcional agora mesmo.</div>
+                {weatherDiagnosticoTestando ? (
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>🔍 Testando os 3 provedores...</div>
+                ) : !weatherDiagnostico ? (
+                  <button onClick={testarDiagnosticoProvedores} style={{ background:'#00A86B', color:'#fff', border:'none', borderRadius:10, padding:'9px 16px', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>🩺 Testar os 3 agora</button>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {['meteoblue','tomorrow','open_meteo'].map(id => {
+                      const r = weatherDiagnostico[id]
+                      const label = ({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[id]
+                      return (
+                        <div key={id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background: r?.ok?theme.successBg:theme.dangerBg, borderRadius:10, padding:'8px 12px', fontSize:12.5 }}>
+                          <span style={{ fontWeight:700, color:theme.text }}>{r?.ok?'🟢':'🔴'} {label}</span>
+                          {!r?.ok && <span style={{ color:theme.dangerText, fontSize:11, maxWidth:220, textAlign:'right' }}>{r?.erro||'—'}</span>}
+                        </div>
+                      )
+                    })}
+                    <button onClick={testarDiagnosticoProvedores} style={{ marginTop:6, background:'none', border:'none', color:'#00A86B', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0, alignSelf:'flex-start' }}>🔄 Testar de novo</button>
+                  </div>
+                )}
               </div>
 
               <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:520 }}>
@@ -5108,6 +5168,11 @@ export default function AdminPanel({ onSwitchMode }) {
                       <div style={{ fontSize:10.5, color:theme.textFaint2 }}>chamadas</div>
                     </div>
                     <div style={{ background:theme.bg, borderRadius:12, padding:'12px 14px' }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:theme.textFaint2, letterSpacing:.5 }}>TOMORROW.IO</div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:theme.text }}>{weatherLogStats.totalTomorrow}</div>
+                      <div style={{ fontSize:10.5, color:theme.textFaint2 }}>chamadas</div>
+                    </div>
+                    <div style={{ background:theme.bg, borderRadius:12, padding:'12px 14px' }}>
                       <div style={{ fontSize:10, fontWeight:700, color:theme.textFaint2, letterSpacing:.5 }}>OPEN-METEO</div>
                       <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:theme.text }}>{weatherLogStats.totalOpenMeteo}</div>
                       <div style={{ fontSize:10.5, color:theme.textFaint2 }}>chamadas</div>
@@ -5117,7 +5182,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color:theme.text }}>{weatherLogStats.hoje}</div>
                       <div style={{ fontSize:10.5, color:theme.textFaint2 }}>chamadas</div>
                     </div>
-                    <div style={{ background: weatherLogStats.falhasMes>0?theme.dangerBg:theme.bg, borderRadius:12, padding:'12px 14px' }}>
+                    <div style={{ background: weatherLogStats.falhasMes>0?theme.dangerBg:theme.bg, borderRadius:12, padding:'12px 14px', gridColumn:'1 / -1' }}>
                       <div style={{ fontSize:10, fontWeight:700, color: weatherLogStats.falhasMes>0?theme.dangerText:theme.textFaint2, letterSpacing:.5 }}>FALHAS</div>
                       <div style={{ fontFamily:"'Syne',sans-serif", fontSize:22, fontWeight:700, color: weatherLogStats.falhasMes>0?theme.dangerText:theme.text }}>{weatherLogStats.falhasMes}</div>
                       <div style={{ fontSize:10.5, color: weatherLogStats.falhasMes>0?theme.dangerText:theme.textFaint2 }}>no mês</div>
@@ -5144,7 +5209,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         <span style={{ flexShrink:0 }}>{l.sucesso?'✅':'❌'}</span>
                         <div style={{ flex:1, minWidth:0 }}>
                           <div style={{ fontWeight:700, color:theme.text }}>
-                            {l.provider==='meteoblue'?'Meteoblue':'Open-Meteo'}
+                            {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[l.provider]||l.provider}
                             <span style={{ fontWeight:400, color:theme.textFaint2, marginLeft:6 }}>{new Date(l.criado_em).toLocaleString('pt-BR')}</span>
                           </div>
                           {l.erro && <div style={{ color:theme.dangerText, marginTop:2, wordBreak:'break-word' }}>{l.erro}</div>}
