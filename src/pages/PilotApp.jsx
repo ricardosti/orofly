@@ -14,7 +14,7 @@ import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
-import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 import { App as CapApp } from '@capacitor/app'
 
@@ -655,7 +655,7 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoErro,setTempoErro] = useState('')
   const [tempoLocal,setTempoLocal] = useState('')
   const [tempoProvedor,setTempoProvedor] = useState('')
-  const [tempoCep,setTempoCep] = useState('')
+  const [tempoBusca,setTempoBusca] = useState('')
   const [tempoLat,setTempoLat] = useState('')
   const [tempoLng,setTempoLng] = useState('')
   const [tempoHorario,setTempoHorario] = useState(null)
@@ -1415,27 +1415,44 @@ export default function PilotApp({onSwitchMode}) {
     )
   }
 
-  async function buscarPorCep(){
-    const cep = tempoCep.replace(/\D/g,'')
-    if(cep.length!==8){ setTempoErro('Digite um CEP válido (8 números).'); return }
+  // Busca unificada: aceita nome de cidade, CEP, "lat, lng" digitado ou colado, e até
+  // um link do Google Maps colado direto (extrai as coordenadas do próprio link) — assim
+  // o piloto não precisa entender qual campo usar, só cola/digita e pronto.
+  async function buscarPorTexto(){
+    const raw = tempoBusca.trim()
+    if(!raw){ setTempoErro('Digite uma cidade, CEP ou coordenadas.'); return }
     setTempoLoading(true); setTempoErro('')
     try {
-      const viaCep = await fetch(`https://viacep.com.br/ws/${cep}/json/`).then(r=>r.json())
-      if(viaCep.erro) throw new Error('CEP não encontrado')
-      const cidade = viaCep.localidade, uf = viaCep.uf
-      const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cidade)}&count=5&language=pt&format=json`).then(r=>r.json())
+      const mapsMatch = raw.match(/[@=](-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/)
+      if (mapsMatch) {
+        const lat = parseFloat(mapsMatch[1]), lng = parseFloat(mapsMatch[2])
+        await buscarPrevisao(lat, lng, `${lat.toFixed(4)}, ${lng.toFixed(4)}`)
+        return
+      }
+      const coordMatch = raw.match(/^(-?\d{1,3}(?:[.,]\d+)?)\s*[,;]\s*(-?\d{1,3}(?:[.,]\d+)?)$/)
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1].replace(',','.'))
+        const lng = parseFloat(coordMatch[2].replace(',','.'))
+        if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat)<=90 && Math.abs(lng)<=180) {
+          await buscarPrevisao(lat, lng, `${lat.toFixed(4)}, ${lng.toFixed(4)}`)
+          return
+        }
+      }
+      const cepDigits = raw.replace(/\D/g,'')
+      if (/^\d{5}-?\d{3}$/.test(raw.replace(/\s/g,'')) && cepDigits.length===8) {
+        const viaCep = await fetch(`https://viacep.com.br/ws/${cepDigits}/json/`).then(r=>r.json())
+        if (!viaCep.erro) {
+          const cidade = viaCep.localidade, uf = viaCep.uf
+          const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cidade)}&count=5&language=pt&format=json`).then(r=>r.json())
+          const match = (geo.results||[]).find(r=>r.country_code==='BR') || (geo.results||[])[0]
+          if (match) { await buscarPrevisao(match.latitude, match.longitude, `${cidade}, ${uf}`); return }
+        }
+      }
+      const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(raw)}&count=5&language=pt&format=json`).then(r=>r.json())
       const match = (geo.results||[]).find(r=>r.country_code==='BR') || (geo.results||[])[0]
-      if(!match) throw new Error('Cidade não encontrada')
-      await buscarPrevisao(match.latitude,match.longitude,`${cidade}, ${uf}`)
-    } catch(e){ setTempoLoading(false); setTempoErro('Não encontramos esse CEP. Confira e tente de novo.') }
-  }
-
-  function buscarPorLatLng(){
-    const lat = parseFloat(tempoLat.replace(',','.'))
-    const lng = parseFloat(tempoLng.replace(',','.'))
-    if(isNaN(lat)||lat<-90||lat>90){ setTempoErro('Latitude inválida (-90 a 90).'); return }
-    if(isNaN(lng)||lng<-180||lng>180){ setTempoErro('Longitude inválida (-180 a 180).'); return }
-    buscarPrevisao(lat,lng,`${lat.toFixed(4)}, ${lng.toFixed(4)}`)
+      if (!match) throw new Error('Local não encontrado')
+      await buscarPrevisao(match.latitude, match.longitude, `${match.name}${match.admin1?`, ${match.admin1}`:''}`)
+    } catch(e){ setTempoLoading(false); setTempoErro('Não encontramos esse local. Tente o nome da cidade, CEP ou coordenadas.') }
   }
 
   async function salvarNota(){
@@ -2754,49 +2771,53 @@ export default function PilotApp({onSwitchMode}) {
       <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
         <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
 
-        {!tempoDias && (
-          <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:20,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-            <button style={{...sw.btnG,opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorGPS}>{tempoLoading?'Buscando...':'📍 Usar meu GPS'}</button>
-            <div style={{textAlign:'center',fontSize:11,color:theme.textFaint2,margin:'14px 0'}}>ou digite seu CEP</div>
-            <div style={{display:'flex',gap:8}}>
-              <input style={{...sw.fi,flex:1}} placeholder="00000-000" value={tempoCep} maxLength={9}
-                onChange={e=>{
-                  let v=e.target.value.replace(/\D/g,'').slice(0,8)
-                  if(v.length>5) v=v.slice(0,5)+'-'+v.slice(5)
-                  setTempoCep(v)
-                }}/>
-              <button style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:16,padding:'0 20px',fontSize:14,fontWeight:600,cursor:'pointer',opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorCep}>Buscar</button>
-            </div>
-            <div style={{textAlign:'center',fontSize:11,color:theme.textFaint2,margin:'14px 0'}}>ou digite latitude/longitude</div>
-            <div style={{display:'flex',gap:8}}>
-              <input style={{...sw.fi,flex:1}} placeholder="Latitude" inputMode="decimal" value={tempoLat} onChange={e=>setTempoLat(e.target.value)}/>
-              <input style={{...sw.fi,flex:1}} placeholder="Longitude" inputMode="decimal" value={tempoLng} onChange={e=>setTempoLng(e.target.value)}/>
-              <button style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:16,padding:'0 20px',fontSize:14,fontWeight:600,cursor:'pointer',opacity:tempoLoading?.7:1}} disabled={tempoLoading} onClick={buscarPorLatLng}>Buscar</button>
-            </div>
-            {tempoErro&&<div style={{marginTop:12,background:theme.dangerBg,color:theme.dangerText,borderRadius:12,padding:'10px 14px',fontSize:13}}>{tempoErro}</div>}
-            {fazendasDB.some(fz=>fz.lat&&fz.lng) && (
-              <>
-                <div style={{textAlign:'center',fontSize:11,color:theme.textFaint2,margin:'14px 0'}}>ou escolha uma fazenda cadastrada</div>
-                <select style={{...sw.fi,width:'100%'}} defaultValue="" disabled={tempoLoading}
-                  onChange={e=>{
-                    const fz = fazendasDB.find(f=>f.id===e.target.value)
-                    if(fz) buscarPrevisao(fz.lat,fz.lng,`${fz.nome} (${fz.cliente})`)
-                  }}>
-                  <option value="" disabled>Selecione a fazenda...</option>
-                  {fazendasDB.filter(fz=>fz.lat&&fz.lng).map(fz=>(
-                    <option key={fz.id} value={fz.id}>{fz.nome} — {fz.cliente}</option>
-                  ))}
-                </select>
-              </>
-            )}
+        {/* Barra de busca híbrida — sempre no topo, nunca troca de tela/rota. Aceita nome de
+            cidade, CEP, "lat, lng" digitado/colado ou até um link do Google Maps colado. */}
+        <div style={{display:'flex',gap:8}}>
+          <div style={{flex:1,position:'relative'}}>
+            <input style={{...sw.fi,width:'100%',paddingRight:38}} placeholder="Buscar por cidade ou coordenadas"
+              value={tempoBusca} onChange={e=>setTempoBusca(e.target.value)}
+              onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); buscarPorTexto() } }}/>
+            <button aria-label="Buscar" disabled={tempoLoading} onClick={buscarPorTexto}
+              style={{position:'absolute',right:2,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',padding:8,color:theme.textMuted,display:'flex'}}>
+              <Search size={18}/>
+            </button>
+          </div>
+          <button aria-label="Usar GPS" disabled={tempoLoading} onClick={buscarPorGPS}
+            style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:16,padding:'0 16px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6,whiteSpace:'nowrap',opacity:tempoLoading?.7:1,flexShrink:0}}>
+            <Crosshair size={16}/> GPS
+          </button>
+        </div>
+
+        {fazendasDB.some(fz=>fz.lat&&fz.lng) && (
+          <select style={{...sw.fi,width:'100%'}} defaultValue="" disabled={tempoLoading}
+            onChange={e=>{
+              const fz = fazendasDB.find(f=>f.id===e.target.value)
+              if(fz) buscarPrevisao(fz.lat,fz.lng,`${fz.nome} (${fz.cliente})`)
+            }}>
+            <option value="" disabled>Ou selecione uma fazenda cadastrada...</option>
+            {fazendasDB.filter(fz=>fz.lat&&fz.lng).map(fz=>(
+              <option key={fz.id} value={fz.id}>{fz.nome} — {fz.cliente}</option>
+            ))}
+          </select>
+        )}
+
+        {tempoErro && <div style={{background:theme.dangerBg,color:theme.dangerText,borderRadius:12,padding:'10px 14px',fontSize:13}}>{tempoErro}</div>}
+
+        {tempoLoading && !tempoDias && (
+          <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'36px 20px',textAlign:'center',color:theme.textMuted,fontSize:13,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>Buscando previsão...</div>
+        )}
+
+        {!tempoDias && !tempoLoading && (
+          <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'28px 20px',textAlign:'center',color:theme.textFaint2,fontSize:13,lineHeight:1.5,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+            Digite o nome de uma cidade, CEP ou coordenadas acima, ou toque em <strong style={{color:theme.textMuted}}>GPS</strong> pra usar sua localização atual.
           </div>
         )}
 
         {tempoDias && (
           <>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div style={{fontSize:13,color:theme.textMuted}}>📍 {tempoLocal}</div>
-              <button style={{...s.nowBtn,padding:'6px 12px',fontSize:11}} onClick={()=>{setTempoDias(null);setTempoErro('')}}>Trocar local</button>
+            <div style={{fontSize:13,color:theme.textMuted,display:'flex',alignItems:'center',gap:6}}>
+              📍 {tempoLocal}{tempoLoading && <span style={{fontSize:11,color:theme.textFaint2}}>· atualizando...</span>}
             </div>
 
             {/* Card resumo — leitura atual (não a média do dia) */}
@@ -3011,26 +3032,35 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   if(view==='calculadora') {
-    // Vazão total = volume da CALDA PRONTA por hectare (água + produtos), não só água —
-    // então a água por hectare é o que sobra da vazão depois de tirar os produtos.
+    // Cada unidade pertence a uma família física: volume (L/mL) ou massa (kg/g) — produto
+    // sólido não entra na conta de água/vazão (que é sempre em L/ha) nem soma com líquido
+    // num único total, senão o número final não quer dizer nada.
+    const familiaDe = u => (u==='kg/ha'||u==='g/ha') ? 'massa' : 'vol'
+    const fatorBaseDe = u => (u==='mL/ha'||u==='g/ha') ? 1/1000 : 1 // -> L (vol) ou kg (massa)
+
+    // Vazão total = volume da CALDA PRONTA por hectare (água + produtos líquidos), não só
+    // água — então a água por hectare é o que sobra da vazão depois de tirar os líquidos.
     const vazaoN = parseFloat(calcVazao)||0
     const aguaN = parseFloat(calcAgua)||0
     const areaN = parseFloat(calcArea)||0
     const produtosPorHa = calcProdutos.reduce((a,p)=>{
+      if (familiaDe(p.unidade)!=='vol') return a
       const dose = parseFloat(p.dose)||0
-      return a + (p.unidade==='mL/ha' ? dose/1000 : dose)
+      return a + dose*fatorBaseDe(p.unidade)
     },0)
     const aguaPorHa = vazaoN-produtosPorHa
     const vazaoInsuficiente = vazaoN>0 && produtosPorHa>0 && aguaPorHa<=0
     const area = calcModo==='agua' ? (aguaPorHa>0?aguaN/aguaPorHa:0) : areaN
     const produtosCalc = calcProdutos.map(p=>{
       const dose = parseFloat(p.dose)||0
-      const totalBase = dose*area
-      return { ...p, totalL: p.unidade==='mL/ha' ? totalBase/1000 : totalBase }
+      const familia = familiaDe(p.unidade)
+      const totalBase = dose*fatorBaseDe(p.unidade)*area
+      return { ...p, totalBase, familia }
     })
-    const totalProdutos = produtosCalc.reduce((a,p)=>a+p.totalL,0)
+    const totalProdutosVol = produtosCalc.filter(p=>p.familia==='vol').reduce((a,p)=>a+p.totalBase,0)
+    const totalProdutosMassa = produtosCalc.filter(p=>p.familia==='massa').reduce((a,p)=>a+p.totalBase,0)
     const agua = calcModo==='agua' ? aguaN : Math.max(0,aguaPorHa*area)
-    const totalCalda = agua+totalProdutos
+    const totalCalda = agua+totalProdutosVol
     const addProduto = () => setCalcProdutos(ps=>[...ps,{nome:'',dose:'',unidade:'L/ha',custom:false}])
     const removeProduto = i => setCalcProdutos(ps=>ps.filter((_,idx)=>idx!==i))
     const updProduto = (i,campo,v) => setCalcProdutos(ps=>ps.map((p,idx)=>idx===i?{...p,[campo]:v}:p))
@@ -3096,7 +3126,8 @@ export default function PilotApp({onSwitchMode}) {
                         if (v==='__outro__') { setCalcProdutos(ps=>ps.map((pp,idx)=>idx===i?{...pp,custom:true,nome:''}:pp)); return }
                         const pd = produtosDB.find(x=>x.nome===v)
                         const doseAuto = pd && pd.dose_auto!==false && pd.dose_padrao!=null ? String(pd.dose_padrao) : p.dose
-                        const un = pd?.unidade==='mL' ? 'mL/ha' : pd ? 'L/ha' : p.unidade
+                        const UNIDADE_MAP = { mL:'mL/ha', ml:'mL/ha', kg:'kg/ha', Kg:'kg/ha', KG:'kg/ha', g:'g/ha', G:'g/ha' }
+                        const un = pd ? (UNIDADE_MAP[pd.unidade] || 'L/ha') : p.unidade
                         setCalcProdutos(ps=>ps.map((pp,idx)=>idx===i?{...pp,nome:v,dose:doseAuto,unidade:un}:pp))
                       }}
                       style={{flex:'2 1 0',minWidth:0,border:'1px solid #e0ece5',borderRadius:10,padding:'10px 10px',fontSize:13,fontFamily:"'Poppins',sans-serif",outline:'none',background:theme.card}}>
@@ -3111,8 +3142,10 @@ export default function PilotApp({onSwitchMode}) {
                     style={{border:'1px solid #e0ece5',borderRadius:10,padding:'10px 6px',fontSize:11.5,fontFamily:"'Poppins',sans-serif",outline:'none',background:theme.card}}>
                     <option value="L/ha">L/ha</option>
                     <option value="mL/ha">mL/ha</option>
+                    <option value="g/ha">g/ha</option>
+                    <option value="kg/ha">kg/ha</option>
                   </select>
-                  <span style={{minWidth:58,textAlign:'right',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#00A86B',flexShrink:0}}>{produtosCalc[i].totalL.toFixed(2)} L</span>
+                  <span style={{minWidth:58,textAlign:'right',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#00A86B',flexShrink:0}}>{produtosCalc[i].totalBase.toFixed(2)} {produtosCalc[i].familia==='massa'?'kg':'L'}</span>
                   {calcProdutos.length>1 && <button onClick={()=>removeProduto(i)} style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:8,width:26,height:26,fontSize:13,cursor:'pointer',flexShrink:0}}>✕</button>}
                 </div>
                 {p.custom && <button onClick={()=>updProduto(i,'custom',false)} style={{background:'none',border:'none',color:theme.textFaint2,fontSize:10.5,fontWeight:600,cursor:'pointer',padding:'4px 0 0'}}>‹ Escolher da lista de produtos</button>}
@@ -3124,7 +3157,8 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
             {[
               ['💧 Água total', `${agua.toFixed(1)} L`],
-              ['🧪 Total produtos', `${totalProdutos.toFixed(2)} L`],
+              ...(totalProdutosVol>0 ? [['🧪 Total líquidos', `${totalProdutosVol.toFixed(2)} L`]] : []),
+              ...(totalProdutosMassa>0 ? [['🧂 Total sólidos', `${totalProdutosMassa.toFixed(2)} kg`]] : []),
               ['🧴 Total da calda', `${totalCalda.toFixed(2)} L`],
               ['🌾 Área aplicada', `${area.toFixed(2)} ha`],
             ].map(([label,val])=>(
