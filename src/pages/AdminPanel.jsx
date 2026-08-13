@@ -732,22 +732,42 @@ export default function AdminPanel({ onSwitchMode }) {
     await compartilharNativo({ text: texto, file, filename: 'mapa.jpg', webFallbackUrl: 'https://wa.me/?text=' + encodeURIComponent(texto) })
   }
 
+  // Junta todos os caminhos de arquivo (fotos, mapa) de uma leva de relatórios — usado
+  // antes de apagar em massa, pra não deixar arquivo órfão no Storage (custa espaço e
+  // Egress pra sempre, já que nada mais referencia esse caminho depois da linha apagada).
+  function caminhosDeArquivos(lista) {
+    const caminhos = []
+    lista.forEach(r => {
+      if (r.foto_mapa_url) caminhos.push(r.foto_mapa_url)
+      ;(r.obs_fotos_urls||[]).forEach(p => { if (p) caminhos.push(p) })
+    })
+    return caminhos
+  }
+  async function excluirArquivosRelatorios(lista) {
+    const caminhos = caminhosDeArquivos(lista)
+    if (caminhos.length === 0) return
+    const { error } = await supabase.storage.from('relatorios').remove(caminhos)
+    if (error) console.error('Falha ao limpar arquivos órfãos:', error.message) // não bloqueia a exclusão do relatório por isso
+  }
+
   async function excluirTodosRascunhos() {
-    const ids = relatorios.filter(r=>r.status==='rascunho').map(r=>r.id)
-    if(ids.length===0) return
-    if(!window.confirm(`Excluir TODOS os ${ids.length} rascunhos (de todos os pilotos)? Essa ação não pode ser desfeita.`)) return
-    const { error } = await supabase.from('relatorios').delete().in('id', ids)
+    const lista = relatorios.filter(r=>r.status==='rascunho')
+    if(lista.length===0) return
+    if(!window.confirm(`Excluir TODOS os ${lista.length} rascunhos (de todos os pilotos)? Essa ação não pode ser desfeita.`)) return
+    await excluirArquivosRelatorios(lista)
+    const { error } = await supabase.from('relatorios').delete().in('id', lista.map(r=>r.id))
     if(error){ showToast('Erro: '+error.message,'error'); return }
-    showToast(`🗑️ ${ids.length} rascunho(s) excluído(s)`); fetchAll()
+    showToast(`🗑️ ${lista.length} rascunho(s) excluído(s)`); fetchAll()
   }
 
   async function excluirTodosTestes() {
-    const ids = relatorios.filter(r=>r.teste).map(r=>r.id)
-    if(ids.length===0) return
-    if(!window.confirm(`Excluir TODOS os ${ids.length} voos marcados como teste (qualquer status, de todos os pilotos)? Essa ação não pode ser desfeita.`)) return
-    const { error } = await supabase.from('relatorios').delete().in('id', ids)
+    const lista = relatorios.filter(r=>r.teste)
+    if(lista.length===0) return
+    if(!window.confirm(`Excluir TODOS os ${lista.length} voos marcados como teste (qualquer status, de todos os pilotos)? Essa ação não pode ser desfeita.`)) return
+    await excluirArquivosRelatorios(lista)
+    const { error } = await supabase.from('relatorios').delete().in('id', lista.map(r=>r.id))
     if(error){ showToast('Erro: '+error.message,'error'); return }
-    showToast(`🧪 ${ids.length} voo(s) de teste excluído(s)`); fetchAll()
+    showToast(`🧪 ${lista.length} voo(s) de teste excluído(s)`); fetchAll()
   }
 
   async function marcarIncidenteStatus(inc, status) {
@@ -1039,6 +1059,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['GESTÃO', [
             ['fazendas', '🌾', 'Fazendas', invFazendas.length],
             ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
+            ['arquivos', '🗂️', 'Arquivos', ''],
           ]],
           ['OPERAÇÕES', [
             ['relatorios', '📋', 'Relatórios', filtered.length],
@@ -5550,9 +5571,9 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
 
 const INCIDENTE_TIPO_LABEL = {drone:'🚁 Drone',veiculo:'🚗 Veículo',pessoal:'🤕 Pessoal',outro:'❓ Outro'}
 const INCIDENTE_STATUS = {
-  aberto: { label:'Aberto', bg:theme.warningBg, cor:theme.warningText2 },
+  aberto: { label:'Aberto', bg:'#fff3e0', cor:'#a3690a' },
   em_tratativa: { label:'Em Tratativa', bg:'#e6f1fb', cor:'#2952a3' },
-  fechado: { label:'Fechado', bg:theme.successBg, cor:'#00A86B' },
+  fechado: { label:'Fechado', bg:'#e3f7ec', cor:'#00A86B' },
 }
 function normIncidenteStatus(s) { return s==='resolvido' ? 'fechado' : (s||'aberto') } // compat com status antigo, antes da migração
 
@@ -6185,11 +6206,11 @@ function DetailCol({ title, items }) {
 }
 
 const sG = {
-  td: { padding:'11px 14px', fontSize:13, color:theme.text, borderBottom:`1px solid ${theme.divider}`, verticalAlign:'middle' },
+  td: { padding:'11px 14px', fontSize:13, color:'#0b1210', borderBottom:`1px solid ${'#eef5f0'}`, verticalAlign:'middle' },
   iconBtn: { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'3px 4px', borderRadius:10 },
-  label: { fontSize:11, fontWeight:600, color:theme.textMuted, letterSpacing:.5, marginBottom:4, fontFamily:"'Syne',sans-serif" },
-  input: { width:'100%', border:`1px solid ${theme.cardBorder2}`, borderRadius:12, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:theme.text, background:theme.bg, appearance:'none', WebkitAppearance:'none' },
+  label: { fontSize:11, fontWeight:600, color:'#5c7568', letterSpacing:.5, marginBottom:4, fontFamily:"'Syne',sans-serif" },
+  input: { width:'100%', border:`1px solid ${'#d7e6dc'}`, borderRadius:12, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#F4F7F5', appearance:'none', WebkitAppearance:'none' },
   btn: { background:'#00A86B', color:'#fff', border:'none', borderRadius:100, padding:'11px', fontFamily:"'Syne',sans-serif", fontSize:13, fontWeight:600, cursor:'pointer', width:'100%', boxShadow:'0 4px 14px rgba(14,159,110,0.3)' },
-  fi: { border:`1px solid ${theme.cardBorder2}`, borderRadius:12, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:theme.text, background:theme.bg, minWidth:110, appearance:'none' },
+  fi: { border:`1px solid ${'#d7e6dc'}`, borderRadius:12, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#F4F7F5', minWidth:110, appearance:'none' },
   actBtn: (bg) => ({ color:'#fff', background:bg, border:'none', borderRadius:16, padding:'6px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }),
 }
