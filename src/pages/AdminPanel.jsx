@@ -5707,10 +5707,31 @@ function fmtTamanho(bytes) {
 // se pudesse ser, por segurança extra.
 function TelaArquivos({ lista, loading, erro, filtroCategoria, setFiltroCategoria, excluindo, onExcluir, onRecarregar, isMobile }) {
   const { theme } = useTheme()
+  // Padrão: do mais pesado pro menor, como pedido — clicar no cabeçalho "Tamanho" alterna.
+  const [ordemTamanho, setOrdemTamanho] = useState('desc')
+  const [preview, setPreview] = useState(null) // { item, url, carregando, erro }
   const listaSegura = Array.isArray(lista) ? lista : []
-  const filtrada = filtroCategoria ? listaSegura.filter(it => it?.categoria === filtroCategoria) : listaSegura
+  const filtrada = (filtroCategoria ? listaSegura.filter(it => it?.categoria === filtroCategoria) : listaSegura)
+    .slice()
+    .sort((a, b) => {
+      const ta = typeof a?.tamanho === 'number' ? a.tamanho : -1
+      const tb = typeof b?.tamanho === 'number' ? b.tamanho : -1
+      return ordemTamanho === 'desc' ? tb - ta : ta - tb
+    })
   const usoTotal = listaSegura.reduce((a, it) => a + (typeof it?.tamanho === 'number' ? it.tamanho : 0), 0)
   const contagemPorCategoria = listaSegura.reduce((acc, it) => { const c = it?.categoria || '—'; acc[c] = (acc[c]||0)+1; return acc }, {})
+
+  async function visualizar(item) {
+    setPreview({ item, url:null, carregando:true, erro:'' })
+    try {
+      const { data, error } = await supabase.storage.from('relatorios').createSignedUrl(item.path, 300)
+      if (error || !data?.signedUrl) throw error || new Error('sem URL')
+      setPreview({ item, url:data.signedUrl, carregando:false, erro:'' })
+    } catch (e) {
+      setPreview({ item, url:null, carregando:false, erro:'Não foi possível abrir esse arquivo agora.' })
+    }
+  }
+  const ehImagem = cat => cat === 'foto' || cat === 'logo'
 
   return (
     <div>
@@ -5760,7 +5781,9 @@ function TelaArquivos({ lista, loading, erro, filtroCategoria, setFiltroCategori
                   <th style={{ padding:'10px 14px' }}>Nome</th>
                   <th style={{ padding:'10px 14px' }}>Categoria</th>
                   <th style={{ padding:'10px 14px' }}>Relatório</th>
-                  <th style={{ padding:'10px 14px' }}>Tamanho</th>
+                  <th style={{ padding:'10px 14px', cursor:'pointer', userSelect:'none' }} onClick={() => setOrdemTamanho(o => o==='desc'?'asc':'desc')}>
+                    Tamanho {ordemTamanho==='desc' ? '▼' : '▲'}
+                  </th>
                   <th style={{ padding:'10px 14px' }}>Data</th>
                   <th style={{ padding:'10px 14px' }}></th>
                 </tr>
@@ -5768,12 +5791,15 @@ function TelaArquivos({ lista, loading, erro, filtroCategoria, setFiltroCategori
               <tbody>
                 {filtrada.map((it, i) => (
                   <tr key={it?.path||i} style={{ borderTop:`1px solid ${theme.divider}` }}>
-                    <td style={{ padding:'10px 14px', color:theme.text, maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it?.nome||'—'}</td>
+                    <td style={{ padding:'10px 14px', color:'#00A86B', fontWeight:600, maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', cursor:'pointer' }} onClick={() => visualizar(it)}>{it?.nome||'—'}</td>
                     <td style={{ padding:'10px 14px', color:theme.textMuted }}>{CATEGORIA_ARQUIVO_LABEL[it?.categoria]||it?.categoria||'—'}</td>
                     <td style={{ padding:'10px 14px', color:theme.textMuted }}>{it?.relLabel||'—'}</td>
                     <td style={{ padding:'10px 14px', color:theme.textMuted }}>{fmtTamanho(it?.tamanho)}</td>
                     <td style={{ padding:'10px 14px', color:theme.textMuted }}>{it?.data ? new Date(it.data).toLocaleDateString('pt-BR') : '—'}</td>
-                    <td style={{ padding:'10px 14px' }}>
+                    <td style={{ padding:'10px 14px', whiteSpace:'nowrap' }}>
+                      <button onClick={() => visualizar(it)} style={{ background:theme.bg, color:theme.textMuted, border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'5px 10px', fontSize:11.5, cursor:'pointer', marginRight:6 }}>
+                        👁️ Ver
+                      </button>
                       <button disabled={excluindo===it?.path} onClick={() => onExcluir(it)} style={{ background:'#fdeaea', color:'#e5484d', border:'none', borderRadius:10, padding:'5px 10px', fontSize:11.5, cursor:excluindo===it?.path?'default':'pointer' }}>
                         {excluindo===it?.path ? '...' : '🗑️ Deletar'}
                       </button>
@@ -5782,6 +5808,29 @@ function TelaArquivos({ lista, loading, erro, filtroCategoria, setFiltroCategori
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {preview && (
+        <div onClick={() => setPreview(null)} style={{ position:'fixed', inset:0, background:'rgba(11,18,16,0.75)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:theme.card, borderRadius:16, maxWidth:640, width:'100%', maxHeight:'88vh', overflow:'auto', padding:18 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, gap:10 }}>
+              <div style={{ fontWeight:700, fontSize:14, color:theme.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{preview.item?.nome}</div>
+              <button onClick={() => setPreview(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:theme.textMuted, flexShrink:0 }}>×</button>
+            </div>
+            {preview.carregando ? (
+              <div style={{ textAlign:'center', color:theme.textMuted, padding:40 }}>⏳ Carregando...</div>
+            ) : preview.erro ? (
+              <div style={{ background:'#fff3e0', border:'1px solid #f2c98a', borderRadius:12, padding:'12px 16px', fontSize:12.5, color:'#a3690a' }}>⚠️ {preview.erro}</div>
+            ) : ehImagem(preview.item?.categoria) ? (
+              <img src={preview.url} alt={preview.item?.nome} style={{ width:'100%', borderRadius:10, display:'block' }}/>
+            ) : (
+              <div style={{ textAlign:'center', padding:'20px 0' }}>
+                <div style={{ fontSize:13, color:theme.textMuted, marginBottom:14 }}>Esse tipo de arquivo (KML/KMZ) não tem visualização direta — abra ou baixe pra ver no seu app de mapas.</div>
+                <a href={preview.url} target="_blank" rel="noreferrer" style={{ background:'#00A86B', color:'#fff', borderRadius:10, padding:'10px 18px', fontSize:13, fontWeight:600, textDecoration:'none', display:'inline-block' }}>⬇️ Abrir/Baixar arquivo</a>
+              </div>
+            )}
           </div>
         </div>
       )}
