@@ -6085,10 +6085,10 @@ function TemplateEditorModal({ template, onClose, onSalvar, invClientes, isMobil
   }
 
   const WA_GRUPOS = [
-    { titulo:'Cabeçalho & Identificação', itens:[['areaFazendaTalhao','Nome do Cliente/Fazenda/Talhão'],['dataHorario','Data e Horário da Operação'],['piloto','Nome do Piloto/Operador']] },
-    { titulo:'Dados do Voo & Clima', itens:[['area','Área Aplicada (ha)'],['tempoVoo','Tempo Total de Voo'],['alturaVelocidade','Altura do Drone (m) e Velocidade (km/h)'],['climaBasico','Temperatura/Umidade/Vento'],['deltaT','Delta T']] },
+    { titulo:'Cabeçalho & Identificação', itens:[['areaFazendaTalhao','Nome do Cliente/Fazenda/Talhão'],['dataHorario','Data e Horário da Operação'],['piloto','Nome do Piloto/Operador'],['ordemServico','Número da OS'],['tipoServico','Tipo de Serviço / Qtde de Voos']] },
+    { titulo:'Dados do Voo & Clima', itens:[['area','Área Aplicada (ha)'],['tempoVoo','Tempo Total de Voo'],['alturaVelocidade','Altura do Drone (m) e Velocidade (km/h)'],['faixaAplicacao','Faixa de Aplicação (m)'],['vazaoDetalhada','Vazão (L/ha)'],['tamanhoGota','Tamanho de Gota'],['climaBasico','Temperatura/Umidade/Vento'],['deltaT','Delta T']] },
     { titulo:'Insumos & Calda', itens:[['produtos','Produtos e Dosagens'],['volumeTotal','Volume Total Aplicado (L)']] },
-    { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['linkPdf','Link para o PDF no app'],['semEmoji','Remover emojis do texto']] },
+    { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['observacoes2','Observações 2'],['gpsLink','Coordenadas GPS + link do mapa'],['linkPdf','Link para o PDF no app'],['semEmoji','Remover emojis do texto']] },
   ]
 
   return (
