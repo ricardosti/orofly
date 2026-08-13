@@ -213,7 +213,7 @@ function FS({label,val,onChange,children}) {
   )
 }
 
-function classificarCondicaoGeral(form, sufixo) {
+function classificarCondicaoGeral(form, sufixo, theme) {
   const params = ['vento','umidade','temperatura','delta_t']
   const resultados = params.map(k => classificarClimaParam(k, form[k+sufixo])).filter(Boolean)
   if (resultados.length === 0) return null
@@ -3615,7 +3615,7 @@ export default function PilotApp({onSwitchMode}) {
 
       {/* ══ STEP 3 — CONDIÇÕES (início e fim lado a lado) ══ */}
       {wizardStep===3&&(()=>{
-        const geral = classificarCondicaoGeral(form, '_i')
+        const geral = classificarCondicaoGeral(form, '_i', theme)
         return (
           <>
             <div style={sw.body}>
