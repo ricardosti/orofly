@@ -204,15 +204,30 @@ module.exports = async function handler(req, res) {
 
   const sb = clienteAdmin()
 
-  // Modo diagnóstico (usado pelo Admin pra mostrar status individual de cada provedor) —
-  // testa os 3 de forma independente, sem parar no primeiro que funcionar, e SEM gravar no
+  // Modo diagnóstico (usado pelo Admin — status individual + benchmark comparativo) —
+  // testa os 3 de forma independente e EM PARALELO (pra medir tempo de resposta de verdade,
+  // sem um atrasar o outro), sem parar no primeiro que funcionar, e SEM gravar no
   // repositório de logs (é um teste manual do admin, não uma chamada real do app do piloto).
   if (req.query.diagnostico === '1') {
     const resultados = {}
-    for (const p of TODOS_PROVEDORES) {
-      try { await BUSCAR_POR_PROVEDOR[p](lat, lon); resultados[p] = { ok: true } }
-      catch (e) { resultados[p] = { ok: false, erro: e.message } }
-    }
+    await Promise.all(TODOS_PROVEDORES.map(async (p) => {
+      const inicio = Date.now()
+      try {
+        const r = await BUSCAR_POR_PROVEDOR[p](lat, lon)
+        // "Agora" aproximado = primeira hora da timeline (todos os 3 provedores começam bem
+        // perto do horário atual) — suficiente pro benchmark comparativo, não precisa achar
+        // o índice exato da hora corrente aqui.
+        resultados[p] = {
+          ok: true,
+          tempoMs: Date.now() - inicio,
+          temperatura: r.hourly?.temperature_2m?.[0] ?? null,
+          umidade: r.hourly?.relativehumidity_2m?.[0] ?? null,
+          vento: r.hourly?.windspeed_10m?.[0] ?? null,
+        }
+      } catch (e) {
+        resultados[p] = { ok: false, tempoMs: Date.now() - inicio, erro: e.message }
+      }
+    }))
     return res.status(200).json({ diagnostico: resultados })
   }
 

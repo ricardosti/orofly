@@ -96,6 +96,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const isMobile = useIsMobile()
   const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : 'relatorios')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Sidebar em accordion — {grupoId: true|false}. Grupo sem entrada aqui ainda (nunca
+  // clicado) usa o padrão de "aberto se contém a aba ativa", calculado na hora do render.
+  const [sidebarGruposAbertos, setSidebarGruposAbertos] = useState({})
   // Configurações do Sistema — Clima (Meteoblue/Tomorrow.io/Open-Meteo) usa app_settings
   // (chave/valor) genérica de propósito, pra caber novas opções no futuro sem precisar de
   // migração de banco nem tela nova.
@@ -109,6 +112,25 @@ export default function AdminPanel({ onSwitchMode }) {
   const [weatherDiagnostico, setWeatherDiagnostico] = useState(null) // {meteoblue:{ok,erro}, tomorrow:{...}, open_meteo:{...}}
   const [weatherDiagnosticoTestando, setWeatherDiagnosticoTestando] = useState(false)
   const [weatherLogs, setWeatherLogs] = useState(null) // últimas chamadas (repositório de logs)
+  // Dev / Benchmark — comparador ao vivo das 3 APIs de clima pra mesma coordenada.
+  // Coordenada padrão é a mesma usada no teste de conexão (Ribeirão Preto), o admin pode trocar.
+  const [devBenchLat, setDevBenchLat] = useState('-21.1775')
+  const [devBenchLng, setDevBenchLng] = useState('-47.8103')
+  const [devBenchResultados, setDevBenchResultados] = useState(null)
+  const [devBenchTestando, setDevBenchTestando] = useState(false)
+  async function rodarBenchmarkClima() {
+    setDevBenchTestando(true)
+    try {
+      const r = await fetch(`/api/clima?lat=${devBenchLat}&lon=${devBenchLng}&diagnostico=1`)
+      const data = await r.json()
+      setDevBenchResultados(data?.diagnostico || null)
+    } catch (e) {
+      setDevBenchResultados(null)
+      showToast('Erro ao rodar benchmark: '+e.message, 'error')
+    } finally {
+      setDevBenchTestando(false)
+    }
+  }
   // Orçamento (ex-Agro Finance) — agora vive dentro de Financeiro, como sub-aba. Módulo
   // trazido do projeto do Isaque (sócio); só a Calculadora por enquanto.
   const [calc, setCalc] = useState({
@@ -242,6 +264,7 @@ export default function AdminPanel({ onSwitchMode }) {
     if (tab === 'configuracoes' && weatherLogStats === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
     if (tab === 'custos' && custosSubTab === 'orcamento' && !calcConfigLoaded) { setCalcConfigLoaded(true); carregarCalcConfig() }
     if (tab === 'arquivos' && !arquivosLoaded) { setArquivosLoaded(true); carregarArquivos() }
+    if (tab === 'dev' && weatherLogs === null) { carregarWeatherLogs() }
   }, [tab, custosSubTab]) // eslint-disable-line
   const [relatorios, setRelatorios] = useState([])
   const [pilotos, setPilotos] = useState([])
@@ -1225,48 +1248,69 @@ export default function AdminPanel({ onSwitchMode }) {
 
       <nav style={{ padding: '4px 12px', flex: 1 }}>
         {(isSupervisor ? [
-          ['OPERAÇÕES', [
+          ['op', '🚁 Operações', [
             ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
           ]],
-          ['CONFIGURAÇÕES', [
+          ['cfg', '⚙️ Configurações', [
             ['pilotos', '👥', 'Equipes', pilotos.length],
           ]],
         ] : [
-          ['RESUMO', [
+          // Reorganizado em grupos com accordion — os ids das abas (1º item de cada linha)
+          // são os mesmos de sempre, só a organização visual mudou. "Planejamento de Voo" e
+          // "Ordens de Serviço" citados no pedido original não viraram itens novos porque não
+          // existe tela própria pra eles ainda — Buscar OS já cobre a parte de OS.
+          ['dash', '📊 Dashboard', [
             ['dashboard', '📊', 'Início', ''],
             ['sustentabilidade', '🌱', 'Sustentabilidade', ''],
             ['mapa', '🗺️', 'Mapa de Voos', relatorios.filter(r=>r.gps_lat).length],
             ['kml', '🛰️', 'Trajetos KML', relatorios.filter(r=>(r.kml_paths||[]).length>0).length],
           ]],
-          ['GESTÃO', [
-            ['fazendas', '🌾', 'Fazendas', invFazendas.length],
+          ['voos', '🚁 Voos & Operações', [
+            ['buscaOS', '🔍', 'Ordens de Serviço', ''],
+            ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
+          ]],
+          ['gestao', '🗂️ Gestão', [
+            ['fazendas', '🌾', 'Fazendas & Clientes', invFazendas.length],
             ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
             ['arquivos', '🗂️', 'Arquivos', ''],
           ]],
-          ['OPERAÇÕES', [
+          ['adminfin', '💼 Administrativo & Financeiro', [
             ['relatorios', '📋', 'Relatórios', filtered.length],
-            ['buscaOS', '🔍', 'Buscar OS', ''],
-            ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
-            ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
             ['custos', '💰', 'Financeiro', custos.length],
+            ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
           ]],
-          ['CONFIGURAÇÕES', [
+          ['cfg', '⚙️ Configurações', [
             ['pilotos', '👥', 'Usuários', pilotos.length],
             ['configuracoes', '⚙️', 'Configurações do Sistema', ''],
           ]],
-        ]).map(([secao, itens]) => (
-          <div key={secao} style={{marginBottom:14}}>
-            <div style={{fontSize:9,fontWeight:700,color:'#4a6e56',letterSpacing:1.2,padding:'0 12px',marginBottom:6}}>{secao}</div>
-            {itens.map(([id, icon, lbl, cnt]) => (
-              <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#00A86B,#00875A)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':theme.textFaint2, fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
-                onClick={() => { setTab(id); setSidebarOpen(false) }}>
-                <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{icon}</span>
-                <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
-                {cnt!==''&&<span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?theme.text:theme.textMuted, fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>}
+          ['dev', '🛠️ Desenvolvedor', [
+            ['dev', '🩺', 'Benchmark Clima & Logs', ''],
+          ]],
+        ]).map(([grupoId, secao, itens]) => {
+          const contemAtivo = itens.some(([id]) => id === tab)
+          const aberto = sidebarGruposAbertos[grupoId] ?? contemAtivo
+          return (
+            <div key={grupoId} style={{marginBottom:4}}>
+              <button onClick={() => setSidebarGruposAbertos(g => ({...g, [grupoId]: !aberto}))}
+                style={{display:'flex', alignItems:'center', width:'100%', background:'none', border:'none', padding:'8px 12px', cursor:'pointer'}}>
+                <span style={{flex:1, textAlign:'left', fontSize:9, fontWeight:700, color:'#4a6e56', letterSpacing:1.2}}>{secao}</span>
+                <span style={{display:'inline-block', transition:'transform .25s ease', transform: aberto?'rotate(180deg)':'rotate(0deg)', color:'#4a6e56', fontSize:9}}>▼</span>
               </button>
-            ))}
-          </div>
-        ))}
+              <div style={{display:'grid', gridTemplateRows: aberto?'1fr':'0fr', transition:'grid-template-rows .3s ease-in-out'}}>
+                <div style={{overflow:'hidden', minHeight:0}}>
+                  {itens.map(([id, icon, lbl, cnt]) => (
+                    <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#00A86B,#00875A)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':theme.textFaint2, fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
+                      onClick={() => { setTab(id); setSidebarOpen(false) }}>
+                      <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{icon}</span>
+                      <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
+                      {cnt!==''&&<span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?theme.text:theme.textMuted, fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )
+        })}
       </nav>
 
       <div style={{ padding:'10px 20px', borderTop:'1px solid #1e3828', borderBottom:'1px solid #1e3828', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4 }}>
@@ -5249,6 +5293,95 @@ export default function AdminPanel({ onSwitchMode }) {
                 isMobile={isMobile}
               />
             </ArquivosErrorBoundary>
+          )}
+
+          {tab === 'dev' && (
+            <div>
+              <div style={{ marginBottom:18 }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>🛠️ Área do Desenvolvedor</div>
+                <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>Benchmark comparativo das APIs de clima e histórico de chamadas.</div>
+              </div>
+
+              <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:640 }}>
+                <SecTitle>🩺 Comparador das 3 APIs em Tempo Real</SecTitle>
+                <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Chama as 3 APIs em paralelo pra mesma coordenada — útil pra comparar precisão e velocidade antes de mudar a prioridade em Configurações {'>'} Clima.</div>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:12 }}>
+                  <input style={{ border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'8px 11px', fontSize:12.5, outline:'none', width:130, background:theme.inputBg, color:theme.text }} placeholder="Latitude" value={devBenchLat} onChange={e=>setDevBenchLat(e.target.value)}/>
+                  <input style={{ border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'8px 11px', fontSize:12.5, outline:'none', width:130, background:theme.inputBg, color:theme.text }} placeholder="Longitude" value={devBenchLng} onChange={e=>setDevBenchLng(e.target.value)}/>
+                  <button onClick={rodarBenchmarkClima} disabled={devBenchTestando} style={{ background:'#00A86B', color:'#fff', border:'none', borderRadius:10, padding:'9px 16px', fontSize:12.5, fontWeight:700, cursor:'pointer', opacity:devBenchTestando?.7:1 }}>{devBenchTestando?'Testando...':'▶️ Rodar benchmark'}</button>
+                </div>
+                {!devBenchResultados ? (
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Ainda não rodou — clique em "Rodar benchmark".</div>
+                ) : (
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5, minWidth:520 }}>
+                      <thead>
+                        <tr style={{ background:theme.bg, textAlign:'left' }}>
+                          <th style={{ padding:'8px 10px' }}>Provedor</th>
+                          <th style={{ padding:'8px 10px' }}>Status</th>
+                          <th style={{ padding:'8px 10px' }}>Temp. (°C)</th>
+                          <th style={{ padding:'8px 10px' }}>Umidade (%)</th>
+                          <th style={{ padding:'8px 10px' }}>Vento (km/h)</th>
+                          <th style={{ padding:'8px 10px' }}>Tempo (ms)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {['meteoblue','tomorrow','open_meteo'].map(id => {
+                          const r = devBenchResultados[id]
+                          const label = ({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[id]
+                          return (
+                            <tr key={id} style={{ borderTop:`1px solid ${theme.divider}` }}>
+                              <td style={{ padding:'8px 10px', fontWeight:700, color:theme.text }}>{label}</td>
+                              <td style={{ padding:'8px 10px' }}>{r?.ok ? <span style={{color:'#00A86B',fontWeight:700}}>🟢 OK</span> : <span style={{color:theme.dangerText,fontWeight:700}}>🔴 {r?.erro||'Erro'}</span>}</td>
+                              <td style={{ padding:'8px 10px', color:theme.text }}>{r?.temperatura!=null?r.temperatura.toFixed(1):'—'}</td>
+                              <td style={{ padding:'8px 10px', color:theme.text }}>{r?.umidade!=null?Math.round(r.umidade):'—'}</td>
+                              <td style={{ padding:'8px 10px', color:theme.text }}>{r?.vento!=null?r.vento.toFixed(1):'—'}</td>
+                              <td style={{ padding:'8px 10px', color:theme.textMuted }}>{r?.tempoMs!=null?`${r.tempoMs} ms`:'—'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:640 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
+                  <SecTitle>📜 Painel de Logs do Clima</SecTitle>
+                  <button onClick={carregarWeatherLogs} style={{ background:'none', border:'none', color:'#00A86B', fontSize:11.5, fontWeight:700, cursor:'pointer', padding:0, marginBottom:8 }}>🔄</button>
+                </div>
+                <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:10 }}>Últimas 20 chamadas reais do app (não inclui os testes do comparador acima). "Motivo/Status" mostra o erro exato quando falhou — geralmente inclui o código HTTP.</div>
+                {weatherLogs===null ? (
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Carregando...</div>
+                ) : weatherLogs.length===0 ? (
+                  <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Nenhuma chamada registrada ainda.</div>
+                ) : (
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12, minWidth:480 }}>
+                      <thead>
+                        <tr style={{ background:theme.bg, textAlign:'left' }}>
+                          <th style={{ padding:'7px 10px' }}>Data/Hora</th>
+                          <th style={{ padding:'7px 10px' }}>Provedor</th>
+                          <th style={{ padding:'7px 10px' }}>Status</th>
+                          <th style={{ padding:'7px 10px' }}>Motivo (se falhou)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {weatherLogs.map((l,i)=>(
+                          <tr key={i} style={{ borderTop:`1px solid ${theme.divider}`, background: l.sucesso?'transparent':theme.dangerBg }}>
+                            <td style={{ padding:'7px 10px', color:theme.textMuted, whiteSpace:'nowrap' }}>{new Date(l.criado_em).toLocaleString('pt-BR')}</td>
+                            <td style={{ padding:'7px 10px', fontWeight:700, color:theme.text }}>{({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[l.provider]||l.provider}</td>
+                            <td style={{ padding:'7px 10px' }}>{l.sucesso ? '✅' : '❌'}</td>
+                            <td style={{ padding:'7px 10px', color:theme.dangerText, wordBreak:'break-word' }}>{l.erro||'—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
 
         </main>
