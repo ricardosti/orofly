@@ -121,6 +121,12 @@ export default function AdminPanel({ onSwitchMode }) {
   const [calcConfigLoaded, setCalcConfigLoaded] = useState(false)
   const [custosSubTab, setCustosSubTab] = useState('notas')
   const [configSubTab, setConfigSubTab] = useState('geral')
+  const [arquivosLista, setArquivosLista] = useState([]) // nunca undefined — tela de Arquivos depende disso
+  const [arquivosLoading, setArquivosLoading] = useState(false)
+  const [arquivosLoaded, setArquivosLoaded] = useState(false)
+  const [arquivosErro, setArquivosErro] = useState('')
+  const [arquivosFiltroCategoria, setArquivosFiltroCategoria] = useState('')
+  const [arquivosExcluindo, setArquivosExcluindo] = useState('')
   async function carregarCalcConfig() {
     try {
       const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'orcamento_config').maybeSingle()
@@ -232,6 +238,7 @@ export default function AdminPanel({ onSwitchMode }) {
   useEffect(() => {
     if (tab === 'configuracoes' && weatherProvider === null) { carregarConfiguracoes(); testarConexaoClima(); carregarWeatherLogs() }
     if (tab === 'custos' && custosSubTab === 'orcamento' && !calcConfigLoaded) { setCalcConfigLoaded(true); carregarCalcConfig() }
+    if (tab === 'arquivos' && !arquivosLoaded) { setArquivosLoaded(true); carregarArquivos() }
   }, [tab, custosSubTab]) // eslint-disable-line
   const [relatorios, setRelatorios] = useState([])
   const [pilotos, setPilotos] = useState([])
@@ -815,6 +822,74 @@ export default function AdminPanel({ onSwitchMode }) {
     if (caminhos.length === 0) return
     const { error } = await supabase.storage.from('relatorios').remove(caminhos)
     if (error) console.error('Falha ao limpar arquivos órfãos:', error.message) // não bloqueia a exclusão do relatório por isso
+  }
+
+  // Tela de Arquivos — em vez de varrer o bucket inteiro às cegas (pastas por piloto_id, sem
+  // fim claro, arriscado), usa os caminhos já conhecidos via `relatorios` (fotos/KML) + a
+  // pasta `logos/` (empresa/templates). Cada chamada de listagem é isolada em try/catch —
+  // se uma pasta falhar, ela só não aparece, não derruba a tela inteira.
+  async function carregarArquivos() {
+    setArquivosLoading(true); setArquivosErro('')
+    try {
+      const itens = []
+      ;(relatorios||[]).forEach(r => {
+        const relLabel = `${r.cliente||'—'} — ${r.fazenda||'—'}`
+        if (r.foto_mapa_url) itens.push({ path:r.foto_mapa_url, categoria:'foto', relatorioId:r.id, relLabel, data:r.created_at })
+        ;(r.obs_fotos_urls||[]).forEach(p => { if (p) itens.push({ path:p, categoria:'foto', relatorioId:r.id, relLabel, data:r.created_at }) })
+        ;(r.kml_paths||[]).forEach(p => { if (p) itens.push({ path:p, categoria:'kml', relatorioId:r.id, relLabel, data:r.created_at }) })
+      })
+
+      let logoItens = []
+      try {
+        const { data } = await supabase.storage.from('relatorios').list('logos', { limit:200 })
+        logoItens = (data||[]).filter(f=>f?.name).map(f=>({ path:`logos/${f.name}`, categoria:'logo', relLabel:'Logo da empresa/template', data:f.created_at, tamanho:f.metadata?.size??null }))
+      } catch (e) { console.warn('[Arquivos] falha ao listar pasta logos:', e?.message) }
+
+      const pastas = [...new Set(itens.map(it => it.path.split('/').slice(0,-1).join('/')).filter(Boolean))]
+      const tamanhoPorPath = {}
+      for (const pasta of pastas) {
+        try {
+          const { data } = await supabase.storage.from('relatorios').list(pasta, { limit:200 })
+          ;(data||[]).forEach(f => { if (f?.name) tamanhoPorPath[`${pasta}/${f.name}`] = f.metadata?.size ?? null })
+        } catch (e) { console.warn('[Arquivos] falha ao listar pasta', pasta, e?.message) }
+      }
+
+      const itensFinal = itens.map(it => ({ ...it, tamanho: tamanhoPorPath[it.path] ?? null, nome: it.path.split('/').pop()||it.path }))
+        .concat(logoItens.map(it => ({ ...it, nome: it.path.split('/').pop()||it.path })))
+
+      setArquivosLista(itensFinal)
+    } catch (e) {
+      console.error('[Arquivos] erro geral ao carregar:', e)
+      setArquivosErro('Não foi possível carregar a lista de arquivos agora. Tenta de novo em instantes.')
+      setArquivosLista([])
+    } finally {
+      setArquivosLoading(false)
+    }
+  }
+
+  async function excluirArquivoIndividual(item) {
+    if (!window.confirm(`Excluir "${item.nome}"? Essa ação não pode ser desfeita.`)) return
+    setArquivosExcluindo(item.path)
+    try {
+      const { error } = await supabase.storage.from('relatorios').remove([item.path])
+      if (error) throw error
+      if (item.relatorioId && item.categoria !== 'logo') {
+        const rel = relatorios.find(r => r.id === item.relatorioId)
+        if (rel) {
+          const patch = {}
+          if (rel.foto_mapa_url === item.path) patch.foto_mapa_url = null
+          if ((rel.obs_fotos_urls||[]).includes(item.path)) patch.obs_fotos_urls = rel.obs_fotos_urls.filter(p => p !== item.path)
+          if ((rel.kml_paths||[]).includes(item.path)) patch.kml_paths = rel.kml_paths.filter(p => p !== item.path)
+          if (Object.keys(patch).length) await supabase.from('relatorios').update(patch).eq('id', rel.id)
+        }
+      }
+      setArquivosLista(l => l.filter(x => x.path !== item.path))
+      showToast('🗑️ Arquivo excluído')
+    } catch (e) {
+      showToast('Erro ao excluir: ' + (e?.message||'desconhecido'), 'error')
+    } finally {
+      setArquivosExcluindo('')
+    }
   }
 
   async function excluirTodosRascunhos() {
@@ -5100,6 +5175,17 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           )}
 
+          {tab === 'arquivos' && (
+            <ArquivosErrorBoundary>
+              <TelaArquivos
+                lista={arquivosLista} loading={arquivosLoading} erro={arquivosErro}
+                filtroCategoria={arquivosFiltroCategoria} setFiltroCategoria={setArquivosFiltroCategoria}
+                excluindo={arquivosExcluindo} onExcluir={excluirArquivoIndividual} onRecarregar={carregarArquivos}
+                isMobile={isMobile}
+              />
+            </ArquivosErrorBoundary>
+          )}
+
         </main>
       </div>
 
@@ -5383,6 +5469,126 @@ export default function AdminPanel({ onSwitchMode }) {
 function SecTitle({ children }) {
   const { theme } = useTheme()
   return <div style={{ fontSize:10, fontWeight:700, color:'#00A86B', letterSpacing:1, marginBottom:8, paddingBottom:4, borderBottom:`1px solid ${theme.successBg}`, fontFamily:"'Syne',sans-serif" }}>{children}</div>
+}
+
+// Error boundary da tela de Arquivos — React Error Boundaries PRECISAM ser class component
+// (não existe hook equivalente). Se qualquer coisa dentro de TelaArquivos quebrar em runtime
+// (dado inesperado, null, etc), mostra uma mensagem amigável em vez de branquear a tela
+// inteira do Admin. Note: por ser classe, não pode usar useTheme() — usa cores fixas, o que é
+// aceitável aqui já que é uma tela de fallback de erro, não uma tela do dia a dia.
+class ArquivosErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { erro: null } }
+  static getDerivedStateFromError(erro) { return { erro } }
+  componentDidCatch(erro, info) { console.error('[Arquivos] erro capturado pelo ErrorBoundary:', erro, info) }
+  render() {
+    if (this.state.erro) {
+      return (
+        <div style={{ background:'#fdeaea', border:'1px solid #f3b8b8', borderRadius:16, padding:24, textAlign:'center', color:'#a3221e' }}>
+          <div style={{ fontSize:32, marginBottom:10 }}>⚠️</div>
+          <div style={{ fontWeight:700, marginBottom:4 }}>A tela de Arquivos encontrou um problema</div>
+          <div style={{ fontSize:12.5, marginBottom:14 }}>Isso não afeta o resto do sistema — só essa tela. Tenta recarregar a página.</div>
+          <button onClick={() => this.setState({ erro:null })} style={{ background:'#fff', border:'1px solid #e5a3a3', color:'#a3221e', borderRadius:10, padding:'8px 16px', fontSize:12.5, fontWeight:600, cursor:'pointer' }}>Tentar de novo</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+const CATEGORIA_ARQUIVO_LABEL = { foto:'📷 Foto de Relatório', kml:'🛰️ KML/KMZ', logo:'🏢 Logo' }
+function fmtTamanho(bytes) {
+  if (bytes == null || isNaN(bytes)) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024*1024) return `${(bytes/1024).toFixed(0)} KB`
+  return `${(bytes/1024/1024).toFixed(2)} MB`
+}
+
+// Tela de Gestão de Arquivos — dados vêm de `relatorios` (fotos/KML já referenciados lá) +
+// pasta `logos/`, não de uma varredura cega do bucket inteiro (ver carregarArquivos no
+// componente pai). `lista` nunca é undefined (o pai garante isso), mas ainda assim trata como
+// se pudesse ser, por segurança extra.
+function TelaArquivos({ lista, loading, erro, filtroCategoria, setFiltroCategoria, excluindo, onExcluir, onRecarregar, isMobile }) {
+  const { theme } = useTheme()
+  const listaSegura = Array.isArray(lista) ? lista : []
+  const filtrada = filtroCategoria ? listaSegura.filter(it => it?.categoria === filtroCategoria) : listaSegura
+  const usoTotal = listaSegura.reduce((a, it) => a + (typeof it?.tamanho === 'number' ? it.tamanho : 0), 0)
+  const contagemPorCategoria = listaSegura.reduce((acc, it) => { const c = it?.categoria || '—'; acc[c] = (acc[c]||0)+1; return acc }, {})
+
+  return (
+    <div>
+      <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:10 }}>
+        <div>
+          <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>🗂️ Arquivos</div>
+          <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>Fotos, KML e logos armazenados no Supabase Storage.</div>
+        </div>
+        <button onClick={onRecarregar} disabled={loading} style={{ background:theme.card, border:`1px solid ${theme.cardBorder}`, color:'#00A86B', borderRadius:10, padding:'8px 14px', fontSize:12.5, fontWeight:600, cursor:loading?'default':'pointer' }}>
+          {loading ? '⏳ Carregando...' : '🔄 Atualizar'}
+        </button>
+      </div>
+
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:18, marginBottom:16, maxWidth:520 }}>
+        <SecTitle>💾 Uso de Armazenamento (conhecido)</SecTitle>
+        <div style={{ fontSize:11, color:theme.textFaint2, marginBottom:10 }}>Soma dos arquivos listados abaixo — não é necessariamente o total do bucket inteiro (ex: recibos de despesas não entram aqui).</div>
+        <div style={{ fontFamily:"'Syne',sans-serif", fontSize:26, fontWeight:700, color:'#00A86B' }}>{fmtTamanho(usoTotal)}</div>
+        <div style={{ display:'flex', gap:14, marginTop:8, flexWrap:'wrap', fontSize:12, color:theme.textMuted }}>
+          {Object.entries(CATEGORIA_ARQUIVO_LABEL).map(([k,label]) => <span key={k}>{label}: {contagemPorCategoria[k]||0}</span>)}
+        </div>
+      </div>
+
+      <div style={{ display:'flex', gap:6, marginBottom:14, flexWrap:'wrap' }}>
+        <button onClick={() => setFiltroCategoria('')} style={{ background: filtroCategoria===''?'#00A86B':theme.card, color: filtroCategoria===''?'#fff':theme.textMuted, border:`1px solid ${filtroCategoria===''?'#00A86B':theme.cardBorder}`, borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>Todos ({listaSegura.length})</button>
+        {Object.entries(CATEGORIA_ARQUIVO_LABEL).map(([k,label]) => (
+          <button key={k} onClick={() => setFiltroCategoria(k)} style={{ background: filtroCategoria===k?'#00A86B':theme.card, color: filtroCategoria===k?'#fff':theme.textMuted, border:`1px solid ${filtroCategoria===k?'#00A86B':theme.cardBorder}`, borderRadius:20, padding:'6px 14px', fontSize:12, fontWeight:600, cursor:'pointer' }}>{label} ({contagemPorCategoria[k]||0})</button>
+        ))}
+      </div>
+
+      {erro && (
+        <div style={{ background:'#fff3e0', border:'1px solid #f2c98a', borderRadius:12, padding:'12px 16px', marginBottom:14, fontSize:12.5, color:'#a3690a' }}>⚠️ {erro}</div>
+      )}
+
+      {loading ? (
+        <div style={{ textAlign:'center', color:theme.textMuted, padding:40 }}>⏳ Carregando arquivos...</div>
+      ) : filtrada.length === 0 ? (
+        <div style={{ background:theme.card, borderRadius:16, border:`1px dashed ${theme.cardBorder}`, padding:40, textAlign:'center', color:theme.textFaint2 }}>
+          <div style={{ fontSize:32, marginBottom:8 }}>📭</div>
+          Nenhum arquivo encontrado no storage.
+        </div>
+      ) : (
+        <div style={{ background:theme.card, borderRadius:16, border:`1px solid ${theme.cardBorder}`, overflow:'hidden' }}>
+          <div style={{ overflowX:'auto' }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
+              <thead>
+                <tr style={{ background:theme.bg, textAlign:'left' }}>
+                  <th style={{ padding:'10px 14px' }}>Nome</th>
+                  <th style={{ padding:'10px 14px' }}>Categoria</th>
+                  <th style={{ padding:'10px 14px' }}>Relatório</th>
+                  <th style={{ padding:'10px 14px' }}>Tamanho</th>
+                  <th style={{ padding:'10px 14px' }}>Data</th>
+                  <th style={{ padding:'10px 14px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtrada.map((it, i) => (
+                  <tr key={it?.path||i} style={{ borderTop:`1px solid ${theme.divider}` }}>
+                    <td style={{ padding:'10px 14px', color:theme.text, maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{it?.nome||'—'}</td>
+                    <td style={{ padding:'10px 14px', color:theme.textMuted }}>{CATEGORIA_ARQUIVO_LABEL[it?.categoria]||it?.categoria||'—'}</td>
+                    <td style={{ padding:'10px 14px', color:theme.textMuted }}>{it?.relLabel||'—'}</td>
+                    <td style={{ padding:'10px 14px', color:theme.textMuted }}>{fmtTamanho(it?.tamanho)}</td>
+                    <td style={{ padding:'10px 14px', color:theme.textMuted }}>{it?.data ? new Date(it.data).toLocaleDateString('pt-BR') : '—'}</td>
+                    <td style={{ padding:'10px 14px' }}>
+                      <button disabled={excluindo===it?.path} onClick={() => onExcluir(it)} style={{ background:'#fdeaea', color:'#e5484d', border:'none', borderRadius:10, padding:'5px 10px', fontSize:11.5, cursor:excluindo===it?.path?'default':'pointer' }}>
+                        {excluindo===it?.path ? '...' : '🗑️ Deletar'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // Painel de regras + calculadora, dentro de Financeiro > Orçamento. Explica exatamente como

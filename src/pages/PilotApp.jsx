@@ -9,6 +9,7 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
+import ImageAnnotator from '../components/ImageAnnotator'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
@@ -556,12 +557,44 @@ export default function PilotApp({onSwitchMode}) {
   const [incidenteCompartilharLoc,setIncidenteCompartilharLoc] = useState(false)
   const [meusIncidentes,setMeusIncidentes] = useState([])
 
+  // Editor de marcação (lápis) — abre sobre a foto antes de aceitar, tanto na foto de
+  // observação do Passo 5 quanto nas fotos de Incidentes. `aplicar(blob)` é chamado com o
+  // JPEG final (já comprimido/redimensionado pelo próprio ImageAnnotator) quando o piloto
+  // confirma; cancelar simplesmente descarta a foto que tinha acabado de escolher.
+  const [annotatorTarget,setAnnotatorTarget] = useState(null)
+  function handleObsFoto(f){
+    if(!f) return
+    const r=new FileReader()
+    r.onload=ev=>{
+      setAnnotatorTarget({
+        src: ev.target.result,
+        aplicar: (blob) => {
+          const arquivo = new File([blob], 'obs.jpg', {type:'image/jpeg'})
+          const leitor = new FileReader()
+          leitor.onload = ev2 => setObsFotos(a => { const n=[...a]; n[0]=ev2.target.result; return n })
+          leitor.readAsDataURL(blob)
+          setObsFotoFiles(a => { const n=[...a]; n[0]=arquivo; return n })
+        }
+      })
+    }
+    r.readAsDataURL(f)
+  }
   function handleIncidenteFoto(slot,f){
     if(!f) return
     const r=new FileReader()
-    r.onload=ev=>setIncidenteFotos(arr=>{const a=[...arr];a[slot]=ev.target.result;return a})
+    r.onload=ev=>{
+      setAnnotatorTarget({
+        src: ev.target.result,
+        aplicar: (blob) => {
+          const arquivo = new File([blob], `incidente_${slot}.jpg`, {type:'image/jpeg'})
+          const leitor = new FileReader()
+          leitor.onload = ev2 => setIncidenteFotos(arr => { const a=[...arr]; a[slot]=ev2.target.result; return a })
+          leitor.readAsDataURL(blob)
+          setIncidenteFotoFiles(arr => { const a=[...arr]; a[slot]=arquivo; return a })
+        }
+      })
+    }
     r.readAsDataURL(f)
-    setIncidenteFotoFiles(arr=>{const a=[...arr];a[slot]=f;return a})
   }
 
   async function loadMeusIncidentes(){
@@ -2695,6 +2728,11 @@ export default function PilotApp({onSwitchMode}) {
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
       <ConfirmDialogModal/>
+      {annotatorTarget && (
+        <ImageAnnotator src={annotatorTarget.src}
+          onSave={blob=>{ annotatorTarget.aplicar(blob); setAnnotatorTarget(null) }}
+          onCancel={()=>setAnnotatorTarget(null)}/>
+      )}
     </div>
   )
 
@@ -4173,8 +4211,8 @@ export default function PilotApp({onSwitchMode}) {
                   <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:14,padding:'3px',fontSize:10,cursor:'pointer'}}
                     onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[0]=null;setObsFotos(a);const b=[...obsFotoFiles];b[0]=null;setObsFotoFiles(b)}}>🗑️</button>
                 )}
-                <input id="obs-galeria-0" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
-                <input id="obs-camera-0" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[0]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f);const a=[...obsFotoFiles];a[0]=f;setObsFotoFiles(a)}}/>
+                <input id="obs-galeria-0" type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleObsFoto(e.target.files[0])}/>
+                <input id="obs-camera-0" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleObsFoto(e.target.files[0])}/>
               </div>
             </div>
 
@@ -4379,6 +4417,11 @@ export default function PilotApp({onSwitchMode}) {
       {/* CONFIRM SAIR */}
       <ExitConfirmModal/>
       <ConfirmDialogModal/>
+      {annotatorTarget && (
+        <ImageAnnotator src={annotatorTarget.src}
+          onSave={blob=>{ annotatorTarget.aplicar(blob); setAnnotatorTarget(null) }}
+          onCancel={()=>setAnnotatorTarget(null)}/>
+      )}
 
       {/* CONFIRM FINALIZAR */}
       {finalizeConfirm&&(
