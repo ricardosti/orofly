@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { ThemeProvider } from './lib/theme'
+import { LanguageProvider, useLanguage } from './lib/i18n'
 import LoginPage from './pages/LoginPage'
 import PilotApp from './pages/PilotApp'
 import AdminPanel from './pages/AdminPanel'
@@ -72,7 +73,7 @@ function Splash() {
       </svg>
       <div className="of-word" style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
         <div style={{fontFamily:"'Syne',sans-serif",color:'#fff',fontSize:20,fontWeight:700,letterSpacing:-.5}}>Orofly<span style={{color:'#ffb020'}}>.</span></div>
-        <div style={{fontFamily:"'Syne',sans-serif",color:'#7ba38f',fontSize:10.5,letterSpacing:2,textTransform:'uppercase'}}>Aplicações Aéreas</div>
+        <div style={{fontFamily:"'Syne',sans-serif",color:'#7ba38f',fontSize:10.5,letterSpacing:2,textTransform:'uppercase'}}>{useLanguage().t('Aplicações Aéreas')}</div>
       </div>
     </div>
   )
@@ -80,18 +81,19 @@ function Splash() {
 
 function Bloqueado() {
   const { signOut } = useAuth()
+  const { t } = useLanguage()
   return (
     <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'#f4f8f5'}}>
       <div style={{textAlign:'center',padding:32}}>
         <div style={{fontSize:40,marginBottom:12}}>⛔</div>
-        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:600,color:'#111a14'}}>Acesso desativado</div>
-        <div style={{color:'#6b8070',marginTop:8,fontSize:14}}>Entre em contato com o administrador.</div>
-        <button style={{marginTop:20,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'10px 24px',cursor:'pointer',fontFamily:"'Syne',sans-serif",fontWeight:600}} onClick={signOut}>Sair</button>
+        <div style={{fontFamily:"'Syne',sans-serif",fontSize:18,fontWeight:600,color:'#111a14'}}>{t('Acesso desativado')}</div>
+        <div style={{color:'#6b8070',marginTop:8,fontSize:14}}>{t('Entre em contato com o administrador.')}</div>
+        <button style={{marginTop:20,background:'#1a7a4a',color:'#fff',border:'none',borderRadius:10,padding:'10px 24px',cursor:'pointer',fontFamily:"'Syne',sans-serif",fontWeight:600}} onClick={signOut}>{t('Sair')}</button>
       </div>
     </div>
   )
 }
 
 export default function App() {
-  return <ThemeProvider><AuthProvider><AppRouter /></AuthProvider></ThemeProvider>
+  return <ThemeProvider><LanguageProvider><AuthProvider><AppRouter /></AuthProvider></LanguageProvider></ThemeProvider>
 }

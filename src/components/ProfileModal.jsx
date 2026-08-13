@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../lib/theme'
+import { useLanguage } from '../lib/i18n'
 
 export default function ProfileModal({ profile, onClose, onSaved }) {
   const { theme, themeName, toggleTheme } = useTheme()
+  const { lang, setLang, t } = useLanguage()
   const [nome, setNome] = useState(profile?.nome || '')
   const [telefone, setTelefone] = useState(profile?.telefone || '')
   const [avatarPreview, setAvatarPreview] = useState(null)
@@ -31,8 +33,8 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
 
   async function salvar() {
     setErro('')
-    if (novaSenha && novaSenha.length < 6) { setErro('A nova senha precisa ter no mínimo 6 caracteres'); return }
-    if (novaSenha && novaSenha !== confirmaSenha) { setErro('As senhas não coincidem'); return }
+    if (novaSenha && novaSenha.length < 6) { setErro(t('A nova senha precisa ter no mínimo 6 caracteres')); return }
+    if (novaSenha && novaSenha !== confirmaSenha) { setErro(t('As senhas não coincidem')); return }
     setSaving(true)
     try {
       let avatar_url = profile.avatar_url || null
@@ -62,7 +64,7 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(11,18,16,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div style={{ background: theme.card, borderRadius: 24, width: '100%', maxWidth: 400, maxHeight: '90vh', overflowY: 'auto', padding: 24 }} onClick={e => e.stopPropagation()}>
-        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, color: theme.text, marginBottom: 20 }}>👤 Meu Perfil</div>
+        <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 18, fontWeight: 700, color: theme.text, marginBottom: 20 }}>{t('👤 Meu Perfil')}</div>
 
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
           <label style={{ position: 'relative', cursor: 'pointer' }}>
@@ -77,15 +79,15 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <div style={labelStyle}>NOME</div>
+          <div style={labelStyle}>{t('NOME')}</div>
           <input style={inputStyle} value={nome} onChange={e => setNome(e.target.value)} />
         </div>
         <div style={{ marginBottom: 12 }}>
-          <div style={labelStyle}>TELEFONE</div>
+          <div style={labelStyle}>{t('TELEFONE')}</div>
           <input style={inputStyle} placeholder="(00) 00000-0000" value={telefone} onChange={e => setTelefone(e.target.value)} />
         </div>
         <div style={{ marginBottom: 12 }}>
-          <div style={labelStyle}>E-MAIL</div>
+          <div style={labelStyle}>{t('E-MAIL')}</div>
           <input style={{ ...inputStyle, color: theme.textFaint2, background: theme.divider }} value={profile?.email || ''} disabled />
         </div>
 
