@@ -418,6 +418,23 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   }
   function onMapaTouchEnd() { gestoRef.current = { modo: null } }
 
+  // Arrastar com o mouse (desktop/PC) — antes só existia pan por toque, então no navegador
+  // dava pra dar zoom com a roda mas não pra mover o mapa e ver o resto das coordenadas.
+  function onMapaMouseDown(e) {
+    if (calibrando) return
+    gestoRef.current = { modo: 'pan', x0: e.clientX, y0: e.clientY, panX0: pan.x, panY0: pan.y }
+  }
+  function onMapaMouseMove(e) {
+    if (calibrando) return
+    const g = gestoRef.current
+    if (g.modo !== 'pan') return
+    if (e.buttons !== 1) { gestoRef.current = { modo: null }; return } // botão soltou fora do elemento
+    const dx = e.clientX - g.x0, dy = e.clientY - g.y0
+    setSeguindoGps(false)
+    setPan(limitarPan(zoom, { x: g.panX0 + dx, y: g.panY0 + dy }))
+  }
+  function onMapaMouseUp() { gestoRef.current = { modo: null } }
+
   // FAB "minha localização" — centraliza a câmera no pin do GPS e trava ali (segue
   // automaticamente conforme a posição atualiza), até o usuário arrastar/pinçar manualmente.
   const [seguindoGps, setSeguindoGps] = useState(false)
@@ -798,8 +815,9 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
               backgroundColor:'#1c2321',
               backgroundImage:'linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px)',
               backgroundSize:'26px 26px', touchAction:'none',
-              cursor: calibrando ? 'crosshair' : 'default' }}
+              cursor: calibrando ? 'crosshair' : 'grab', userSelect:'none' }}
             onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
+            onMouseDown={onMapaMouseDown} onMouseMove={onMapaMouseMove} onMouseUp={onMapaMouseUp} onMouseLeave={onMapaMouseUp}
             onDoubleClick={resetZoom} onWheel={onMapaWheel} onClick={onMapaClickCalibrar}>
             {carregando && <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#9fc2af' }}>Abrindo mapa...</div>}
             {/* O canvas precisa ficar sempre montado (mesmo com tamCanvas ainda 0/0) — é nele

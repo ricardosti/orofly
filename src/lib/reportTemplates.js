@@ -40,6 +40,7 @@ export const DEFAULT_WHATSAPP_CONFIG = {
   volumeTotal: true,
   observacoes: true,
   linkPdf: false,
+  semEmoji: false,
 }
 
 export const DEFAULT_PDF_CONFIG = {
@@ -142,5 +143,17 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   if (cfg.observacoes && rel.obs1) t += `${linhaDiv}\n📝 *Obs:* ${rel.obs1}\n`
   if (cfg.linkPdf && opts.linkPdf) t += `${linhaDiv}\n📄 Relatório completo: ${opts.linkPdf}\n`
 
+  if (cfg.semEmoji) t = removerEmoji(t)
+
   return t
+}
+
+// Remove emojis do texto (mantém acentos/pontuação normais). Cobre os principais blocos
+// Unicode de emoji + variation selectors + ZWJ, sem mexer em texto comum em pt-BR.
+function removerEmoji(txt) {
+  return txt
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^[ \t]+/gm, '')
 }

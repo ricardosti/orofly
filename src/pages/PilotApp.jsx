@@ -1908,7 +1908,7 @@ export default function PilotApp({onSwitchMode}) {
               <MapPin size={12}/> {tempoLocal}
             </div>
           )}
-          <div onClick={()=>setView('tempo')} style={{position:'relative',display:'flex',alignItems:'stretch',marginTop:8,border:`1px solid ${theme.divider2}`,borderRadius:18,overflow:'hidden',cursor:'pointer',minHeight:106}}>
+          <div style={{position:'relative',display:'flex',alignItems:'stretch',marginTop:8,border:`1px solid ${theme.divider2}`,borderRadius:18,overflow:'hidden',minHeight:106}}>
             {condDia ? (() => {
               const chuvoso = chuvaAgora>=60, nublado = chuvaAgora>=25
               // Sem fotos noturnas de verdade ainda (só temos sunny/cloudy/rainy tiradas de

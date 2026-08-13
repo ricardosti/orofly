@@ -6088,7 +6088,7 @@ function TemplateEditorModal({ template, onClose, onSalvar, invClientes, isMobil
     { titulo:'Cabeçalho & Identificação', itens:[['areaFazendaTalhao','Nome do Cliente/Fazenda/Talhão'],['dataHorario','Data e Horário da Operação'],['piloto','Nome do Piloto/Operador']] },
     { titulo:'Dados do Voo & Clima', itens:[['area','Área Aplicada (ha)'],['tempoVoo','Tempo Total de Voo'],['alturaVelocidade','Altura do Drone (m) e Velocidade (km/h)'],['climaBasico','Temperatura/Umidade/Vento'],['deltaT','Delta T']] },
     { titulo:'Insumos & Calda', itens:[['produtos','Produtos e Dosagens'],['volumeTotal','Volume Total Aplicado (L)']] },
-    { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['linkPdf','Link para o PDF no app']] },
+    { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['linkPdf','Link para o PDF no app'],['semEmoji','Remover emojis do texto']] },
   ]
 
   return (
