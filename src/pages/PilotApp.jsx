@@ -97,6 +97,7 @@ function initForm(data) {
       dt_inicio_data:ini.data,dt_inicio_hh:ini.hh,dt_inicio_mm:ini.mm,
       dt_fim_data:fim.data,dt_fim_hh:fim.hh,dt_fim_mm:fim.mm,
       pausas:data.pausas||[],obs1:data.obs1||'',obs2:data.obs2||'',bordadura:data.bordadura||'',
+      area_total_aplicada:data.area_total_aplicada!=null?String(data.area_total_aplicada):'',
       bordaduraPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       evid_meta:data.evidencia_meta||{},
       area_feita:data.area_feita!=null?String(data.area_feita):'',
@@ -111,7 +112,7 @@ function initForm(data) {
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
-    pausas:[],obs1:'',obs2:'',bordadura:'',bordaduraPorTalhao:{},evid_meta:{},
+    pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},evid_meta:{},
     area_feita:'',area_deduzida:'',teste:false,
   }
 }
@@ -371,6 +372,10 @@ export default function PilotApp({onSwitchMode}) {
     return initForm()
   })
   const [condTab,setCondTab] = useState('inicio')
+  // Passo 5 — categoria escolhida pra diferença entre Área do Talhão e Área Total Aplicada
+  // (lida direto do controle da DJI): 'bordadura' (padrão) ou 'nao_aplicada'. É estado de UI
+  // só, não persiste — o que persiste é o resultado (form.bordadura + texto em form.obs1).
+  const [areaDifCategoria,setAreaDifCategoria] = useState('bordadura')
   const [opState,setOpState] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).opState||'idle' } catch{}
     return 'idle'
@@ -951,7 +956,7 @@ export default function PilotApp({onSwitchMode}) {
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,altura:form.altura,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
-      obs1:form.obs1,obs2:form.obs2,bordadura:bordaduraTotal||null,bordadura_detalhe:bordaduraDetalhe&&bordaduraDetalhe.length?bordaduraDetalhe:null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
+      obs1:form.obs1,obs2:form.obs2,bordadura:bordaduraTotal||null,area_total_aplicada:form.area_total_aplicada?parseFloat(form.area_total_aplicada):null,bordadura_detalhe:bordaduraDetalhe&&bordaduraDetalhe.length?bordaduraDetalhe:null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
@@ -4010,12 +4015,66 @@ export default function PilotApp({onSwitchMode}) {
                   </div>
                 )
               }
+              // Área Total Aplicada = o valor bruto que o piloto lê direto no controle da DJI,
+              // sem precisar calcular bordadura de cabeça. A diferença pro Área do Talhão vira
+              // bordadura automaticamente — o piloto só escolhe SE quer documentar o motivo
+              // (quando a diferença não é bordadura normal, e sim voo incompleto por algum problema).
+              const areaTalhaoN = parseFloat(form.area_ha)||0
+              const areaAplicadaN = parseFloat(form.area_total_aplicada)||0
+              const temAmbos = form.area_ha!=='' && form.area_total_aplicada!==''
+              const diferenca = temAmbos ? Math.max(0, +(areaTalhaoN-areaAplicadaN).toFixed(2)) : 0
+              const MOTIVOS = ['Obstáculo / Fiação','Vento / Condição Climática','Fim do Insumo / Calda','Problema Técnico / Bateria','Outro']
+              function aplicarMotivo(motivo) {
+                const nota = `Área incompleta (${diferenca.toFixed(1)} ha não aplicado): ${motivo}`
+                setForm(f=>({...f,obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}))
+              }
               return (
                 <>
-                  <FI label="BORDADURA (Ha)" ph="Ex: 10" val={form.bordadura} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number" disabled={bordaduraTravada}/>
+                  <FI label="ÁREA TOTAL APLICADA (Ha)" ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
+                    onChange={e=>{
+                      const v = e.target.value
+                      setForm(f=>{
+                        const diff = Math.max(0, +((parseFloat(f.area_ha)||0)-(parseFloat(v)||0)).toFixed(2))
+                        // Sem diferença (aplicou tudo ou mais): bordadura zera sozinha. Com diferença
+                        // e categoria "bordadura" (padrão), preenche a bordadura automaticamente — o
+                        // piloto não precisa mais fazer essa conta de cabeça.
+                        const novaBordadura = diff<=0 ? '0' : (areaDifCategoria==='bordadura' ? String(diff) : f.bordadura)
+                        return {...f, area_total_aplicada:v, bordadura:novaBordadura}
+                      })
+                    }} type="number" disabled={bordaduraTravada}/>
+
+                  {temAmbos && diferenca>0 && (
+                    <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:14,marginTop:-8,marginBottom:14}}>
+                      <div style={{fontSize:12.5,color:theme.text,marginBottom:10}}>💡 Diferença detectada: <strong>{diferenca.toFixed(1)} ha</strong>. Essa área restante foi:</div>
+                      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                        {[['bordadura','🟢 Bordadura'],['nao_aplicada','⚠️ Área Não Aplicada / Incompleta']].map(([val,label])=>(
+                          <label key={val} style={{display:'flex',alignItems:'center',gap:8,cursor:bordaduraTravada?'default':'pointer'}}>
+                            <input type="radio" checked={areaDifCategoria===val} disabled={bordaduraTravada}
+                              onChange={()=>{
+                                setAreaDifCategoria(val)
+                                setForm(f=>({...f,bordadura: val==='bordadura' ? String(diferenca) : ''}))
+                              }}/>
+                            <span style={{fontSize:13,color:theme.text}}>{label}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {areaDifCategoria==='nao_aplicada' && (
+                        <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                          <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>Motivo (adiciona automaticamente na Observação):</div>
+                          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                            {MOTIVOS.map(m=>(
+                              <button key={m} type="button" disabled={bordaduraTravada} onClick={()=>aplicarMotivo(m)}
+                                style={{background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,padding:'6px 12px',fontSize:12,color:theme.text,cursor:bordaduraTravada?'default':'pointer'}}>{m}</button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {form.bordadura&&form.area_ha&&(
                     <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:-8,marginBottom:bordaduraTravada?4:14}}>
-                      Área aplicada (descontando bordadura): {areaLiquidaAtual(form)} ha
+                      Bordadura: {form.bordadura} ha · Área aplicada: {areaLiquidaAtual(form)} ha
                     </div>
                   )}
                   {bordaduraTravada&&<div style={{fontSize:11,color:theme.textFaint2,marginBottom:14}}>🔒 Trava após Finalizado Parcial, pra não bagunçar o progresso já registrado</div>}
