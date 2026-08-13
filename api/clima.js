@@ -150,8 +150,17 @@ async function buscarTomorrow(lat, lon) {
     throw new Error('resposta sem timeline horária')
   }
 
-  // "2026-08-13T14:00:00Z" -> "2026-08-13T14:00" (mesmo formato ISO-ish do Meteoblue/Open-Meteo)
-  const timeIso = horas.map(h => String(h.time).replace('Z', '').slice(0, 16))
+  // Tomorrow.io devolve os horários em UTC ("2026-08-13T14:00:00Z"). Meteoblue e Open-Meteo
+  // (com &timezone=auto) já devolvem hora LOCAL de America/Sao_Paulo — só tirar o "Z" sem
+  // deslocar o fuso deixava a Tomorrow.io 3h adiantada, o que descasava o card de "temperatura
+  // agora" (cai no fallback de tempMax) e fazia o gráfico "por hora" mostrar o dia errado de
+  // horas. Brasil não observa horário de verão desde 2019, então UTC-3 fixo é seguro aqui.
+  const timeIso = horas.map(h => {
+    const d = new Date(h.time) // "...Z" já é interpretado como UTC
+    d.setUTCHours(d.getUTCHours() - 3)
+    const p2 = n => String(n).padStart(2, '0')
+    return `${d.getUTCFullYear()}-${p2(d.getUTCMonth() + 1)}-${p2(d.getUTCDate())}T${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())}`
+  })
   const temperature = horas.map(h => h.values?.temperature ?? null)
   const relativehumidity = horas.map(h => h.values?.humidity ?? null)
   const windspeed = horas.map(h => h.values?.windSpeed ?? null)

@@ -654,6 +654,7 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoLoading,setTempoLoading] = useState(false)
   const [tempoErro,setTempoErro] = useState('')
   const [tempoLocal,setTempoLocal] = useState('')
+  const [tempoProvedor,setTempoProvedor] = useState('')
   const [tempoCep,setTempoCep] = useState('')
   const [tempoLat,setTempoLat] = useState('')
   const [tempoLng,setTempoLng] = useState('')
@@ -1396,6 +1397,7 @@ export default function PilotApp({onSwitchMode}) {
         }
       })
       setTempoDias(dias); setTempoLocal(local); setTempoHorario(data.hourly||null)
+      setTempoProvedor(data.provider_active||'')
       // Guarda as coordenadas de onde a previsão atual é (GPS, CEP, fazenda ou manual) —
       // o card do Radar de Chuva usa isso pra saber onde centralizar o mapa.
       setTempoLat(String(lat)); setTempoLng(String(lon))
@@ -2924,7 +2926,7 @@ export default function PilotApp({onSwitchMode}) {
 
             <RadarChuva lat={parseFloat(String(tempoLat).replace(',','.'))} lng={parseFloat(String(tempoLng).replace(',','.'))}/>
 
-            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: Meteoblue · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer.</div>
+            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[tempoProvedor]||'—'} · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer.</div>
           </>
         )}
       </div>
