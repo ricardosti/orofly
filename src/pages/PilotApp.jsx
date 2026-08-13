@@ -312,7 +312,7 @@ export default function PilotApp({onSwitchMode}) {
   // o app — sem linha configurada ainda, os módulos já têm seus próprios padrões internos.
   const [wizardDefaults, setWizardDefaults] = useState({ velocidadeDrone:'', altura:'', faixa:'' })
   useEffect(() => {
-    supabase.from('app_settings').select('valor').eq('chave','config_geral').single()
+    supabase.from('app_settings').select('valor').eq('chave','config_geral').maybeSingle()
       .then(({data}) => {
         if (!data?.valor) return
         const cfg = JSON.parse(data.valor)

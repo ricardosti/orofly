@@ -122,7 +122,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [configSubTab, setConfigSubTab] = useState('geral')
   async function carregarCalcConfig() {
     try {
-      const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'orcamento_config').single()
+      const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'orcamento_config').maybeSingle()
       if (data?.valor) setCalcConfig({ ...CALC_CONFIG_PADRAO, ...JSON.parse(data.valor) })
     } catch { /* sem linha configurada ainda — mantém o padrão */ }
   }
@@ -147,7 +147,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [configGeralLoaded, setConfigGeralLoaded] = useState(false)
   async function carregarConfigGeral() {
     try {
-      const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'config_geral').single()
+      const { data } = await supabase.from('app_settings').select('valor').eq('chave', 'config_geral').maybeSingle()
       const cfg = data?.valor ? JSON.parse(data.valor) : {}
       const nova = {
         empresa: { ...EMPRESA_CFG_PADRAO, ...cfg.empresa },
