@@ -6089,6 +6089,7 @@ function TemplateEditorModal({ template, onClose, onSalvar, invClientes, isMobil
     { titulo:'Dados do Voo & Clima', itens:[['area','Área Aplicada (ha)'],['tempoVoo','Tempo Total de Voo'],['alturaVelocidade','Altura do Drone (m) e Velocidade (km/h)'],['faixaAplicacao','Faixa de Aplicação (m)'],['vazaoDetalhada','Vazão (L/ha)'],['tamanhoGota','Tamanho de Gota'],['climaBasico','Temperatura/Umidade/Vento'],['deltaT','Delta T']] },
     { titulo:'Insumos & Calda', itens:[['produtos','Produtos e Dosagens'],['volumeTotal','Volume Total Aplicado (L)']] },
     { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['observacoes2','Observações 2'],['gpsLink','Coordenadas GPS + link do mapa'],['linkPdf','Link para o PDF no app'],['semEmoji','Remover emojis do texto']] },
+    { titulo:'Formatação (só no modo sem emoji)', itens:[['negritoTitulos','Negrito nos títulos das seções'],['negritoCampos','Negrito no nome dos campos'],['juntarPilotoDrone','Juntar Piloto e Drone na mesma linha'],['juntarAplicadaBorda','Juntar Área Aplicada e Borda na mesma linha'],['juntarVazaoGota','Juntar Vazão e Gota na mesma linha'],['juntarVelocidadeFaixa','Juntar Altura/Velocidade e Faixa na mesma linha']] },
   ]
 
   return (

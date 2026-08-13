@@ -48,6 +48,12 @@ export const DEFAULT_WHATSAPP_CONFIG = {
   tamanhoGota: false,
   gpsLink: false,
   observacoes2: false,
+  negritoTitulos: false,
+  negritoCampos: false,
+  juntarPilotoDrone: true,
+  juntarAplicadaBorda: true,
+  juntarVazaoGota: true,
+  juntarVelocidadeFaixa: true,
 }
 
 export const DEFAULT_PDF_CONFIG = {
@@ -194,6 +200,8 @@ function montarTextoLimpo(rel, cfg, opts) {
   const fmtDataCurta = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'
   const fmtHora = iso => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'
   const nomeCurto = n => { if (!n) return '—'; const p = String(n).trim().split(/\s+/).filter(Boolean); return p.length <= 1 ? (p[0] || '—') : `${p[0]} ${p[p.length - 1]}` }
+  // Monta "Rótulo: valor", com o rótulo em negrito se cfg.negritoCampos estiver ligado.
+  const campo = (label, valor) => cfg.negritoCampos ? `*${label}:* ${valor}` : `${label}: ${valor}`
 
   const areaAplicada = areaLiquidaLocal(rel)
   const areaTotal = parseFloat(rel.area_ha) || 0
@@ -205,24 +213,36 @@ function montarTextoLimpo(rel, cfg, opts) {
 
   const cliente = []
   if (cfg.areaFazendaTalhao) {
-    cliente.push(`Cliente: ${rel.cliente || '—'}`)
+    cliente.push(campo('Cliente', rel.cliente || '—'))
     const localTxt = `${rel.id_fazenda ? `[${rel.id_fazenda}] ` : ''}${rel.fazenda || '—'}${rel.localizacao ? ` | Talhão: ${rel.localizacao}` : ''}`
-    cliente.push(`Local: ${localTxt}`)
+    cliente.push(campo('Local', localTxt))
   }
-  if (cfg.dataHorario) cliente.push(`Período: ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`)
-  if (cfg.piloto) cliente.push(`Piloto: ${nomeCurto(rel.piloto_nome)}${rel.drone ? ` | Drone: ${rel.drone}` : ''}`)
-  if (cfg.ordemServico && rel.ordem_servico) cliente.push(`OS: ${rel.ordem_servico}`)
+  if (cfg.dataHorario) cliente.push(campo('Período', `${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`))
+  if (cfg.piloto) {
+    if (cfg.juntarPilotoDrone) {
+      cliente.push(campo('Piloto', nomeCurto(rel.piloto_nome)) + (rel.drone ? ` | ${campo('Drone', rel.drone)}` : ''))
+    } else {
+      cliente.push(campo('Piloto', nomeCurto(rel.piloto_nome)))
+      if (rel.drone) cliente.push(campo('Drone', rel.drone))
+    }
+  }
+  if (cfg.ordemServico && rel.ordem_servico) cliente.push(campo('OS', rel.ordem_servico))
   if (cfg.tipoServico && (rel.tipo_servico || rel.qtd_voos > 1)) {
-    cliente.push(`Tipo de Serviço: ${rel.tipo_servico === 'catacao' ? 'Catação' : rel.tipo_servico === 'area_total' ? 'Área Total' : '—'}${rel.qtd_voos > 1 ? ` (${rel.qtd_voos} voos)` : ''}`)
+    cliente.push(campo('Tipo de Serviço', `${rel.tipo_servico === 'catacao' ? 'Catação' : rel.tipo_servico === 'area_total' ? 'Área Total' : '—'}${rel.qtd_voos > 1 ? ` (${rel.qtd_voos} voos)` : ''}`))
   }
   if (cliente.length) secoes.push(['CLIENTE', cliente])
 
   const area = []
   if (cfg.area) {
-    area.push(`Área Total: ${fmtNum(areaTotal)} ha`)
-    area.push(`Aplicada: ${fmtNum(areaAplicada)} ha | Borda: ${fmtNum(bordadura)} ha`)
+    area.push(campo('Área Total', `${fmtNum(areaTotal)} ha`))
+    if (cfg.juntarAplicadaBorda) {
+      area.push(campo('Aplicada', `${fmtNum(areaAplicada)} ha`) + ` | ${campo('Borda', `${fmtNum(bordadura)} ha`)}`)
+    } else {
+      area.push(campo('Aplicada', `${fmtNum(areaAplicada)} ha`))
+      area.push(campo('Borda', `${fmtNum(bordadura)} ha`))
+    }
   }
-  if (cfg.tempoVoo && tempo) area.push(`Tempo de Voo: ${tempo}`)
+  if (cfg.tempoVoo && tempo) area.push(campo('Tempo de Voo', tempo))
   if (area.length) secoes.push(['ÁREA', area])
 
   if (cfg.produtos && (rel.produtos || []).length) {
@@ -231,24 +251,32 @@ function montarTextoLimpo(rel, cfg, opts) {
 
   const params = []
   if (cfg.vazaoDetalhada && (rel.vazao_i || rel.vazao_f)) {
-    params.push(`Vazão: ${fmtNum(rel.vazao_i || rel.vazao_f)} L/ha${cfg.tamanhoGota && gotaTxt ? ` | Gota: ${gotaTxt}` : ''}`)
+    if (cfg.juntarVazaoGota && cfg.tamanhoGota && gotaTxt) {
+      params.push(campo('Vazão', `${fmtNum(rel.vazao_i || rel.vazao_f)} L/ha`) + ` | ${campo('Gota', gotaTxt)}`)
+    } else {
+      params.push(campo('Vazão', `${fmtNum(rel.vazao_i || rel.vazao_f)} L/ha`))
+      if (cfg.tamanhoGota && gotaTxt) params.push(campo('Gota', gotaTxt))
+    }
   } else if (cfg.tamanhoGota && gotaTxt) {
-    params.push(`Gota: ${gotaTxt}`)
+    params.push(campo('Gota', gotaTxt))
   }
   const linha2 = []
-  if (cfg.alturaVelocidade && rel.altura) linha2.push(`Altura: ${fmtNum(rel.altura)} m`)
-  if (cfg.alturaVelocidade && rel.velocidade_drone) linha2.push(`Velocidade: ${fmtNum(rel.velocidade_drone)} km/h`)
-  if (cfg.faixaAplicacao && (rel.faixa_i || rel.faixa_f)) linha2.push(`Faixa: ${fmtNum(rel.faixa_i || rel.faixa_f)} m`)
-  if (linha2.length) params.push(linha2.join(' | '))
+  if (cfg.alturaVelocidade && rel.altura) linha2.push(campo('Altura', `${fmtNum(rel.altura)} m`))
+  if (cfg.alturaVelocidade && rel.velocidade_drone) linha2.push(campo('Velocidade', `${fmtNum(rel.velocidade_drone)} km/h`))
+  if (cfg.faixaAplicacao && (rel.faixa_i || rel.faixa_f)) linha2.push(campo('Faixa', `${fmtNum(rel.faixa_i || rel.faixa_f)} m`))
+  if (linha2.length) {
+    if (cfg.juntarVelocidadeFaixa) params.push(linha2.join(' | '))
+    else linha2.forEach(l => params.push(l))
+  }
   if (params.length) secoes.push(['PARÂMETROS', params])
 
   const clima = []
   if (cfg.climaBasico) {
-    clima.push(`Vento: ${fmtNum(rel.vento_i)} ➔ ${fmtNum(rel.vento_f)} km/h`)
-    clima.push(`Umidade: ${fmtNum(rel.umidade_i)}% ➔ ${fmtNum(rel.umidade_f)}%`)
-    clima.push(`Temperatura: ${fmtNum(rel.temperatura_i)}°C ➔ ${fmtNum(rel.temperatura_f)}°C`)
+    clima.push(campo('Vento', `${fmtNum(rel.vento_i)} ➔ ${fmtNum(rel.vento_f)} km/h`))
+    clima.push(campo('Umidade', `${fmtNum(rel.umidade_i)}% ➔ ${fmtNum(rel.umidade_f)}%`))
+    clima.push(campo('Temperatura', `${fmtNum(rel.temperatura_i)}°C ➔ ${fmtNum(rel.temperatura_f)}°C`))
   }
-  if (cfg.deltaT) clima.push(`Delta T: ${fmtNum(rel.delta_t_i)}°C ➔ ${fmtNum(rel.delta_t_f)}°C`)
+  if (cfg.deltaT) clima.push(campo('Delta T', `${fmtNum(rel.delta_t_i)}°C ➔ ${fmtNum(rel.delta_t_f)}°C`))
   if (clima.length) secoes.push(['CLIMA (Início ➔ Fim)', clima])
 
   const obs = []
@@ -262,8 +290,9 @@ function montarTextoLimpo(rel, cfg, opts) {
 
   if (cfg.linkPdf && opts.linkPdf) secoes.push(['RELATÓRIO', [opts.linkPdf]])
 
-  let t = 'RELATÓRIO OROFLY\n\n'
-  t += secoes.map(([titulo, linhas]) => `${titulo}\n${linhas.join('\n')}`).join('\n\n')
+  const tituloTxt = t => cfg.negritoTitulos ? `*${t}*` : t
+  let t = `${tituloTxt('RELATÓRIO OROFLY')}\n\n`
+  t += secoes.map(([titulo, linhas]) => `${tituloTxt(titulo)}\n${linhas.join('\n')}`).join('\n\n')
   return removerEmoji(t.trim())
 }
 
