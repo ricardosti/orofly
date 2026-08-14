@@ -199,8 +199,8 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
         area.push(total != null
           ? `Total: ${fmtHa(total)} ha | Bord: ${fmtHa(bord)} ha | Aplicada: ${fmtHa(aplicada)} ha`
           : `Bord: ${fmtHa(bord)} ha`)
+        area.push('')
       })
-      area.push('')
       area.push(`Total Geral: ${fmtHa(rel.area_ha)} ha | Bord: ${fmtHa(rel.bordadura)} ha | Aplicada: ${fmtHa(areaAplicada)} ha`)
     } else {
       area.push(`Total: ${fmtHa(rel.area_ha)} ha | Bord: ${fmtHa(rel.bordadura)} ha | Aplicada: ${fmtHa(areaAplicada)} ha`)

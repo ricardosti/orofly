@@ -1125,11 +1125,41 @@ export default function AdminPanel({ onSwitchMode }) {
   }
 
   function ChecklistFazendasPorCliente({ chavePrefixo, marcadas, onToggle, excluirPilotoId, excluirTimeId }) {
+    const [filtroProgresso, setFiltroProgresso] = useState('')
+    const passaFiltro = (fz) => {
+      if (!filtroProgresso) return true
+      const { pct } = progressoFazenda(fz)
+      if (filtroProgresso === 'concluidas') return pct != null && pct >= 100
+      if (filtroProgresso === 'andamento') return pct != null && pct > 0 && pct < 100
+      if (filtroProgresso === 'naoIniciadas') return pct != null && pct === 0
+      if (filtroProgresso === 'semCadastro') return pct == null
+      if (filtroProgresso === 'conflito') {
+        const { outrosPilotos, outrosTimes } = quemMaisTemFazenda(fz, { excluirPilotoId, excluirTimeId })
+        return outrosPilotos.length > 0 || outrosTimes.length > 0
+      }
+      if (filtroProgresso === 'marcadas') return marcadas.includes(fz.id)
+      return true
+    }
+    const FILTROS = [
+      ['', 'Todos'], ['marcadas', '✓ Marcadas'], ['concluidas', '✅ 100%'], ['andamento', '🟡 Em andamento'],
+      ['naoIniciadas', '⚪ Não iniciadas'], ['conflito', '⚠️ Já atribuídas'], ['semCadastro', '❔ Sem área cadastrada'],
+    ]
     return (
-      <div style={{border:`1px solid ${theme.divider}`,borderRadius:12,overflow:'hidden'}}>
+      <div>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+          {FILTROS.map(([v,lbl])=>(
+            <button key={v} type="button" onClick={()=>setFiltroProgresso(v)}
+              style={{background:filtroProgresso===v?'#00A86B':theme.bg,color:filtroProgresso===v?'#fff':theme.textMuted,border:`1px solid ${filtroProgresso===v?'#00A86B':theme.cardBorder2}`,borderRadius:20,padding:'5px 11px',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+        <div style={{border:`1px solid ${theme.divider}`,borderRadius:12,overflow:'hidden'}}>
         {[...new Set(invFazendas.map(fz=>fz.cliente))].sort().map(cliente=>{
-          const fazendasCli = invFazendas.filter(fz=>fz.cliente===cliente)
-          const marcadasCli = fazendasCli.filter(fz=>marcadas.includes(fz.id)).length
+          const fazendasCliTodas = invFazendas.filter(fz=>fz.cliente===cliente)
+          const fazendasCli = fazendasCliTodas.filter(passaFiltro)
+          if (fazendasCli.length === 0) return null
+          const marcadasCli = fazendasCliTodas.filter(fz=>marcadas.includes(fz.id)).length
           const chave = `${chavePrefixo}-${cliente}`
           const aberto = equipeClienteAberto[chave] ?? marcadasCli>0
           return (
@@ -1137,7 +1167,7 @@ export default function AdminPanel({ onSwitchMode }) {
               <div onClick={()=>setEquipeClienteAberto(s=>({...s,[chave]:!aberto}))}
                 style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',cursor:'pointer',background:'#f9fbfa'}}>
                 <span style={{fontSize:12,fontWeight:700,color:theme.text}}>🏢 {cliente}</span>
-                <span style={{fontSize:11,color:marcadasCli>0?'#00A86B':'#aaa',fontWeight:600}}>{marcadasCli>0?`${marcadasCli}/${fazendasCli.length} liberada(s)`:`${fazendasCli.length} fazenda(s)`} {aberto?'▲':'▼'}</span>
+                <span style={{fontSize:11,color:marcadasCli>0?'#00A86B':'#aaa',fontWeight:600}}>{marcadasCli>0?`${marcadasCli}/${fazendasCliTodas.length} liberada(s)`:`${fazendasCli.length} fazenda(s)`} {aberto?'▲':'▼'}</span>
               </div>
               {aberto && fazendasCli.map(fz=>{
                 const ativo = marcadas.includes(fz.id)
@@ -1167,6 +1197,7 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           )
         })}
+        </div>
       </div>
     )
   }

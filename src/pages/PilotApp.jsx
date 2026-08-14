@@ -1557,8 +1557,8 @@ export default function PilotApp({onSwitchMode}) {
     setStorageFotoMapa(rel.foto_mapa_url||null)
     setStorageObsFotos(rel.obs_fotos_urls||[null,null,null])
     setView('form')
-    if(st==='paused_day'||st==='running'||st==='paused') { setWizardStep(4); showToast(st==='paused_day'?'🌙 Voo retomado do dia anterior!':'✏️ Voo carregado') }
-    else showToast('✏️ Voo carregado')
+    setWizardStep(4)
+    showToast(st==='paused_day'?'🌙 Voo retomado do dia anterior!':'✏️ Voo carregado')
   }
 
   // Todos os voos desse piloto ainda em aberto (rodando, pausado ou parcial) — consultado direto
@@ -2330,6 +2330,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={s.headerSub}>🗺️ Mapa da Fazenda</div>
         </div>
         <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}>
+          <button type="button" style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
           <div style={{display:'flex',gap:4,background:'#eef3ee',borderRadius:12,padding:4}}>
             <button onClick={()=>setMapaModo('fazenda')}
               style={{flex:1,padding:'9px 4px',borderRadius:9,border:'none',fontSize:11.5,fontWeight:700,cursor:'pointer',
@@ -4715,8 +4716,8 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false,talhoesCatalogo
         const aplicada = total!=null ? Math.max(0,total-bord) : null
         area.push(`Talhão ${nome}:`)
         area.push(total!=null ? `Total: ${fmtHaTxt(total)} ha | Bord: ${fmtHaTxt(bord)} ha | Aplicada: ${fmtHaTxt(aplicada)} ha` : `Bord: ${fmtHaTxt(bord)} ha`)
+        area.push('')
       })
-      area.push('')
       area.push(`Total Geral: ${fmtHaTxt(areaTotal)} ha | Bord: ${fmtHaTxt(bordTotal)} ha | Aplicada: ${fmtHaTxt(areaAplicada)} ha`)
     } else {
       area.push(`Total: ${fmtHaTxt(areaTotal)} ha | Bord: ${fmtHaTxt(bordTotal)} ha | Aplicada: ${fmtHaTxt(areaAplicada)} ha`)
