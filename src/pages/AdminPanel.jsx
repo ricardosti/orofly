@@ -738,31 +738,6 @@ export default function AdminPanel({ onSwitchMode }) {
     fetchAll()
   }
 
-  // Mesmo padrão de texto usado no app do piloto pro compartilhamento no WhatsApp, só que
-  // montado a partir da linha crua do banco (rel) em vez do form em edição.
-  function buildTxtAdmin(rel) {
-    const fmtData = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—'
-    const fmtHora = iso => iso ? new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—'
-    const nomeCurto = n => { if(!n) return '—'; const p=n.trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
-    const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
-    const fz = invFazendas.find(f=>f.cliente===rel.cliente && f.nome===rel.fazenda)
-    const localTxt = `${fz?.id_fazenda?`[${fz.id_fazenda}] `:''}${rel.fazenda||'—'}${rel.localizacao?` | Talhão: ${rel.localizacao}`:''}`
-    let t = `🚁 *RELATÓRIO OROFLY*\n`
-    t += `👤 *Cliente:* ${rel.cliente||'—'}\n`
-    t += `📍 *Local:* ${localTxt}\n`
-    t += `⏰ *Período:* ${fmtData(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} ➔ ${fmtHora(rel.dt_fim)})\n`
-    t += `👨‍✈️ *Piloto:* ${nomeCurto(rel.piloto_nome)} | 🛸 *Drone:* ${rel.drone||'—'}\n`
-    t += `${linha}\n`
-    t += `📏 *Área Total:* ${rel.area_ha||'—'} ha${rel.bordadura?` (Aplicada: ${areaLiquida(rel)} ha | Bord: ${rel.bordadura} ha)`:''}\n`
-    if((rel.produtos||[]).length){
-      t += `${linha}\n🧪 *Produtos:*\n`
-      rel.produtos.forEach(p=>{ t += `* ${p}\n` })
-    }
-    if(rel.obs1) t += `${linha}\n📝 *Obs:* ${rel.obs1}\n`
-    if(rel.gps_lat && rel.gps_lng) t += `${linha}\n📍 ${rel.gps_lat}, ${rel.gps_lng}\nhttps://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}\n`
-    return t
-  }
-
   // Texto pro WhatsApp do relatório de área aplicada por fazenda/período (resumo — o PDF
   // completo com a tabela de voos vai anexado, quando o app nativo/Web Share suportar).
   function buildTxtFazendaPeriodo(fz, voosPeriodo, dataIni, dataFim, areaTotalCadastrada) {
@@ -809,15 +784,18 @@ export default function AdminPanel({ onSwitchMode }) {
   // não tem como anexar arquivo num link wa.me, cai só no texto (limitação do WhatsApp Web).
   async function enviarWhatsApp(rel) {
     // Se existir um template personalizado (por cliente ou padrão global) com config de
-    // WhatsApp, usa o texto config-driven; senão mantém o texto padrão de sempre (comportamento
-    // inalterado pra quem nunca configurou nada em Personalização de Relatórios).
-    let texto = buildTxtAdmin(rel)
+    // WhatsApp, usa a config dele; senão usa o DEFAULT_WHATSAPP_CONFIG (o padrão novo, com
+    // quebra por talhão) — montarTextoWhatsapp já cai nesse default quando `tpl` é null.
+    const fz = invFazendas.find(f => f.cliente === rel.cliente && f.nome === rel.fazenda)
+    const talhoesCatalogo = fz ? invTalhoes.filter(t => t.fazenda_id === fz.id).map(t => ({ nome: t.nome, area_ha: t.area_ha })) : []
+    let texto
     try {
       const tpl = await resolverTemplate(supabase, rel.cliente)
-      if (tpl?.whatsapp_config && Object.keys(tpl.whatsapp_config).length) {
-        texto = montarTextoWhatsapp(rel, tpl.whatsapp_config)
-      }
-    } catch (e) { console.warn('Falha ao resolver template de WhatsApp, usando texto padrão:', e) }
+      texto = montarTextoWhatsapp({ ...rel, id_fazenda: fz?.id_fazenda }, tpl?.whatsapp_config, { talhoesCatalogo })
+    } catch (e) {
+      console.warn('Falha ao resolver template de WhatsApp, usando config padrão:', e)
+      texto = montarTextoWhatsapp({ ...rel, id_fazenda: fz?.id_fazenda }, null, { talhoesCatalogo })
+    }
     let file = null
     if (rel.foto_mapa_url) {
       try {
@@ -1124,7 +1102,29 @@ export default function AdminPanel({ onSwitchMode }) {
 
   // Lista de fazendas agrupada por cliente, colapsável — reaproveitada tanto na permissão
   // por time (Equipes) quanto na permissão individual por piloto.
-  function ChecklistFazendasPorCliente({ chavePrefixo, marcadas, onToggle }) {
+  // Progresso de campo (mesma fórmula do BI de Fazendas & Clientes): % da área total já
+  // pulverizada (bordadura conta como feito), a partir dos relatórios finalizados da fazenda.
+  function progressoFazenda(fz) {
+    const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
+    const areaTotal = talhoesFz.reduce((a,t)=>a+parseFloat(t.area_ha||0),0)
+    const relatoriosFz = relatorios.filter(r=>r.fazenda===fz.nome && r.cliente===fz.cliente && r.status==='finalizado')
+    const areaRealizada = relatoriosFz.reduce((a,r)=>a+areaLiquida(r),0)
+    const bordaduraRealizada = relatoriosFz.reduce((a,r)=>a+(parseFloat(r.bordadura)||0),0)
+    const pct = areaTotal>0 ? Math.min(100,((areaRealizada+bordaduraRealizada)/areaTotal)*100) : null
+    return { pct, areaTotal }
+  }
+
+  // Quem mais já tem acesso a essa fazenda — outros pilotos (permissão individual) e outros
+  // times (permissão de time) — pra avisar antes de duplicar/entrar em conflito de atribuição.
+  function quemMaisTemFazenda(fz, { excluirPilotoId, excluirTimeId } = {}) {
+    const outrosPilotos = pilotoFazendas.filter(pf=>pf.fazenda_id===fz.id && pf.piloto_id!==excluirPilotoId)
+      .map(pf=>pilotos.find(p=>p.id===pf.piloto_id)?.nome).filter(Boolean)
+    const outrosTimes = fazendaTimes.filter(ft=>ft.fazenda_id===fz.id && ft.time_id!==excluirTimeId)
+      .map(ft=>times.find(t=>t.id===ft.time_id)?.nome).filter(Boolean)
+    return { outrosPilotos, outrosTimes }
+  }
+
+  function ChecklistFazendasPorCliente({ chavePrefixo, marcadas, onToggle, excluirPilotoId, excluirTimeId }) {
     return (
       <div style={{border:`1px solid ${theme.divider}`,borderRadius:12,overflow:'hidden'}}>
         {[...new Set(invFazendas.map(fz=>fz.cliente))].sort().map(cliente=>{
@@ -1141,11 +1141,26 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
               {aberto && fazendasCli.map(fz=>{
                 const ativo = marcadas.includes(fz.id)
+                const { pct } = progressoFazenda(fz)
+                const { outrosPilotos, outrosTimes } = quemMaisTemFazenda(fz, { excluirPilotoId, excluirTimeId })
+                const temConflito = outrosPilotos.length>0 || outrosTimes.length>0
                 return (
                   <div key={fz.id} onClick={()=>onToggle(fz.id)}
-                    style={{display:'flex',alignItems:'center',gap:8,padding:'7px 14px 7px 26px',cursor:'pointer',fontSize:12,background:ativo?theme.successBg:'#fff',borderTop:'1px solid #f7fbf8'}}>
-                    <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${ativo?'#00A86B':'#c3d4c9'}`,background:ativo?'#00A86B':'#fff',flexShrink:0}}/>
-                    <span style={{color:ativo?theme.text:theme.textMuted,fontWeight:ativo?600:400}}>{fz.nome}</span>
+                    style={{padding:'7px 14px 7px 26px',cursor:'pointer',fontSize:12,background:ativo?theme.successBg:'#fff',borderTop:'1px solid #f7fbf8'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:14,height:14,borderRadius:4,border:`2px solid ${ativo?'#00A86B':'#c3d4c9'}`,background:ativo?'#00A86B':'#fff',flexShrink:0}}/>
+                      <span style={{color:ativo?theme.text:theme.textMuted,fontWeight:ativo?600:400,flex:1}}>{fz.nome}</span>
+                      {pct!=null && (
+                        <span title="Progresso de campo (área já aplicada)" style={{fontSize:10,fontWeight:700,color: pct>=100?'#00A86B':pct>=50?'#c98a1c':theme.textFaint2,background:theme.bg,borderRadius:20,padding:'2px 7px',flexShrink:0}}>
+                          {pct.toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                    {temConflito && (
+                      <div style={{marginTop:3,marginLeft:22,fontSize:10.5,color:theme.warningText2,background:theme.warningBg,borderRadius:8,padding:'3px 7px',display:'inline-block'}}>
+                        ⚠️ Já atribuída a: {[...outrosPilotos, ...outrosTimes.map(n=>`time ${n}`)].join(', ')}
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -5028,7 +5043,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>PILOTOS ({membros.length})</div>
                             <div style={{fontSize:12,color:theme.textMuted,marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na aba Usuários.'}</div>
                             <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
-                            <ChecklistFazendasPorCliente chavePrefixo={t.id} marcadas={fazendasDoTime} onToggle={fzId=>toggleFazendaTime(fzId,t.id)}/>
+                            <ChecklistFazendasPorCliente chavePrefixo={t.id} marcadas={fazendasDoTime} onToggle={fzId=>toggleFazendaTime(fzId,t.id)} excluirTimeId={t.id}/>
                             <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo, a menos que o piloto tenha permissão individual — ver aba Usuários).</div>
                           </div>
                         )
@@ -5398,7 +5413,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 <button style={{background:'none',border:'none',fontSize:18,color:theme.textFaint2,cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>✕</button>
               </div>
               <p style={{fontSize:12,color:theme.textMuted,marginBottom:14,lineHeight:1.5}}>Permissão individual — se marcar alguma fazenda aqui, esse piloto passa a ver <strong>só</strong> essas, ignorando a permissão do time dele. Sem nenhuma marcada, vale a regra do time (ou tudo, se não tiver time).</p>
-              <ChecklistFazendasPorCliente chavePrefixo={'piloto-'+pilotoFazendasModal.id} marcadas={marcadas} onToggle={fzId=>toggleFazendaPiloto(fzId,pilotoFazendasModal.id)}/>
+              <ChecklistFazendasPorCliente chavePrefixo={'piloto-'+pilotoFazendasModal.id} marcadas={marcadas} onToggle={fzId=>toggleFazendaPiloto(fzId,pilotoFazendasModal.id)} excluirPilotoId={pilotoFazendasModal.id}/>
               <button style={{width:'100%',marginTop:16,background:'#00A86B',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:700,cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>Pronto</button>
             </div>
           </div>

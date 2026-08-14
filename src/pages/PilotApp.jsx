@@ -888,32 +888,37 @@ export default function PilotApp({onSwitchMode}) {
   async function compartilharWhatsApp(){
     const fzMatch = fazendasDB.find(fz=>fz.cliente===form.cliente && fz.nome===form.fazenda)
     const formComPiloto = {...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||'', id_fazenda: fzMatch?.id_fazenda||''}
-    let texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade,opState==='paused_day')
+    const talhoesCatalogo = fzMatch ? talhoesDB.filter(t=>t.fazenda_id===fzMatch.id).map(t=>({nome:t.nome, area_ha:t.area_ha})) : []
+    const talhoesSelAtual = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+    const bordaduraDetalheAtual = talhoesSelAtual.length>1
+      ? talhoesSelAtual.map(nome=>({talhao:nome, bordadura:parseFloat(form.bordaduraPorTalhao?.[nome])||0}))
+      : null
+    let texto = buildTxt(formComPiloto,clienteVal,droneVal,produtoComUnidade,opState==='paused_day',talhoesCatalogo)
     // Se o cliente tiver um template de WhatsApp personalizado (ou existir um padrão global),
     // usa o texto config-driven — mas só quando a operação NÃO é parcial (o construtor
     // config-driven ainda não modela o modo "parcial/🌙", então nesse caso mantém o texto padrão).
     if (opState!=='paused_day') {
       try {
         const tpl = await resolverTemplate(supabase, clienteVal)
-        if (tpl?.whatsapp_config && Object.keys(tpl.whatsapp_config).length) {
-          const dtIniIso = form.dt_inicio_data ? new Date(`${form.dt_inicio_data}T${form.dt_inicio_hh||'00'}:${form.dt_inicio_mm||'00'}:00`).toISOString() : null
-          const dtFimIso = form.dt_fim_data ? new Date(`${form.dt_fim_data}T${form.dt_fim_hh||'00'}:${form.dt_fim_mm||'00'}:00`).toISOString() : null
-          const relLike = {
-            cliente: clienteVal, fazenda: form.fazenda, localizacao: form.talhao,
-            piloto_nome: formComPiloto.piloto_nome, drone: droneVal,
-            dt_inicio: dtIniIso, dt_fim: dtFimIso,
-            area_ha: form.area_ha, bordadura: bordaduraAtual(form),
-            produtos: form.produtos.filter(Boolean).map(produtoComUnidade),
-            vazao_i: form.vazao_i, vazao_f: form.vazao_f,
-            velocidade_drone: form.velocidade_drone, altura: form.altura,
-            vento_i: form.vento_i, vento_f: form.vento_f,
-            umidade_i: form.umidade_i, umidade_f: form.umidade_f,
-            temperatura_i: form.temperatura_i, temperatura_f: form.temperatura_f,
-            delta_t_i: form.delta_t_i, delta_t_f: form.delta_t_f,
-            obs1: form.obs1,
-          }
-          texto = montarTextoWhatsapp(relLike, tpl.whatsapp_config)
+        const dtIniIso = form.dt_inicio_data ? new Date(`${form.dt_inicio_data}T${form.dt_inicio_hh||'00'}:${form.dt_inicio_mm||'00'}:00`).toISOString() : null
+        const dtFimIso = form.dt_fim_data ? new Date(`${form.dt_fim_data}T${form.dt_fim_hh||'00'}:${form.dt_fim_mm||'00'}:00`).toISOString() : null
+        const relLike = {
+          cliente: clienteVal, fazenda: form.fazenda, localizacao: form.talhao,
+          id_fazenda: formComPiloto.id_fazenda, status: 'finalizado',
+          piloto_nome: formComPiloto.piloto_nome, drone: droneVal,
+          dt_inicio: dtIniIso, dt_fim: dtFimIso,
+          area_ha: form.area_ha, bordadura: bordaduraAtual(form), bordadura_detalhe: bordaduraDetalheAtual,
+          produtos: form.produtos.filter(Boolean).map(produtoComUnidade),
+          vazao_i: form.vazao_i, vazao_f: form.vazao_f,
+          velocidade_drone: form.velocidade_drone, altura: form.altura, faixa_i: form.faixa_i, faixa_f: form.faixa_f,
+          tamanho_gota: form.tamanho_gota,
+          vento_i: form.vento_i, vento_f: form.vento_f,
+          umidade_i: form.umidade_i, umidade_f: form.umidade_f,
+          temperatura_i: form.temperatura_i, temperatura_f: form.temperatura_f,
+          delta_t_i: form.delta_t_i, delta_t_f: form.delta_t_f,
+          obs1: form.obs1,
         }
+        texto = montarTextoWhatsapp(relLike, tpl?.whatsapp_config, { talhoesCatalogo })
       } catch(e) { console.warn('Falha ao resolver template de WhatsApp, usando texto padrão:', e) }
     }
     let file = fotoMapaFile
@@ -4641,64 +4646,97 @@ function ReportView({form,clienteVal,droneVal,kmlFiles=[],prodFmt}) {
   ))}</div>
 }
 
-function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false){
+// Formata número sem forçar casas decimais fixas (20 fica "20", não "20,00"; 0.2 fica "0,2").
+function fmtN(v) {
+  const n = parseFloat(v)
+  return isNaN(n) ? '—' : n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
+}
+// Hectares sempre com 2 casas fixas (8 -> "8,00"), diferente de fmtN (que varia).
+function fmtHaTxt(v) {
+  const n = parseFloat(v)
+  return isNaN(n) ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false,talhoesCatalogo=[]){
   const numBR = (n,dec=2) => n==null||isNaN(n) ? '—' : n.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})
   const fmtHora=p=>{const hh=form[p+'_hh'],mm=form[p+'_mm'];return (hh||mm)?`${hh||'00'}:${mm||'00'}`:'—'}
   const fmtDataCurta=p=>{const d=form[p+'_data'];if(!d)return'—';const partes=d.split('-');return partes.length===3?`${partes[2]}/${partes[1]}`:d}
   const nomeCurto = n => { if(!n) return '—'; const p=n.trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
-  const linha='┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 
   const areaTotal = parseFloat(form.area_ha)||0
   const bordTotal = bordaduraAtual(form)
   const areaAplicada = areaLiquidaAtual(form)
   const {feita:areaFeita,pct:pctFeito} = progressoParcial(form)
-  const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaAplicada)
+  // Dosagem é sobre a área total sobrevoada (não a líquida) — bate com a quantidade de
+  // produto realmente colocada no tanque/gasta na operação.
+  const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaTotal)
+  const talhoes = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
 
-  const localTxt = `${form.id_fazenda?`[${form.id_fazenda}] `:''}${form.fazenda||'—'}${form.talhao?` | Talhão: ${form.talhao}`:''}`
+  const secoes = []
 
-  let t = `🚁 *RELATÓRIO OROFLY${parcial?' — PARCIAL 🌙':''}*\n`
-  t += `👤 *Cliente:* ${clienteVal||'—'}\n`
-  t += `📍 *Local:* ${localTxt}\n`
-  t += `⏰ *Período:* ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} ➔ ${fmtHora('dt_fim')})\n`
-  t += `👨‍✈️ *Piloto:* ${nomeCurto(form.piloto_nome)} | 🛸 *Drone:* ${droneVal||'—'}\n`
-  t += `${linha}\n`
-  if(parcial) {
-    t += `🌙 *Progresso até agora:* ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)\n`
-    t += `⏳ Operação continua — este é um relatório parcial, não o voo finalizado.\n`
+  const dados = []
+  dados.push(`Cliente: ${clienteVal||'—'}`)
+  dados.push(`Local: ${form.id_fazenda?`[${form.id_fazenda}] `:''}${form.fazenda||'—'}`)
+  if (talhoes.length) dados.push(`Talhões: ${talhoes.join(' | ')}`)
+  dados.push(`Período: ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} - ${fmtHora('dt_fim')}) | Status: ${parcial?'Parcial':'Completo'}`)
+  dados.push(`Piloto: ${nomeCurto(form.piloto_nome)}${droneVal?` | Drone: ${droneVal}`:''}`)
+  secoes.push(['DADOS DA OPERAÇÃO', dados])
+
+  if (parcial) {
+    secoes.push(['PROGRESSO', [`Feito até agora: ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)`, 'Operação continua — este é um relatório parcial, não o voo finalizado.']])
   } else {
-    t += `📏 *Área Total:* ${numBR(areaTotal)} ha${bordTotal>0?` (Aplicada: ${numBR(areaAplicada)} ha | Bord: ${numBR(bordTotal)} ha)`:''}\n`
+    const area = []
+    if (talhoes.length > 1) {
+      talhoes.forEach(nome => {
+        const doCatalogo = talhoesCatalogo.find(t=>t.nome===nome)
+        const total = doCatalogo ? parseFloat(doCatalogo.area_ha)||0 : null
+        const bord = parseFloat(form.bordaduraPorTalhao?.[nome])||0
+        const aplicada = total!=null ? Math.max(0,total-bord) : null
+        area.push(`Talhão ${nome}:`)
+        area.push(total!=null ? `Total: ${fmtHaTxt(total)} ha | Bord: ${fmtHaTxt(bord)} ha | Aplicada: ${fmtHaTxt(aplicada)} ha` : `Bord: ${fmtHaTxt(bord)} ha`)
+      })
+      area.push('')
+      area.push(`Total Geral: ${fmtHaTxt(areaTotal)} ha | Bord: ${fmtHaTxt(bordTotal)} ha | Aplicada: ${fmtHaTxt(areaAplicada)} ha`)
+    } else {
+      area.push(`Total: ${fmtHaTxt(areaTotal)} ha | Bord: ${fmtHaTxt(bordTotal)} ha | Aplicada: ${fmtHaTxt(areaAplicada)} ha`)
+    }
+    secoes.push(['ÁREAS', area])
   }
 
   const gastosValidos = gastos.filter(g=>g.nome)
   if(gastosValidos.length){
-    t += `${linha}\n🧪 *Produtos:*\n`
-    gastosValidos.forEach(g=>{
-      const doseTxt = g.dose!=null ? String(g.dose).replace('.',',') : '—'
-      t += `* ${g.nome}: ${doseTxt} ${g.unidade}/ha${g.total!=null?` (Total: ${numBR(g.total)} ${g.unidade})`:''}\n`
+    const linhas = gastosValidos.map(g=>{
+      const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
+      return `${g.nome}: ${doseTxt} ${g.unidade}/ha${g.total!=null?` (Total: ${fmtN(g.total)} ${g.unidade})`:''}`
     })
+    secoes.push([gastosValidos.length>1?'PRODUTOS':'PRODUTO', linhas])
   }
 
-  if(form.vazao_i||form.tamanho_gota||form.velocidade_drone||form.faixa_i||form.altura){
-    t += `${linha}\n⚙️ *Parâmetros:*\n`
-    t += `* Vazão: ${form.vazao_i||'—'} L/ha | Gota: ${form.tamanho_gota||'—'} µm\n`
-    t += `* Velocidade: ${form.velocidade_drone||'—'} km/h | Altura: ${form.altura||'—'} m | Faixa: ${form.faixa_i||'—'} m\n`
-  }
+  const params = []
+  if (form.vazao_i) params.push(`Vazão: ${fmtN(form.vazao_i)} L/ha`)
+  if (form.tamanho_gota) params.push(`Gota: ${form.tamanho_gota}${/^\d+([.,]\d+)?$/.test(String(form.tamanho_gota).trim())?' µm':''}`)
+  if (form.velocidade_drone) params.push(`Vel: ${fmtN(form.velocidade_drone)} km/h`)
+  if (form.altura) params.push(`Alt: ${fmtN(form.altura)} m`)
+  if (form.faixa_i) params.push(`Faixa: ${fmtN(form.faixa_i)} m`)
+  if (params.length) secoes.push(['PARÂMETROS', [params.join(' | ')]])
 
   const anyIni = ['vento','umidade','temperatura','delta_t'].some(k=>form[k+'_i'])
   if(anyIni){
-    t += `${linha}\n🌤️ *Clima (Início ➔ Fim):*\n`
-    t += `* Vento: ${form.vento_i||'—'} ➔ ${form.vento_f||'—'} km/h\n`
-    t += `* Umidade: ${form.umidade_i||'—'}% ➔ ${form.umidade_f||'—'}%\n`
-    t += `* Temp: ${form.temperatura_i||'—'}°C ➔ ${form.temperatura_f||'—'}°C\n`
-    t += `* Delta T: ${form.delta_t_i||'—'}°C ➔ ${form.delta_t_f||'—'}°C\n`
+    secoes.push(['CLIMA (Início - Fim)', [
+      `Vento: ${fmtN(form.vento_i)} - ${fmtN(form.vento_f)} km/h | Umidade: ${fmtN(form.umidade_i)}% - ${fmtN(form.umidade_f)}%`,
+      `Temp: ${fmtN(form.temperatura_i)}°C - ${fmtN(form.temperatura_f)}°C | Delta T: ${fmtN(form.delta_t_i)}°C - ${fmtN(form.delta_t_f)}°C`,
+    ]])
   }
 
-  if(form.obs1) t += `${linha}\n📝 *Obs:* ${form.obs1}\n`
+  if(form.obs1) secoes.push(['OBSERVAÇÕES', [form.obs1]])
 
   if(form.gps_lat && form.gps_lng){
-    t += `${linha}\n📍 ${form.gps_lat}, ${form.gps_lng}\nhttps://maps.google.com/?q=${form.gps_lat},${form.gps_lng}\n`
+    secoes.push(['LOCALIZAÇÃO', [`${form.gps_lat}, ${form.gps_lng}`, `https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`]])
   }
-  return t
+
+  let t = '🚁 RELATÓRIO OROFLY\n\n'
+  t += secoes.map(([titulo,linhas])=>`${titulo}\n${linhas.join('\n')}`).join('\n\n')
+  return t.trim()
 }
 
 function Sec({title,icon,children}){return <div style={s.section}><div style={s.sectionHeader}>{icon} {title}</div>{children}</div>}
