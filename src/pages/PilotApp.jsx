@@ -4678,87 +4678,106 @@ function fmtHaTxt(v) {
   const n = parseFloat(v)
   return isNaN(n) ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
+// Vento/Temp/Delta T sempre com 1 casa fixa (6 -> "6,0"), diferente de fmtN (que varia).
+function fmtDec1Txt(v) {
+  const n = parseFloat(v)
+  return isNaN(n) ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+}
+const linhaDiv16Txt = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 
 function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false,talhoesCatalogo=[]){
   const numBR = (n,dec=2) => n==null||isNaN(n) ? '—' : n.toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec})
   const fmtHora=p=>{const hh=form[p+'_hh'],mm=form[p+'_mm'];return (hh||mm)?`${hh||'00'}:${mm||'00'}`:'—'}
   const fmtDataCurta=p=>{const d=form[p+'_data'];if(!d)return'—';const partes=d.split('-');return partes.length===3?`${partes[2]}/${partes[1]}`:d}
-  const nomeCurto = n => { if(!n) return '—'; const p=n.trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
 
   const areaTotal = parseFloat(form.area_ha)||0
   const bordTotal = bordaduraAtual(form)
   const areaAplicada = areaLiquidaAtual(form)
   const {feita:areaFeita,pct:pctFeito} = progressoParcial(form)
-  // Dosagem é sobre a área total sobrevoada (não a líquida) — bate com a quantidade de
-  // produto realmente colocada no tanque/gasta na operação.
-  const gastos = calcularGastoProdutos(form.produtos.filter(Boolean).map(prodFmt||(p=>p)), areaTotal)
+  const produtosStrings = form.produtos.filter(Boolean).map(prodFmt||(p=>p))
   const talhoes = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
 
-  const secoes = []
+  const dadosPorTalhao = talhoes.map(nome => {
+    const doCatalogo = talhoesCatalogo.find(t=>t.nome===nome)
+    const total = doCatalogo ? parseFloat(doCatalogo.area_ha)||0 : null
+    const bord = parseFloat(form.bordaduraPorTalhao?.[nome])||0
+    const aplicada = total!=null ? Math.max(0,total-bord) : null
+    return { nome, total, bord, aplicada }
+  })
+
+  const blocos = []
 
   const dados = []
-  dados.push(`Cliente: ${clienteVal||'—'}`)
-  dados.push(`Local: ${form.id_fazenda?`[${form.id_fazenda}] `:''}${form.fazenda||'—'}`)
-  if (talhoes.length) dados.push(`Talhões: ${talhoes.join(' | ')}`)
-  dados.push(`Período: ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} - ${fmtHora('dt_fim')}) | Status: ${parcial?'Parcial':'Completo'}`)
-  dados.push(`Piloto: ${nomeCurto(form.piloto_nome)}${droneVal?` | Drone: ${droneVal}`:''}`)
-  secoes.push(['DADOS DA OPERAÇÃO', dados])
+  dados.push(`*Cliente:* ${clienteVal||'—'}`)
+  dados.push(`*Local:* ${form.id_fazenda?`[${form.id_fazenda}] `:''}${form.fazenda||'—'}`)
+  if (talhoes.length) dados.push(`*Talhões:* ${talhoes.join(' | ')}`)
+  dados.push(`*Período:* ${fmtDataCurta('dt_inicio')} (${fmtHora('dt_inicio')} às ${fmtHora('dt_fim')})`)
+  dados.push(`*Piloto:* ${form.piloto_nome||'—'}`)
+  if (droneVal) dados.push(`*Drone:* ${droneVal}`)
+  blocos.push(dados.join('\n'))
 
   if (parcial) {
-    secoes.push(['PROGRESSO', [`Feito até agora: ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)`, 'Operação continua — este é um relatório parcial, não o voo finalizado.']])
+    blocos.push(`*Progresso*\nFeito até agora: ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)\nOperação continua — este é um relatório parcial, não o voo finalizado.`)
   } else {
     const area = []
     if (talhoes.length > 1) {
-      talhoes.forEach(nome => {
-        const doCatalogo = talhoesCatalogo.find(t=>t.nome===nome)
-        const total = doCatalogo ? parseFloat(doCatalogo.area_ha)||0 : null
-        const bord = parseFloat(form.bordaduraPorTalhao?.[nome])||0
-        const aplicada = total!=null ? Math.max(0,total-bord) : null
-        area.push(`Talhão ${nome}:`)
-        area.push(total!=null ? `Total: ${fmtHaTxt(total)} ha | Bord: ${fmtHaTxt(bord)} ha | Aplicada: ${fmtHaTxt(aplicada)} ha` : `Bord: ${fmtHaTxt(bord)} ha`)
-        area.push('')
+      dadosPorTalhao.forEach(({nome,total,bord,aplicada}, i) => {
+        area.push(total!=null
+          ? `Tal. ${nome}: Tot ${fmtHaTxt(total)} ha | Bord ${fmtHaTxt(bord)} | Aplic ${fmtHaTxt(aplicada)} ha`
+          : `Tal. ${nome}: Bord ${fmtHaTxt(bord)}`)
+        if (i<dadosPorTalhao.length-1) area.push('')
       })
-      area.push(`Total Geral: ${fmtHaTxt(areaTotal)} ha | Bord: ${fmtHaTxt(bordTotal)} ha | Aplicada: ${fmtHaTxt(areaAplicada)} ha`)
     } else {
-      area.push(`Total: ${fmtHaTxt(areaTotal)} ha | Bord: ${fmtHaTxt(bordTotal)} ha | Aplicada: ${fmtHaTxt(areaAplicada)} ha`)
+      area.push(`Tot ${fmtHaTxt(areaTotal)} ha | Bord ${fmtHaTxt(bordTotal)} | Aplic ${fmtHaTxt(areaAplicada)} ha`)
     }
-    secoes.push(['ÁREAS', area])
-  }
+    blocos.push(`*Áreas*\n${area.join('\n')}`)
 
-  const gastosValidos = gastos.filter(g=>g.nome)
-  if(gastosValidos.length){
-    const linhas = gastosValidos.map(g=>{
-      const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
-      return `${g.nome}: ${doseTxt} ${g.unidade}/ha${g.total!=null?` (Total: ${fmtN(g.total)} ${g.unidade})`:''}`
-    })
-    secoes.push([gastosValidos.length>1?'PRODUTOS':'PRODUTO', linhas])
+    if (produtosStrings.length) {
+      const produtosLinhas = []
+      if (talhoes.length > 1) {
+        dadosPorTalhao.forEach(({nome,aplicada}, i) => {
+          produtosLinhas.push(`Tal. ${nome}:`)
+          calcularGastoProdutos(produtosStrings, aplicada ?? 0).filter(g=>g.nome).forEach(g=>{
+            const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
+            produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtN(g.total)} ${g.unidade})`:''}`)
+          })
+          if (i<dadosPorTalhao.length-1) produtosLinhas.push('')
+        })
+      } else {
+        calcularGastoProdutos(produtosStrings, areaAplicada).filter(g=>g.nome).forEach(g=>{
+          const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
+          produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtN(g.total)} ${g.unidade})`:''}`)
+        })
+      }
+      if (produtosLinhas.length) blocos.push(`*Produtos*\n${produtosLinhas.join('\n')}`)
+    }
   }
 
   const params = []
-  if (form.vazao_i) params.push(`Vazão: ${fmtN(form.vazao_i)} L/ha`)
-  if (form.tamanho_gota) params.push(`Gota: ${form.tamanho_gota}${/^\d+([.,]\d+)?$/.test(String(form.tamanho_gota).trim())?' µm':''}`)
-  if (form.velocidade_drone) params.push(`Vel: ${fmtN(form.velocidade_drone)} km/h`)
-  if (form.altura) params.push(`Alt: ${fmtN(form.altura)} m`)
-  if (form.faixa_i) params.push(`Faixa: ${fmtN(form.faixa_i)} m`)
-  if (params.length) secoes.push(['PARÂMETROS', [params.join(' | ')]])
+  if (form.vazao_i) {
+    let l = `Vazão: ${fmtN(form.vazao_i)} L/ha`
+    if (form.tamanho_gota) l += ` | Gota: ${form.tamanho_gota}${/^\d+([.,]\d+)?$/.test(String(form.tamanho_gota).trim())?' µm':''}`
+    params.push(l)
+  }
+  const linha2 = []
+  if (form.velocidade_drone) linha2.push(`Vel: ${fmtN(form.velocidade_drone)} km/h`)
+  if (form.altura) linha2.push(`Alt: ${fmtN(form.altura)}m`)
+  if (form.faixa_i) linha2.push(`Faixa: ${fmtN(form.faixa_i)}m`)
+  if (linha2.length) params.push(linha2.join(' | '))
+  if (params.length) blocos.push(`*Parâmetros*\n${params.join('\n')}`)
 
   const anyIni = ['vento','umidade','temperatura','delta_t'].some(k=>form[k+'_i'])
   if(anyIni){
-    secoes.push(['CLIMA (Início - Fim)', [
-      `Vento: ${fmtN(form.vento_i)} - ${fmtN(form.vento_f)} km/h | Umidade: ${fmtN(form.umidade_i)}% - ${fmtN(form.umidade_f)}%`,
-      `Temp: ${fmtN(form.temperatura_i)}°C - ${fmtN(form.temperatura_f)}°C | Delta T: ${fmtN(form.delta_t_i)}°C - ${fmtN(form.delta_t_f)}°C`,
-    ]])
+    blocos.push(`*Clima (Início - Fim)*\nVento: ${fmtDec1Txt(form.vento_i)} - ${fmtDec1Txt(form.vento_f)} km/h | UR: ${fmtN(form.umidade_i)}% - ${fmtN(form.umidade_f)}%\nTemp: ${fmtDec1Txt(form.temperatura_i)}°C - ${fmtDec1Txt(form.temperatura_f)}°C | ΔT: ${fmtDec1Txt(form.delta_t_i)}°C - ${fmtDec1Txt(form.delta_t_f)}°C`)
   }
 
-  if(form.obs1) secoes.push(['OBSERVAÇÕES', [form.obs1]])
+  blocos.push(`*Obs:* ${form.obs1 || 'Nenhuma'}`)
 
   if(form.gps_lat && form.gps_lng){
-    secoes.push(['LOCALIZAÇÃO', [`${form.gps_lat}, ${form.gps_lng}`, `https://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`]])
+    blocos.push(`*Localização:*\n${form.gps_lat}, ${form.gps_lng}\nhttps://maps.google.com/?q=${form.gps_lat},${form.gps_lng}`)
   }
 
-  let t = '🚁 RELATÓRIO OROFLY\n\n'
-  t += secoes.map(([titulo,linhas])=>`${titulo}\n${linhas.join('\n')}`).join('\n\n')
-  return t.trim()
+  return `🚁 *RELATÓRIO OROFLY*\n${linhaDiv16Txt}\n` + blocos.join(`\n${linhaDiv16Txt}\n`)
 }
 
 function Sec({title,icon,children}){return <div style={s.section}><div style={s.sectionHeader}>{icon} {title}</div>{children}</div>}

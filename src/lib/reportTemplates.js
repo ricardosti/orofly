@@ -105,6 +105,7 @@ export const MOCK_RELATORIO = {
 }
 
 const linhaDiv = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
+const linhaDiv16 = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 
 function areaLiquidaLocal(rel) {
   const bruta = parseFloat(rel.area_ha) || 0
@@ -134,6 +135,20 @@ function parseProdutoDose(str, areaAplicada) {
   return `${nome}: ${fmtNum(dose)}${unidade ? ' ' + unidade : ''} (Total: ${fmtNum(total)} ${unidadeTotal})`
 }
 
+// Extrai nome/dose/unidade de "Nome - 0.24 kg/ha" e calcula o total (dose x área) pro
+// padrão em negrito — sem dois-pontos depois do nome, é "NOME dose unidade/ha (total unidade)".
+function formatarProdutoLinha(str, area) {
+  const m = String(str).match(/^(.*?)\s*[-–]\s*([\d.,]+)\s*(.*)$/)
+  if (!m) return str
+  const nome = m[1].trim()
+  const dose = parseFloat(m[2].replace(',', '.'))
+  const unidade = m[3].trim()
+  if (!dose || !area) return `${nome} ${m[2]}${unidade ? ' ' + unidade : ''}`
+  const total = dose * area
+  const unidadeTotal = unidade.replace(/\/\s*ha$/i, '').trim() || 'L'
+  return `${nome} ${fmtNum(dose)}${unidade ? ' ' + unidade : ''} (${fmtNum(total)} ${unidadeTotal})`
+}
+
 function fmtNum(v) {
   const n = parseFloat(v)
   return isNaN(n) ? '—' : n.toLocaleString('pt-BR', { maximumFractionDigits: 2 })
@@ -143,6 +158,12 @@ function fmtNum(v) {
 function fmtHa(v) {
   const n = parseFloat(v)
   return isNaN(n) ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// Vento/Temp/Delta T sempre com 1 casa fixa (6 -> "6,0"), diferente de fmtNum (que varia).
+function fmtDec1(v) {
+  const n = parseFloat(v)
+  return isNaN(n) ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 }
 
 // Nomes dos talhões desse relatório, na ordem em que foram selecionados (rel.localizacao
@@ -161,90 +182,96 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
 
   const fmtDataCurta = iso => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '—'
   const fmtHora = iso => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—'
-  const nomeCurto = n => { if (!n) return '—'; const p = String(n).trim().split(/\s+/).filter(Boolean); return p.length <= 1 ? (p[0] || '—') : `${p[0]} ${p[p.length - 1]}` }
 
   const talhoes = talhoesDoRelatorio(rel)
-  const areaAplicada = areaLiquidaLocal(rel)
-  const statusTxt = rel.status === 'finalizado' ? 'Completo' : rel.status === 'pausado_dia' ? 'Parcial' : rel.status === 'pausado' ? 'Pausado' : null
+  const bordaduraPorTalhao = {}
+  ;(rel.bordadura_detalhe || []).forEach(d => { if (d?.talhao) bordaduraPorTalhao[d.talhao] = parseFloat(d.bordadura) || 0 })
+  const catalogo = opts.talhoesCatalogo || []
 
-  const secoes = []
+  // Dados de área/aplicada por talhão — usados tanto na seção Áreas quanto pra calcular o
+  // total de produto de cada talhão (dose x área LÍQUIDA daquele talhão, não a área bruta).
+  const dadosPorTalhao = talhoes.map(nome => {
+    const doCatalogo = catalogo.find(t => t.nome === nome)
+    const total = doCatalogo ? parseFloat(doCatalogo.area_ha) || 0 : null
+    const bord = bordaduraPorTalhao[nome] ?? 0
+    const aplicada = total != null ? Math.max(0, total - bord) : null
+    return { nome, total, bord, aplicada }
+  })
+  const areaAplicadaGeral = areaLiquidaLocal(rel)
+
+  const blocos = []
 
   const dados = []
-  if (cfg.areaFazendaTalhao) {
-    dados.push(`Cliente: ${rel.cliente || '—'}`)
-    dados.push(`Local: ${rel.id_fazenda ? `[${rel.id_fazenda}] ` : ''}${rel.fazenda || '—'}`)
-    if (talhoes.length) dados.push(`Talhões: ${talhoes.join(' | ')}`)
-  }
-  if (cfg.dataHorario) dados.push(`Período: ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} - ${fmtHora(rel.dt_fim)})${statusTxt ? ` | Status: ${statusTxt}` : ''}`)
-  if (cfg.piloto) dados.push(`Piloto: ${nomeCurto(rel.piloto_nome)}${rel.drone ? ` | Drone: ${rel.drone}` : ''}`)
-  if (cfg.ordemServico && rel.ordem_servico) dados.push(`OS: ${rel.ordem_servico}`)
-  if (dados.length) secoes.push(['DADOS DA OPERAÇÃO', dados])
+  dados.push(`*Cliente:* ${rel.cliente || '—'}`)
+  dados.push(`*Local:* ${rel.id_fazenda ? `[${rel.id_fazenda}] ` : ''}${rel.fazenda || '—'}`)
+  if (talhoes.length) dados.push(`*Talhões:* ${talhoes.join(' | ')}`)
+  dados.push(`*Período:* ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`)
+  dados.push(`*Piloto:* ${rel.piloto_nome || '—'}`)
+  if (rel.drone) dados.push(`*Drone:* ${rel.drone}`)
+  blocos.push(dados.join('\n'))
 
-  // Quebra por talhão: usa bordadura_detalhe (salvo por talhão desde o wizard) pra
-  // bordadura, e o catálogo de talhões (opts.talhoesCatalogo) pra área total registrada de
-  // cada um — a área total do relatório (rel.area_ha) continua sendo a fonte de verdade
-  // pro "Total Geral", só a quebra por talhão é reconstruída.
   if (cfg.area) {
     const area = []
-    const bordaduraPorTalhao = {}
-    ;(rel.bordadura_detalhe || []).forEach(d => { if (d?.talhao) bordaduraPorTalhao[d.talhao] = parseFloat(d.bordadura) || 0 })
-    const catalogo = opts.talhoesCatalogo || []
     if (talhoes.length > 1) {
-      talhoes.forEach(nome => {
-        const doCatalogo = catalogo.find(t => t.nome === nome)
-        const total = doCatalogo ? parseFloat(doCatalogo.area_ha) || 0 : null
-        const bord = bordaduraPorTalhao[nome] ?? 0
-        const aplicada = total != null ? Math.max(0, total - bord) : null
-        area.push(`Talhão ${nome}:`)
+      dadosPorTalhao.forEach(({ nome, total, bord, aplicada }, i) => {
         area.push(total != null
-          ? `Total: ${fmtHa(total)} ha | Bord: ${fmtHa(bord)} ha | Aplicada: ${fmtHa(aplicada)} ha`
-          : `Bord: ${fmtHa(bord)} ha`)
-        area.push('')
+          ? `Tal. ${nome}: Tot ${fmtHa(total)} ha | Bord ${fmtHa(bord)} | Aplic ${fmtHa(aplicada)} ha`
+          : `Tal. ${nome}: Bord ${fmtHa(bord)}`)
+        if (i < dadosPorTalhao.length - 1) area.push('')
       })
-      area.push(`Total Geral: ${fmtHa(rel.area_ha)} ha | Bord: ${fmtHa(rel.bordadura)} ha | Aplicada: ${fmtHa(areaAplicada)} ha`)
     } else {
-      area.push(`Total: ${fmtHa(rel.area_ha)} ha | Bord: ${fmtHa(rel.bordadura)} ha | Aplicada: ${fmtHa(areaAplicada)} ha`)
+      area.push(`Tot ${fmtHa(rel.area_ha)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
     }
-    secoes.push(['ÁREAS', area])
+    blocos.push(`*Áreas*\n${area.join('\n')}`)
   }
 
   if (cfg.produtos && (rel.produtos || []).length) {
-    // Dosagem é sobre a área total sobrevoada (não a líquida) — bate com a quantidade de
-    // produto realmente colocada no tanque/gasta na operação.
-    const linhas = rel.produtos.map(p => parseProdutoDose(p, parseFloat(rel.area_ha) || 0))
-    secoes.push([rel.produtos.length > 1 ? 'PRODUTOS' : 'PRODUTO', linhas])
+    const produtos = []
+    if (talhoes.length > 1) {
+      dadosPorTalhao.forEach(({ nome, aplicada }, i) => {
+        produtos.push(`Tal. ${nome}:`)
+        rel.produtos.forEach(p => produtos.push(formatarProdutoLinha(p, aplicada ?? 0)))
+        if (i < dadosPorTalhao.length - 1) produtos.push('')
+      })
+    } else {
+      rel.produtos.forEach(p => produtos.push(formatarProdutoLinha(p, areaAplicadaGeral)))
+    }
+    blocos.push(`*Produtos*\n${produtos.join('\n')}`)
   }
 
   const params = []
-  if (cfg.vazaoDetalhada && (rel.vazao_i || rel.vazao_f)) params.push(`Vazão: ${fmtNum(rel.vazao_i || rel.vazao_f)} L/ha`)
-  if (cfg.tamanhoGota && rel.tamanho_gota) params.push(`Gota: ${rel.tamanho_gota}${/^\d+([.,]\d+)?$/.test(String(rel.tamanho_gota).trim()) ? ' µm' : ''}`)
-  if (cfg.alturaVelocidade && rel.velocidade_drone) params.push(`Vel: ${fmtNum(rel.velocidade_drone)} km/h`)
-  if (cfg.alturaVelocidade && rel.altura) params.push(`Alt: ${fmtNum(rel.altura)} m`)
-  if (cfg.faixaAplicacao && (rel.faixa_i || rel.faixa_f)) params.push(`Faixa: ${fmtNum(rel.faixa_i || rel.faixa_f)} m`)
-  if (params.length) secoes.push(['PARÂMETROS', [params.join(' | ')]])
+  if (cfg.vazaoDetalhada && (rel.vazao_i || rel.vazao_f)) {
+    let l = `Vazão: ${fmtNum(rel.vazao_i || rel.vazao_f)} L/ha`
+    if (cfg.tamanhoGota && rel.tamanho_gota) l += ` | Gota: ${rel.tamanho_gota}${/^\d+([.,]\d+)?$/.test(String(rel.tamanho_gota).trim()) ? ' µm' : ''}`
+    params.push(l)
+  }
+  const linha2 = []
+  if (cfg.alturaVelocidade && rel.velocidade_drone) linha2.push(`Vel: ${fmtNum(rel.velocidade_drone)} km/h`)
+  if (cfg.alturaVelocidade && rel.altura) linha2.push(`Alt: ${fmtNum(rel.altura)}m`)
+  if (cfg.faixaAplicacao && (rel.faixa_i || rel.faixa_f)) linha2.push(`Faixa: ${fmtNum(rel.faixa_i || rel.faixa_f)}m`)
+  if (linha2.length) params.push(linha2.join(' | '))
+  if (params.length) blocos.push(`*Parâmetros*\n${params.join('\n')}`)
 
   const clima = []
   if (cfg.climaBasico) {
-    clima.push(`Vento: ${fmtNum(rel.vento_i)} - ${fmtNum(rel.vento_f)} km/h | Umidade: ${fmtNum(rel.umidade_i)}% - ${fmtNum(rel.umidade_f)}%`)
-    clima.push(`Temp: ${fmtNum(rel.temperatura_i)}°C - ${fmtNum(rel.temperatura_f)}°C${cfg.deltaT ? ` | Delta T: ${fmtNum(rel.delta_t_i)}°C - ${fmtNum(rel.delta_t_f)}°C` : ''}`)
+    clima.push(`Vento: ${fmtDec1(rel.vento_i)} - ${fmtDec1(rel.vento_f)} km/h | UR: ${fmtNum(rel.umidade_i)}% - ${fmtNum(rel.umidade_f)}%`)
+    clima.push(`Temp: ${fmtDec1(rel.temperatura_i)}°C - ${fmtDec1(rel.temperatura_f)}°C${cfg.deltaT ? ` | ΔT: ${fmtDec1(rel.delta_t_i)}°C - ${fmtDec1(rel.delta_t_f)}°C` : ''}`)
   } else if (cfg.deltaT) {
-    clima.push(`Delta T: ${fmtNum(rel.delta_t_i)}°C - ${fmtNum(rel.delta_t_f)}°C`)
+    clima.push(`ΔT: ${fmtDec1(rel.delta_t_i)}°C - ${fmtDec1(rel.delta_t_f)}°C`)
   }
-  if (clima.length) secoes.push(['CLIMA (Início - Fim)', clima])
+  if (clima.length) blocos.push(`*Clima (Início - Fim)*\n${clima.join('\n')}`)
 
-  const obs = []
-  if (cfg.observacoes && rel.obs1) obs.push(rel.obs1)
-  if (cfg.observacoes2 && rel.obs2) obs.push(rel.obs2)
-  if (obs.length) secoes.push(['OBSERVAÇÕES', obs])
+  if (cfg.observacoes) {
+    const obsTxt = [rel.obs1, cfg.observacoes2 ? rel.obs2 : null].filter(Boolean).join(' | ')
+    blocos.push(`*Obs:* ${obsTxt || 'Nenhuma'}`)
+  }
 
   if (cfg.gpsLink && rel.gps_lat && rel.gps_lng) {
-    secoes.push(['LOCALIZAÇÃO', [`${rel.gps_lat}, ${rel.gps_lng}`, `https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`]])
+    blocos.push(`*Localização:*\n${rel.gps_lat}, ${rel.gps_lng}\nhttps://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`)
   }
-  if (cfg.linkPdf && opts.linkPdf) secoes.push(['RELATÓRIO', [opts.linkPdf]])
+  if (cfg.linkPdf && opts.linkPdf) blocos.push(`*Relatório completo:* ${opts.linkPdf}`)
 
-  let t = '🚁 RELATÓRIO OROFLY\n\n'
-  t += secoes.map(([titulo, linhas]) => `${titulo}\n${linhas.join('\n')}`).join('\n\n')
-  return t.trim()
+  return `🚁 *RELATÓRIO OROFLY*\n${linhaDiv16}\n` + blocos.join(`\n${linhaDiv16}\n`)
 }
 
 // Layout limpo por seções (CLIENTE / ÁREA / PRODUTOS / PARÂMETROS / CLIMA / OBSERVAÇÕES /
