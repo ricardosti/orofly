@@ -747,8 +747,15 @@ export default function PilotApp({onSwitchMode}) {
   // escondido do piloto) e já usa pra adiantar a previsão do tempo na Home.
   // Se o piloto negar ou o GPS falhar, não insiste — ele ainda pode buscar
   // manualmente por GPS ou CEP na tela de Previsão do Tempo.
+  const gpsClimaAutoRef = useRef(false)
   useEffect(() => {
     if (!profile) return
+    // `profile` pode ser recriado (nova referência, mesmos dados) por outros efeitos/
+    // listeners de auth — sem essa trava, cada recriação disparava essa busca de novo,
+    // resetando e re-buscando o clima enquanto o piloto estava com a tela de Previsão do
+    // Tempo aberta (bug visto: tela "piscando"/atualizando sozinha). Só roda 1x por sessão.
+    if (gpsClimaAutoRef.current) return
+    gpsClimaAutoRef.current = true
     // Fallback fixo (Região Metropolitana de Ribeirão Preto) usado sempre que o GPS
     // falha, é negado, ou nem existe no navegador — antes disso a Home ficava presa
     // em "Buscando previsão do tempo..." pra sempre quando o GPS não respondia (bug
@@ -1453,8 +1460,19 @@ export default function PilotApp({onSwitchMode}) {
           if (match) { await buscarPrevisao(match.latitude, match.longitude, `${cidade}, ${uf}`); return }
         }
       }
-      const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(raw)}&count=5&language=pt&format=json`).then(r=>r.json())
-      const match = (geo.results||[]).find(r=>r.country_code==='BR') || (geo.results||[])[0]
+      // Nome de cidade: a API de geocoding lida bem com "Cidade, UF" (a vírgula ajuda o
+      // matcher a separar cidade de estado) — só colapsa espaços duplicados/sobrando, sem
+      // mexer na vírgula. Se a busca com o texto inteiro não achar nada, tenta de novo só
+      // com a parte antes da primeira vírgula (só o nome da cidade).
+      const nomeLimpo = raw.replace(/\s+/g, ' ').trim()
+      const soNomeCidade = nomeLimpo.split(',')[0].trim()
+      const candidatos = [...new Set([nomeLimpo, soNomeCidade].filter(Boolean))]
+      let match = null
+      for (const cand of candidatos) {
+        const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cand)}&count=5&language=pt&format=json`).then(r=>r.json())
+        match = (geo.results||[]).find(r=>r.country_code==='BR') || (geo.results||[])[0]
+        if (match) break
+      }
       if (!match) throw new Error('Local não encontrado')
       await buscarPrevisao(match.latitude, match.longitude, `${match.name}${match.admin1?`, ${match.admin1}`:''}`)
     } catch(e){ setTempoLoading(false); setTempoErro('Não encontramos esse local. Tente o nome da cidade, CEP ou coordenadas.') }
@@ -2774,25 +2792,28 @@ export default function PilotApp({onSwitchMode}) {
       </div>
 
       <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
-        <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
+        <button type="button" style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
 
         {/* Barra de busca híbrida — sempre no topo, nunca troca de tela/rota. Aceita nome de
-            cidade, CEP, "lat, lng" digitado/colado ou até um link do Google Maps colado. */}
-        <div style={{display:'flex',gap:8}}>
+            cidade, CEP, "lat, lng" digitado/colado ou até um link do Google Maps colado.
+            É um <form> de verdade (não só um input solto) com preventDefault no submit —
+            no mobile o teclado virtual dispara "submit" ao tocar em Buscar/Ir, e sem isso
+            o navegador tentava recarregar a página (o app parecia "voltar pra Home"). */}
+        <form onSubmit={e=>{ e.preventDefault(); e.stopPropagation(); buscarPorTexto() }} style={{display:'flex',gap:8}}>
           <div style={{flex:1,position:'relative'}}>
             <input style={{...sw.fi,width:'100%',paddingRight:38}} placeholder="Buscar por cidade ou coordenadas"
               value={tempoBusca} onChange={e=>setTempoBusca(e.target.value)}
-              onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); buscarPorTexto() } }}/>
-            <button aria-label="Buscar" disabled={tempoLoading} onClick={buscarPorTexto}
+              enterKeyHint="search" inputMode="text"/>
+            <button type="submit" aria-label="Buscar" disabled={tempoLoading}
               style={{position:'absolute',right:2,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',padding:8,color:theme.textMuted,display:'flex'}}>
               <Search size={18}/>
             </button>
           </div>
-          <button aria-label="Usar GPS" disabled={tempoLoading} onClick={buscarPorGPS}
+          <button type="button" aria-label="Usar GPS" disabled={tempoLoading} onClick={buscarPorGPS}
             style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:16,padding:'0 16px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6,whiteSpace:'nowrap',opacity:tempoLoading?.7:1,flexShrink:0}}>
             <Crosshair size={16}/> GPS
           </button>
-        </div>
+        </form>
 
         {fazendasDB.some(fz=>fz.lat&&fz.lng) && (
           <select style={{...sw.fi,width:'100%'}} defaultValue="" disabled={tempoLoading}
