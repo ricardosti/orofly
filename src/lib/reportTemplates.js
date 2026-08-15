@@ -141,10 +141,14 @@ function formatarProdutoLinha(str, area) {
   // bug: um talhão com 0,00 ha aplicada fazia a linha sair sem o "(total)" e com ponto em
   // vez de vírgula, porque caía direto no `m[2]` cru sem passar pelo formatador).
   if (isNaN(dose)) return `${nome} ${m[2]}${unidade ? ' ' + unidade : ''}`
+  // O total precisa multiplicar pela dose JÁ ARREDONDADA em 2 casas (a mesma que aparece
+  // na linha) — senão o total impresso não bate com "dose exibida × área" na conta manual
+  // (era o bug: multiplicava pela dose crua, ex. 0.075, mas mostrava "0,08 L/ha").
+  const doseArred = Math.round(dose * 100) / 100
   const areaNum = parseFloat(area)
   const unidadeTotal = unidade.replace(/\/\s*ha$/i, '').trim() || 'L'
-  const totalTxt = !isNaN(areaNum) ? ` (${fmtHa(dose * areaNum)} ${unidadeTotal})` : ''
-  return `${nome} ${fmtNum(dose)}${unidade ? ' ' + unidade : ''}${totalTxt}`
+  const totalTxt = !isNaN(areaNum) ? ` (${fmtHa(doseArred * areaNum)} ${unidadeTotal})` : ''
+  return `${nome} ${fmtNum(doseArred)}${unidade ? ' ' + unidade : ''}${totalTxt}`
 }
 
 function fmtNum(v) {

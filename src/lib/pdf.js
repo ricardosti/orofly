@@ -54,7 +54,11 @@ export function calcularGastoProdutos(produtos, areaHa) {
   // porque 0 é falsy; senão a linha do produto sai sem o "(total)" nenhum.
   const areaValida = areaHa!=null && !isNaN(areaHa) && areaHa>=0
   return (produtos||[]).filter(Boolean).map(p => {
-    const { nome, dose, unidade } = parseDoseProduto(p)
+    const { nome, dose: doseCrua, unidade } = parseDoseProduto(p)
+    // Arredonda a dose ANTES de multiplicar pela área — senão o total sai calculado com
+    // uma dose "crua" (ex: 0.075) diferente da dose arredondada mostrada na tela (0,08),
+    // e a conta manual do piloto (dose exibida × área) não bate com o total impresso.
+    const dose = doseCrua!=null ? Math.round(doseCrua*100)/100 : doseCrua
     const total = (dose!=null && areaValida) ? +(dose*areaHa).toFixed(2) : null
     return { produto:p, nome, dose, unidade: unidade||'L', total }
   })
