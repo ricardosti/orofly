@@ -2974,28 +2974,19 @@ export default function PilotApp({onSwitchMode}) {
 
             <RadarChuva lat={parseFloat(String(tempoLat).replace(',','.'))} lng={parseFloat(String(tempoLng).replace(',','.'))}/>
 
-            {/* Segundo radar (IPMet/Unesp) lado a lado com o RainViewer acima — ajuda o
-                piloto a comparar e confirmar se a chuva tá mesmo se aproximando/afastando
-                do talhão, já que cada provedor atualiza e enquadra o radar de um jeito.
-                O servidor do IPMet manda um CSP frame-ancestors que bloqueia iframe de fora
-                do domínio deles — por isso o iframe aponta pro nosso proxy (/api/ipmet-proxy,
-                ver api/ipmet-proxy.js) em vez da URL direta: a gente busca o HTML deles no
-                servidor e reserve sem repassar aquele header, então o navegador vê a página
-                como se fosse nossa. Mesmo assim é best-effort (recursos internos da página
-                deles podem ter CORS próprio), daí o botão "abrir em nova aba" como reserva. */}
-            <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
-              <div style={{padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            {/* Segundo radar (IPMet/Unesp): testamos embutir via proxy reverso (api/ipmet-proxy.js)
+                pra contornar o CSP frame-ancestors do servidor deles, e o proxy resolve o CSP da
+                página externa — mas a página deles carrega o mapa de verdade dentro de OUTRO
+                iframe interno (2cappiGis.html), servido direto por ipmetradar.com.br, que tem o
+                mesmo bloqueio de CSP e não passa pelo nosso proxy. Resultado: só a casca (logo/
+                menu) aparece, sem o radar. Por isso ficou como link só, mais simples e confiável. */}
+            <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',padding:'14px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div style={{fontSize:13,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>🛰️ Radar GIS Local (IPMet)</div>
                 <a href="https://www.ipmetradar.com.br/2mobileGis.php" target="_blank" rel="noreferrer"
                   style={{fontSize:11,fontWeight:600,color:'#00A86B',textDecoration:'none'}}>Abrir em nova aba ↗</a>
               </div>
-              <iframe
-                title="Radar GIS Local (IPMet)"
-                src="/api/ipmet-proxy"
-                style={{width:'100%',height:480,border:'none',display:'block'}}
-                loading="lazy"
-              />
-              <div style={{padding:'8px 14px',fontSize:10,color:theme.textFaint2}}>Se o mapa não carregar aqui dentro, use "Abrir em nova aba" acima — é uma restrição do servidor do IPMet, não do app.</div>
+              <div style={{fontSize:11,color:theme.textFaint2,marginTop:6}}>Segunda opção de radar, do IPMet/Unesp, útil pra comparar com o de cima. O servidor deles não permite abrir dentro do app — toque em "Abrir em nova aba" para ver.</div>
             </div>
 
             <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[tempoProvedor]||'—'} · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer + IPMet.</div>
