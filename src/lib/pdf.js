@@ -50,9 +50,12 @@ export function areaLiquida(rel) {
 
 // Total esperado de cada produto = dose (por ha) x área líquida aplicada
 export function calcularGastoProdutos(produtos, areaHa) {
+  // areaHa===0 é válido (talhão ainda sem área aplicada) — não pode cair no `null` só
+  // porque 0 é falsy; senão a linha do produto sai sem o "(total)" nenhum.
+  const areaValida = areaHa!=null && !isNaN(areaHa) && areaHa>=0
   return (produtos||[]).filter(Boolean).map(p => {
     const { nome, dose, unidade } = parseDoseProduto(p)
-    const total = (dose!=null && areaHa>0) ? +(dose*areaHa).toFixed(2) : null
+    const total = (dose!=null && areaValida) ? +(dose*areaHa).toFixed(2) : null
     return { produto:p, nome, dose, unidade: unidade||'L', total }
   })
 }

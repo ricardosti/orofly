@@ -4739,14 +4739,14 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false,talhoesCatalogo
           produtosLinhas.push(`Tal. ${nome}:`)
           calcularGastoProdutos(produtosStrings, aplicada ?? 0).filter(g=>g.nome).forEach(g=>{
             const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
-            produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtN(g.total)} ${g.unidade})`:''}`)
+            produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtHaTxt(g.total)} ${g.unidade})`:''}`)
           })
           if (i<dadosPorTalhao.length-1) produtosLinhas.push('')
         })
       } else {
         calcularGastoProdutos(produtosStrings, areaAplicada).filter(g=>g.nome).forEach(g=>{
           const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
-          produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtN(g.total)} ${g.unidade})`:''}`)
+          produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtHaTxt(g.total)} ${g.unidade})`:''}`)
         })
       }
       if (produtosLinhas.length) blocos.push(`*Produtos*\n${produtosLinhas.join('\n')}`)

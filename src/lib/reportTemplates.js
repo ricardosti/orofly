@@ -136,10 +136,15 @@ function formatarProdutoLinha(str, area) {
   const nome = m[1].trim()
   const dose = parseFloat(m[2].replace(',', '.'))
   const unidade = m[3].trim()
-  if (!dose || !area) return `${nome} ${m[2]}${unidade ? ' ' + unidade : ''}`
-  const total = dose * area
+  // Área 0 é um valor válido (talhão ainda não aplicado) — só omite o total se a dose ou a
+  // área vierem indefinidas/NaN de verdade, nunca por causa de "0" ser falsy em JS (era o
+  // bug: um talhão com 0,00 ha aplicada fazia a linha sair sem o "(total)" e com ponto em
+  // vez de vírgula, porque caía direto no `m[2]` cru sem passar pelo formatador).
+  if (isNaN(dose)) return `${nome} ${m[2]}${unidade ? ' ' + unidade : ''}`
+  const areaNum = parseFloat(area)
   const unidadeTotal = unidade.replace(/\/\s*ha$/i, '').trim() || 'L'
-  return `${nome} ${fmtNum(dose)}${unidade ? ' ' + unidade : ''} (${fmtNum(total)} ${unidadeTotal})`
+  const totalTxt = !isNaN(areaNum) ? ` (${fmtHa(dose * areaNum)} ${unidadeTotal})` : ''
+  return `${nome} ${fmtNum(dose)}${unidade ? ' ' + unidade : ''}${totalTxt}`
 }
 
 function fmtNum(v) {
