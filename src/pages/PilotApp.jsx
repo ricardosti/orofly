@@ -2974,7 +2974,28 @@ export default function PilotApp({onSwitchMode}) {
 
             <RadarChuva lat={parseFloat(String(tempoLat).replace(',','.'))} lng={parseFloat(String(tempoLng).replace(',','.'))}/>
 
-            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[tempoProvedor]||'—'} · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer.</div>
+            {/* Segundo radar (IPMet/Unesp) lado a lado com o RainViewer acima — ajuda o
+                piloto a comparar e confirmar se a chuva tá mesmo se aproximando/afastando
+                do talhão, já que cada provedor atualiza e enquadra o radar de um jeito.
+                O servidor do IPMet manda um CSP frame-ancestors que só libera embutir em
+                'self' e canaoeste.com.br — então o iframe pode aparecer em branco/bloqueado
+                dependendo do navegador; por isso o botão "abrir em nova aba" como reserva. */}
+            <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{fontSize:13,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>🛰️ Radar GIS Local (IPMet)</div>
+                <a href="https://www.ipmetradar.com.br/2mobileGis.php" target="_blank" rel="noreferrer"
+                  style={{fontSize:11,fontWeight:600,color:'#00A86B',textDecoration:'none'}}>Abrir em nova aba ↗</a>
+              </div>
+              <iframe
+                title="Radar GIS Local (IPMet)"
+                src="https://www.ipmetradar.com.br/2mobileGis.php"
+                style={{width:'100%',height:480,border:'none',display:'block'}}
+                loading="lazy"
+              />
+              <div style={{padding:'8px 14px',fontSize:10,color:theme.textFaint2}}>Se o mapa não carregar aqui dentro, use "Abrir em nova aba" acima — é uma restrição do servidor do IPMet, não do app.</div>
+            </div>
+
+            <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[tempoProvedor]||'—'} · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer + IPMet.</div>
           </>
         )}
       </div>
