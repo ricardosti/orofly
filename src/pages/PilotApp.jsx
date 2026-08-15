@@ -4589,9 +4589,15 @@ function RadarChuva({ lat, lng }) {
         <div id="map"></div>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script>
-          var map = L.map('map',{zoomControl:true,maxZoom:22}).setView([${lat},${lng}],7);
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:22,maxNativeZoom:19,subdomains:'abcd'}).addTo(map);
-          L.tileLayer('${tileUrl}',{opacity:0.70,maxZoom:22,maxNativeZoom:9}).addTo(map);
+          var map = L.map('map',{zoomControl:true,maxZoom:18}).setView([${lat},${lng}],7);
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:18,maxNativeZoom:18,subdomains:'abcd'}).addTo(map);
+          // maxNativeZoom bem menor que maxZoom é de propósito: o servidor do RainViewer não
+          // tem tiles de radar em zoom de cidade (ex: 14+) — sem isso o Leaflet tentava buscar
+          // um tile que não existe e a tela quebrava com quadros cinza. Com maxNativeZoom:10,
+          // o Leaflet para de pedir tile novo depois do zoom 10 e só re-escala visualmente o
+          // último tile carregado, então o usuário ainda pode aproximar o mapa à vontade (o
+          // radar fica com a mancha de chuva "esticada", mas sem quebrar a tela).
+          L.tileLayer('${tileUrl}',{opacity:0.70,maxZoom:18,maxNativeZoom:10}).addTo(map);
           L.circleMarker([${lat},${lng}],{color:'#00A86B',fillColor:'#00A86B',fillOpacity:0.9,radius:7,weight:2}).addTo(map);
         </script>
       </body></html>`
