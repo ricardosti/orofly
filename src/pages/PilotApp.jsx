@@ -2977,9 +2977,12 @@ export default function PilotApp({onSwitchMode}) {
             {/* Segundo radar (IPMet/Unesp) lado a lado com o RainViewer acima — ajuda o
                 piloto a comparar e confirmar se a chuva tá mesmo se aproximando/afastando
                 do talhão, já que cada provedor atualiza e enquadra o radar de um jeito.
-                O servidor do IPMet manda um CSP frame-ancestors que só libera embutir em
-                'self' e canaoeste.com.br — então o iframe pode aparecer em branco/bloqueado
-                dependendo do navegador; por isso o botão "abrir em nova aba" como reserva. */}
+                O servidor do IPMet manda um CSP frame-ancestors que bloqueia iframe de fora
+                do domínio deles — por isso o iframe aponta pro nosso proxy (/api/ipmet-proxy,
+                ver api/ipmet-proxy.js) em vez da URL direta: a gente busca o HTML deles no
+                servidor e reserve sem repassar aquele header, então o navegador vê a página
+                como se fosse nossa. Mesmo assim é best-effort (recursos internos da página
+                deles podem ter CORS próprio), daí o botão "abrir em nova aba" como reserva. */}
             <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
               <div style={{padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div style={{fontSize:13,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>🛰️ Radar GIS Local (IPMet)</div>
@@ -2988,7 +2991,7 @@ export default function PilotApp({onSwitchMode}) {
               </div>
               <iframe
                 title="Radar GIS Local (IPMet)"
-                src="https://www.ipmetradar.com.br/2mobileGis.php"
+                src="/api/ipmet-proxy"
                 style={{width:'100%',height:480,border:'none',display:'block'}}
                 loading="lazy"
               />
