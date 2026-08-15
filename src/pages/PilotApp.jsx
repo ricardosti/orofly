@@ -1180,7 +1180,10 @@ export default function PilotApp({onSwitchMode}) {
     return () => document.removeEventListener('pointerdown', handler)
   },[]) // eslint-disable-line
 
-  async function fetchClima() {
+  // `alvo` = 'i' (início) ou 'f' (fim) — cada botão de GPS busca e preenche só o seu lado,
+  // sem mexer no outro (antes buscava só uma vez e copiava pro fim, o que fazia sentido só
+  // se início e fim fossem sempre iguais — na prática o piloto quer medir os dois de verdade).
+  async function fetchClima(alvo='i') {
     let lat = form.gps_lat, lng = form.gps_lng
     if (!lat || !lng) {
       if (!navigator.geolocation) { showToast('⚠️ GPS não disponível neste dispositivo','error'); return }
@@ -1207,13 +1210,10 @@ export default function PilotApp({onSwitchMode}) {
       const deltaT = deltaTCalc!=null ? deltaTCalc.toFixed(1) : null
       setForm(f => ({
         ...f,
-        temperatura_i: temp, umidade_i: umid,
-        vento_i: vento, delta_t_i: deltaT,
-        // Fim vem com o mesmo valor do início por padrão, só enquanto o fim ainda não foi definido
-        temperatura_f: f.temperatura_f || temp, umidade_f: f.umidade_f || umid,
-        vento_f: f.vento_f || vento, delta_t_f: f.delta_t_f || deltaT,
+        [`temperatura_${alvo}`]: temp, [`umidade_${alvo}`]: umid,
+        [`vento_${alvo}`]: vento, [`delta_t_${alvo}`]: deltaT,
       }))
-      showToast('✅ Clima carregado!')
+      showToast(`✅ Clima do ${alvo==='i'?'início':'fim'} carregado!`)
     } catch(e) {
       showToast('Erro ao buscar clima: ' + e.message, 'error')
     }
@@ -3731,11 +3731,17 @@ export default function PilotApp({onSwitchMode}) {
                 </div>
               )}
 
-              {/* Botão clima */}
-              <button style={{width:'100%',background:theme.successBg,border:'1px solid #c3e0d0',color:'#00A86B',borderRadius:18,padding:'10px',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}
-                onClick={fetchClima}>
-                🌤️ Buscar clima atual (GPS)
-              </button>
+              {/* Botões de clima — início e fim separados, cada um busca e preenche só o seu lado */}
+              <div style={{display:'flex',gap:8,marginBottom:16}}>
+                <button style={{flex:1,background:theme.successBg,border:'1px solid #c3e0d0',color:'#00A86B',borderRadius:18,padding:'10px 6px',fontSize:12.5,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
+                  onClick={()=>fetchClima('i')}>
+                  🌤️ Clima início (GPS)
+                </button>
+                <button style={{flex:1,background:theme.successBg,border:'1px solid #c3e0d0',color:'#00A86B',borderRadius:18,padding:'10px 6px',fontSize:12.5,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
+                  onClick={()=>fetchClima('f')}>
+                  🌤️ Clima fim (GPS)
+                </button>
+              </div>
 
               {/* Cards com início e fim lado a lado */}
               {['vento','umidade','temperatura','delta_t'].map(key=>{
@@ -3764,16 +3770,10 @@ export default function PilotApp({onSwitchMode}) {
                           placeholder={`Ex: ${key==='vento'?'8':key==='umidade'?'65':key==='temperatura'?'28':'4'}`}
                           value={form[key+'_i']||''} onChange={e=>setForm(f=>{
                             const next={...f,[key+'_i']:e.target.value}
-                            // Fim vem com o mesmo valor do início por padrão (facilita preenchimento), mas só enquanto o fim ainda não foi definido
-                            if(!f[key+'_f']) next[key+'_f']=e.target.value
                             // Delta T automático (editável): recalcula ao mudar temp/umidade
                             if(key==='temperatura'||key==='umidade'){
                               const dt=calcDeltaT(next.temperatura_i,next.umidade_i)
                               if(dt!==null) next.delta_t_i=dt.toFixed(1)
-                              if(!f.delta_t_f){
-                                const dtF=calcDeltaT(next.temperatura_f,next.umidade_f)
-                                if(dtF!==null) next.delta_t_f=dtF.toFixed(1)
-                              }
                             }
                             return next
                           })}/>
@@ -4589,9 +4589,9 @@ function RadarChuva({ lat, lng }) {
         <div id="map"></div>
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script>
-          var map = L.map('map',{zoomControl:true}).setView([${lat},${lng}],7);
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(map);
-          L.tileLayer('${tileUrl}',{opacity:0.70,maxZoom:19}).addTo(map);
+          var map = L.map('map',{zoomControl:true,maxZoom:20}).setView([${lat},${lng}],7);
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:20,maxNativeZoom:19,subdomains:'abcd'}).addTo(map);
+          L.tileLayer('${tileUrl}',{opacity:0.70,maxZoom:20,maxNativeZoom:9}).addTo(map);
           L.circleMarker([${lat},${lng}],{color:'#00A86B',fillColor:'#00A86B',fillOpacity:0.9,radius:7,weight:2}).addTo(map);
         </script>
       </body></html>`
