@@ -17,6 +17,8 @@ import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 import { App as CapApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
+import { apiUrl } from '../lib/apiBase'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -653,6 +655,8 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoDias,setTempoDias] = useState(null)
   const [tempoLoading,setTempoLoading] = useState(false)
   const [tempoErro,setTempoErro] = useState('')
+  const [tempoErroDebug,setTempoErroDebug] = useState(null)
+  const [tempoErroDebugAberto,setTempoErroDebugAberto] = useState(false)
   const [tempoLocal,setTempoLocal] = useState('')
   const [tempoProvedor,setTempoProvedor] = useState('')
   const [tempoBusca,setTempoBusca] = useState('')
@@ -1385,14 +1389,19 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   async function buscarPrevisao(lat,lon,local){
-    setTempoLoading(true); setTempoErro(''); setTempoDias(null); setDiaSelecionado(null)
+    setTempoLoading(true); setTempoErro(''); setTempoErroDebug(null); setTempoDias(null); setDiaSelecionado(null)
+    // Chama nosso proxy (api/clima.js), que busca na Meteoblue com a chave guardada no
+    // servidor e devolve os dados já no mesmo formato que o Open-Meteo usava antes.
+    // apiUrl() resolve pro domínio de produção (orofly.vercel.app) quando roda no app
+    // nativo (Capacitor) — o WebView do app carrega os assets de um esquema local
+    // (capacitor://localhost), então um fetch relativo bateria nesse esquema local, que
+    // não tem essa rota, e falharia mesmo com internet OK.
+    const url = apiUrl(`/api/clima?lat=${lat}&lon=${lon}`)
     try {
-      // Chama nosso proxy (api/clima.js), que busca na Meteoblue com a chave guardada no
-      // servidor e devolve os dados já no mesmo formato que o Open-Meteo usava antes.
-      const url = `/api/clima?lat=${lat}&lon=${lon}`
       const res = await fetch(url)
-      const data = await res.json()
-      if(!res.ok) throw new Error(data?.error || 'Falha ao buscar previsão')
+      let data = null, textoResp = ''
+      try { data = await res.json() } catch(eJson) { try { textoResp = await res.text() } catch {} }
+      if(!res.ok) throw Object.assign(new Error(data?.error || `HTTP ${res.status}${res.statusText?' '+res.statusText:''}`), { status: res.status, url, respostaTexto: textoResp })
       const dias = (data.daily?.time||[]).map((dataStr,i)=>{
         // Pega temperatura/umidade por volta das 13h (janela típica de aplicação) pra estimar o Delta T do dia
         const idxHora = (data.hourly?.time||[]).findIndex(t=>t.startsWith(dataStr)&&t.endsWith('T13:00'))
@@ -1413,18 +1422,55 @@ export default function PilotApp({onSwitchMode}) {
       // Guarda as coordenadas de onde a previsão atual é (GPS, CEP, fazenda ou manual) —
       // o card do Radar de Chuva usa isso pra saber onde centralizar o mapa.
       setTempoLat(String(lat)); setTempoLng(String(lon))
-    } catch(e){ setTempoErro('Não foi possível buscar a previsão. Confira sua conexão e tente de novo.') }
+    } catch(e){
+      setTempoErro('Não foi possível buscar a previsão. Confira sua conexão e tente de novo.')
+      // Detalhe técnico real do erro (status HTTP, mensagem, URL chamada) — fica escondido
+      // atrás de "Detalhes técnicos" na tela, útil pra diagnosticar no APK sem precisar de
+      // cabo/adb, já que o piloto pode simplesmente tirar print e mandar pro suporte.
+      setTempoErroDebug({
+        mensagem: e.message || String(e),
+        status: e.status ?? null,
+        url: e.url || url,
+        respostaTexto: e.respostaTexto ? String(e.respostaTexto).slice(0,300) : null,
+        nomeErro: e.name || null,
+        plataforma: Capacitor.getPlatform(),
+        online: typeof navigator!=='undefined' ? navigator.onLine : null,
+        quando: new Date().toISOString(),
+      })
+    }
     finally { setTempoLoading(false) }
   }
 
   function buscarPorGPS(){
-    if(!navigator.geolocation){ setTempoErro('GPS não disponível neste dispositivo.'); return }
+    if(!navigator.geolocation){
+      setTempoErro('GPS não disponível neste dispositivo. Buscando pela localização padrão...')
+      setTempoErroDebug({ mensagem: 'navigator.geolocation indisponível no WebView', plataforma: Capacitor.getPlatform(), quando: new Date().toISOString() })
+      buscarPorPadrao()
+      return
+    }
     setTempoLoading(true); setTempoErro('')
     navigator.geolocation.getCurrentPosition(
       pos=>buscarPrevisao(pos.coords.latitude,pos.coords.longitude,'Sua localização (GPS)'),
-      ()=>{ setTempoLoading(false); setTempoErro('Não deu pra pegar o GPS. Digite o CEP abaixo.') },
+      err=>{
+        // Fallback automático: se o GPS falhar/for negado no WebView do app (bem comum em
+        // Android — permissão de localização do sistema separada da do navegador), a tela
+        // não fica travada esperando — já busca pela localização padrão (Ribeirão Preto),
+        // e o piloto ainda pode digitar cidade/CEP se preferir outro lugar.
+        setTempoErro('Não deu pra pegar o GPS. Mostrando previsão da região padrão — digite uma cidade ou CEP acima pra trocar.')
+        setTempoErroDebug({
+          mensagem: err.message || 'Erro de geolocalização',
+          codigoGeo: err.code, // 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+          plataforma: Capacitor.getPlatform(),
+          quando: new Date().toISOString(),
+        })
+        buscarPorPadrao()
+      },
       {enableHighAccuracy:true,timeout:10000}
     )
+  }
+
+  function buscarPorPadrao(){
+    buscarPrevisao(-21.1775, -47.8103, 'Região Metropolitana de Ribeirão Preto - SP (padrão)')
   }
 
   // Busca unificada: aceita nome de cidade, CEP, "lat, lng" digitado ou colado, e até
@@ -2829,7 +2875,28 @@ export default function PilotApp({onSwitchMode}) {
           </select>
         )}
 
-        {tempoErro && <div style={{background:theme.dangerBg,color:theme.dangerText,borderRadius:12,padding:'10px 14px',fontSize:13}}>{tempoErro}</div>}
+        {tempoErro && (
+          <div style={{background:theme.dangerBg,color:theme.dangerText,borderRadius:12,padding:'10px 14px',fontSize:13}}>
+            {tempoErro}
+            {tempoErroDebug && (
+              <div style={{marginTop:8,borderTop:`1px solid ${theme.dangerText}33`,paddingTop:8}}>
+                <button type="button" onClick={()=>setTempoErroDebugAberto(v=>!v)}
+                  style={{background:'none',border:'none',padding:0,color:theme.dangerText,fontSize:11,fontWeight:700,cursor:'pointer',textDecoration:'underline'}}>
+                  {tempoErroDebugAberto ? '▾' : '▸'} Detalhes técnicos (debug)
+                </button>
+                {tempoErroDebugAberto && (
+                  <pre style={{marginTop:6,background:'#00000014',borderRadius:8,padding:'8px 10px',fontSize:10.5,lineHeight:1.5,color:theme.dangerText,whiteSpace:'pre-wrap',wordBreak:'break-all',fontFamily:'monospace'}}>
+{`Mensagem: ${tempoErroDebug.mensagem}
+${tempoErroDebug.status!=null ? `Status HTTP: ${tempoErroDebug.status}\n` : ''}${tempoErroDebug.codigoGeo!=null ? `Código Geolocation: ${tempoErroDebug.codigoGeo} (1=permissão negada, 2=posição indisponível, 3=tempo esgotado)\n` : ''}URL: ${tempoErroDebug.url || '—'}
+${tempoErroDebug.respostaTexto ? `Resposta bruta: ${tempoErroDebug.respostaTexto}\n` : ''}Plataforma: ${tempoErroDebug.plataforma}
+Online (navigator.onLine): ${tempoErroDebug.online === null ? '—' : tempoErroDebug.online ? 'sim' : 'não'}
+Quando: ${tempoErroDebug.quando}`}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {tempoLoading && !tempoDias && (
           <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'36px 20px',textAlign:'center',color:theme.textMuted,fontSize:13,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>Buscando previsão...</div>
@@ -2981,12 +3048,12 @@ export default function PilotApp({onSwitchMode}) {
                 mesmo bloqueio de CSP e não passa pelo nosso proxy. Resultado: só a casca (logo/
                 menu) aparece, sem o radar. Por isso ficou como link só, mais simples e confiável. */}
             <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,overflow:'hidden',boxShadow:'0 6px 20px rgba(11,18,16,0.05)',padding:'14px'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div style={{fontSize:13,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>🛰️ Radar GIS Local (IPMet)</div>
-                <a href="https://www.ipmetradar.com.br/2mobileGis.php" target="_blank" rel="noreferrer"
-                  style={{fontSize:11,fontWeight:600,color:'#00A86B',textDecoration:'none'}}>Abrir em nova aba ↗</a>
-              </div>
-              <div style={{fontSize:11,color:theme.textFaint2,marginTop:6}}>Segunda opção de radar, do IPMet/Unesp, útil pra comparar com o de cima. O servidor deles não permite abrir dentro do app — toque em "Abrir em nova aba" para ver.</div>
+              <div style={{fontSize:13,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif",marginBottom:6}}>🛰️ Radar GIS Local (IPMet)</div>
+              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10}}>Segunda opção de radar, do IPMet/Unesp, útil pra comparar com o de cima. O servidor deles não permite abrir dentro do app.</div>
+              <a href="https://www.ipmetradar.com.br//2mobileGis.php" target="_blank" rel="noreferrer"
+                style={{display:'block',textAlign:'center',background:'#00A86B',color:'#fff',borderRadius:12,padding:'10px 14px',fontSize:13,fontWeight:700,textDecoration:'none'}}>
+                Abrir Radar IPMet em nova aba ↗
+              </a>
             </div>
 
             <div style={{fontSize:10,color:'#aaa',textAlign:'center'}}>Fonte: {({meteoblue:'Meteoblue',tomorrow:'Tomorrow.io',open_meteo:'Open-Meteo'})[tempoProvedor]||'—'} · Umidade e Delta T estimados às 13h, referência para o horário mais comum de aplicação. Radar: RainViewer + IPMet.</div>
