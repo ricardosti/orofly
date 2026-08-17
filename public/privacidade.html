@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidade — Orofly</title>
+<style>
+  :root { --green:#00A86B; --text:#1a2420; --muted:#5c6b64; --bg:#f4f7f5; --card:#ffffff; --border:#e2e8e4; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'Segoe UI',Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
+  .wrap { max-width:760px; margin:0 auto; padding:40px 20px 80px; }
+  header { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  header .logo { width:34px; height:34px; border-radius:9px; background:var(--green); display:flex; align-items:center; justify-content:center; font-size:18px; }
+  header h1 { font-size:22px; margin:0; font-weight:800; }
+  .updated { color:var(--muted); font-size:13px; margin-bottom:32px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:28px 30px; box-shadow:0 6px 20px rgba(11,18,16,0.04); }
+  h2 { font-size:17px; margin:28px 0 10px; color:var(--text); }
+  h2:first-child { margin-top:0; }
+  p, li { font-size:14.5px; color:#33473d; }
+  ul { padding-left:20px; margin:8px 0; }
+  li { margin-bottom:6px; }
+  a { color:var(--green); font-weight:600; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .contato { background:#f0faf5; border:1px solid #cdeee0; border-radius:12px; padding:16px 18px; margin-top:24px; font-size:14px; }
+  footer { text-align:center; color:var(--muted); font-size:12px; margin-top:32px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">🚁</div>
+      <h1>Orofly</h1>
+    </header>
+    <div class="updated">Política de Privacidade — última atualização em 17 de agosto de 2026</div>
+
+    <div class="card">
+      <h2>1. Quem somos</h2>
+      <p>O Orofly é um sistema de gestão de operações de pulverização agrícola com drones, usado por pilotos e administradores para registrar voos, relatórios técnicos, previsão do tempo, produtos aplicados e dados operacionais das fazendas atendidas. O app é desenvolvido e mantido por Ricardo Stiebler.</p>
+
+      <h2>2. Quais dados coletamos</h2>
+      <p>Para o app funcionar, coletamos e armazenamos:</p>
+      <ul>
+        <li><strong>Dados de conta:</strong> nome, e-mail e senha (criptografada) usados no login.</li>
+        <li><strong>Localização (GPS):</strong> usada para registrar a posição das operações de voo, sugerir a fazenda/talhão mais próximo e mostrar a previsão do tempo local. Só é coletada com a permissão do dispositivo.</li>
+        <li><strong>Fotos e anotações:</strong> imagens de mapas, talhões e incidentes que o piloto opta por anexar aos relatórios.</li>
+        <li><strong>Dados operacionais:</strong> relatórios de voo, produtos e doses aplicadas, ordens de serviço, notas de despesas, veículos e incidentes registrados por você ou pela sua empresa.</li>
+        <li><strong>Token de notificação:</strong> usado para enviar alertas do app (ex.: aviso de manutenção, incidente, agenda).</li>
+      </ul>
+
+      <h2>3. Como usamos esses dados</h2>
+      <p>Os dados são usados exclusivamente para operar o serviço: gerar relatórios de voo, calcular áreas aplicadas, mostrar previsão do tempo, controlar estoque/custos e permitir que a administração da sua empresa acompanhe as operações. Não vendemos nem compartilhamos seus dados com terceiros para fins de publicidade.</p>
+
+      <h2>4. Onde os dados ficam armazenados</h2>
+      <p>Os dados são armazenados em infraestrutura de nuvem (Supabase e Vercel), com acesso restrito por autenticação e permissões por perfil (piloto, administrador). Fotos e documentos ficam em armazenamento seguro vinculado à sua conta.</p>
+
+      <h2>5. Compartilhamento com terceiros</h2>
+      <p>Só compartilhamos dados com provedores necessários para o funcionamento do app (ex.: serviços de previsão do tempo, que recebem apenas coordenadas geográficas, sem dados pessoais). Não compartilhamos dados com terceiros para fins comerciais ou de marketing.</p>
+
+      <h2>6. Seus direitos (LGPD)</h2>
+      <p>Você pode solicitar, a qualquer momento: acesso aos seus dados, correção de informações incorretas, exclusão da sua conta e dos dados associados, ou esclarecimento sobre como seus dados são usados. Basta entrar em contato pelo e-mail abaixo.</p>
+
+      <h2>7. Retenção e exclusão</h2>
+      <p>Mantemos os dados enquanto sua conta estiver ativa ou enquanto forem necessários para cumprir obrigações legais/operacionais da empresa contratante. Ao solicitar exclusão da conta, os dados pessoais são removidos, exceto quando a lei exigir retenção por período determinado (ex.: registros fiscais).</p>
+
+      <h2>8. Alterações nesta política</h2>
+      <p>Esta política pode ser atualizada periodicamente. A data da última atualização está sempre indicada no topo desta página.</p>
+
+      <div class="contato">
+        <strong>Contato:</strong> dúvidas sobre privacidade ou solicitações de dados podem ser enviadas para
+        <a href="mailto:ricardosti@gmail.com">ricardosti@gmail.com</a>.
+      </div>
+    </div>
+
+    <footer>Orofly — Sistema de Gestão de Operações de Drone</footer>
+  </div>
+</body>
+</html>
