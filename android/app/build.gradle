@@ -1,5 +1,15 @@
 apply plugin: 'com.android.application'
 
+// Carrega as credenciais de assinatura de keystore.properties (fora do Git — nunca versionar
+// senha/keystore de produção). Se o arquivo não existir (ex.: outra máquina sem o keystore),
+// o build de release simplesmente fica sem assinatura em vez de quebrar o debug.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def temKeystore = keystorePropertiesFile.exists()
+if (temKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.ricardosti.orofly"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +26,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (temKeystore) {
+            release {
+                storeFile rootProject.file(keystoreProperties['STOREFILE'])
+                storePassword keystoreProperties['STOREPASS']
+                keyAlias keystoreProperties['KEYALIAS']
+                keyPassword keystoreProperties['KEYPASS']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (temKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
