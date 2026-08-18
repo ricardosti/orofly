@@ -9,6 +9,7 @@ import { pedirPermissaoNotificacaoLocal, notificarLocal } from '../lib/localNoti
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
+import RegionTreeSelect from '../components/RegionTreeSelect'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { apiUrl } from '../lib/apiBase'
@@ -273,6 +274,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fazendaTimes, setFazendaTimes] = useState([])
   const [pilotoFazendas, setPilotoFazendas] = useState([])
   const [pilotoFazendasModal, setPilotoFazendasModal] = useState(null) // piloto sendo editado
+  const [pilotoFazendasAba, setPilotoFazendasAba] = useState('individual') // 'individual' (checklist por cliente) ou 'lote' (árvore de seleção em massa)
   const [incidentes, setIncidentes] = useState([])
   const [incidenteFocoId, setIncidenteFocoId] = useState(null)
   const [usuariosSubTab, setUsuariosSubTab] = useState('usuarios')
@@ -1097,6 +1099,26 @@ export default function AdminPanel({ onSwitchMode }) {
       await supabase.from('piloto_fazendas').delete().eq('id', existente.id)
     } else {
       await supabase.from('piloto_fazendas').insert({ fazenda_id: fazendaId, piloto_id: pilotoId })
+    }
+    fetchAll()
+  }
+
+  // Versão em lote de toggleFazendaPiloto — usada pela árvore de seleção por grupo
+  // (RegionTreeSelect). Faz UM delete + UM insert em vez de várias chamadas em sequência
+  // (uma por fazenda), pra não multiplicar round-trips ao Supabase quando o grupo tem
+  // dezenas de fazendas. Mesma regra: se o grupo inteiro já está marcado, desmarca tudo;
+  // senão, marca só o que ainda falta.
+  async function toggleGrupoFazendasPiloto(fazendaIds, pilotoId) {
+    if (!fazendaIds.length) return
+    const marcadasAtuais = pilotoFazendas.filter(pf=>pf.piloto_id===pilotoId).map(pf=>pf.fazenda_id)
+    const todasJaMarcadas = fazendaIds.every(id=>marcadasAtuais.includes(id))
+    if (todasJaMarcadas) {
+      await supabase.from('piloto_fazendas').delete().eq('piloto_id', pilotoId).in('fazenda_id', fazendaIds)
+    } else {
+      const faltando = fazendaIds.filter(id=>!marcadasAtuais.includes(id))
+      if (faltando.length) {
+        await supabase.from('piloto_fazendas').insert(faltando.map(fazenda_id=>({ fazenda_id, piloto_id: pilotoId })))
+      }
     }
     fetchAll()
   }
@@ -5135,7 +5157,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
                                 return (
                                   <button title="Fazendas individuais" style={{background:n>0?theme.successBg:theme.bg,color:n>0?'#00A86B':theme.textMuted,border:'none',borderRadius:12,padding:'4px 8px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
-                                    onClick={()=>setPilotoFazendasModal(p)}>📍{n>0?` ${n}`:''}</button>
+                                    onClick={()=>{setPilotoFazendasModal(p); setPilotoFazendasAba('individual')}}>📍{n>0?` ${n}`:''}</button>
                                 )
                               })()}
                             </div>
@@ -5437,6 +5459,15 @@ export default function AdminPanel({ onSwitchMode }) {
       {/* MODAL FAZENDAS INDIVIDUAIS DO PILOTO */}
       {pilotoFazendasModal && (()=>{
         const marcadas = pilotoFazendas.filter(pf=>pf.piloto_id===pilotoFazendasModal.id).map(pf=>pf.fazenda_id)
+        // Fazendas com progresso e conflito pré-calculados uma vez só aqui — a árvore por
+        // lote (RegionTreeSelect) é um componente burro/apresentacional, não conhece
+        // pilotoFazendas nem relatórios, só recebe os números prontos.
+        const fazendasComInfo = invFazendas.map(fz => {
+          const { pct } = progressoFazenda(fz)
+          const { outrosPilotos, outrosTimes } = quemMaisTemFazenda(fz, { excluirPilotoId: pilotoFazendasModal.id })
+          const conflito = outrosPilotos.length>0 || outrosTimes.length>0
+          return { id:fz.id, nome:fz.nome, cliente:fz.cliente, pct, conflito, conflitoLabel: conflito ? [...outrosPilotos, ...outrosTimes.map(n=>`time ${n}`)].join(', ') : '' }
+        })
         return (
           <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setPilotoFazendasModal(null)}>
             <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:460,maxHeight:'85vh',overflowY:'auto',padding:22}} onClick={e=>e.stopPropagation()}>
@@ -5445,7 +5476,30 @@ export default function AdminPanel({ onSwitchMode }) {
                 <button style={{background:'none',border:'none',fontSize:18,color:theme.textFaint2,cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>✕</button>
               </div>
               <p style={{fontSize:12,color:theme.textMuted,marginBottom:14,lineHeight:1.5}}>Permissão individual — se marcar alguma fazenda aqui, esse piloto passa a ver <strong>só</strong> essas, ignorando a permissão do time dele. Sem nenhuma marcada, vale a regra do time (ou tudo, se não tiver time).</p>
-              <ChecklistFazendasPorCliente chavePrefixo={'piloto-'+pilotoFazendasModal.id} marcadas={marcadas} onToggle={fzId=>toggleFazendaPiloto(fzId,pilotoFazendasModal.id)} excluirPilotoId={pilotoFazendasModal.id}/>
+
+              <div style={{display:'flex',gap:6,marginBottom:12,background:theme.bg,borderRadius:12,padding:4}}>
+                {[['individual','☑️ Uma por uma'],['lote','🗂️ Selecionar em lote']].map(([v,lbl])=>(
+                  <button key={v} type="button" onClick={()=>setPilotoFazendasAba(v)}
+                    style={{flex:1,background:pilotoFazendasAba===v?theme.card:'transparent',color:pilotoFazendasAba===v?theme.text:theme.textMuted,border:'none',borderRadius:9,padding:'7px 0',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              {pilotoFazendasAba==='individual' ? (
+                <ChecklistFazendasPorCliente chavePrefixo={'piloto-'+pilotoFazendasModal.id} marcadas={marcadas} onToggle={fzId=>toggleFazendaPiloto(fzId,pilotoFazendasModal.id)} excluirPilotoId={pilotoFazendasModal.id}/>
+              ) : (
+                <>
+                  <p style={{fontSize:11,color:theme.textFaint2,marginBottom:8,lineHeight:1.4}}>Marca o ✓ ao lado do cliente pra atribuir todas as fazendas dele de uma vez.</p>
+                  <RegionTreeSelect
+                    fazendas={fazendasComInfo}
+                    marcadas={marcadas}
+                    onToggleFazenda={fzId=>toggleFazendaPiloto(fzId,pilotoFazendasModal.id)}
+                    onToggleGrupo={ids=>toggleGrupoFazendasPiloto(ids,pilotoFazendasModal.id)}
+                    theme={theme}
+                  />
+                </>
+              )}
               <button style={{width:'100%',marginTop:16,background:'#00A86B',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:700,cursor:'pointer'}} onClick={()=>setPilotoFazendasModal(null)}>Pronto</button>
             </div>
           </div>
