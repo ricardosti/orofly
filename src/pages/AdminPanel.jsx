@@ -280,6 +280,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [incidenteFocoId, setIncidenteFocoId] = useState(null)
   const [novoTimeNome, setNovoTimeNome] = useState('')
   const [importarFazendasAberto, setImportarFazendasAberto] = useState(false)
+  const [kanbanAberto, setKanbanAberto] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
@@ -1225,6 +1226,145 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           )
         })}
+        </div>
+      </div>
+    )
+  }
+
+  // Kanban de atribuição de fazendas — visão alternativa à checklist/árvore por lote:
+  // um card por fazenda, uma coluna por piloto, arrastar move. Usa o mesmo mecanismo de
+  // permissão individual (piloto_fazendas) já usado no resto da tela, mas trata como
+  // atribuição EXCLUSIVA — arrastar pra uma coluna substitui qualquer piloto individual
+  // que a fazenda já tinha (o modelo de dados permite vários pilotos por fazenda, mas um
+  // quadro Kanban clássico não representa isso — cada card mora numa coluna só).
+  // Nada é salvo até clicar "Salvar alterações" — mudanças ficam só em memória (pendentes).
+  function AtribuirAreasKanbanModal({ onClose }) {
+    const [filtroCliente, setFiltroCliente] = useState('')
+    const [busca, setBusca] = useState('')
+    const [pendentes, setPendentes] = useState({})
+    const [salvando, setSalvando] = useState(false)
+    const [arrastando, setArrastando] = useState(null)
+
+    const pilotosAtivos = pilotos.filter(p => (p.role||'piloto')==='piloto' && p.ativo)
+    const CORES = ['#00A86B','#2f6fed','#c98a1c','#7c3aed','#dc2626','#0891b2']
+
+    function estadoAtual(fazendaId) {
+      const row = pilotoFazendas.find(pf => pf.fazenda_id === fazendaId)
+      return row ? row.piloto_id : null
+    }
+    function colunaDe(fazendaId) {
+      return Object.prototype.hasOwnProperty.call(pendentes, fazendaId) ? pendentes[fazendaId] : estadoAtual(fazendaId)
+    }
+
+    const q = busca.trim().toLowerCase()
+    const fazendasFiltradas = invFazendas.filter(fz =>
+      (!filtroCliente || fz.cliente === filtroCliente) &&
+      (!q || fz.nome.toLowerCase().includes(q) || fz.cliente.toLowerCase().includes(q))
+    )
+    const mudancas = Object.keys(pendentes).filter(fid => pendentes[fid] !== estadoAtual(fid))
+    const atribuidas = fazendasFiltradas.filter(fz => colunaDe(fz.id)).length
+
+    function onDrop(e, pilotoIdOuNull) {
+      e.preventDefault()
+      const fazendaId = e.dataTransfer.getData('text/plain')
+      if (!fazendaId) return
+      setPendentes(p => ({ ...p, [fazendaId]: pilotoIdOuNull }))
+      setArrastando(null)
+    }
+
+    async function salvar() {
+      setSalvando(true)
+      try {
+        for (const fazendaId of mudancas) {
+          await supabase.from('piloto_fazendas').delete().eq('fazenda_id', fazendaId)
+          const novoPiloto = pendentes[fazendaId]
+          if (novoPiloto) await supabase.from('piloto_fazendas').insert({ fazenda_id: fazendaId, piloto_id: novoPiloto })
+        }
+        showToast(`✅ ${mudancas.length} atribuição(ões) salva(s)!`)
+        fetchInventario()
+        onClose()
+      } catch (e) {
+        showToast('Erro: ' + e.message, 'error')
+      } finally {
+        setSalvando(false)
+      }
+    }
+
+    function Card({ fz }) {
+      const { pct } = progressoFazenda(fz)
+      const areaTotal = invTalhoes.filter(t => t.fazenda_id === fz.id).reduce((a,t) => a + parseFloat(t.area_ha||0), 0)
+      return (
+        <div draggable
+          onDragStart={e => { e.dataTransfer.setData('text/plain', fz.id); setArrastando(fz.id) }}
+          onDragEnd={() => setArrastando(null)}
+          style={{ background: theme.card, border: `1px solid ${theme.cardBorder2}`, borderRadius: 12, padding: 12, marginBottom: 8, cursor: 'grab', opacity: arrastando === fz.id ? 0.4 : 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: theme.text }}>{fz.nome}</div>
+            <div style={{ fontSize: 11, color: theme.textMuted, whiteSpace: 'nowrap' }}>{areaTotal.toFixed(0)} ha</div>
+          </div>
+          <div style={{ fontSize: 11, color: theme.textFaint2, marginTop: 2 }}>{fz.cliente}{fz.produto ? ` · ${fz.produto}` : ''}</div>
+          {pct != null && (
+            <div style={{ height: 6, background: theme.divider, borderRadius: 20, overflow: 'hidden', marginTop: 8 }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? '#00A86B' : '#2f6fed', borderRadius: 20 }} />
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    function Coluna({ titulo, cor, icone, pilotoId }) {
+      const fazendasCol = fazendasFiltradas.filter(fz => colunaDe(fz.id) === pilotoId)
+      return (
+        <div onDragOver={e => e.preventDefault()} onDrop={e => onDrop(e, pilotoId)}
+          style={{ background: theme.bg, borderRadius: 16, minWidth: 250, flex: '0 0 250px', display: 'flex', flexDirection: 'column', maxHeight: '58vh' }}>
+          <div style={{ background: cor, color: '#fff', borderRadius: '16px 16px 0 0', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{icone}</span>
+            <span style={{ flex: 1, fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{titulo}</span>
+            <span style={{ background: 'rgba(255,255,255,0.25)', borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{fazendasCol.length} área{fazendasCol.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div style={{ padding: 10, overflowY: 'auto', flex: 1 }}>
+            {fazendasCol.length === 0 ? (
+              <div style={{ fontSize: 11, color: theme.textFaint2, textAlign: 'center', padding: '20px 0' }}>Arraste fazendas pra cá</div>
+            ) : fazendasCol.map(fz => <Card key={fz.id} fz={fz} />)}
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(11,18,16,0.55)', zIndex: 1600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+        <div style={{ background: theme.card, borderRadius: 20, width: '100%', maxWidth: 1100, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+          <div style={{ padding: '20px 24px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10, marginBottom: 6 }}>
+              <div>
+                <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 20, fontWeight: 700, color: theme.text }}>Atribuir áreas</div>
+                <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>Arraste as áreas para o piloto responsável — nada é salvo até você confirmar</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={{ background: theme.bg, color: theme.textMuted, border: 'none', borderRadius: 100, padding: '10px 18px', fontSize: 13, cursor: 'pointer' }} onClick={onClose}>Cancelar</button>
+                <button disabled={!mudancas.length || salvando} onClick={salvar}
+                  style={{ background: '#00A86B', color: '#fff', border: 'none', borderRadius: 100, padding: '10px 18px', fontSize: 13, fontWeight: 700, cursor: mudancas.length ? 'pointer' : 'default', opacity: (!mudancas.length || salvando) ? .5 : 1 }}>
+                  {salvando ? 'Salvando...' : `💾 Salvar alterações${mudancas.length ? ` (${mudancas.length})` : ''}`}
+                </button>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+              <input style={{ ...sG.input, flex: '1 1 200px', width: 'auto' }} placeholder="🔍 Buscar fazenda..." value={busca} onChange={e => setBusca(e.target.value)} />
+              <select style={{ ...sG.input, flex: '0 1 180px', width: 'auto' }} value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)}>
+                <option value="">Cliente (todos)</option>
+                {invClientes.filter(c => c.ativo).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 14, padding: '0 24px 20px', overflowX: 'auto', flex: 1 }}>
+            {pilotosAtivos.map((p, i) => (
+              <Coluna key={p.id} titulo={`Piloto: ${p.nome.split(' ')[0]}`} cor={CORES[i % CORES.length]} icone="✈️" pilotoId={p.id} />
+            ))}
+            <Coluna titulo="Sem piloto" cor="#6b7280" icone="📋" pilotoId={null} />
+          </div>
+          <div style={{ padding: '12px 24px', borderTop: `1px solid ${theme.divider}`, fontSize: 12, color: theme.textMuted }}>
+            Total: {fazendasFiltradas.length} área(s) · {atribuidas} atribuída(s) · {fazendasFiltradas.length - atribuidas} sem piloto
+          </div>
         </div>
       </div>
     )
@@ -3979,7 +4119,13 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     )}
 
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:4}}>📍 Atribuição por piloto</div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10,marginBottom:4}}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text}}>📍 Atribuição por piloto</div>
+                      <button type="button" onClick={()=>setKanbanAberto(true)}
+                        style={{background:theme.card,color:'#00A86B',border:'1px solid #00A86B',borderRadius:16,padding:'6px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                        🗂️ Atribuir por Kanban
+                      </button>
+                    </div>
                     <p style={{fontSize:12,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>Time de cada piloto e permissão individual de fazendas (tem prioridade sobre o time — ver aviso acima). Conta, senha e status ficam em Configurações → Usuários.</p>
                     <div style={{overflowX:'auto'}}>
                       <table style={{width:'100%',borderCollapse:'collapse',background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,overflow:'hidden'}}>
@@ -4065,6 +4211,8 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
             )
           })()}
+
+          {kanbanAberto && <AtribuirAreasKanbanModal onClose={()=>setKanbanAberto(false)}/>}
 
           {importarFazendasAberto && (
             <ImportarFazendasModal
