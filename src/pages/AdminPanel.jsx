@@ -300,6 +300,11 @@ export default function AdminPanel({ onSwitchMode }) {
   const [selectedKmlIds, setSelectedKmlIds] = useState([])
   const [newUser, setNewUser] = useState({ nome:'', email:'', senha:'', role:'piloto' })
   const [criandoUser, setCriandoUser] = useState(false)
+  const [novoUsuarioModalAberto, setNovoUsuarioModalAberto] = useState(false)
+  const [usuariosBusca, setUsuariosBusca] = useState('')
+  const [usuariosFiltroPerfil, setUsuariosFiltroPerfil] = useState('')
+  const [usuariosFiltroTime, setUsuariosFiltroTime] = useState('')
+  const [usuarioAcoesAbertoId, setUsuarioAcoesAbertoId] = useState(null)
   const [droneHorasLimite, setDroneHorasLimite] = useState(() => {
     try { return JSON.parse(localStorage.getItem('orofly_drone_horas')||'{}') } catch { return {} }
   })
@@ -1287,7 +1292,7 @@ export default function AdminPanel({ onSwitchMode }) {
       const text = await res.text(); let data
       try { data = JSON.parse(text) } catch { throw new Error('Função não encontrada.') }
       if (data.error) throw new Error(data.error)
-      showToast('✅ Usuário criado!'); setNewUser({ nome: '', email: '', senha: '', role: 'piloto' }); fetchAll()
+      showToast('✅ Usuário criado!'); setNewUser({ nome: '', email: '', senha: '', role: 'piloto' }); setNovoUsuarioModalAberto(false); fetchAll()
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
     setCriandoUser(false)
   }
@@ -5063,9 +5068,17 @@ export default function AdminPanel({ onSwitchMode }) {
           {/* ===== PILOTOS ===== */}
           {tab === 'pilotos' && (
             <div>
-              <div style={{ marginBottom:18 }}>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>{isSupervisor?'Equipes':'Gestão de Usuários'}</div>
-                <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{pilotos.length} usuários · {times.length} time(s)</div>
+              <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
+                <div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>{isSupervisor?'Equipes':'Gestão de Usuários'}</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{usuariosSubTab==='usuarios' ? 'Gerencie os acessos e perfis da equipe' : `${pilotos.length} usuários · ${times.length} time(s)`}</div>
+                </div>
+                {usuariosSubTab==='usuarios' && (
+                  <button type="button" onClick={()=>setNovoUsuarioModalAberto(true)}
+                    style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:12,padding:'11px 18px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6,boxShadow:'0 4px 14px rgba(14,159,110,0.25)',whiteSpace:'nowrap'}}>
+                    + Criar usuário
+                  </button>
+                )}
               </div>
 
               <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4,marginBottom:18,maxWidth:320}}>
@@ -5107,76 +5120,174 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
 
-              {usuariosSubTab==='usuarios' && (
-              <div style={{ display:'flex', gap:20, flexDirection: isMobile?'column':'row', alignItems:'flex-start' }}>
-                <div style={{ background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, padding:20, width: isMobile?'100%':280, flexShrink:0 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize:14, fontWeight:700, marginBottom:16 }}>+ Novo usuário</div>
-                  <form onSubmit={criarUsuario} style={{ display:'flex', flexDirection:'column', gap:12 }}>
-                    {[['Nome completo','nome','text','João Silva'],['E-mail','email','email','piloto@email.com'],['Senha','senha','password','Mínimo 6 caracteres']].map(([lbl,key,type,ph]) => (
-                      <div key={key}>
-                        <div style={sG.label}>{lbl.toUpperCase()}</div>
-                        <input style={sG.input} type={type} placeholder={ph} value={newUser[key]} autoComplete="new-password" onChange={e => setNewUser(u => ({ ...u, [key]: e.target.value }))} />
+              {usuariosSubTab==='usuarios' && (()=>{
+                const ROLE_ESTILO = {
+                  piloto:     { bg:'#dcfce7', cor:'#16a34a', label:'🚁 Piloto' },
+                  supervisor: { bg:'#dbeafe', cor:'#2563eb', label:'🧑‍🤝‍🧑 Supervisor' },
+                  admin:      { bg:'#fde2e2', cor:'#dc2626', label:'⚙️ Admin' },
+                }
+                const totalUsuarios = pilotos.length
+                const totalPilotosN = pilotos.filter(p=>(p.role||'piloto')==='piloto').length
+                const totalSupervisoresN = pilotos.filter(p=>p.role==='supervisor').length
+                const totalAdminsN = pilotos.filter(p=>p.role==='admin').length
+                const CARDS = [
+                  { label:'Total de usuários', valor:totalUsuarios, icone:'👥', bg:'#dcfce7', cor:'#16a34a' },
+                  { label:'Pilotos', valor:totalPilotosN, icone:'🚁', bg:'#dbeafe', cor:'#2563eb' },
+                  { label:'Supervisores', valor:totalSupervisoresN, icone:'🧑‍🤝‍🧑', bg:'#ffedd5', cor:'#ea580c' },
+                  { label:'Admins', valor:totalAdminsN, icone:'⚙️', bg:'#ede9fe', cor:'#7c3aed' },
+                ]
+                const buscaNorm = usuariosBusca.trim().toLowerCase()
+                const pilotosFiltrados = pilotos.filter(p => {
+                  if (buscaNorm && !`${p.nome} ${p.email}`.toLowerCase().includes(buscaNorm)) return false
+                  if (usuariosFiltroPerfil && (p.role||'piloto') !== usuariosFiltroPerfil) return false
+                  if (usuariosFiltroTime === '__sem_time__' ? !!p.time_id : usuariosFiltroTime && p.time_id !== usuariosFiltroTime) return false
+                  return true
+                })
+                return (
+                <div>
+                  {/* Cards de métricas */}
+                  <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr 1fr':'repeat(4,1fr)', gap:14, marginBottom:18 }}>
+                    {CARDS.map(c => (
+                      <div key={c.label} style={{ background:theme.card, borderRadius:16, border:`1px solid ${theme.cardBorder2}`, padding:'16px 18px', display:'flex', alignItems:'center', gap:14 }}>
+                        <div style={{ width:44, height:44, borderRadius:12, background:c.bg, color:c.cor, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{c.icone}</div>
+                        <div>
+                          <div style={{ fontSize:12, color:theme.textMuted }}>{c.label}</div>
+                          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:24, fontWeight:700, color:theme.text }}>{c.valor}</div>
+                        </div>
                       </div>
                     ))}
-                    <div>
-                      <div style={sG.label}>PERFIL</div>
-                      <select style={sG.input} value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}>
-                        <option value="piloto">🚁 Piloto</option>
-                        <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
-                        <option value="admin">⚙️ Administrador</option>
-                      </select>
+                  </div>
+
+                  {/* Barra de filtros */}
+                  <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:16 }}>
+                    <input style={{...sG.input, flex:'2 1 220px', width:'auto'}} placeholder="🔍 Buscar por nome ou e-mail..." value={usuariosBusca} onChange={e=>setUsuariosBusca(e.target.value)}/>
+                    <select style={{...sG.input, flex:'1 1 140px', width:'auto'}} value={usuariosFiltroPerfil} onChange={e=>setUsuariosFiltroPerfil(e.target.value)}>
+                      <option value="">Perfil (todos)</option>
+                      <option value="piloto">🚁 Piloto</option>
+                      <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
+                      <option value="admin">⚙️ Admin</option>
+                    </select>
+                    <select style={{...sG.input, flex:'1 1 140px', width:'auto'}} value={usuariosFiltroTime} onChange={e=>setUsuariosFiltroTime(e.target.value)}>
+                      <option value="">Time (todos)</option>
+                      <option value="__sem_time__">— Sem time —</option>
+                      {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
+                    </select>
+                  </div>
+
+                  <div style={{ overflowX:'auto' }}>
+                    <table style={{ width:'100%', borderCollapse:'collapse', background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden' }}>
+                      <thead><tr style={{ background:theme.bg }}>{['Usuário','Perfil','Time','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:700, color:theme.textMuted, borderBottom:`1px solid ${theme.cardBorder2}`, fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {pilotosFiltrados.length===0 ? (
+                          <tr><td colSpan={6} style={{ ...sG.td, padding:'28px 16px', textAlign:'center', color:theme.textFaint2 }}>Nenhum usuário encontrado com esse filtro.</td></tr>
+                        ) : pilotosFiltrados.map((p, i) => {
+                          const re = ROLE_ESTILO[p.role||'piloto']
+                          return (
+                          <tr key={p.id} style={{ background: i%2===0?theme.card:'#f7fbf8', opacity: p.ativo?1:.5 }}>
+                            <td style={{ ...sG.td, padding:'14px 16px' }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                                <div style={{ width:36, height:36, borderRadius:'50%', background:re.bg, color:re.cor, display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:13, flexShrink:0 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div>
+                                <div>
+                                  <div style={{ fontWeight:600, color:theme.text }}>{p.nome}</div>
+                                  <div style={{ fontSize:11.5, color:theme.textMuted }}>{p.email}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td style={{ ...sG.td, padding:'14px 16px' }}>
+                              {p.id === profile?.id ? (
+                                <span style={{ background:re.bg, color:re.cor, fontSize:11, fontWeight:700, padding:'4px 11px', borderRadius:20, display:'inline-block' }}>{re.label}</span>
+                              ) : (
+                                <select value={p.role||'piloto'} onChange={e=>toggleRoleTo(p,e.target.value)}
+                                  style={{ background:re.bg, color:re.cor, border:'none', borderRadius:20, padding:'4px 11px', fontSize:11, fontWeight:700, cursor:'pointer', appearance:'none', WebkitAppearance:'none' }}>
+                                  <option value="piloto">🚁 Piloto</option>
+                                  <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
+                                  <option value="admin">⚙️ Admin</option>
+                                </select>
+                              )}
+                            </td>
+                            <td style={{ ...sG.td, padding:'14px 16px' }}>
+                              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                <select value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}
+                                  style={{ background:theme.bg, color:theme.textMuted, border:'none', borderRadius:20, padding:'4px 11px', fontSize:11, fontWeight:600, cursor:'pointer', appearance:'none', WebkitAppearance:'none' }}>
+                                  <option value="">— Sem time —</option>
+                                  {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
+                                </select>
+                                {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
+                                  return (
+                                    <button title="Fazendas individuais" style={{background:n>0?theme.successBg:theme.bg,color:n>0?'#00A86B':theme.textMuted,border:'none',borderRadius:12,padding:'4px 8px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
+                                      onClick={()=>{setPilotoFazendasModal(p); setPilotoFazendasAba('individual')}}>📍{n>0?` ${n}`:''}</button>
+                                  )
+                                })()}
+                              </div>
+                            </td>
+                            <td style={{ ...sG.td, padding:'14px 16px', fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#00A86B', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
+                            <td style={{ ...sG.td, padding:'14px 16px' }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+                                <span style={{ width:8, height:8, borderRadius:'50%', background: p.ativo?'#22c55e':'#9ca3af', flexShrink:0 }}/>
+                                <span style={{ fontSize:12.5, color:theme.text }}>{p.ativo?'Ativo':'Inativo'}</span>
+                              </div>
+                            </td>
+                            <td style={{ ...sG.td, padding:'14px 16px', position:'relative' }}>
+                              <button title="Ações" onClick={()=>setUsuarioAcoesAbertoId(id=>id===p.id?null:p.id)}
+                                style={{ background:'none', border:'none', fontSize:18, color:theme.textMuted, cursor:'pointer', padding:'2px 8px', borderRadius:8, lineHeight:1 }}>⋯</button>
+                              {usuarioAcoesAbertoId===p.id && (
+                                <>
+                                  <div onClick={()=>setUsuarioAcoesAbertoId(null)} style={{ position:'fixed', inset:0, zIndex:90 }}/>
+                                  <div style={{ position:'absolute', top:'100%', right:16, marginTop:2, background:theme.card, border:`1px solid ${theme.cardBorder2}`, borderRadius:12, boxShadow:'0 10px 30px rgba(0,0,0,.18)', zIndex:91, padding:6, minWidth:170 }}>
+                                    <button onClick={()=>{toggleAtivo(p); setUsuarioAcoesAbertoId(null)}}
+                                      style={{ width:'100%', textAlign:'left', background:'none', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12.5, color: p.ativo?theme.dangerText:'#00A86B', cursor:'pointer' }}>
+                                      {p.ativo?'🔒 Desativar':'✅ Ativar'}
+                                    </button>
+                                    <button onClick={()=>{resetarSenha(p); setUsuarioAcoesAbertoId(null)}}
+                                      style={{ width:'100%', textAlign:'left', background:'none', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12.5, color:'#2952a3', cursor:'pointer' }}>
+                                      🔑 Redefinir senha
+                                    </button>
+                                    {p.id !== profile?.id && (
+                                      <button onClick={()=>{deletarUsuario(p); setUsuarioAcoesAbertoId(null)}}
+                                        style={{ width:'100%', textAlign:'left', background:'none', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12.5, color:theme.dangerText, cursor:'pointer' }}>
+                                        🗑️ Deletar usuário
+                                      </button>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        )})}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                )
+              })()}
+
+              {/* MODAL CRIAR USUÁRIO */}
+              {novoUsuarioModalAberto && (
+                <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1500,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setNovoUsuarioModalAberto(false)}>
+                  <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:380,padding:22}} onClick={e=>e.stopPropagation()}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:16}}>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontSize:16, fontWeight:700 }}>+ Novo usuário</div>
+                      <button style={{background:'none',border:'none',fontSize:18,color:theme.textFaint2,cursor:'pointer'}} onClick={()=>setNovoUsuarioModalAberto(false)}>✕</button>
                     </div>
-                    <button type="submit" style={{ ...sG.btn, opacity: criandoUser?.6:1 }} disabled={criandoUser}>{criandoUser?'Criando...':'Criar usuário'}</button>
-                  </form>
-                </div>
-                <div style={{ flex:1, overflowX:'auto' }}>
-                  <table style={{ width:'100%', borderCollapse:'collapse', background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden' }}>
-                    <thead><tr style={{ background:theme.bg }}>{['Usuário','E-mail','Perfil','Time','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'10px 13px', textAlign:'left', fontSize:11, fontWeight:700, color:theme.textMuted, borderBottom:`1px solid ${theme.cardBorder2}`, fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {pilotos.map((p, i) => (
-                        <tr key={p.id} style={{ background: i%2===0?'#fff':'#f7fbf8', opacity: p.ativo?1:.5 }}>
-                          <td style={sG.td}><div style={{ display:'flex', alignItems:'center', gap:8 }}><div style={{ width:30, height:30, borderRadius:'50%', background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':theme.successBg, color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#00A86B', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12 }}>{p.nome?.[0]?.toUpperCase()||'?'}</div><span style={{ fontWeight:500 }}>{p.nome}</span></div></td>
-                          <td style={{ ...sG.td, color:theme.textMuted, fontSize:12 }}>{p.email}</td>
-                          <td style={sG.td}>
-                            {p.id === profile?.id ? (
-                              <span style={{ background: p.role==='admin'?'#faeeda':p.role==='supervisor'?'#eef2fb':theme.successBg, color: p.role==='admin'?'#854f0b':p.role==='supervisor'?'#2952a3':'#00875A', fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.role==='admin'?'⚙️ Admin':p.role==='supervisor'?'🧑‍🤝‍🧑 Supervisor':'🚁 Piloto'}</span>
-                            ) : (
-                              <select style={{...sG.input,padding:'4px 8px',fontSize:11,width:'auto'}} value={p.role||'piloto'} onChange={e=>toggleRoleTo(p,e.target.value)}>
-                                <option value="piloto">🚁 Piloto</option>
-                                <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
-                                <option value="admin">⚙️ Admin</option>
-                              </select>
-                            )}
-                          </td>
-                          <td style={sG.td}>
-                            <div style={{display:'flex',alignItems:'center',gap:6}}>
-                              <select style={{...sG.input,padding:'4px 8px',fontSize:11,width:'auto'}} value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}>
-                                <option value="">— Sem time —</option>
-                                {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
-                              </select>
-                              {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
-                                return (
-                                  <button title="Fazendas individuais" style={{background:n>0?theme.successBg:theme.bg,color:n>0?'#00A86B':theme.textMuted,border:'none',borderRadius:12,padding:'4px 8px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
-                                    onClick={()=>{setPilotoFazendasModal(p); setPilotoFazendasAba('individual')}}>📍{n>0?` ${n}`:''}</button>
-                                )
-                              })()}
-                            </div>
-                          </td>
-                          <td style={{ ...sG.td, fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#00A86B', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
-                          <td style={{ ...sG.td }}><span style={{ background: p.ativo?theme.successBg:'#fee', color: p.ativo?'#00A86B':theme.dangerText, fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{p.ativo?'Ativo':'Inativo'}</span></td>
-                          <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
-                            <button style={{ background: p.ativo?'#fee':theme.successBg, color: p.ativo?theme.dangerText:'#00A86B', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => toggleAtivo(p)}>{p.ativo?'Desativar':'Ativar'}</button>
-                            <button style={{ background:'#eef2fb', color:'#2952a3', border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer', marginRight:4 }} onClick={() => resetarSenha(p)}>🔑 Senha</button>
-                            {p.id !== profile?.id && (
-                              <button style={{ background:'#fee', color:theme.dangerText, border:'none', borderRadius:16, padding:'5px 10px', fontSize:12, cursor:'pointer' }} onClick={() => deletarUsuario(p)}>🗑️ Deletar</button>
-                            )}
-                          </td>
-                        </tr>
+                    <form onSubmit={criarUsuario} style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                      {[['Nome completo','nome','text','João Silva'],['E-mail','email','email','piloto@email.com'],['Senha','senha','password','Mínimo 6 caracteres']].map(([lbl,key,type,ph]) => (
+                        <div key={key}>
+                          <div style={sG.label}>{lbl.toUpperCase()}</div>
+                          <input style={sG.input} type={type} placeholder={ph} value={newUser[key]} autoComplete="new-password" onChange={e => setNewUser(u => ({ ...u, [key]: e.target.value }))} />
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
+                      <div>
+                        <div style={sG.label}>PERFIL</div>
+                        <select style={sG.input} value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}>
+                          <option value="piloto">🚁 Piloto</option>
+                          <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
+                          <option value="admin">⚙️ Administrador</option>
+                        </select>
+                      </div>
+                      <button type="submit" style={{ ...sG.btn, opacity: criandoUser?.6:1 }} disabled={criandoUser}>{criandoUser?'Criando...':'Criar usuário'}</button>
+                    </form>
+                  </div>
                 </div>
-              </div>
               )}
             </div>
           )}
