@@ -2052,7 +2052,7 @@ export default function PilotApp({onSwitchMode}) {
           {draftAtivo && (opState==='paused_day' ? (()=>{
             const {total,feita,pct} = progressoParcial(form)
             return (
-              <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,borderLeft:'4px solid #00A86B',padding:'14px 16px',cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}} onClick={()=>setView('form')}>
+              <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,borderLeft:'4px solid #00A86B',padding:'14px 16px',cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}} onClick={()=>{setView('form');setWizardStep(4)}}>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <span style={{width:40,height:40,borderRadius:12,background:theme.successBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🕐</span>
                   <div style={{flex:1,minWidth:0}}>
@@ -2069,7 +2069,7 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             )
           })() : (
-            <div style={{background:'linear-gradient(135deg,#00A86B,#00875A)',borderRadius:22,padding:18,color:'#fff',cursor:'pointer',boxShadow:'0 10px 26px rgba(14,159,110,0.35)',position:'relative',overflow:'hidden'}} onClick={()=>setView('form')}>
+            <div style={{background:'linear-gradient(135deg,#00A86B,#00875A)',borderRadius:22,padding:18,color:'#fff',cursor:'pointer',boxShadow:'0 10px 26px rgba(14,159,110,0.35)',position:'relative',overflow:'hidden'}} onClick={()=>{setView('form');setWizardStep(4)}}>
               <span style={{position:'absolute',right:-10,bottom:-14,fontSize:64,opacity:.15}}>🚁</span>
               <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':'🟢 VOO EM ANDAMENTO'}</div>
               <div style={{fontSize:17,fontWeight:700,marginTop:4,fontFamily:"'Poppins',sans-serif"}}>{form.cliente||'—'} — {form.fazenda||'—'}</div>
@@ -3572,9 +3572,17 @@ Quando: ${tempoErroDebug.quando}`}
                       const isSel = selecionados.includes(t.nome)
                       aplicarSelecao(isSel ? selecionados.filter(n=>n!==t.nome) : [...selecionados, t.nome])
                     }
-                    const todosSelecionados = temTalhoes && talhoesFaz.every(t=>selecionados.includes(t.nome))
-                    const toggleTodos = () => aplicarSelecao(todosSelecionados ? [] : talhoesFaz.map(t=>t.nome))
-                    const talhoesVisiveis = talhoesFaz
+                    // Esconde talhões já 100% concluídos da lista (evita reaplicar em cima do que já foi
+                    // feito) — mas mantém visível se já estiver selecionado (ex: reabrindo um voo que já
+                    // incluía esse talhão), pra não sumir uma seleção existente debaixo do piloto.
+                    const talhoesDisponiveis = talhoesFaz.filter(t=>{
+                      if(selecionados.includes(t.nome)) return true
+                      const prog = fazendaSel ? progressoTalhao(fazendaSel,t,talhoesFaz) : null
+                      return !(prog && prog.pct>=100)
+                    })
+                    const todosSelecionados = talhoesDisponiveis.length>0 && talhoesDisponiveis.every(t=>selecionados.includes(t.nome))
+                    const toggleTodos = () => aplicarSelecao(todosSelecionados ? [] : talhoesDisponiveis.map(t=>t.nome))
+                    const talhoesVisiveis = talhoesDisponiveis
                       .filter(t=>!talhaoSearch.trim() || t.nome.toLowerCase().includes(talhaoSearch.trim().toLowerCase()))
                     if (temTalhoes) return (
                       <div style={{...sw.fw,position:'relative'}}>
@@ -3865,7 +3873,7 @@ Quando: ${tempoErroDebug.quando}`}
                       <div>
                         <label style={{...sw.fl,marginBottom:4}}>FIM</label>
                         <input style={{...sw.fi,background:'rgba(255,255,255,0.85)'}} type="number"
-                          placeholder={form[key+'_i']||'—'}
+                          placeholder={`Ex: ${key==='vento'?'8':key==='umidade'?'65':key==='temperatura'?'28':'4'}`}
                           value={form[key+'_f']||''} onChange={e=>setForm(f=>{
                             const next={...f,[key+'_f']:e.target.value}
                             if(key==='temperatura'||key==='umidade'){

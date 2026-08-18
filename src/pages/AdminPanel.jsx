@@ -277,7 +277,6 @@ export default function AdminPanel({ onSwitchMode }) {
   const [pilotoFazendasAba, setPilotoFazendasAba] = useState('individual') // 'individual' (checklist por cliente) ou 'lote' (árvore de seleção em massa)
   const [incidentes, setIncidentes] = useState([])
   const [incidenteFocoId, setIncidenteFocoId] = useState(null)
-  const [usuariosSubTab, setUsuariosSubTab] = useState('usuarios')
   const [novoTimeNome, setNovoTimeNome] = useState('')
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
@@ -303,7 +302,6 @@ export default function AdminPanel({ onSwitchMode }) {
   const [novoUsuarioModalAberto, setNovoUsuarioModalAberto] = useState(false)
   const [usuariosBusca, setUsuariosBusca] = useState('')
   const [usuariosFiltroPerfil, setUsuariosFiltroPerfil] = useState('')
-  const [usuariosFiltroTime, setUsuariosFiltroTime] = useState('')
   const [usuarioAcoesAbertoId, setUsuarioAcoesAbertoId] = useState(null)
   const [droneHorasLimite, setDroneHorasLimite] = useState(() => {
     try { return JSON.parse(localStorage.getItem('orofly_drone_horas')||'{}') } catch { return {} }
@@ -1367,17 +1365,17 @@ export default function AdminPanel({ onSwitchMode }) {
             <div key={grupoId} style={{marginBottom:4}}>
               <button onClick={() => setSidebarGruposAbertos(g => ({...g, [grupoId]: !aberto}))}
                 style={{display:'flex', alignItems:'center', width:'100%', background:'none', border:'none', padding:'8px 12px', cursor:'pointer'}}>
-                <span style={{flex:1, textAlign:'left', fontSize:9, fontWeight:700, color:'#4a6e56', letterSpacing:1.2}}>{secao}</span>
+                <span style={{flex:1, textAlign:'left', fontSize:10.5, fontWeight:700, color:'#4a6e56', letterSpacing:1.2}}>{secao}</span>
                 <span style={{display:'inline-block', transition:'transform .25s ease', transform: aberto?'rotate(180deg)':'rotate(0deg)', color:'#4a6e56', fontSize:9}}>▼</span>
               </button>
               <div style={{display:'grid', gridTemplateRows: aberto?'1fr':'0fr', transition:'grid-template-rows .3s ease-in-out'}}>
                 <div style={{overflow:'hidden', minHeight:0}}>
                   {itens.map(([id, icon, lbl, cnt]) => (
-                    <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#00A86B,#00875A)':'transparent', border:'none', borderRadius:18, padding:'9px 12px', cursor:'pointer', color: tab===id?'#fff':theme.textFaint2, fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
+                    <button key={id} style={{ display:'flex', alignItems:'center', gap:10, width:'100%', background: tab===id?'linear-gradient(135deg,#00A86B,#00875A)':'transparent', border:'none', borderRadius:18, padding:'10px 12px', cursor:'pointer', color: tab===id?'#fff':theme.textFaint2, fontSize:14.5, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:3, boxShadow: tab===id?'0 6px 16px rgba(14,159,110,0.35)':'none', transition:'all .15s' }}
                       onClick={() => { setTab(id); setSidebarOpen(false) }}>
-                      <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>{icon}</span>
+                      <span style={{width:26,height:26,borderRadius:9,background:tab===id?'rgba(255,255,255,0.2)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0}}>{icon}</span>
                       <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
-                      {cnt!==''&&<span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?theme.text:theme.textMuted, fontSize:11, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>}
+                      {cnt!==''&&<span style={{ background: tab===id?'#ffb020':'#1e3828', color: tab===id?theme.text:theme.textMuted, fontSize:11.5, fontWeight:600, padding:'1px 7px', borderRadius:20 }}>{cnt}</span>}
                     </button>
                   ))}
                 </div>
@@ -3538,7 +3536,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-                  {[['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes']].map(([id,lbl])=>(
+                  {[['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes'],['equipes','🧑‍🤝‍🧑 Equipes']].map(([id,lbl])=>(
                     <button key={id} style={{background:fzTab===id?'#00A86B':theme.bg,color:fzTab===id?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setFzTab(id)}>{lbl}</button>
                   ))}
@@ -3938,6 +3936,70 @@ export default function AdminPanel({ onSwitchMode }) {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* ── EQUIPES (times + atribuição de fazendas por time/piloto) ── */}
+                {fzTab==='equipes' && (
+                  <div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:10}}>🧑‍🤝‍🧑 Times</div>
+                    <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:16,marginBottom:16,display:'flex',gap:8,maxWidth:420}}>
+                      <input style={{...sG.input,flex:1}} placeholder="Nome do novo time (ex: Time Norte)" value={novoTimeNome} onChange={e=>setNovoTimeNome(e.target.value)}/>
+                      <button style={{...sG.btn,width:'auto',padding:'0 18px'}} onClick={criarTime}>+ Criar</button>
+                    </div>
+                    {times.length===0 ? (
+                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:30,textAlign:'center',color:theme.textMuted,fontSize:13,marginBottom:24}}>Nenhum time cadastrado ainda.</div>
+                    ) : (
+                      <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:24}}>
+                        {times.map(t=>{
+                          const membros = pilotos.filter(p=>p.time_id===t.id)
+                          const fazendasDoTime = fazendaTimes.filter(ft=>ft.time_id===t.id).map(ft=>ft.fazenda_id)
+                          return (
+                            <div key={t.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder2}`,padding:16}}>
+                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700}}>🧑‍🤝‍🧑 {t.nome}</div>
+                                <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirTime(t)}>🗑️ Excluir</button>
+                              </div>
+                              <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>PILOTOS ({membros.length})</div>
+                              <div style={{fontSize:12,color:theme.textMuted,marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na lista abaixo.'}</div>
+                              <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
+                              <ChecklistFazendasPorCliente chavePrefixo={t.id} marcadas={fazendasDoTime} onToggle={fzId=>toggleFazendaTime(fzId,t.id)} excluirTimeId={t.id}/>
+                              <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo, a menos que o piloto tenha permissão individual — ver abaixo).</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:4}}>📍 Atribuição por piloto</div>
+                    <p style={{fontSize:12,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>Time de cada piloto e permissão individual de fazendas (tem prioridade sobre o time — ver aviso acima). Conta, senha e status ficam em Configurações → Usuários.</p>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,overflow:'hidden'}}>
+                        <thead><tr style={{background:theme.bg}}>{['Piloto','Time','Fazendas individuais'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',fontSize:11,fontWeight:700,color:theme.textMuted,borderBottom:`1px solid ${theme.cardBorder2}`,fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {pilotos.map((p,i)=>(
+                            <tr key={p.id} style={{background:i%2===0?theme.card:'#f7fbf8',opacity:p.ativo?1:.5}}>
+                              <td style={{...sG.td,padding:'12px 16px',fontWeight:600,color:theme.text}}>{p.nome}</td>
+                              <td style={{...sG.td,padding:'12px 16px'}}>
+                                <select value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}
+                                  style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:20,padding:'4px 11px',fontSize:11,fontWeight:600,cursor:'pointer',appearance:'none',WebkitAppearance:'none'}}>
+                                  <option value="">— Sem time —</option>
+                                  {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
+                                </select>
+                              </td>
+                              <td style={{...sG.td,padding:'12px 16px'}}>
+                                {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
+                                  return (
+                                    <button title="Fazendas individuais" style={{background:n>0?theme.successBg:theme.bg,color:n>0?'#00A86B':theme.textMuted,border:'none',borderRadius:12,padding:'5px 10px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
+                                      onClick={()=>{setPilotoFazendasModal(p); setPilotoFazendasAba('individual')}}>📍{n>0?` ${n} liberada(s)`:' Nenhuma (segue o time)'}</button>
+                                  )
+                                })()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
@@ -5070,57 +5132,16 @@ export default function AdminPanel({ onSwitchMode }) {
             <div>
               <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
                 <div>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>{isSupervisor?'Equipes':'Gestão de Usuários'}</div>
-                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{usuariosSubTab==='usuarios' ? 'Gerencie os acessos e perfis da equipe' : `${pilotos.length} usuários · ${times.length} time(s)`}</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>Gestão de Usuários</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>Conta, senha e status de acesso — atribuição de time e fazendas fica em Fazendas & Clientes → Equipes.</div>
                 </div>
-                {usuariosSubTab==='usuarios' && (
-                  <button type="button" onClick={()=>setNovoUsuarioModalAberto(true)}
-                    style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:12,padding:'11px 18px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6,boxShadow:'0 4px 14px rgba(14,159,110,0.25)',whiteSpace:'nowrap'}}>
-                    + Criar usuário
-                  </button>
-                )}
+                <button type="button" onClick={()=>setNovoUsuarioModalAberto(true)}
+                  style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:12,padding:'11px 18px',fontSize:13,fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:6,boxShadow:'0 4px 14px rgba(14,159,110,0.25)',whiteSpace:'nowrap'}}>
+                  + Criar usuário
+                </button>
               </div>
 
-              <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4,marginBottom:18,maxWidth:320}}>
-                <button style={{flex:1,background:usuariosSubTab==='usuarios'?'#fff':'transparent',color:usuariosSubTab==='usuarios'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='usuarios'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
-                  onClick={()=>setUsuariosSubTab('usuarios')}>👥 Usuários</button>
-                <button style={{flex:1,background:usuariosSubTab==='equipes'?'#fff':'transparent',color:usuariosSubTab==='equipes'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'8px 10px',fontSize:12,fontWeight:700,cursor:'pointer',boxShadow:usuariosSubTab==='equipes'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
-                  onClick={()=>setUsuariosSubTab('equipes')}>🧑‍🤝‍🧑 Equipes</button>
-              </div>
-
-              {usuariosSubTab==='equipes' && (
-                <div>
-                  <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:16,marginBottom:16,display:'flex',gap:8,maxWidth:420}}>
-                    <input style={{...sG.input,flex:1}} placeholder="Nome do novo time (ex: Time Norte)" value={novoTimeNome} onChange={e=>setNovoTimeNome(e.target.value)}/>
-                    <button style={{...sG.btn,width:'auto',padding:'0 18px'}} onClick={criarTime}>+ Criar</button>
-                  </div>
-                  {times.length===0 ? (
-                    <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:30,textAlign:'center',color:theme.textMuted,fontSize:13}}>Nenhum time cadastrado ainda.</div>
-                  ) : (
-                    <div style={{display:'flex',flexDirection:'column',gap:12}}>
-                      {times.map(t=>{
-                        const membros = pilotos.filter(p=>p.time_id===t.id)
-                        const fazendasDoTime = fazendaTimes.filter(ft=>ft.time_id===t.id).map(ft=>ft.fazenda_id)
-                        return (
-                          <div key={t.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder2}`,padding:16}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                              <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700}}>🧑‍🤝‍🧑 {t.nome}</div>
-                              <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirTime(t)}>🗑️ Excluir</button>
-                            </div>
-                            <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>PILOTOS ({membros.length})</div>
-                            <div style={{fontSize:12,color:theme.textMuted,marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na aba Usuários.'}</div>
-                            <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
-                            <ChecklistFazendasPorCliente chavePrefixo={t.id} marcadas={fazendasDoTime} onToggle={fzId=>toggleFazendaTime(fzId,t.id)} excluirTimeId={t.id}/>
-                            <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo, a menos que o piloto tenha permissão individual — ver aba Usuários).</div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {usuariosSubTab==='usuarios' && (()=>{
+              {(()=>{
                 const ROLE_ESTILO = {
                   piloto:     { bg:'#dcfce7', cor:'#16a34a', label:'🚁 Piloto' },
                   supervisor: { bg:'#dbeafe', cor:'#2563eb', label:'🧑‍🤝‍🧑 Supervisor' },
@@ -5140,7 +5161,6 @@ export default function AdminPanel({ onSwitchMode }) {
                 const pilotosFiltrados = pilotos.filter(p => {
                   if (buscaNorm && !`${p.nome} ${p.email}`.toLowerCase().includes(buscaNorm)) return false
                   if (usuariosFiltroPerfil && (p.role||'piloto') !== usuariosFiltroPerfil) return false
-                  if (usuariosFiltroTime === '__sem_time__' ? !!p.time_id : usuariosFiltroTime && p.time_id !== usuariosFiltroTime) return false
                   return true
                 })
                 return (
@@ -5167,19 +5187,14 @@ export default function AdminPanel({ onSwitchMode }) {
                       <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
                       <option value="admin">⚙️ Admin</option>
                     </select>
-                    <select style={{...sG.input, flex:'1 1 140px', width:'auto'}} value={usuariosFiltroTime} onChange={e=>setUsuariosFiltroTime(e.target.value)}>
-                      <option value="">Time (todos)</option>
-                      <option value="__sem_time__">— Sem time —</option>
-                      {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
-                    </select>
                   </div>
 
                   <div style={{ overflowX:'auto' }}>
                     <table style={{ width:'100%', borderCollapse:'collapse', background:theme.card, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, overflow:'hidden' }}>
-                      <thead><tr style={{ background:theme.bg }}>{['Usuário','Perfil','Time','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:700, color:theme.textMuted, borderBottom:`1px solid ${theme.cardBorder2}`, fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
+                      <thead><tr style={{ background:theme.bg }}>{['Usuário','Perfil','Voos','Status','Ações'].map(h => <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:700, color:theme.textMuted, borderBottom:`1px solid ${theme.cardBorder2}`, fontFamily:"'Syne',sans-serif" }}>{h}</th>)}</tr></thead>
                       <tbody>
                         {pilotosFiltrados.length===0 ? (
-                          <tr><td colSpan={6} style={{ ...sG.td, padding:'28px 16px', textAlign:'center', color:theme.textFaint2 }}>Nenhum usuário encontrado com esse filtro.</td></tr>
+                          <tr><td colSpan={5} style={{ ...sG.td, padding:'28px 16px', textAlign:'center', color:theme.textFaint2 }}>Nenhum usuário encontrado com esse filtro.</td></tr>
                         ) : pilotosFiltrados.map((p, i) => {
                           const re = ROLE_ESTILO[p.role||'piloto']
                           return (
@@ -5204,21 +5219,6 @@ export default function AdminPanel({ onSwitchMode }) {
                                   <option value="admin">⚙️ Admin</option>
                                 </select>
                               )}
-                            </td>
-                            <td style={{ ...sG.td, padding:'14px 16px' }}>
-                              <div style={{display:'flex',alignItems:'center',gap:6}}>
-                                <select value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}
-                                  style={{ background:theme.bg, color:theme.textMuted, border:'none', borderRadius:20, padding:'4px 11px', fontSize:11, fontWeight:600, cursor:'pointer', appearance:'none', WebkitAppearance:'none' }}>
-                                  <option value="">— Sem time —</option>
-                                  {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
-                                </select>
-                                {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
-                                  return (
-                                    <button title="Fazendas individuais" style={{background:n>0?theme.successBg:theme.bg,color:n>0?'#00A86B':theme.textMuted,border:'none',borderRadius:12,padding:'4px 8px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
-                                      onClick={()=>{setPilotoFazendasModal(p); setPilotoFazendasAba('individual')}}>📍{n>0?` ${n}`:''}</button>
-                                  )
-                                })()}
-                              </div>
                             </td>
                             <td style={{ ...sG.td, padding:'14px 16px', fontFamily:"'Syne',sans-serif", fontWeight:700, color:'#00A86B', textAlign:'center' }}>{voosPorPiloto[p.id]||0}</td>
                             <td style={{ ...sG.td, padding:'14px 16px' }}>
