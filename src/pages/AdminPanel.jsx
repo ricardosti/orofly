@@ -10,6 +10,7 @@ import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo }
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
+import ImportarFazendasModal from '../components/ImportarFazendasModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { apiUrl } from '../lib/apiBase'
@@ -278,6 +279,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [incidentes, setIncidentes] = useState([])
   const [incidenteFocoId, setIncidenteFocoId] = useState(null)
   const [novoTimeNome, setNovoTimeNome] = useState('')
+  const [importarFazendasAberto, setImportarFazendasAberto] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
@@ -3527,10 +3529,16 @@ export default function AdminPanel({ onSwitchMode }) {
                     </button>
                   )}
                   {fzTab==='fazendas' && (
-                    <button style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                      onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
-                      + Nova Fazenda
-                    </button>
+                    <div style={{display:'flex',gap:8}}>
+                      <button style={{background:theme.card,color:'#00A86B',border:'1px solid #00A86B',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                        onClick={()=>setImportarFazendasAberto(true)}>
+                        📤 Importar planilha
+                      </button>
+                      <button style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
+                        + Nova Fazenda
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -4057,6 +4065,18 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
             )
           })()}
+
+          {importarFazendasAberto && (
+            <ImportarFazendasModal
+              supabase={supabase}
+              invClientes={invClientes}
+              invFazendas={invFazendas}
+              invTalhoes={invTalhoes}
+              theme={theme}
+              onClose={()=>setImportarFazendasAberto(false)}
+              onImported={fetchInventario}
+            />
+          )}
 
           {/* ===== INCIDENTES ===== */}
           {tab === 'incidentes' && (() => {
