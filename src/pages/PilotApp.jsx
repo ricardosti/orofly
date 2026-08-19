@@ -581,6 +581,23 @@ export default function PilotApp({onSwitchMode}) {
     }
     r.readAsDataURL(f)
   }
+  function handleMapaFoto(f){
+    if(!f) return
+    const r=new FileReader()
+    r.onload=ev=>{
+      setAnnotatorTarget({
+        src: ev.target.result,
+        aplicar: (blob) => {
+          const arquivo = new File([blob], 'mapa.jpg', {type:'image/jpeg'})
+          const leitor = new FileReader()
+          leitor.onload = ev2 => setFotoMapa(ev2.target.result)
+          leitor.readAsDataURL(blob)
+          setFotoMapaFile(arquivo)
+        }
+      })
+    }
+    r.readAsDataURL(f)
+  }
   function handleIncidenteFoto(slot,f){
     if(!f) return
     const r=new FileReader()
@@ -947,28 +964,47 @@ export default function PilotApp({onSwitchMode}) {
     await compartilharNativo({ text:texto, file, filename:'mapa.jpg', webFallbackUrl:'https://wa.me/?text='+encodeURIComponent(texto) })
   }
 
-  // Anexa a evidência climática (foto de câmera/galeria ou PDF) no slot 1 (início) ou 2 (fim)
-  async function handleEvidFile(slot,lbl,f){
-    const isPdf=f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')
-    if(isPdf){
-      const a=[...obsFotos];a[slot]='pdf:'+f.name;setObsFotos(a)
-    }else{
-      const r=new FileReader();r.onload=ev=>{const a=[...obsFotos];a[slot]=ev.target.result;setObsFotos(a)};r.readAsDataURL(f)
-    }
-    const b=[...obsFotoFiles];b[slot]=f;setObsFotoFiles(b)
-    // Metadata: data original da foto (EXIF) ou do arquivo + tamanho/tipo/GPS
-    const metaFoto = isPdf ? {data:new Date(f.lastModified).toLocaleString('pt-BR'),lat:null,lng:null} : await extrairMetadadosFoto(f)
+  // Grava a metadata da evidência (EXIF da foto original ou dados do arquivo) — sempre a
+  // partir do arquivo ORIGINAL escolhido (a edição/corte no canvas apaga o EXIF).
+  async function gravarMetaEvid(slot,lbl,fOriginal,isPdf){
+    const metaFoto = isPdf ? {data:new Date(fOriginal.lastModified).toLocaleString('pt-BR'),lat:null,lng:null} : await extrairMetadadosFoto(fOriginal)
     const chave = slot===1?'inicio':'fim'
     setForm(fm=>({...fm,evid_meta:{...(fm.evid_meta||{}),[chave]:{
-      arquivo:f.name,
+      arquivo:fOriginal.name,
       data_foto:metaFoto.data,
       gps_lat:metaFoto.lat,
       gps_lng:metaFoto.lng,
-      tamanho:(f.size/1024).toFixed(0)+' KB',
-      tipo:isPdf?'PDF':(f.type.split('/')[1]||'imagem').toUpperCase(),
+      tamanho:(fOriginal.size/1024).toFixed(0)+' KB',
+      tipo:isPdf?'PDF':(fOriginal.type.split('/')[1]||'imagem').toUpperCase(),
       incluir:true
     }}}))
     showToast('✅ Evidência '+lbl.toLowerCase()+' anexada!')
+  }
+  // Anexa a evidência climática (foto de câmera/galeria ou PDF) no slot 1 (início) ou 2 (fim).
+  // PDF vai direto; foto passa pelo editor (marcação/corte) antes de ser aceita.
+  async function handleEvidFile(slot,lbl,f){
+    const isPdf=f.type==='application/pdf'||f.name.toLowerCase().endsWith('.pdf')
+    if(isPdf){
+      setObsFotos(a=>{const n=[...a];n[slot]='pdf:'+f.name;return n})
+      setObsFotoFiles(a=>{const n=[...a];n[slot]=f;return n})
+      await gravarMetaEvid(slot,lbl,f,true)
+      return
+    }
+    const r=new FileReader()
+    r.onload=ev=>{
+      setAnnotatorTarget({
+        src: ev.target.result,
+        aplicar: async (blob) => {
+          const arquivo = new File([blob], `evid_${slot}.jpg`, {type:'image/jpeg'})
+          const leitor = new FileReader()
+          leitor.onload = ev2 => setObsFotos(a=>{const n=[...a];n[slot]=ev2.target.result;return n})
+          leitor.readAsDataURL(blob)
+          setObsFotoFiles(a=>{const n=[...a];n[slot]=arquivo;return n})
+          await gravarMetaEvid(slot,lbl,f,false)
+        }
+      })
+    }
+    r.readAsDataURL(f)
   }
 
   // Adiciona unidade à dosagem ao salvar: "Moddus - 1.1" → "Moddus - 1.1 Kg/ha"
@@ -1383,9 +1419,19 @@ export default function PilotApp({onSwitchMode}) {
   function handleNotaFoto(f){
     if(!f) return
     const r=new FileReader()
-    r.onload=ev=>setNotaFotoPreview(ev.target.result)
+    r.onload=ev=>{
+      setAnnotatorTarget({
+        src: ev.target.result,
+        aplicar: (blob) => {
+          const arquivo = new File([blob], 'nota.jpg', {type:'image/jpeg'})
+          const leitor = new FileReader()
+          leitor.onload = ev2 => setNotaFotoPreview(ev2.target.result)
+          leitor.readAsDataURL(blob)
+          setNotaFotoFile(arquivo)
+        }
+      })
+    }
     r.readAsDataURL(f)
-    setNotaFotoFile(f)
   }
 
   async function buscarPrevisao(lat,lon,local){
@@ -2731,6 +2777,11 @@ export default function PilotApp({onSwitchMode}) {
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
       <ConfirmDialogModal/>
+      {annotatorTarget && (
+        <ImageAnnotator src={annotatorTarget.src}
+          onSave={blob=>{ annotatorTarget.aplicar(blob); setAnnotatorTarget(null) }}
+          onCancel={()=>setAnnotatorTarget(null)}/>
+      )}
     </div>
   )
 
@@ -4174,8 +4225,8 @@ Quando: ${tempoErroDebug.quando}`}
               <label style={sw.fl}>MAPA DE PÓS APLICAÇÃO</label>
               <div style={{border:'1.5px dashed #e0ece5',borderRadius:12,padding:18,textAlign:'center',cursor:'pointer',background:'#f8fbf9',...((fotoMapa||storageFotoMapa)?{padding:0,border:'none'}:{})}}
                 onClick={()=>setFotoPickerOpen({tipo:'mapa',idx:0})}>
-                <input id="mapa-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f)}}/>
-                <input id="mapa-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>setFotoMapa(ev.target.result);r.readAsDataURL(f);setFotoMapaFile(f)}}/>
+                <input id="mapa-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleMapaFoto(e.target.files[0])}/>
+                <input id="mapa-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleMapaFoto(e.target.files[0])}/>
                 {fotoMapa?<img src={fotoMapa} alt="mapa" style={{width:'100%',borderRadius:12,maxHeight:180,objectFit:'cover'}}/>
                   :storageFotoMapa?<StorageFotoSlot supabase={supabase} path={storageFotoMapa} height={180}/>
                   :<><div style={{fontSize:28}}>🗺️</div><div style={{fontSize:13,color:'#aaa',marginTop:6}}>Toque para adicionar foto do mapa</div></>}
