@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
+import { Geolocation } from '@capacitor/geolocation'
 import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
@@ -24,6 +25,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   const [erro, setErro] = useState('')
   const [tamCanvas, setTamCanvas] = useState({ width: 0, height: 0 })
   const [pos, setPos] = useState(null) // { lat, lng, accuracy }
+  const [gpsErro, setGpsErro] = useState(null) // null = ainda buscando ou já achou; string = última falha
   const [enviando, setEnviando] = useState(false)
   // Depois que o piloto envia um PDF novo, a fazenda que veio por props ainda não reflete
   // isso (o admin que carregou a lista não sabe do upload) — guarda local pra já mostrar
@@ -319,14 +321,74 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
 
   // Segue o GPS sempre que der pra comparar com algum destino — mesmo longe da fazenda,
   // isso já mostra distância e o link do Maps, útil pra quem tá testando ou se deslocando.
+  //
+  // No app nativo (Android), usa o plugin @capacitor/geolocation em vez de navigator.geolocation
+  // direto — o watchPosition do WebView passa pela implementação de geolocalização do Chrome/
+  // WebView, que historicamente é instável sem rede (tenta assistir o fix via rede antes do GPS
+  // puro, e alguns aparelhos/Android nem sempre voltam pro GPS-only direito). O plugin nativo
+  // chama a LocationManager/FusedLocationProvider do Android diretamente — funciona offline
+  // contanto que o GPS do aparelho esteja ligado. No navegador comum (dev/preview), cai pro
+  // navigator.geolocation normal, que o próprio plugin usaria de qualquer forma.
+  //
+  // O bug de campo era o watchPosition antigo ter um handler de erro vazio (`() => {}`): se o
+  // fix falhasse ou desse timeout uma vez (comum sem sinal), a tela ficava presa pra sempre em
+  // "buscando seu GPS..." sem nunca tentar de novo. Agora todo erro é logado no painel de
+  // diagnóstico da própria tela e dispara uma nova tentativa em vez de desistir silenciosamente.
   useEffect(() => {
-    if (!destino || !navigator.geolocation) return
-    const watchId = navigator.geolocation.watchPosition(
-      p => setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 3000 }
-    )
-    return () => navigator.geolocation.clearWatch(watchId)
+    if (!destino) return
+    let cancelado = false
+    let watchId = null
+    let retryTimer = null
+    const opts = { enableHighAccuracy: true, timeout: 30000, maximumAge: 10000 }
+
+    function aoErrar(err) {
+      if (cancelado) return
+      const msg = err?.message || (err?.code === 1 ? 'permissão negada' : err?.code === 3 ? 'tempo esgotado' : 'sinal indisponível')
+      log(`⚠️ GPS falhou: ${msg} — tentando de novo em 8s`)
+      setGpsErro(msg)
+      retryTimer = setTimeout(iniciar, 8000)
+    }
+
+    async function iniciar() {
+      if (cancelado) return
+      try {
+        if (Capacitor.isNativePlatform()) {
+          let perm = await Geolocation.checkPermissions()
+          if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') {
+            perm = await Geolocation.requestPermissions()
+          }
+          if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') {
+            log('⚠️ GPS: permissão de localização negada pelo usuário')
+            setGpsErro('permissão negada')
+            return
+          }
+          const id = await Geolocation.watchPosition(opts, (p, err) => {
+            if (cancelado) return
+            if (err) { aoErrar(err); return }
+            if (!p) return
+            setGpsErro(null)
+            setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy })
+          })
+          watchId = id
+        } else if (navigator.geolocation) {
+          watchId = navigator.geolocation.watchPosition(
+            p => { setGpsErro(null); setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }) },
+            aoErrar,
+            opts
+          )
+        }
+      } catch (e) { aoErrar(e) }
+    }
+    iniciar()
+
+    return () => {
+      cancelado = true
+      if (retryTimer) clearTimeout(retryTimer)
+      if (watchId != null) {
+        if (Capacitor.isNativePlatform()) Geolocation.clearWatch({ id: watchId }).catch(() => {})
+        else navigator.geolocation.clearWatch(watchId)
+      }
+    }
   }, [destino?.lat, destino?.lng])
 
   const bounds = boundsOverride || (temBounds ? { latMin: fazenda.mapa_lat_min, latMax: fazenda.mapa_lat_max, lngMin: fazenda.mapa_lng_min, lngMax: fazenda.mapa_lng_max } : null)
@@ -932,8 +994,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                     <div style={{ fontFamily:'ui-monospace,monospace', fontSize:11.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                       🎯 {formatarCoord(coordMira.lat, coordMira.lng)}
                     </div>
-                    <div style={{ fontSize:10.5, color:'#9fc2af', marginTop:2 }}>
-                      {pos ? `a ${distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você` : 'buscando seu GPS...'}
+                    <div style={{ fontSize:10.5, color: gpsErro && !pos ? '#ffb0a0' : '#9fc2af', marginTop:2 }}>
+                      {pos ? `a ${distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você`
+                        : gpsErro ? `⚠️ sem sinal de GPS (${gpsErro}) — verifique se o GPS do celular está ligado`
+                        : 'buscando seu GPS...'}
                     </div>
                   </>
                 ) : (
