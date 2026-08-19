@@ -3727,13 +3727,22 @@ export default function AdminPanel({ onSwitchMode }) {
                       <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:16}}>
                         <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:theme.text,marginBottom:2}}>🚧 Maior área pendente (top 10 fazendas)</div>
                         <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10}}>Onde ainda falta mais hectare pra pulverizar — pra decidir pra onde mandar o drone.</div>
+                        <style>{`
+                          @keyframes fzDroneFloat { 0%,50%,100% { transform: translateX(0) translateY(0) rotate(0deg) } 25% { transform: translateX(5px) translateY(-2px) rotate(6deg) } 75% { transform: translateX(-5px) translateY(2px) rotate(-6deg) } }
+                          .fz-drone-bar { animation: fzDroneFloat 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+                          @media (prefers-reduced-motion: reduce) { .fz-drone-bar { animation: none; } }
+                        `}</style>
                         <ResponsiveContainer width="100%" height={280}>
-                          <BarChart data={chartFazendas} layout="vertical" margin={{left:10,right:20}}>
+                          <BarChart data={chartFazendas} layout="vertical" margin={{left:10,right:34}}>
                             <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
                             <XAxis type="number" tick={{fontSize:10,fill:theme.textFaint2}} unit=" ha"/>
                             <YAxis type="category" dataKey="name" width={110} tick={{fontSize:10,fill:theme.textMuted}}/>
                             <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={(v,n,p)=>[`${v} ha pendentes (${p.payload.pct}% feito)`,'']}/>
-                            <Bar dataKey="pendente" fill={theme.warningText||'#c98a1c'} radius={[0,6,6,0]}/>
+                            <Bar dataKey="pendente" fill={theme.warningText||'#c98a1c'} radius={[0,6,6,0]}
+                              label={({x,y,width,height,index})=>(
+                                <text key={index} x={x+width+6} y={y+height/2} dy={5} fontSize={15} className="fz-drone-bar"
+                                  style={{animationDelay:`${(index%10)*0.15}s`}}>🚁</text>
+                              )}/>
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
