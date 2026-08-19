@@ -28,6 +28,7 @@ export async function resolverTemplate(supabase, clienteNome) {
 // Configs padrão — usadas tanto pro template novo quanto de fallback caso o registro no
 // banco esteja incompleto (upsert parcial, migração antiga, etc).
 export const DEFAULT_WHATSAPP_CONFIG = {
+  statusOperacao: true,
   areaFazendaTalhao: true,
   dataHorario: true,
   piloto: true,
@@ -100,7 +101,15 @@ export const MOCK_RELATORIO = {
 const linhaDiv = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 const linhaDiv16 = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 
+// Área líquida REALMENTE aplicada — mesma lógica de `areaLiquida` em lib/pdf.js (duplicada
+// aqui de propósito pra manter esse builder de WhatsApp leve/sem depender do módulo de PDF).
+// Um voo Finalizado Parcial (status pausado_dia) grava area_ha/bordadura do talhão INTEIRO,
+// não do trecho pulverizado — quem sabe quanto foi aplicado de fato é `area_feita`.
 function areaLiquidaLocal(rel) {
+  if (rel.status === 'pausado_dia') {
+    const feita = parseFloat(rel.area_feita)
+    if (!isNaN(feita) && feita > 0) return +feita.toFixed(2)
+  }
   const bruta = parseFloat(rel.area_ha) || 0
   const bord = parseFloat(rel.bordadura) || 0
   return Math.max(0, +(bruta - bord).toFixed(2))
@@ -190,6 +199,8 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   ;(rel.bordadura_detalhe || []).forEach(d => { if (d?.talhao) bordaduraPorTalhao[d.talhao] = parseFloat(d.bordadura) || 0 })
   const catalogo = opts.talhoesCatalogo || []
 
+  const parcial = rel.status === 'pausado_dia'
+
   // Dados de área/aplicada por talhão — usados tanto na seção Áreas quanto pra calcular o
   // total de produto de cada talhão (dose x área LÍQUIDA daquele talhão, não a área bruta).
   const dadosPorTalhao = talhoes.map(nome => {
@@ -199,6 +210,16 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
     const aplicada = total != null ? Math.max(0, total - bord) : null
     return { nome, total, bord, aplicada }
   })
+  // Se for Finalizado Parcial com mais de um talhão selecionado, `rel.area_feita` é um único
+  // valor cumulativo (não sabe quanto foi feito EM CADA talhão) — divide proporcional ao
+  // tamanho cadastrado de cada um, mesmo critério já usado no progresso por talhão do app.
+  if (parcial) {
+    const areaFeitaRel = parseFloat(rel.area_feita)
+    const somaTotais = dadosPorTalhao.reduce((a, d) => a + (d.total || 0), 0)
+    if (!isNaN(areaFeitaRel) && areaFeitaRel > 0 && somaTotais > 0) {
+      dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = +(areaFeitaRel * (d.total / somaTotais)).toFixed(2) })
+    }
+  }
   const areaAplicadaGeral = areaLiquidaLocal(rel)
 
   const blocos = []
@@ -210,6 +231,7 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   dados.push(`*Período:* ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`)
   dados.push(`*Piloto:* ${rel.piloto_nome || '—'}`)
   if (rel.drone) dados.push(`*Drone:* ${rel.drone}`)
+  if (cfg.statusOperacao) dados.push(`*Status:* ${parcial ? '🌙 Finalizado Parcial — aplicação continua em outro voo' : '✅ Finalizado'}`)
   blocos.push(dados.join('\n'))
 
   if (cfg.area) {
@@ -217,12 +239,12 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
     if (talhoes.length > 1) {
       dadosPorTalhao.forEach(({ nome, total, bord, aplicada }, i) => {
         area.push(total != null
-          ? `Tal. ${nome}: Tot ${fmtHa(total)} ha | Bord ${fmtHa(bord)} | Aplic ${fmtHa(aplicada)} ha`
+          ? `Tal. ${nome}: Tot ${fmtHa(total)} ha | Bord ${fmtHa(bord)} | Aplic ${fmtHa(aplicada)} ha${parcial ? ' (parcial)' : ''}`
           : `Tal. ${nome}: Bord ${fmtHa(bord)}`)
         if (i < dadosPorTalhao.length - 1) area.push('')
       })
     } else {
-      area.push(`Tot ${fmtHa(rel.area_ha)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
+      area.push(`Tot ${fmtHa(rel.area_ha)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha${parcial ? ' (parcial)' : ''}`)
     }
     blocos.push(`*Áreas*\n${area.join('\n')}`)
   }

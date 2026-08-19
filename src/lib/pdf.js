@@ -41,8 +41,20 @@ export function parseDoseProduto(str) {
   return { nome, dose, unidade }
 }
 
-// Área líquida aplicada = soma dos talhões (area_ha) − bordadura (ha)
+// Área líquida REALMENTE aplicada nesse voo/relatório. Pro caso normal (voo concluído do
+// início ao fim numa tacada só), é a área bruta do(s) talhão(ões) selecionado(s) menos a
+// bordadura. MAS um voo "Finalizado Parcial" (status pausado_dia — o piloto encerrou o dia
+// sem terminar o talhão inteiro, e por algum motivo nunca retomou pra fechar 100%) grava
+// `area_ha`/`bordadura` do talhão INTEIRO (cadastro), não do trecho realmente pulverizado —
+// quem sabe quanto foi feito de fato é o campo `area_feita`, preenchido pelo piloto na hora
+// de encerrar aquele dia. Sem esse desvio, dose×área e o total de produto saem calculados
+// em cima da área toda do talhão mesmo quando só uma fração foi aplicada (bug real: 30 ha
+// aplicados de um talhão de 100 ha gerava relatório de 100 ha / 2x o produto usado de verdade).
 export function areaLiquida(rel) {
+  if (rel.status === 'pausado_dia') {
+    const feita = parseFloat(rel.area_feita)
+    if (!isNaN(feita) && feita > 0) return +feita.toFixed(2)
+  }
   const bruta = parseFloat(rel.area_ha)||0
   const bord = parseFloat(rel.bordadura)||0
   return Math.max(0, +(bruta-bord).toFixed(2))
@@ -113,8 +125,9 @@ export async function gerarPDFRelatorio(rel, { supabase, localObsFotos, localFot
   pdfSec('Identificação')
   pdfRow('Cliente', rel.cliente, true)
   pdfRow('Fazenda', rel.fazenda, false)
-  if (areaBruta) pdfRow('Área Total (talhões)', areaBruta+' ha', true)
-  if (areaBruta) pdfRow('Área Realizada', areaNeta+' ha', false)
+  if (rel.status==='pausado_dia') pdfRow('Status', 'FINALIZADO PARCIAL — aplicação continua em outro voo', true)
+  if (areaBruta) pdfRow('Área Total (talhões)', areaBruta+' ha', !(rel.status==='pausado_dia'))
+  if (areaBruta) pdfRow('Área Realizada', areaNeta+' ha', rel.status==='pausado_dia')
   if (bordaduraHa) {
     const detalheTxt = rel.bordadura_detalhe?.length ? ' ('+rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(', ')+')' : ''
     pdfRow('Bordadura', bordaduraHa+' ha'+detalheTxt, true)
@@ -434,6 +447,16 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   })
   y+=14
 
+  // Aviso de Finalizado Parcial — deixa claro que a Área Aplicada abaixo é só o trecho
+  // realmente pulverizado até o encerramento daquele dia, não o talhão inteiro.
+  if(rel.status==='pausado_dia'){
+    doc.setFillColor(255,247,224);doc.roundedRect(C1,y,CW,6,1.2,1.2,'F')
+    doc.setDrawColor(240,192,64);doc.setLineWidth(0.3);doc.roundedRect(C1,y,CW,6,1.2,1.2,'S')
+    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(178,124,10)
+    doc.text('FINALIZADO PARCIAL — aplicação continua em outro voo',C1+3,y+4)
+    y+=8
+  }
+
   // Tipo de serviço / qtde de voos (opcional)
   const tsLabelC = rel.tipo_servico==='catacao' ? 'Catação' : rel.tipo_servico==='area_total' ? 'Área Total' : null
   if(tsLabelC || (rel.qtd_voos && rel.qtd_voos>1)){
@@ -622,11 +645,13 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   }
   }
 
-  // Bordadura — logo após o mapa, só se preenchida: mostra total, bordadura e líquido
-  if(bordaduraHaC){
+  // Total x Realizada x Bordadura — mostra sempre que tiver bordadura OU for um voo
+  // Finalizado Parcial (nesse caso a distinção Total/Realizada é essencial mesmo sem
+  // bordadura, já que Realizada aqui é só o trecho aplicado até o encerramento do dia).
+  if(bordaduraHaC || rel.status==='pausado_dia'){
     doc.setFillColor(240,248,243);doc.roundedRect(C2,y2,CW,8,1.5,1.5,'F')
-    const trio = [['TOTAL:',areaBrutaC+' ha'],['REALIZADA:',area+' ha'],['BORDADURA:',bordaduraHaC+' ha']]
-    const trioW = CW/3
+    const trio = [['TOTAL:',areaBrutaC+' ha'],['REALIZADA:',area+' ha'],...(bordaduraHaC?[['BORDADURA:',bordaduraHaC+' ha']]:[])]
+    const trioW = CW/trio.length
     trio.forEach(([lbl,val],i)=>{
       const tx = C2+3+i*trioW
       doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text(lbl,tx,y2+5.5)
@@ -1188,6 +1213,7 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
   .obs-fotos img { width:30%; border-radius:6px; }
   .footer { margin-top: 32px; border-top: 2px solid #2da05e; padding-top: 10px; font-size:9pt; color:#888; display:flex; justify-content:space-between; }
   .badge { display:inline-block; background:#e8f5ee; color:#2da05e; padding:2px 10px; border-radius:20px; font-size:9pt; font-weight:bold; }
+  .badge-parcial { display:block; background:#fff7e0; color:#b27c0a; border:1px solid #f0c040; padding:8px 14px; border-radius:6px; font-size:10pt; font-weight:bold; margin-bottom:16px; }
 </style>
 </head>
 <body>
@@ -1200,6 +1226,8 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
   </div>
 </div>
 <div class="gold-line"></div>
+
+${rel.status==='pausado_dia'?`<div class="badge-parcial">🌙 FINALIZADO PARCIAL — aplicação continua em outro voo. A Área Realizada abaixo é só o trecho aplicado até o encerramento desse dia.</div>`:''}
 
 <h2>Dados da Operação</h2>
 <table>
