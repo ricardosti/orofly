@@ -3563,8 +3563,19 @@ export default function AdminPanel({ onSwitchMode }) {
             const somaRealizada = fazendasBI.reduce((a,f)=>a+f.areaRealizada,0)
             const pctGeral = somaTotal>0 ? Math.min(100,(somaRealizada/somaTotal)*100) : 0
             const comCadastro = fazendasBI.filter(f=>f.areaTotal>0)
-            const chartFazendas = [...comCadastro].sort((a,b)=>b.pct-a.pct).slice(0,10)
-              .map(f=>({ name: f.nome.length>16?f.nome.slice(0,15)+'…':f.nome, pct: parseFloat(f.pct.toFixed(1)) }))
+            // Ranking por % concluído vira só uma parede de barras 100% quando a maioria da
+            // carteira já tá pronta — não separa sinal de ruído, e o gestor não teria o que
+            // fazer com essa informação (não dá pra "agir" em cima do que já terminou).
+            // Ordenar pela área que AINDA FALTA (em ha, não em %) já resolve isso sozinho: só
+            // fica "cheio de barra 100%" se sobrar muita coisa pra fazer, o que já seria, em
+            // si, a informação certa a mostrar. É a pergunta que quem opera a frota realmente
+            // faz de manhã: "pra onde eu mando o drone hoje, e quanto falta lá?"
+            const chartFazendas = [...comCadastro]
+              .map(f => ({ ...f, pendente: Math.max(0, f.areaTotal * (1 - (f.pct||0)/100)) }))
+              .filter(f => f.pendente > 0.05)
+              .sort((a,b) => b.pendente - a.pendente)
+              .slice(0,10)
+              .map(f => ({ name: f.nome.length>16?f.nome.slice(0,15)+'…':f.nome, pendente: parseFloat(f.pendente.toFixed(1)), pct: parseFloat((f.pct||0).toFixed(1)) }))
 
             // Sem talhão cadastrado com área conta como "não iniciada" também — na prática,
             // se não tem nem área lançada, o trabalho ainda nem começou de verdade.
@@ -3714,14 +3725,15 @@ export default function AdminPanel({ onSwitchMode }) {
 
                     {chartFazendas.length>0 && (
                       <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:16}}>
-                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:theme.text,marginBottom:10}}>📊 % Concluído por Fazenda (top 10)</div>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:13,fontWeight:700,color:theme.text,marginBottom:2}}>🚧 Maior área pendente (top 10 fazendas)</div>
+                        <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10}}>Onde ainda falta mais hectare pra pulverizar — pra decidir pra onde mandar o drone.</div>
                         <ResponsiveContainer width="100%" height={280}>
                           <BarChart data={chartFazendas} layout="vertical" margin={{left:10,right:20}}>
                             <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
-                            <XAxis type="number" domain={[0,100]} tick={{fontSize:10,fill:theme.textFaint2}} unit="%"/>
+                            <XAxis type="number" tick={{fontSize:10,fill:theme.textFaint2}} unit=" ha"/>
                             <YAxis type="category" dataKey="name" width={110} tick={{fontSize:10,fill:theme.textMuted}}/>
-                            <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={v=>`${v}%`}/>
-                            <Bar dataKey="pct" fill="#00A86B" radius={[0,6,6,0]}/>
+                            <Tooltip contentStyle={{borderRadius:10,border:`1px solid ${theme.cardBorder}`,fontSize:12}} formatter={(v,n,p)=>[`${v} ha pendentes (${p.payload.pct}% feito)`,'']}/>
+                            <Bar dataKey="pendente" fill={theme.warningText||'#c98a1c'} radius={[0,6,6,0]}/>
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
