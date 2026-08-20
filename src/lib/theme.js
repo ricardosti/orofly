@@ -108,12 +108,34 @@ export const ADMIN_DARK_THEME = {
   radius: 8,
 };
 
+// Duas variações extras (mesma estrutura neutra do ADMIN_*_THEME, só troca o tom de destaque
+// primary/success) — dá pra oferecer no seletor de "Tema" sem reescrever o app inteiro de novo.
+export const ADMIN_LIGHT_THEME_AZUL = { ...ADMIN_LIGHT_THEME, primary:'#2563EB', primaryDark:'#1D4ED8', successBg:'#EFF6FF', successText:'#2563EB' };
+export const ADMIN_DARK_THEME_AZUL  = { ...ADMIN_DARK_THEME,  primary:'#3B82F6', primaryDark:'#2563EB', successBg:'#122A4A', successText:'#60A5FA' };
+export const ADMIN_LIGHT_THEME_VIOLETA = { ...ADMIN_LIGHT_THEME, primary:'#7C3AED', primaryDark:'#6D28D9', successBg:'#F5F3FF', successText:'#7C3AED' };
+export const ADMIN_DARK_THEME_VIOLETA  = { ...ADMIN_DARK_THEME,  primary:'#A78BFA', primaryDark:'#8B5CF6', successBg:'#2E1F4A', successText:'#C4B5FD' };
+
+// Registro de temas selecionáveis do Admin (menu Configurações > Tema). "verde" reaproveita a
+// LIGHT_THEME/DARK_THEME original (a identidade visual de antes do redesign) — é o "voltar pro
+// verde" que dá pra escolher a qualquer momento, sem perder o resto do redesign (sidebar
+// compacta, tabela, badges etc, que não dependem de cor).
+export const ADMIN_PALETTES = {
+  slate:   { label: 'Slate (Enterprise)', swatch: '#059669', light: ADMIN_LIGHT_THEME,          dark: ADMIN_DARK_THEME },
+  verde:   { label: 'Verde Clássico',     swatch: '#00A86B', light: LIGHT_THEME,                 dark: DARK_THEME },
+  azul:    { label: 'Azul Corporativo',   swatch: '#2563EB', light: ADMIN_LIGHT_THEME_AZUL,      dark: ADMIN_DARK_THEME_AZUL },
+  violeta: { label: 'Violeta',            swatch: '#7C3AED', light: ADMIN_LIGHT_THEME_VIOLETA,   dark: ADMIN_DARK_THEME_VIOLETA },
+};
+export const ADMIN_PALETTE_LIST = Object.entries(ADMIN_PALETTES).map(([id, p]) => ({ id, label: p.label, swatch: p.swatch }));
+
 const STORAGE_KEY = 'orofly_theme';
+const PALETTE_KEY = 'orofly_admin_palette';
 
 const ThemeContext = createContext({
   theme: LIGHT_THEME,
   themeName: 'light',
   toggleTheme: () => {},
+  adminPalette: 'slate',
+  setAdminPalette: () => {},
 });
 
 export function ThemeProvider({ children }) {
@@ -126,6 +148,15 @@ export function ThemeProvider({ children }) {
     }
   });
 
+  const [adminPalette, setAdminPalette] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(PALETTE_KEY);
+      return saved && ADMIN_PALETTES[saved] ? saved : 'slate';
+    } catch {
+      return 'slate';
+    }
+  });
+
   useEffect(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, themeName);
@@ -133,6 +164,14 @@ export function ThemeProvider({ children }) {
       // ignora erro de storage indisponível
     }
   }, [themeName]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PALETTE_KEY, adminPalette);
+    } catch {
+      // ignora erro de storage indisponível
+    }
+  }, [adminPalette]);
 
   const toggleTheme = () => {
     setThemeName((prev) => (prev === 'light' ? 'dark' : 'light'));
@@ -142,7 +181,9 @@ export function ThemeProvider({ children }) {
     theme: themeName === 'dark' ? DARK_THEME : LIGHT_THEME,
     themeName,
     toggleTheme,
-  }), [themeName]);
+    adminPalette,
+    setAdminPalette,
+  }), [themeName, adminPalette]);
 
   return React.createElement(ThemeContext.Provider, { value }, children);
 }
@@ -152,14 +193,15 @@ export function useTheme() {
 }
 
 // Mesma fonte de verdade do toggle claro/escuro (contexto/localStorage compartilhado com o
-// resto do app), mas devolve a paleta ADMIN_LIGHT_THEME/ADMIN_DARK_THEME em vez da paleta
-// padrão — usado só pelo AdminPanel, pra ele ter sua própria identidade visual sem afetar
-// o App do Piloto.
+// resto do app), mas devolve a paleta escolhida em ADMIN_PALETTES (padrão "slate") em vez da
+// paleta padrão do app — usado só pelo AdminPanel, pra ele ter sua própria identidade visual
+// sem afetar o App do Piloto. `paletteList` e `setAdminPalette` alimentam o seletor de Tema em
+// Configurações do Sistema.
 export function useAdminTheme() {
-  const { themeName, toggleTheme } = useContext(ThemeContext);
-  const theme = useMemo(
-    () => (themeName === 'dark' ? ADMIN_DARK_THEME : ADMIN_LIGHT_THEME),
-    [themeName]
-  );
-  return { theme, themeName, toggleTheme };
+  const { themeName, toggleTheme, adminPalette, setAdminPalette } = useContext(ThemeContext);
+  const theme = useMemo(() => {
+    const palette = ADMIN_PALETTES[adminPalette] || ADMIN_PALETTES.slate;
+    return themeName === 'dark' ? palette.dark : palette.light;
+  }, [themeName, adminPalette]);
+  return { theme, themeName, toggleTheme, adminPalette, setAdminPalette, paletteList: ADMIN_PALETTE_LIST };
 }

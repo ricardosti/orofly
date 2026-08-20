@@ -84,7 +84,7 @@ function MultiSelectDropdown({ label, options, selected, onChange }) {
 }
 
 export default function AdminPanel({ onSwitchMode }) {
-  const { theme } = useTheme()
+  const { theme, adminPalette, setAdminPalette, paletteList } = useTheme()
   const { profile, signOut, refreshProfile } = useAuth()
   const [confirmSair, setConfirmSair] = useState(false)
   const sairComConfirmacao = () => setConfirmSair(true)
@@ -5586,6 +5586,7 @@ export default function AdminPanel({ onSwitchMode }) {
               <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:420,flexWrap:'wrap'}}>
                 {[
                   {id:'geral',label:'🏢 Geral'},
+                  {id:'tema',label:'🎨 Tema'},
                   {id:'clima',label:'🌦️ Clima'},
                   {id:'personalizacao',label:'📄 Personalização de Relatórios'},
                 ].map(t=>(
@@ -5593,6 +5594,25 @@ export default function AdminPanel({ onSwitchMode }) {
                     onClick={()=>setConfigSubTab(t.id)}>{t.label}</button>
                 ))}
               </div>
+
+              {configSubTab==='tema' && (
+                <div style={{ background:theme.card, borderRadius:theme.radius||14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:640 }}>
+                  <SecTitle>🎨 Tema do Painel Admin</SecTitle>
+                  <div style={{ fontSize:12.5, color:theme.textMuted, marginBottom:16 }}>
+                    Escolha a paleta de cores do painel — não afeta o app do piloto no celular, nem a claro/escuro (que continua um botão separado). Fica salvo neste navegador.
+                  </div>
+                  <div style={{ display:'grid', gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)', gap:12 }}>
+                    {paletteList.map(p=>(
+                      <button key={p.id} onClick={()=>setAdminPalette(p.id)}
+                        style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8, background: adminPalette===p.id?theme.successBg:theme.bg, border: adminPalette===p.id?`2px solid ${p.swatch}`:`1px solid ${theme.cardBorder2}`, borderRadius:theme.radius||10, padding:'16px 10px', cursor:'pointer' }}>
+                        <div style={{ width:34, height:34, borderRadius:'50%', background:p.swatch, boxShadow: adminPalette===p.id?`0 0 0 4px ${p.swatch}22`:'none' }}/>
+                        <span style={{ fontSize:12.5, fontWeight:600, color:theme.text, textAlign:'center' }}>{p.label}</span>
+                        {adminPalette===p.id && <span style={{ fontSize:10, fontWeight:700, color:p.swatch }}>Selecionado</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {configSubTab==='clima' && (<>
               <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, marginBottom:16, maxWidth:520 }}>
