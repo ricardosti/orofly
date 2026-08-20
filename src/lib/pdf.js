@@ -1056,7 +1056,7 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
 </div>
 <div class="gold-line"></div>
 
-${rel.status==='pausado_dia'?`<div class="badge-parcial">🌙 FINALIZADO PARCIAL — aplicação continua em outro voo. A Área Realizada abaixo é só o trecho aplicado até o encerramento desse dia.</div>`:''}
+${rel.status==='pausado_dia'?`<div class="badge-parcial">FINALIZADO PARCIAL — aplicação continua em outro voo. A Área Realizada abaixo é só o trecho aplicado até o encerramento desse dia.</div>`:''}
 
 <h2>Dados da Operação</h2>
 <table>
