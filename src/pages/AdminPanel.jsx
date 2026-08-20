@@ -1510,16 +1510,16 @@ export default function AdminPanel({ onSwitchMode }) {
           const contemAtivo = itens.some(([id]) => id === tab)
           const aberto = sidebarGruposAbertos[grupoId] ?? contemAtivo
           return (
-            <div key={grupoId} style={{marginBottom:4}}>
+            <div key={grupoId} style={{marginBottom:1}}>
               <button onClick={() => setSidebarGruposAbertos(g => ({...g, [grupoId]: !aberto}))}
-                style={{display:'flex', alignItems:'center', width:'100%', background:'none', border:'none', padding:'8px 12px', cursor:'pointer'}}>
+                style={{display:'flex', alignItems:'center', width:'100%', background:'none', border:'none', padding:'6px 9px', cursor:'pointer'}}>
                 <span style={{flex:1, textAlign:'left', fontSize:10.5, fontWeight:700, color:'#64748B', letterSpacing:1.2}}>{secao}</span>
                 <span style={{display:'inline-block', transition:'transform .25s ease', transform: aberto?'rotate(180deg)':'rotate(0deg)', color:'#64748B', fontSize:9}}>▼</span>
               </button>
               <div style={{display:'grid', gridTemplateRows: aberto?'1fr':'0fr', transition:'grid-template-rows .3s ease-in-out'}}>
                 <div style={{overflow:'hidden', minHeight:0}}>
                   {itens.map(([id, icon, lbl, cnt]) => (
-                    <button key={id} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background: tab===id?'rgba(5,150,105,0.16)':'transparent', border:'none', borderLeft: tab===id?'2px solid #10B981':'2px solid transparent', borderRadius:6, padding:'7px 9px', cursor:'pointer', color: tab===id?'#fff':'#94A3B8', fontSize:13, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:1, transition:'all .12s' }}
+                    <button key={id} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background: tab===id?'rgba(5,150,105,0.16)':'transparent', border:'none', borderLeft: tab===id?'2px solid #10B981':'2px solid transparent', borderRadius:6, padding:'5.5px 9px', cursor:'pointer', color: tab===id?'#fff':'#94A3B8', fontSize:12.5, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:0, transition:'all .12s' }}
                       onClick={() => { setTab(id); setSidebarOpen(false) }}>
                       <span style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12.5,flexShrink:0,opacity:.9}}>{icon}</span>
                       <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
@@ -1533,17 +1533,12 @@ export default function AdminPanel({ onSwitchMode }) {
         })}
       </nav>
 
-      <div style={{ padding:'10px 20px', borderTop:'1px solid #1E293B', borderBottom:'1px solid #1E293B', display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:4 }}>
-        {[
-          ['Em voo', relatorios.filter(r=>r.status==='em_operacao').length, '#059669'],
-          ['Pausados', relatorios.filter(r=>r.status==='pausado').length, theme.warningText],
-          ['SOS', sosAtivos.length, theme.dangerText]
-        ].map(([lbl,val,cor]) => (
-          <div key={lbl} style={{ textAlign:'center' }}>
-            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:18, fontWeight:700, color:cor }}>{val}</div>
-            <div style={{ fontSize:9, color:'#64748B' }}>{lbl}</div>
-          </div>
-        ))}
+      {/* Widget minimalista de status operacional — antes era um bloco de 3 caixas grandes,
+          agora é uma linha discreta só com pontinho colorido + número. */}
+      <div style={{ padding:'8px 16px', borderTop:'1px solid #1E293B', display:'flex', alignItems:'center', gap:12, fontSize:11, color:'#64748B', flexWrap:'wrap' }}>
+        <span><span style={{color:'#10B981'}}>●</span> {relatorios.filter(r=>r.status==='em_operacao').length} em voo</span>
+        <span><span style={{color:'#FBBF24'}}>●</span> {relatorios.filter(r=>r.status==='pausado').length} pausados</span>
+        {sosAtivos.length>0 && <span style={{color:theme.dangerText,fontWeight:700}}>● {sosAtivos.length} SOS</span>}
       </div>
 
       <div style={{ padding:'10px 12px', borderTop:'1px solid #1E293B', position:'relative' }}>
@@ -1676,7 +1671,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
 
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:theme.card, padding:12, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#F8FAFC', padding:12, borderRadius:theme.radius||8, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
                 {[['Cliente','cliente'],['Fazenda','fazenda'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
@@ -1749,7 +1744,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       <thead>
                         <tr style={{ background:theme.bg }}>
                           {['Cliente','Fazenda','Piloto','Drone','Status','Data','Tempo','Custo','Ações'].map(h => (
-                            <th key={h} style={{ padding:'12px 14px', textAlign:'left', fontSize:11, fontWeight:600, color:theme.textFaint2, letterSpacing:0.4, textTransform:'uppercase', borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'DM Sans',sans-serif" }}>{h}</th>
+                            <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:theme.textFaint2, letterSpacing:0.4, textTransform:'uppercase', borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'DM Sans',sans-serif" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1911,7 +1906,7 @@ export default function AdminPanel({ onSwitchMode }) {
               const preco = r.tipo_servico==='catacao' ? cli.preco_catacao : r.tipo_servico==='area_total' ? cli.preco_area_total : null
               if(preco>0){ receitaClientes += preco*parseFloat(r.area_ha||0); voosComPreco++ }
             })
-            const fmtH = m => { const h=Math.floor(m/60),mn=m%60; return `${h}h${String(mn).padStart(2,'0')}m` }
+            const fmtH = m => { const h=Math.floor(m/60),mn=m%60; return `${h}h ${String(mn).padStart(2,'0')}m` }
 
             // ── Área por dia (últimos 30 dias) ──
             const areaPorDia = {}
@@ -2047,14 +2042,14 @@ export default function AdminPanel({ onSwitchMode }) {
             const COLORS = ['#059669','#059669','#D97706','#2f6fed','#8e44ad',theme.warningText,theme.dangerText,theme.textMuted]
 
             const Card = ({title,value,sub,color='#059669',icon}) => (
-              <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'18px',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+              <div style={{background:theme.card,borderRadius:theme.radius||8,border:`1px solid ${theme.cardBorder2}`,padding:'16px'}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
                   <div>
-                    <div style={{fontSize:11,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Syne',sans-serif"}}>{title}</div>
-                    <div style={{fontSize:isMobile?22:28,fontWeight:700,color,fontFamily:"'Syne',sans-serif",lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{value}</div>
-                    {sub&&<div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>{sub}</div>}
+                    <div style={{fontSize:11,fontWeight:600,color:theme.textFaint2,letterSpacing:.4,marginBottom:6,fontFamily:"'DM Sans',sans-serif",textTransform:'uppercase'}}>{title}</div>
+                    <div style={{fontSize:isMobile?21:26,fontWeight:700,color:theme.text,fontFamily:"'DM Sans',sans-serif",lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{value}</div>
+                    {sub&&<div style={{fontSize:11.5,color:theme.textFaint2,marginTop:5}}>{sub}</div>}
                   </div>
-                  {icon&&<div style={{width:44,height:44,borderRadius:14,background:color+'1a',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>{icon}</div>}
+                  {icon&&<div style={{width:38,height:38,borderRadius:8,background:color+'14',display:'flex',alignItems:'center',justifyContent:'center',fontSize:17,flexShrink:0}}>{icon}</div>}
                 </div>
               </div>
             )
@@ -2750,7 +2745,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
               )}
 
-              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:theme.card, padding:12, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#F8FAFC', padding:12, borderRadius:theme.radius||8, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
                 {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
@@ -2861,7 +2856,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{comKml.length} voos com trajeto KML enviado · selecione quais sobrepor no mapa</div>
                 </div>
 
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:theme.card, padding:12, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#F8FAFC', padding:12, borderRadius:theme.radius||8, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
                   {[['Cliente','cliente'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                     <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                   ))}
@@ -2927,7 +2922,7 @@ export default function AdminPanel({ onSwitchMode }) {
               const mins = Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
               horasDrone[key] = (horasDrone[key]||0) + mins
             })
-            const fmtH = m => { const h=Math.floor(m/60),mn=m%60; return `${h}h${String(mn).padStart(2,'0')}m` }
+            const fmtH = m => { const h=Math.floor(m/60),mn=m%60; return `${h}h ${String(mn).padStart(2,'0')}m` }
 
             return (
               <div>
@@ -7533,7 +7528,7 @@ function DetailCol({ title, items }) {
 // Tokens sóbrios (estilo Vercel/Linear/Stripe) usados na tabela de Relatórios e em outras
 // telas densas do Admin — bordas finas, cinza-slate neutro, sem preenchimento colorido pesado.
 const sG = {
-  td: { padding:'12px 14px', fontSize:13, color:'#0F172A', borderBottom:'1px solid #E2E8F0', verticalAlign:'middle' },
+  td: { padding:'12px 16px', fontSize:13, color:'#0F172A', borderBottom:'1px solid #E2E8F0', verticalAlign:'middle' },
   iconBtn: { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'3px 4px', borderRadius:6 },
   label: { fontSize:11, fontWeight:600, color:'#64748B', letterSpacing:.3, marginBottom:4, fontFamily:"'DM Sans',sans-serif" },
   input: { width:'100%', border:'1px solid #CBD5E1', borderRadius:6, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0F172A', background:'#fff', appearance:'none', WebkitAppearance:'none' },
