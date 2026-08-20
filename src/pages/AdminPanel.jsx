@@ -310,6 +310,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [novoUsuarioModalAberto, setNovoUsuarioModalAberto] = useState(false)
   const [usuariosBusca, setUsuariosBusca] = useState('')
   const [usuariosFiltroPerfil, setUsuariosFiltroPerfil] = useState('')
+  const [usuariosFiltroStatus, setUsuariosFiltroStatus] = useState('') // '' | 'ativo' | 'inativo'
   const [usuarioAcoesAbertoId, setUsuarioAcoesAbertoId] = useState(null)
   const [droneHorasLimite, setDroneHorasLimite] = useState(() => {
     try { return JSON.parse(localStorage.getItem('orofly_drone_horas')||'{}') } catch { return {} }
@@ -5441,9 +5442,13 @@ export default function AdminPanel({ onSwitchMode }) {
                   { label:'Admins', valor:totalAdminsN, icone:'⚙️', bg:'#ede9fe', cor:'#7c3aed' },
                 ]
                 const buscaNorm = usuariosBusca.trim().toLowerCase()
+                const totalAtivos = pilotos.filter(p=>p.ativo).length
+                const totalInativos = pilotos.filter(p=>!p.ativo).length
                 const pilotosFiltrados = pilotos.filter(p => {
                   if (buscaNorm && !`${p.nome} ${p.email}`.toLowerCase().includes(buscaNorm)) return false
                   if (usuariosFiltroPerfil && (p.role||'piloto') !== usuariosFiltroPerfil) return false
+                  if (usuariosFiltroStatus === 'ativo' && !p.ativo) return false
+                  if (usuariosFiltroStatus === 'inativo' && p.ativo) return false
                   return true
                 })
                 return (
@@ -5469,6 +5474,11 @@ export default function AdminPanel({ onSwitchMode }) {
                       <option value="piloto">🚁 Piloto</option>
                       <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
                       <option value="admin">⚙️ Admin</option>
+                    </select>
+                    <select style={{...sG.input, flex:'1 1 140px', width:'auto'}} value={usuariosFiltroStatus} onChange={e=>setUsuariosFiltroStatus(e.target.value)}>
+                      <option value="">Status (todos)</option>
+                      <option value="ativo">🟢 Ativo ({totalAtivos})</option>
+                      <option value="inativo">⚪ Inativo ({totalInativos})</option>
                     </select>
                   </div>
 
