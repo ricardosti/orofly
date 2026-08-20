@@ -1512,16 +1512,16 @@ export default function AdminPanel({ onSwitchMode }) {
           return (
             <div key={grupoId} style={{marginBottom:1}}>
               <button onClick={() => setSidebarGruposAbertos(g => ({...g, [grupoId]: !aberto}))}
-                style={{display:'flex', alignItems:'center', width:'100%', background:'none', border:'none', padding:'6px 9px', cursor:'pointer'}}>
-                <span style={{flex:1, textAlign:'left', fontSize:10.5, fontWeight:700, color:'#64748B', letterSpacing:1.2}}>{secao}</span>
+                style={{display:'flex', alignItems:'center', width:'100%', background:'none', border:'none', padding:'7px 9px', cursor:'pointer'}}>
+                <span style={{flex:1, textAlign:'left', fontSize:11.5, fontWeight:700, color:'#64748B', letterSpacing:1}}>{secao}</span>
                 <span style={{display:'inline-block', transition:'transform .25s ease', transform: aberto?'rotate(180deg)':'rotate(0deg)', color:'#64748B', fontSize:9}}>▼</span>
               </button>
               <div style={{display:'grid', gridTemplateRows: aberto?'1fr':'0fr', transition:'grid-template-rows .3s ease-in-out'}}>
                 <div style={{overflow:'hidden', minHeight:0}}>
                   {itens.map(([id, icon, lbl, cnt]) => (
-                    <button key={id} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background: tab===id?'rgba(5,150,105,0.16)':'transparent', border:'none', borderLeft: tab===id?'2px solid #10B981':'2px solid transparent', borderRadius:6, padding:'5.5px 9px', cursor:'pointer', color: tab===id?'#fff':'#94A3B8', fontSize:12.5, fontFamily:"'DM Sans',sans-serif", fontWeight:500, marginBottom:0, transition:'all .12s' }}
+                    <button key={id} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background: tab===id?'rgba(5,150,105,0.16)':'transparent', border:'none', borderLeft: tab===id?'2px solid #10B981':'2px solid transparent', borderRadius:6, padding:'7px 9px', cursor:'pointer', color: tab===id?'#fff':'#94A3B8', fontSize:14.5, fontFamily:"'DM Sans',sans-serif", fontWeight: tab===id?600:500, marginBottom:0, transition:'all .12s' }}
                       onClick={() => { setTab(id); setSidebarOpen(false) }}>
-                      <span style={{width:20,height:20,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12.5,flexShrink:0,opacity:.9}}>{icon}</span>
+                      <span style={{width:22,height:22,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0,opacity:.9}}>{icon}</span>
                       <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
                       {cnt!==''&&<span style={{ background: tab===id?'rgba(255,255,255,0.15)':'#1E293B', color: tab===id?'#fff':'#64748B', fontSize:10.5, fontWeight:600, padding:'1px 6px', borderRadius:10 }}>{cnt}</span>}
                     </button>
