@@ -103,6 +103,7 @@ function initForm(data) {
       area_total_aplicada:data.area_total_aplicada!=null?String(data.area_total_aplicada):'',
       bordaduraPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       areaAplicadaPorTalhao:{},
+      area_feita_por_talhao:data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,String(d.area_feita)])) : {},
       evid_meta:data.evidencia_meta||{},
       area_feita:data.area_feita!=null?String(data.area_feita):'',
       area_deduzida:data.area_deduzida!=null?String(data.area_deduzida):'',
@@ -116,7 +117,7 @@ function initForm(data) {
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
-    pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},evid_meta:{},
+    pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
     area_feita:'',area_deduzida:'',teste:false,
   }
 }
@@ -139,10 +140,17 @@ function bordaduraAtual(form) {
 function areaLiquidaAtual(form) {
   return Math.max(0, +(((parseFloat(form.area_ha)||0)-bordaduraAtual(form))).toFixed(2))
 }
+// Área feita até agora: com mais de um talhão selecionado, soma o que foi digitado em cada um
+// (form.area_feita_por_talhao); com um só, usa o valor único de sempre (form.area_feita).
+function areaFeitaAtual(form) {
+  const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+  if (talhoesSel.length > 1) return talhoesSel.reduce((a,nome)=>a+(parseFloat(form.area_feita_por_talhao?.[nome])||0),0)
+  return parseFloat(form.area_feita)||0
+}
 // Progresso do Finalizado Parcial: quanto já foi feito (líquido) vs a meta líquida (área total menos bordadura)
 function progressoParcial(form) {
   const total = areaLiquidaAtual(form)
-  const feita = Math.max(0, parseFloat(form.area_feita)||0)
+  const feita = Math.max(0, areaFeitaAtual(form))
   const pct = total>0 ? Math.min(100, Math.round((feita/total)*100)) : 0
   return {total, feita, pct}
 }
@@ -1029,6 +1037,12 @@ export default function PilotApp({onSwitchMode}) {
     const bordaduraDetalhe = talhoesSel.length>1
       ? talhoesSel.map(nome=>({talhao:nome,bordadura:parseFloat(form.bordaduraPorTalhao?.[nome])||0})).filter(d=>d.bordadura>0)
       : null
+    // Breakdown por talhão do Finalizado Parcial — mesma ideia do bordaduraDetalhe. Sem isso os
+    // geradores de relatório (PDF/WhatsApp) só enxergam o total somado, sem saber quanto foi
+    // feito em CADA talhão especificamente.
+    const areaFeitaDetalhe = talhoesSel.length>1
+      ? talhoesSel.map(nome=>({talhao:nome,area_feita:Math.max(0,parseFloat(form.area_feita_por_talhao?.[nome])||0)})).filter(d=>d.area_feita>0)
+      : null
     const bordaduraTotal = bordaduraAtual(form)
     // Fallback defensivo: relId deveria sempre existir (gerado em opIniciar), mas se por algum
     // motivo ainda estiver nulo aqui, gera agora em vez de deixar o registro órfão.
@@ -1044,7 +1058,7 @@ export default function PilotApp({onSwitchMode}) {
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,altura:form.altura,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
-      obs1:form.obs1,obs2:form.obs2,bordadura:bordaduraTotal||null,area_total_aplicada:form.area_total_aplicada?parseFloat(form.area_total_aplicada):null,bordadura_detalhe:bordaduraDetalhe&&bordaduraDetalhe.length?bordaduraDetalhe:null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
+      obs1:form.obs1,obs2:form.obs2,bordadura:bordaduraTotal||null,area_total_aplicada:form.area_total_aplicada?parseFloat(form.area_total_aplicada):null,bordadura_detalhe:bordaduraDetalhe&&bordaduraDetalhe.length?bordaduraDetalhe:null,area_feita_detalhe:areaFeitaDetalhe&&areaFeitaDetalhe.length?areaFeitaDetalhe:null,evidencia_meta:form.evid_meta&&Object.keys(form.evid_meta).length?form.evid_meta:null,pausas:form.pausas,
       dt_inicio:fmtDt(form,'dt_inicio'),dt_fim:fmtDt(form,'dt_fim'),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
@@ -4573,16 +4587,60 @@ Quando: ${tempoErroDebug.quando}`}
       {/* FINALIZADO PARCIAL — marcar progresso */}
       {parcialModalOpen&&(()=>{
         const {total,feita,pct}=progressoParcial(form)
+        const talhoesSelP = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+        const multiTalhaoP = talhoesSelP.length > 1
+        // Mesma resolução de fazenda/talhões usada na etapa de bordadura por talhão (Passo 5) —
+        // pra saber a área cadastrada de cada talhão e montar a barra de progresso individual.
+        const normP = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
+        const fazendaSelP = fazendasDB.find(fz=>normP(fz.cliente)===normP(form.cliente==='Outros'?form.clienteOutro:form.cliente) && normP(fz.nome)===normP(form.fazenda))
+        const talhoesFazP = fazendaSelP ? talhoesDB.filter(t=>t.fazenda_id===fazendaSelP.id) : []
+        const areaDoTalhaoP = nome => parseFloat(talhoesFazP.find(t=>t.nome===nome)?.area_ha)||0
         return (
         <div style={s.modalOverlay} onClick={()=>setParcialModalOpen(false)}>
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>🌙 Finalizado Parcial <button style={s.modalClose} onClick={()=>setParcialModalOpen(false)}>✕</button></div>
             <p style={{fontSize:13,color:theme.textMuted,marginBottom:14,lineHeight:1.5}}>Registra quanto já foi aplicado. Amanhã é só retomar e continuar de onde parou.</p>
-            <FI label="ÁREA FEITA ATÉ AGORA (HA)" ph="Ex: 32" val={form.area_feita} onChange={e=>setForm(f=>({...f,area_feita:e.target.value}))} type="number"/>
+
+            {multiTalhaoP ? (
+              <div style={{marginBottom:4}}>
+                <label style={sw.fl}>ÁREA FEITA POR TALHÃO (HA)</label>
+                <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,marginTop:-2}}>Digite quanto já foi aplicado em cada talhão até agora.</div>
+                {talhoesSelP.map(nome=>{
+                  const areaTotalN = areaDoTalhaoP(nome)
+                  const aplicadaN = Math.max(0,parseFloat(form.area_feita_por_talhao?.[nome])||0)
+                  const pctN = areaTotalN>0 ? Math.min(100, Math.round((aplicadaN/areaTotalN)*100)) : 0
+                  return (
+                    <div key={nome} style={{marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${theme.divider}`}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                        <span style={{fontSize:13,fontWeight:600,color:theme.text,flex:1}}>{nome}</span>
+                        <span style={{fontSize:11,color:theme.textFaint2}}>{areaTotalN>0?`${areaTotalN.toFixed(1)} ha cadastrados`:'sem área cadastrada'}</span>
+                      </div>
+                      <input type="number" style={{...sw.fi,marginBottom:8}} placeholder="Ex: 32" value={form.area_feita_por_talhao?.[nome]||''}
+                        onChange={e=>{
+                          const v=e.target.value
+                          setForm(f=>({...f,area_feita_por_talhao:{...f.area_feita_por_talhao,[nome]:v}}))
+                        }}/>
+                      {areaTotalN>0 && (<>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:theme.textMuted,marginBottom:4}}>
+                          <span>{aplicadaN.toFixed(1)} de {areaTotalN.toFixed(1)} ha</span>
+                          <span style={{fontWeight:700,color:'#00A86B'}}>{pctN}%</span>
+                        </div>
+                        <div style={{height:6,background:theme.divider,borderRadius:20,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${pctN}%`,background:'#00A86B',borderRadius:20,transition:'width .3s'}}/>
+                        </div>
+                      </>)}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <FI label="ÁREA FEITA ATÉ AGORA (HA)" ph="Ex: 32" val={form.area_feita} onChange={e=>setForm(f=>({...f,area_feita:e.target.value}))} type="number"/>
+            )}
+
             {total>0&&(
               <div style={{marginTop:2,marginBottom:18}}>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:theme.textMuted,marginBottom:6}}>
-                  <span>{feita.toFixed(1)} de {total.toFixed(1)} ha</span>
+                  <span>{multiTalhaoP?'Total da operação: ':''}{feita.toFixed(1)} de {total.toFixed(1)} ha</span>
                   <span style={{fontWeight:700,color:'#00A86B'}}>{pct}%</span>
                 </div>
                 <div style={{height:10,background:theme.divider,borderRadius:20,overflow:'hidden'}}>
@@ -4598,8 +4656,8 @@ Quando: ${tempoErroDebug.quando}`}
               const jaDeduzido = parseFloat(form.area_deduzida)||0
               const deltaBaixa = Math.max(0, feita-jaDeduzido)
               const n=nowParts()
-              setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-              const relSalvo = await saveToSupabase({status:'pausado_dia',area_deduzida:feita,dt_fim:n.iso})
+              setForm(f=>({...f,area_feita:String(feita),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+              const relSalvo = await saveToSupabase({status:'pausado_dia',area_feita:feita,area_deduzida:feita,dt_fim:n.iso})
               if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
               // O voo já está salvo no servidor — pode ser retomado depois por "Continuar voo" ou
               // "Meus Relatórios". Antes de sair, registra as condições climáticas do fim do dia.
@@ -4872,7 +4930,15 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false,talhoesCatalogo
   blocos.push(dados.join('\n'))
 
   if (parcial) {
-    blocos.push(`*Progresso*\nFeito até agora: ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)\nOperação continua — este é um relatório parcial, não o voo finalizado.`)
+    const progressoLinhas = [`Feito até agora: ${numBR(areaFeita)} de ${numBR(areaAplicada)} ha (${pctFeito}%)`]
+    if (talhoes.length > 1) {
+      dadosPorTalhao.forEach(({nome,total})=>{
+        const feitaN = Math.max(0,parseFloat(form.area_feita_por_talhao?.[nome])||0)
+        progressoLinhas.push(total!=null ? `Tal. ${nome}: ${numBR(feitaN)} de ${numBR(total)} ha` : `Tal. ${nome}: ${numBR(feitaN)} ha`)
+      })
+    }
+    progressoLinhas.push('Operação continua — este é um relatório parcial, não o voo finalizado.')
+    blocos.push(`*Progresso*\n${progressoLinhas.join('\n')}`)
   } else {
     const area = []
     if (talhoes.length > 1) {

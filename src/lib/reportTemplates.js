@@ -210,14 +210,22 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
     const aplicada = total != null ? Math.max(0, total - bord) : null
     return { nome, total, bord, aplicada }
   })
-  // Se for Finalizado Parcial com mais de um talhão selecionado, `rel.area_feita` é um único
-  // valor cumulativo (não sabe quanto foi feito EM CADA talhão) — divide proporcional ao
-  // tamanho cadastrado de cada um, mesmo critério já usado no progresso por talhão do app.
+  // Se for Finalizado Parcial com mais de um talhão selecionado, usa o breakdown REAL digitado
+  // pelo piloto no modal (rel.area_feita_detalhe — um valor por talhão) quando existir. Só cai
+  // pra estimativa proporcional (dividir rel.area_feita pelo tamanho de cada talhão) em
+  // registros antigos, salvos antes desse breakdown existir.
   if (parcial) {
-    const areaFeitaRel = parseFloat(rel.area_feita)
-    const somaTotais = dadosPorTalhao.reduce((a, d) => a + (d.total || 0), 0)
-    if (!isNaN(areaFeitaRel) && areaFeitaRel > 0 && somaTotais > 0) {
-      dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = +(areaFeitaRel * (d.total / somaTotais)).toFixed(2) })
+    const feitaPorTalhao = {}
+    ;(rel.area_feita_detalhe || []).forEach(d => { if (d?.talhao) feitaPorTalhao[d.talhao] = parseFloat(d.area_feita) || 0 })
+    const temBreakdownReal = Object.keys(feitaPorTalhao).length > 0
+    if (temBreakdownReal) {
+      dadosPorTalhao.forEach(d => { d.aplicada = feitaPorTalhao[d.nome] ?? 0 })
+    } else {
+      const areaFeitaRel = parseFloat(rel.area_feita)
+      const somaTotais = dadosPorTalhao.reduce((a, d) => a + (d.total || 0), 0)
+      if (!isNaN(areaFeitaRel) && areaFeitaRel > 0 && somaTotais > 0) {
+        dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = +(areaFeitaRel * (d.total / somaTotais)).toFixed(2) })
+      }
     }
   }
   const areaAplicadaGeral = areaLiquidaLocal(rel)
