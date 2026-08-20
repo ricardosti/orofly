@@ -19,10 +19,11 @@ import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
 const API_BASE = 'https://orofly.vercel.app'
-const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
-// Funções (em vez de objeto fixo) porque as cores dependem do tema atual (claro/escuro)
-const statusColor = (theme) => ({ rascunho:theme.textMuted, em_operacao:'#059669', pausado:theme.warningText, pausado_dia:'#1a1a2e', finalizado:'#2f6fed', sos:theme.dangerText, sos_resolvido:theme.textMuted })
-const statusBg    = (theme) => ({ rascunho:theme.bg, em_operacao:theme.successBg, pausado:theme.warningBg2, pausado_dia:'#e8e8f5', finalizado:'#e6f1fb', sos:theme.dangerBg, sos_resolvido:theme.bg })
+const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
+// Funções (em vez de objeto fixo) porque as cores dependem do tema atual (claro/escuro).
+// Pílulas sóbrias: fundo suave + texto na mesma família de cor (sem preenchimento sólido).
+const statusColor = (theme) => ({ rascunho:theme.textMuted, em_operacao:'#15803D', pausado:'#B45309', pausado_dia:'#B45309', finalizado:'#15803D', sos:theme.dangerText, sos_resolvido:theme.textMuted })
+const statusBg    = (theme) => ({ rascunho:theme.bg, em_operacao:'#DCFCE7', pausado:'#FEF3C7', pausado_dia:'#FEF3C7', finalizado:'#DCFCE7', sos:theme.dangerBg, sos_resolvido:theme.bg })
 const COND_KEYS    = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS  = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
@@ -289,6 +290,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
+  const [acaoMenuAbertoId, setAcaoMenuAbertoId] = useState(null) // id do relatório com o menu "⋯" de ações aberto na tabela
   const [mapaResumo, setMapaResumo] = useState(null)
   const [showNotifs, setShowNotifs] = useState(false)
   const [notifVisto, setNotifVisto] = useState(() => { try { return localStorage.getItem('orofly_notif_visto_'+profile?.id) || null } catch { return null } })
@@ -1676,15 +1678,15 @@ export default function AdminPanel({ onSwitchMode }) {
 
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:theme.card, padding:12, borderRadius:12, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
                 {[['Cliente','cliente'],['Fazenda','fazenda'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
-                  <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
+                  <input key={k} style={sG.fi} placeholder={`${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
                 <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
                   <option value="">Todos status</option>
-                  <option value="em_operacao">🟢 Em operação</option>
-                  <option value="pausado">🟡 Pausado</option>
-                  <option value="finalizado">✅ Finalizado</option>
-                  <option value="sos">🆘 SOS Ativo</option>
-                  <option value="sos_resolvido">✅ SOS Resolvido</option>
+                  <option value="em_operacao">Em operação</option>
+                  <option value="pausado">Pausado</option>
+                  <option value="finalizado">Finalizado</option>
+                  <option value="sos">SOS Ativo</option>
+                  <option value="sos_resolvido">SOS Resolvido</option>
                   <option value="rascunho">Rascunho</option>
                 </select>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -1747,7 +1749,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       <thead>
                         <tr style={{ background:theme.bg }}>
                           {['Cliente','Fazenda','Piloto','Drone','Status','Data','Tempo','Custo','Ações'].map(h => (
-                            <th key={h} style={{ padding:'11px 14px', textAlign:'left', fontSize:11, fontWeight:700, color:theme.textMuted, letterSpacing:0.5, borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'Syne',sans-serif" }}>{h}</th>
+                            <th key={h} style={{ padding:'12px 14px', textAlign:'left', fontSize:11, fontWeight:600, color:theme.textFaint2, letterSpacing:0.4, textTransform:'uppercase', borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'DM Sans',sans-serif" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -1757,7 +1759,7 @@ export default function AdminPanel({ onSwitchMode }) {
                           const isSel = selected?.id === rel.id
                           return (
                             <React.Fragment key={rel.id}>
-                              <tr style={{ background: rel.status==='sos'?theme.dangerBg:isSel?theme.successBg:i%2===0?'#fff':'#f7fbf8', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
+                              <tr style={{ background: rel.status==='sos'?theme.dangerBg:isSel?'#F8FAFC':'#fff', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
                                 <td style={{ ...sG.td, fontWeight:600 }}>{rel.cliente||'—'}</td>
                                 <td style={sG.td}>
                                   {rel.fazenda||'—'}
@@ -1780,13 +1782,29 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={sG.td}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</td>
                                 <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:theme.textMuted }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
                                 <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:theme.warningText}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
-                                <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
-                                  <button title="Editar" style={sG.iconBtn} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️</button>
-                                  <button title="Enviar relatório no WhatsApp" style={{...sG.iconBtn,color:'#25D366'}} onClick={e => { e.stopPropagation(); enviarWhatsApp(rel) }}>💬</button>
-                                  <button title="PDF Cliente" style={{...sG.iconBtn,color:'#059669'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢</button>
-                                  <button title="Word / Google Docs" style={{...sG.iconBtn,color:'#2f6fed'}} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝</button>
-                                  {rel.gps_lat && <a title="Maps" style={{ ...sG.iconBtn, textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>🗺️</a>}
-                                  <button title="Deletar" style={{ ...sG.iconBtn, color:theme.dangerText }} onClick={e => { e.stopPropagation(); setConfirmDelete(rel) }}>🗑️</button>
+                                <td style={{ ...sG.td, whiteSpace:'nowrap', position:'relative' }}>
+                                  <button title="Ações" style={{ background:'none', border:'1px solid #E2E8F0', borderRadius:6, cursor:'pointer', fontSize:14, color:'#64748B', width:28, height:28, lineHeight:1 }}
+                                    onClick={e => { e.stopPropagation(); setAcaoMenuAbertoId(v => v===rel.id ? null : rel.id) }}>⋯</button>
+                                  {acaoMenuAbertoId===rel.id && (
+                                    <>
+                                      <div style={{ position:'fixed', inset:0, zIndex:29 }} onClick={e => { e.stopPropagation(); setAcaoMenuAbertoId(null) }}/>
+                                      <div style={{ position:'absolute', top:'calc(100% + 2px)', right:14, background:'#fff', border:'1px solid #E2E8F0', borderRadius:8, boxShadow:'0 8px 24px rgba(15,23,42,0.12)', overflow:'hidden', zIndex:30, minWidth:180 }} onClick={e => e.stopPropagation()}>
+                                        {[
+                                          ['Editar', () => setEditModal({...rel})],
+                                          ['Enviar no WhatsApp', () => enviarWhatsApp(rel)],
+                                          ['PDF Cliente', () => gerarPDF(rel,null,null,'cliente')],
+                                          ['Word / Google Docs', () => gerarPDF(rel,null,null,'word')],
+                                          ...(rel.gps_lat ? [['Abrir no Maps', () => window.open(`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`,'_blank')]] : []),
+                                        ].map(([lbl,fn]) => (
+                                          <button key={lbl} style={{ width:'100%', display:'block', textAlign:'left', background:'none', border:'none', color:'#0F172A', fontSize:12.5, padding:'9px 12px', cursor:'pointer' }}
+                                            onClick={() => { setAcaoMenuAbertoId(null); fn() }}>{lbl}</button>
+                                        ))}
+                                        <div style={{ height:1, background:'#E2E8F0' }}/>
+                                        <button style={{ width:'100%', display:'block', textAlign:'left', background:'none', border:'none', color:theme.dangerText, fontSize:12.5, padding:'9px 12px', cursor:'pointer' }}
+                                          onClick={() => { setAcaoMenuAbertoId(null); setConfirmDelete(rel) }}>Deletar</button>
+                                      </div>
+                                    </>
+                                  )}
                                 </td>
                               </tr>
                               {isSel && (() => {
@@ -7512,12 +7530,14 @@ function DetailCol({ title, items }) {
   )
 }
 
+// Tokens sóbrios (estilo Vercel/Linear/Stripe) usados na tabela de Relatórios e em outras
+// telas densas do Admin — bordas finas, cinza-slate neutro, sem preenchimento colorido pesado.
 const sG = {
-  td: { padding:'11px 14px', fontSize:13, color:'#0b1210', borderBottom:`1px solid ${'#eef5f0'}`, verticalAlign:'middle' },
-  iconBtn: { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'3px 4px', borderRadius:10 },
-  label: { fontSize:11, fontWeight:600, color:'#5c7568', letterSpacing:.5, marginBottom:4, fontFamily:"'Syne',sans-serif" },
-  input: { width:'100%', border:`1px solid ${'#d7e6dc'}`, borderRadius:12, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#F4F7F5', appearance:'none', WebkitAppearance:'none' },
-  btn: { background:'#059669', color:'#fff', border:'none', borderRadius:100, padding:'11px', fontFamily:"'Syne',sans-serif", fontSize:13, fontWeight:600, cursor:'pointer', width:'100%', boxShadow:'0 4px 14px rgba(14,159,110,0.3)' },
-  fi: { border:`1px solid ${'#d7e6dc'}`, borderRadius:12, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0b1210', background:'#F4F7F5', minWidth:110, appearance:'none' },
-  actBtn: (bg) => ({ color:'#fff', background:bg, border:'none', borderRadius:16, padding:'6px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }),
+  td: { padding:'12px 14px', fontSize:13, color:'#0F172A', borderBottom:'1px solid #E2E8F0', verticalAlign:'middle' },
+  iconBtn: { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'3px 4px', borderRadius:6 },
+  label: { fontSize:11, fontWeight:600, color:'#64748B', letterSpacing:.3, marginBottom:4, fontFamily:"'DM Sans',sans-serif" },
+  input: { width:'100%', border:'1px solid #CBD5E1', borderRadius:6, padding:'9px 11px', fontSize:14, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0F172A', background:'#fff', appearance:'none', WebkitAppearance:'none' },
+  btn: { background:'#059669', color:'#fff', border:'none', borderRadius:6, padding:'10px', fontFamily:"'DM Sans',sans-serif", fontSize:13, fontWeight:600, cursor:'pointer', width:'100%' },
+  fi: { border:'1px solid #CBD5E1', borderRadius:6, padding:'7px 10px', fontSize:13, fontFamily:"'DM Sans',sans-serif", outline:'none', color:'#0F172A', background:'#fff', minWidth:110, appearance:'none' },
+  actBtn: (cor) => ({ color:cor||'#0F172A', background:'#fff', border:'1px solid #CBD5E1', borderRadius:6, padding:'6px 12px', fontSize:12, fontWeight:600, cursor:'pointer' }),
 }
