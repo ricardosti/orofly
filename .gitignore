@@ -2,3 +2,4 @@ node_modules/
 .vercel/
 build/
 .env*.local
+_backups/

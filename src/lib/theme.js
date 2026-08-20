@@ -52,6 +52,62 @@ export const DARK_THEME = {
   inputBorder: '#2a362f',
 };
 
+// Paleta exclusiva do Painel Admin (Stripe/Linear-style) — deliberadamente separada da
+// LIGHT_THEME/DARK_THEME acima, que continuam intactas pro App do Piloto (celular, uso em
+// campo). Reaproveita a MESMA infraestrutura de contexto (toggle claro/escuro persistido em
+// localStorage) via useAdminTheme() abaixo, só troca qual tabela de cores é devolvida.
+export const ADMIN_LIGHT_THEME = {
+  bg: '#F8FAFC',
+  card: '#FFFFFF',
+  cardBorder: '#E2E8F0',
+  cardBorder2: '#E2E8F0',
+  text: '#0F172A',
+  textMuted: '#64748B',
+  textFaint: '#94A3B8',
+  textFaint2: '#94A3B8',
+  divider: '#F1F5F9',
+  divider2: '#EDF2F7',
+  primary: '#059669',
+  primaryDark: '#047857',
+  successBg: '#ECFDF5',
+  successText: '#059669',
+  dangerBg: '#FEF2F2',
+  dangerText: '#DC2626',
+  warningBg: '#FFFBEB',
+  warningBg2: '#FEF3E2',
+  warningText: '#D97706',
+  warningText2: '#B45309',
+  inputBg: '#FFFFFF',
+  inputBorder: '#E2E8F0',
+  radius: 8,
+};
+
+export const ADMIN_DARK_THEME = {
+  bg: '#0B1120',
+  card: '#111827',
+  cardBorder: '#1F2937',
+  cardBorder2: '#1F2937',
+  text: '#F1F5F9',
+  textMuted: '#94A3B8',
+  textFaint: '#64748B',
+  textFaint2: '#64748B',
+  divider: '#1E293B',
+  divider2: '#1E293B',
+  primary: '#10B981',
+  primaryDark: '#059669',
+  successBg: '#0F2A20',
+  successText: '#34D399',
+  dangerBg: '#3A1414',
+  dangerText: '#F87171',
+  warningBg: '#2E2410',
+  warningBg2: '#2E2410',
+  warningText: '#FBBF24',
+  warningText2: '#FBBF24',
+  inputBg: '#111827',
+  inputBorder: '#1F2937',
+  radius: 8,
+};
+
 const STORAGE_KEY = 'orofly_theme';
 
 const ThemeContext = createContext({
@@ -93,4 +149,17 @@ export function ThemeProvider({ children }) {
 
 export function useTheme() {
   return useContext(ThemeContext);
+}
+
+// Mesma fonte de verdade do toggle claro/escuro (contexto/localStorage compartilhado com o
+// resto do app), mas devolve a paleta ADMIN_LIGHT_THEME/ADMIN_DARK_THEME em vez da paleta
+// padrão — usado só pelo AdminPanel, pra ele ter sua própria identidade visual sem afetar
+// o App do Piloto.
+export function useAdminTheme() {
+  const { themeName, toggleTheme } = useContext(ThemeContext);
+  const theme = useMemo(
+    () => (themeName === 'dark' ? ADMIN_DARK_THEME : ADMIN_LIGHT_THEME),
+    [themeName]
+  );
+  return { theme, themeName, toggleTheme };
 }
