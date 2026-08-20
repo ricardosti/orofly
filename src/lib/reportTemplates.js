@@ -231,7 +231,7 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   dados.push(`*Período:* ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`)
   dados.push(`*Piloto:* ${rel.piloto_nome || '—'}`)
   if (rel.drone) dados.push(`*Drone:* ${rel.drone}`)
-  if (cfg.statusOperacao) dados.push(`*Status:* ${parcial ? '🌙 Finalizado Parcial — aplicação continua em outro voo' : '✅ Finalizado'}`)
+  if (cfg.statusOperacao) dados.push(`*Status:* ${parcial ? '🌙 Finalizado Parcial — aplicação continua em outro voo' : 'Finalizado'}`)
   blocos.push(dados.join('\n'))
 
   if (cfg.area) {

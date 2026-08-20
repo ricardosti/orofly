@@ -3,7 +3,7 @@ import { useTheme } from '../lib/theme'
 import { ComposedChart, BarChart, Line, Area, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFRelatorio, calcularGastoProdutos, parseDoseProduto, areaLiquida, setEmpresaConfig } from '../lib/pdf'
+import { gerarPDFCliente, calcularGastoProdutos, parseDoseProduto, areaLiquida, setEmpresaConfig } from '../lib/pdf'
 import { resolverTemplate, montarTextoWhatsapp } from '../lib/reportTemplates'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
@@ -4513,7 +4513,15 @@ Quando: ${tempoErroDebug.quando}`}
             {opState==='finished'&&(
               <button style={{...s.shareBtn,background:theme.text,marginTop:12}} onClick={async()=>{
                 const rel=await saveToSupabase({status:'finalizado'})
-                if(rel){const doc=await gerarPDFRelatorio(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa});await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')}
+                if(rel){
+                  let pdfConfig
+                  try {
+                    const tpl = await resolverTemplate(supabase, rel.cliente)
+                    if (tpl?.pdf_config && Object.keys(tpl.pdf_config).length) pdfConfig = tpl.pdf_config
+                  } catch (e) { console.warn('Falha ao resolver template de PDF, usando padrão:', e) }
+                  const doc=await gerarPDFCliente(rel,{supabase,localObsFotos:obsFotos,localFotoMapa:fotoMapa,pdfConfig})
+                  await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')
+                }
               }}>📄 Baixar PDF</button>
             )}
             <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={compartilharWhatsApp}>💬 WhatsApp{(fotoMapaFile||storageFotoMapa)?' (com foto do mapa)':''}</button>
