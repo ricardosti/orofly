@@ -359,6 +359,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
   const [tlForm, setTlForm] = useState({}) // {fazendaId: {nome,area_ha}}
+  const [talhaoEditId, setTalhaoEditId] = useState(null)
+  const [talhaoEditForm, setTalhaoEditForm] = useState({nome:'',area_ha:''})
   const [fzSearch, setFzSearch] = useState('')
   const [fzProdutoFiltro, setFzProdutoFiltro] = useState('')
   const [fzClienteFiltro, setFzClienteFiltro] = useState('')
@@ -4052,11 +4054,33 @@ export default function AdminPanel({ onSwitchMode }) {
                                     <div style={{background:'#f9fbfa',borderRadius:14,padding:12}}>
                                       <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,marginBottom:8}}>📐 TALHÕES</div>
                                       {talhoesFz.length===0 && <div style={{fontSize:12,color:'#aaa',fontStyle:'italic',marginBottom:8}}>Nenhum talhão cadastrado ainda</div>}
-                                      {talhoesFz.map(t=>(
+                                      {talhoesFz.map(t=> talhaoEditId===t.id ? (
+                                        <div key={t.id} style={{display:'flex',gap:6,alignItems:'center',background:theme.card,border:`1px solid #059669`,borderRadius:8,padding:'7px 10px',marginBottom:5}}>
+                                          <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
+                                            placeholder="Nome do talhão" value={talhaoEditForm.nome}
+                                            onChange={e=>setTalhaoEditForm(f=>({...f,nome:e.target.value}))}/>
+                                          <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
+                                            placeholder="Área (ha)" type="number" value={talhaoEditForm.area_ha}
+                                            onChange={e=>setTalhaoEditForm(f=>({...f,area_ha:e.target.value}))}/>
+                                          <button style={{background:theme.successBg,color:'#059669',border:'none',borderRadius:12,padding:'6px 10px',fontSize:13,fontWeight:700,cursor:'pointer',flexShrink:0}}
+                                            onClick={async()=>{
+                                              if(!talhaoEditForm.nome){alert('Nome do talhão');return}
+                                              const {error}=await supabase.from('talhoes').update({nome:talhaoEditForm.nome,area_ha:talhaoEditForm.area_ha?parseFloat(talhaoEditForm.area_ha):null}).eq('id',t.id)
+                                              if(error){alert('Erro: '+error.message);return}
+                                              setTalhaoEditId(null);fetchInventario()
+                                            }}>✓</button>
+                                          <button style={{background:'none',border:'none',color:theme.textMuted,cursor:'pointer',fontSize:14,flexShrink:0}}
+                                            onClick={()=>setTalhaoEditId(null)}>✕</button>
+                                        </div>
+                                      ) : (
                                         <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:theme.card,border:`1px solid ${theme.divider}`,borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
                                           <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#059669'}}>· {t.area_ha} ha</strong>:''}</span>
-                                          <button style={{background:'none',border:'none',color:theme.dangerText,cursor:'pointer',fontSize:14}}
-                                            onClick={async()=>{await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
+                                          <div style={{display:'flex',gap:4,flexShrink:0}}>
+                                            <button style={{background:'none',border:'none',color:theme.textMuted,cursor:'pointer',fontSize:13}}
+                                              onClick={()=>{setTalhaoEditId(t.id);setTalhaoEditForm({nome:t.nome||'',area_ha:t.area_ha??''})}}>✏️</button>
+                                            <button style={{background:'none',border:'none',color:theme.dangerText,cursor:'pointer',fontSize:14}}
+                                              onClick={async()=>{if(!window.confirm(`Excluir o talhão "${t.nome}"?`))return;await supabase.from('talhoes').delete().eq('id',t.id);fetchInventario()}}>×</button>
+                                          </div>
                                         </div>
                                       ))}
                                       <div style={{display:'flex',gap:6,marginTop:8}}>
