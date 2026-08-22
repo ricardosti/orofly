@@ -106,6 +106,7 @@ export default function AdminPanel({ onSwitchMode }) {
   // Popover discreto de conta (perfil/notificações/Modo Piloto/sair), no rodapé compacto da
   // sidebar — substitui a pilha de botões grandes que existia antes ali.
   const [contaMenuAberto, setContaMenuAberto] = useState(false)
+  const [sidebarBusca, setSidebarBusca] = useState('')
   // Configurações do Sistema — Clima (Meteoblue/Tomorrow.io/Open-Meteo) usa app_settings
   // (chave/valor) genérica de propósito, pra caber novas opções no futuro sem precisar de
   // migração de banco nem tela nova.
@@ -1456,9 +1457,11 @@ export default function AdminPanel({ onSwitchMode }) {
           <span style={{ fontFamily:"'Syne',sans-serif", fontSize: 19, fontWeight: 700, color: '#fff', letterSpacing: -0.5 }}>Orofly<span style={{ color: '#D97706' }}>.</span></span>
           <span style={{ background: '#D97706', color: theme.text, fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 6 }}>ADMIN</span>
         </div>
-        <div style={{ fontSize: 10, color: pushAtivo ? '#059669' : '#64748B', letterSpacing: 1 }}>
+        <div style={{ fontSize: 10, color: pushAtivo ? '#059669' : '#64748B', letterSpacing: 1, marginBottom: 12 }}>
           {pushAtivo ? '🔔 Notificações ativas' : 'Painel de Administração'}
         </div>
+        <input value={sidebarBusca} onChange={e=>setSidebarBusca(e.target.value)} placeholder="Buscar no menu..."
+          style={{ width:'100%', boxSizing:'border-box', padding:'8px 12px', background:'rgba(255,255,255,0.05)', border:'1px solid #1E293B', borderRadius:8, fontSize:12, color:'#fff', outline:'none' }}/>
       </div>
 
       {/* ALERTA SOS */}
@@ -1509,26 +1512,38 @@ export default function AdminPanel({ onSwitchMode }) {
           ['dev', '🛠️ Desenvolvedor', [
             ['dev', '🩺', 'Benchmark Clima & Logs', ''],
           ]],
-        ]).map(([grupoId, secao, itens]) => {
+        ])
+        // Busca rápida: filtra os itens de cada grupo pelo rótulo (ou pelo nome do grupo);
+        // grupo sem nenhum item batendo some da lista inteira enquanto a busca estiver ativa.
+        .map(([grupoId, secao, itens]) => {
+          const buscaNorm = sidebarBusca.trim().toLowerCase()
+          const itensFiltrados = !buscaNorm ? itens
+            : (secao.toLowerCase().includes(buscaNorm) ? itens : itens.filter(([,,lbl]) => lbl.toLowerCase().includes(buscaNorm)))
+          return [grupoId, secao, itensFiltrados]
+        })
+        .filter(([,,itensFiltrados]) => itensFiltrados.length > 0)
+        .map(([grupoId, secao, itens]) => {
           const contemAtivo = itens.some(([id]) => id === tab)
-          const aberto = sidebarGruposAbertos[grupoId] ?? contemAtivo
+          const aberto = sidebarBusca.trim() ? true : (sidebarGruposAbertos[grupoId] ?? contemAtivo)
           return (
             <div key={grupoId} style={{marginBottom:1}}>
               <button onClick={() => setSidebarGruposAbertos(g => ({...g, [grupoId]: !aberto}))}
-                style={{display:'flex', alignItems:'center', width:'100%', background:'none', border:'none', padding:'7px 9px', cursor:'pointer'}}>
+                style={{display:'flex', alignItems:'center', width:'100%', background: aberto?'rgba(255,255,255,0.08)':'none', border:'none', borderRadius:8, padding:'9px 12px', cursor:'pointer'}}>
                 <span style={{flex:1, textAlign:'left', fontSize:11.5, fontWeight:700, color:'#64748B', letterSpacing:1}}>{secao}</span>
-                <span style={{display:'inline-block', transition:'transform .25s ease', transform: aberto?'rotate(180deg)':'rotate(0deg)', color:'#64748B', fontSize:9}}>▼</span>
+                <span style={{fontSize:13, fontWeight:700, color:'#94A3B8', width:14, textAlign:'center'}}>{aberto?'−':'+'}</span>
               </button>
               <div style={{display:'grid', gridTemplateRows: aberto?'1fr':'0fr', transition:'grid-template-rows .3s ease-in-out'}}>
                 <div style={{overflow:'hidden', minHeight:0}}>
-                  {itens.map(([id, icon, lbl, cnt]) => (
-                    <button key={id} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background: tab===id?'rgba(5,150,105,0.16)':'transparent', border:'none', borderLeft: tab===id?'2px solid #10B981':'2px solid transparent', borderRadius:6, padding:'7px 9px', cursor:'pointer', color: tab===id?'#fff':'#94A3B8', fontSize:14.5, fontFamily:"'DM Sans',sans-serif", fontWeight: tab===id?600:500, marginBottom:0, transition:'all .12s' }}
-                      onClick={() => { setTab(id); setSidebarOpen(false) }}>
-                      <span style={{width:22,height:22,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0,opacity:.9}}>{icon}</span>
-                      <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
-                      {cnt!==''&&<span style={{ background: tab===id?'rgba(255,255,255,0.15)':'#1E293B', color: tab===id?'#fff':'#64748B', fontSize:10.5, fontWeight:600, padding:'1px 6px', borderRadius:10 }}>{cnt}</span>}
-                    </button>
-                  ))}
+                  <div style={{display:'flex', flexDirection:'column', gap:2, margin:'4px 0 6px 16px', paddingLeft:10, borderLeft:'2px solid rgba(255,255,255,0.15)'}}>
+                    {itens.map(([id, icon, lbl, cnt]) => (
+                      <button key={id} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background: tab===id?'#059669':'transparent', border:'none', borderRadius:6, padding:'7px 9px', cursor:'pointer', color: tab===id?'#fff':'#CBD5E1', fontSize:14.5, fontFamily:"'DM Sans',sans-serif", fontWeight: tab===id?600:500, transition:'all .12s', boxSizing:'border-box' }}
+                        onClick={() => { setTab(id); setSidebarOpen(false) }}>
+                        <span style={{width:22,height:22,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0,opacity:.9}}>{icon}</span>
+                        <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
+                        {cnt!==''&&<span style={{ background: tab===id?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.1)', color: tab===id?'#fff':'#94A3B8', fontSize:10.5, fontWeight:600, padding:'1px 6px', borderRadius:10 }}>{cnt}</span>}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1536,26 +1551,27 @@ export default function AdminPanel({ onSwitchMode }) {
         })}
       </nav>
 
-      {/* Widget minimalista de status operacional — antes era um bloco de 3 caixas grandes,
-          agora é uma linha discreta só com pontinho colorido + número. */}
-      <div style={{ padding:'8px 16px', borderTop:'1px solid #1E293B', display:'flex', alignItems:'center', gap:12, fontSize:11, color:'#64748B', flexWrap:'wrap' }}>
-        <span><span style={{color:'#10B981'}}>●</span> {relatorios.filter(r=>r.status==='em_operacao').length} em voo</span>
-        <span><span style={{color:'#FBBF24'}}>●</span> {relatorios.filter(r=>r.status==='pausado').length} pausados</span>
-        {sosAtivos.length>0 && <span style={{color:theme.dangerText,fontWeight:700}}>● {sosAtivos.length} SOS</span>}
+      {/* Card de telemetria ao vivo — status operacional em destaque no rodapé do menu. */}
+      <div style={{ padding:'0 12px' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, padding:'8px 10px', fontSize:11, fontWeight:600, flexWrap:'wrap' }}>
+          <span style={{display:'flex',alignItems:'center',gap:6,color:'#4ADE80'}}><span style={{width:6,height:6,borderRadius:'50%',background:'#22C55E',flexShrink:0}}/>{relatorios.filter(r=>r.status==='em_operacao').length} em voo</span>
+          <span style={{display:'flex',alignItems:'center',gap:6,color:'#FBBF24'}}><span style={{width:6,height:6,borderRadius:'50%',background:'#F59E0B',flexShrink:0}}/>{relatorios.filter(r=>r.status==='pausado').length} pausados</span>
+          {sosAtivos.length>0 && <span style={{display:'flex',alignItems:'center',gap:6,color:theme.dangerText}}><span style={{width:6,height:6,borderRadius:'50%',background:theme.dangerText,flexShrink:0}}/>{sosAtivos.length} SOS</span>}
+        </div>
       </div>
 
-      <div style={{ padding:'10px 12px', borderTop:'1px solid #1E293B', position:'relative' }}>
-        <button style={{ width:'100%', display:'flex', alignItems:'center', gap:8, background: contaMenuAberto?'#1E293B':'transparent', border:'none', borderRadius:8, padding:'6px 8px', cursor:'pointer', textAlign:'left' }}
+      <div style={{ padding:'10px 12px', position:'relative' }}>
+        <button style={{ width:'100%', display:'flex', alignItems:'center', gap:10, background: contaMenuAberto?'rgba(255,255,255,0.09)':'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:10, padding:8, cursor:'pointer', textAlign:'left', boxSizing:'border-box' }}
           onClick={()=>setContaMenuAberto(v=>!v)}>
-          <div style={{ width:26, height:26, borderRadius:'50%', background:'#059669', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:600, fontSize:11.5, overflow:'hidden', flexShrink:0 }}>
+          <div style={{ width:32, height:32, borderRadius:'50%', background:'#334155', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12, overflow:'hidden', flexShrink:0 }}>
             {avatarUrl?<img src={avatarUrl} alt="avatar" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:profile?.nome?.[0]?.toUpperCase()}
           </div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontSize:12, fontWeight:500, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{profile?.nome}</div>
-            <div style={{ fontSize:9.5, color:'#64748B' }}>Admin</div>
+            <div style={{ fontSize:12.5, fontWeight:700, color:'#fff', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', lineHeight:1.2 }}>{profile?.nome}</div>
+            <div style={{ fontSize:10.5, color:'#94A3B8' }}>Admin</div>
           </div>
           {notifNaoVistas>0 && <span style={{ background:theme.dangerText, color:'#fff', fontSize:9, fontWeight:700, borderRadius:20, minWidth:15, height:15, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 4px', flexShrink:0 }}>{notifNaoVistas>9?'9+':notifNaoVistas}</span>}
-          <span style={{ color:'#64748B', fontSize:9, flexShrink:0, transform: contaMenuAberto?'rotate(180deg)':'none', transition:'transform .15s' }}>▲</span>
+          <span style={{ color:'#64748B', fontSize:12, flexShrink:0 }}>⚙️</span>
         </button>
 
         {contaMenuAberto && (
