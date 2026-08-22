@@ -1536,9 +1536,9 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{overflow:'hidden', minHeight:0}}>
                   <div style={{display:'flex', flexDirection:'column', gap:2, margin:'4px 0 6px 16px', paddingLeft:10, borderLeft:'2px solid rgba(255,255,255,0.15)'}}>
                     {itens.map(([id, icon, lbl, cnt]) => (
-                      <button key={id} style={{ display:'flex', alignItems:'center', gap:9, width:'100%', background: tab===id?'#059669':'transparent', border:'none', borderRadius:6, padding:'7px 9px', cursor:'pointer', color: tab===id?'#fff':'#CBD5E1', fontSize:14.5, fontFamily:"'DM Sans',sans-serif", fontWeight: tab===id?600:500, transition:'all .12s', boxSizing:'border-box' }}
+                      <button key={id} style={{ display:'flex', alignItems:'center', gap:8, width:'100%', background: tab===id?'#059669':'transparent', border:'none', borderRadius:6, padding:'6px 9px', cursor:'pointer', color: tab===id?'#fff':'#CBD5E1', fontSize:12.5, fontFamily:"'DM Sans',sans-serif", fontWeight: tab===id?600:500, transition:'all .12s', boxSizing:'border-box' }}
                         onClick={() => { setTab(id); setSidebarOpen(false) }}>
-                        <span style={{width:22,height:22,display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,flexShrink:0,opacity:.9}}>{icon}</span>
+                        <span style={{width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0,opacity:.9}}>{icon}</span>
                         <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
                         {cnt!==''&&<span style={{ background: tab===id?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.1)', color: tab===id?'#fff':'#94A3B8', fontSize:10.5, fontWeight:600, padding:'1px 6px', borderRadius:10 }}>{cnt}</span>}
                       </button>
