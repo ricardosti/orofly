@@ -3962,6 +3962,17 @@ export default function AdminPanel({ onSwitchMode }) {
                     const atual = sel ?? talhoesFzPeriodo.map(t=>t.nome)
                     return atual.includes(nome) ? atual.filter(n=>n!==nome) : [...atual,nome]
                   })
+                  // Prévia de quantos voos entram no PDF com o filtro atual (data + talhões
+                  // marcados) — cada um vira uma página cheia igual o PDF Cliente individual,
+                  // então avisa antes pra não pegar o admin de surpresa com um arquivo enorme.
+                  const { dataIni: diPrev, dataFim: dfPrev } = relatorioPeriodoForm
+                  const voosPreviewCount = (diPrev && dfPrev) ? relatorios.filter(r=>{
+                    if(r.cliente!==relatorioPeriodoFz.cliente || r.fazenda!==relatorioPeriodoFz.nome || r.status!=='finalizado') return false
+                    const dRef = (r.dt_inicio || r.created_at || '').slice(0,10)
+                    if(!(dRef && dRef>=diPrev && dRef<=dfPrev)) return false
+                    const talhoesDoVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+                    return talhoesDoVoo.length===0 || talhoesDoVoo.some(n=>talhoesSelAtual.includes(n))
+                  }).length : null
                   return (
                   <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,.7)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}
                     onClick={()=>!relatorioPeriodoLoading && setRelatorioPeriodoFz(null)}>
@@ -4051,6 +4062,11 @@ export default function AdminPanel({ onSwitchMode }) {
                           }}/>
                       </div>
 
+                      {voosPreviewCount!=null && (
+                        <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:10,padding:'8px 12px',fontSize:11.5,color:theme.warningText2||theme.warningText,marginBottom:4}}>
+                          ⚠️ Esse PDF vai sair com <strong>{voosPreviewCount+1} página{voosPreviewCount+1===1?'':'s'}</strong> ({voosPreviewCount>0?`1 capa + ${voosPreviewCount} relatório${voosPreviewCount===1?'':'s'} de voo`:'só a capa, nenhum voo no período'}). As páginas seguintes à capa são o relatório normal do PDF Cliente, um por voo.
+                        </div>
+                      )}
                       <div style={{display:'flex',gap:8,marginTop:16}}>
                         <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:relatorioPeriodoLoading?.6:1}}
                           disabled={!!relatorioPeriodoLoading}
