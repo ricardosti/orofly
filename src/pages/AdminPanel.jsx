@@ -356,6 +356,11 @@ export default function AdminPanel({ onSwitchMode }) {
   const [relatorioPeriodoFz, setRelatorioPeriodoFz] = useState(null) // fazenda (com BI) selecionada pro modal de relatório do período
   const [relatorioPeriodoForm, setRelatorioPeriodoForm] = useState({dataIni:'',dataFim:''})
   const [relatorioPeriodoLoading, setRelatorioPeriodoLoading] = useState('') // '' | 'pdf' | 'whats'
+  // Consolidado do período (capa + um relatório completo por talhão/voo em anexo, igual o
+  // PDF Cliente individual): null em relatorioPeriodoTalhoesSel = todos os talhões da fazenda.
+  const [relatorioPeriodoTalhoesSel, setRelatorioPeriodoTalhoesSel] = useState(null)
+  const [relatorioPeriodoObs, setRelatorioPeriodoObs] = useState('')
+  const [relatorioPeriodoFotoBase64, setRelatorioPeriodoFotoBase64] = useState(null)
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
@@ -779,12 +784,26 @@ export default function AdminPanel({ onSwitchMode }) {
     if(!dataIni || !dataFim){ showToast('Escolha o período (data inicial e final)','error'); return }
     setRelatorioPeriodoLoading(tipo)
     try {
+      const talhoesFzAtual = invTalhoes.filter(t=>t.fazenda_id===fz.id)
+      const talhoesCatalogo = talhoesFzAtual.map(t=>({nome:t.nome, area_ha:t.area_ha}))
+      const talhoesSel = relatorioPeriodoTalhoesSel ?? talhoesFzAtual.map(t=>t.nome)
       const voosPeriodo = relatorios.filter(r=>{
         if(r.cliente!==fz.cliente || r.fazenda!==fz.nome || r.status!=='finalizado') return false
         const dRef = (r.dt_inicio || r.created_at || '').slice(0,10)
-        return dRef && dRef>=dataIni && dRef<=dataFim
+        if(!(dRef && dRef>=dataIni && dRef<=dataFim)) return false
+        const talhoesDoVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+        return talhoesDoVoo.length===0 || talhoesDoVoo.some(n=>talhoesSel.includes(n))
       })
-      const doc = await gerarPDFFazendaPeriodo({ fazenda: fz, voos: voosPeriodo, dataIni, dataFim, areaTotalCadastrada: fz.areaTotal })
+      let pdfConfig
+      try {
+        const tpl = await resolverTemplate(supabase, fz.cliente)
+        if (tpl?.pdf_config && Object.keys(tpl.pdf_config).length) pdfConfig = tpl.pdf_config
+      } catch (e) { console.warn('Falha ao resolver template de PDF, usando padrão:', e) }
+      const doc = await gerarPDFFazendaPeriodo({
+        fazenda: fz, voos: voosPeriodo, dataIni, dataFim, areaTotalCadastrada: fz.areaTotal,
+        talhoesCatalogo, talhoesSelecionados: talhoesSel, observacaoAdmin: relatorioPeriodoObs,
+        fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
+      })
       const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${dataIni}-a-${dataFim}`
       if(tipo==='whats'){
         const texto = buildTxtFazendaPeriodo(fz, voosPeriodo, dataIni, dataFim, fz.areaTotal)
@@ -3876,7 +3895,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                         onClick={()=>zerarProgresso(fz)}>Zerar</button>
                                     )}
                                     <button style={{background:'transparent',color:theme.primary,border:`1px solid ${theme.cardBorder2}`,borderRadius:6,padding:'4px 9px',fontSize:11,fontWeight:600,cursor:'pointer'}}
-                                      onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoFz(fz)}}>Relatório</button>
+                                      onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotoBase64(null);setRelatorioPeriodoFz(fz)}}>Relatório</button>
                                   </div>
                                 </td>
                               </tr>
@@ -3926,7 +3945,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                   onClick={()=>zerarProgresso(fz)}>Zerar</button>
                               )}
                               <button style={{flex:1,background:'transparent',color:theme.primary,border:`1px solid ${theme.cardBorder2}`,borderRadius:theme.radius||8,padding:'7px 10px',fontSize:11.5,fontWeight:600,cursor:'pointer'}}
-                                onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoFz(fz)}}>Relatório do período</button>
+                                onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotoBase64(null);setRelatorioPeriodoFz(fz)}}>Relatório do período</button>
                             </div>
                           </div>
                         ))}
@@ -3936,10 +3955,17 @@ export default function AdminPanel({ onSwitchMode }) {
                 )}
 
                 {/* ── RELATÓRIO DE ÁREA POR PERÍODO (modal) ── */}
-                {relatorioPeriodoFz && (
+                {relatorioPeriodoFz && (()=>{
+                  const talhoesFzPeriodo = invTalhoes.filter(t=>t.fazenda_id===relatorioPeriodoFz.id)
+                  const talhoesSelAtual = relatorioPeriodoTalhoesSel ?? talhoesFzPeriodo.map(t=>t.nome)
+                  const toggleTalhaoPeriodo = nome => setRelatorioPeriodoTalhoesSel(sel => {
+                    const atual = sel ?? talhoesFzPeriodo.map(t=>t.nome)
+                    return atual.includes(nome) ? atual.filter(n=>n!==nome) : [...atual,nome]
+                  })
+                  return (
                   <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,.7)',zIndex:2000,display:'flex',alignItems:'center',justifyContent:'center',padding:14}}
                     onClick={()=>!relatorioPeriodoLoading && setRelatorioPeriodoFz(null)}>
-                    <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:420,padding:20}} onClick={e=>e.stopPropagation()}>
+                    <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:460,padding:20,maxHeight:'92vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}}>
                         <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700}}>📄 Relatório do Período</div>
                         <button style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:14,padding:'5px 10px',fontSize:12,cursor:'pointer'}}
@@ -3958,7 +3984,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             onChange={e=>setRelatorioPeriodoForm(f=>({...f,dataFim:e.target.value}))}/>
                         </div>
                       </div>
-                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
+                      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
                         {[['7',7],['30',30],['Mês atual','mes']].map(([lbl,val])=>(
                           <button key={lbl} style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
                             onClick={()=>{
@@ -3973,6 +3999,58 @@ export default function AdminPanel({ onSwitchMode }) {
                             }}>{val==='mes'?lbl:`Últimos ${lbl}d`}</button>
                         ))}
                       </div>
+
+                      {/* Consolidado: capa + um relatório completo (igual o PDF Cliente) por
+                          voo de cada talhão marcado, anexado em sequência no mesmo arquivo. */}
+                      <div style={{marginBottom:14}}>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>TALHÕES NO RELATÓRIO ({talhoesSelAtual.length}/{talhoesFzPeriodo.length})</div>
+                          <button style={{background:'none',border:'none',color:'#059669',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                            onClick={()=>setRelatorioPeriodoTalhoesSel(talhoesSelAtual.length===talhoesFzPeriodo.length?[]:talhoesFzPeriodo.map(t=>t.nome))}>
+                            {talhoesSelAtual.length===talhoesFzPeriodo.length?'Desmarcar todos':'Marcar todos'}
+                          </button>
+                        </div>
+                        {talhoesFzPeriodo.length===0 ? (
+                          <div style={{fontSize:12,color:theme.textFaint2,fontStyle:'italic'}}>Fazenda sem talhões cadastrados.</div>
+                        ) : (
+                          <div style={{maxHeight:150,overflowY:'auto',border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'4px 10px'}}>
+                            {talhoesFzPeriodo.map(t=>(
+                              <label key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',fontSize:12.5,color:theme.text,cursor:'pointer',borderBottom:`1px solid ${theme.divider}`}}>
+                                <input type="checkbox" checked={talhoesSelAtual.includes(t.nome)} onChange={()=>toggleTalhaoPeriodo(t.nome)} style={{width:15,height:15,accentColor:'#059669'}}/>
+                                <span style={{flex:1}}>{t.nome}</span>
+                                {t.area_ha && <span style={{color:theme.textFaint2,fontSize:11}}>{parseFloat(t.area_ha).toFixed(1)} ha</span>}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{marginBottom:14}}>
+                        <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>OBSERVAÇÕES (opcional, aparece na capa)</div>
+                        <textarea style={{...sG.fi,width:'100%',boxSizing:'border-box',minHeight:60,resize:'vertical',fontFamily:'inherit'}}
+                          placeholder="Ex: período com condições climáticas favoráveis, sem intercorrências."
+                          value={relatorioPeriodoObs} onChange={e=>setRelatorioPeriodoObs(e.target.value)}/>
+                      </div>
+
+                      <div style={{marginBottom:4}}>
+                        <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>FOTO GERAL DA FAZENDA (opcional, aparece no topo da capa)</div>
+                        {relatorioPeriodoFotoBase64 ? (
+                          <div style={{position:'relative'}}>
+                            <img src={relatorioPeriodoFotoBase64} alt="foto geral" style={{width:'100%',maxHeight:140,objectFit:'cover',borderRadius:10,display:'block'}}/>
+                            <button style={{position:'absolute',top:6,right:6,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:24,height:24,cursor:'pointer'}}
+                              onClick={()=>setRelatorioPeriodoFotoBase64(null)}>✕</button>
+                          </div>
+                        ) : (
+                          <button style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:10,padding:'14px',fontSize:12,cursor:'pointer'}}
+                            onClick={()=>document.getElementById('relatorio-periodo-foto-input')?.click()}>📷 Escolher foto</button>
+                        )}
+                        <input id="relatorio-periodo-foto-input" type="file" accept="image/*" style={{display:'none'}}
+                          onChange={e=>{
+                            const f=e.target.files[0]; if(!f) return
+                            const r=new FileReader(); r.onload=ev=>setRelatorioPeriodoFotoBase64(ev.target.result); r.readAsDataURL(f)
+                          }}/>
+                      </div>
+
                       <div style={{display:'flex',gap:8,marginTop:16}}>
                         <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:relatorioPeriodoLoading?.6:1}}
                           disabled={!!relatorioPeriodoLoading}
@@ -3987,7 +4065,8 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     </div>
                   </div>
-                )}
+                  )
+                })()}
 
                 {/* ── FAZENDAS & TALHÕES (cadastro) ── */}
                 {fzTab==='fazendas' && (

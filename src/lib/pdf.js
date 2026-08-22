@@ -206,8 +206,13 @@ function truncFit(doc, txt, maxW) {
 // seções aparecem e a cor de destaque é o verde padrão. Reordenação de seções (pdfConfig.ordem)
 // NÃO é aplicada aqui — o layout de 2 colunas com posicionamento absoluto não comporta um fluxo
 // sequencial reordenável com segurança; só show/hide por seção e a cor de destaque são aplicados.
-export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoMapa, trechos=[], pdfConfig=null } = {}) {
-  const doc = new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
+export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoMapa, trechos=[], pdfConfig=null, doc: docExistente=null } = {}) {
+  // `docExistente` (opcional) permite anexar esse relatório como páginas novas dentro de um
+  // PDF maior já em andamento (ex: consolidado de fazenda/período) em vez de sempre criar um
+  // arquivo novo — usado por gerarPDFFazendaPeriodo pra empilhar um relatório completo por
+  // voo depois da capa, tudo no mesmo arquivo final.
+  const doc = docExistente || new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
+  if (docExistente) doc.addPage([297,210],'l')
   const PW=297, PH=210, C1=8, CW=136, C2=157, M=8
   const sec_ = pdfConfig?.secoes || {}
   const showSec = (k) => sec_[k] !== false // sem pdfConfig, ou sem a chave, = mostrar (padrão atual)
@@ -689,27 +694,57 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 }
 
 // ============================================================
-// RELATÓRIO DE ÁREA POR FAZENDA E PERÍODO — reaproveita a identidade visual do
-// PDF Cliente (mesmas cores/seções/cards), mas agrega os voos finalizados de uma
-// fazenda dentro de um intervalo de datas escolhido pelo admin, em vez de um
-// único voo. Col 1 = resumo do período + ranking por piloto; Col 2 = tabela com
-// cada voo (pagina automaticamente se não couber tudo numa página).
+// RELATÓRIO CONSOLIDADO DE FAZENDA E PERÍODO — página 1 é uma capa agrupadora
+// (resumo do período, ranking por piloto, talhões incluídos, observação livre do
+// admin e foto geral opcional); a partir da página 2, anexa o relatório completo
+// de CADA voo finalizado no período (mesmo layout rico do PDF Cliente individual —
+// mapa, produtos, clima, dados do voo), agrupado por talhão. É literalmente um PDF
+// "empilhado em cima do outro" num arquivo único, pra download ou WhatsApp.
 // ============================================================
-export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, areaTotalCadastrada }) {
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, areaTotalCadastrada, talhoesCatalogo=[], talhoesSelecionados=null, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
   const doc = new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
   const PW=297, PH=210, C1=8, CW=136, C2=157, M=8
-  const G=[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
+  const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
   const fmtD = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'
-  const fmtDcurta = v => v ? new Date(v).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '—'
   const nomeCurto = n => { if(!n) return '—'; const p=String(n).trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
+  function calcTempoMin(ini,fim){
+    if(!ini||!fim) return 0
+    const t=Math.round((new Date(fim)-new Date(ini))/60000)
+    return t>0?t:0
+  }
+  function fmtMin(m){ const h=Math.floor(m/60), mm=m%60; return h>0?`${h}h ${String(mm).padStart(2,'0')}min`:`${mm}min` }
 
   const voosOrd = [...(voos||[])].sort((a,b)=>new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at))
   const areaAplicada = voosOrd.reduce((a,r)=>a+areaLiquida(r),0)
+  const volumeTotal = voosOrd.reduce((a,r)=>{
+    const vazao = parseFloat(r.vazao_i||r.vazao_f)||0
+    return a + vazao*areaLiquida(r)
+  },0)
+  const vazaoMedia = areaAplicada>0 ? volumeTotal/areaAplicada : null
+  const tempoTotalMin = voosOrd.reduce((a,r)=>a+calcTempoMin(r.dt_inicio,r.dt_fim),0)
   const porPiloto = {}
   voosOrd.forEach(r=>{ const n=r.piloto_nome||'—'; porPiloto[n]=(porPiloto[n]||0)+areaLiquida(r) })
   const rankingPilotos = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1])
   const pct = areaTotalCadastrada>0 ? Math.min(100,(areaAplicada/areaTotalCadastrada)*100) : null
+
+  // Área aplicada por talhão (só os selecionados) — voo com mais de um talhão divide
+  // proporcional ao tamanho cadastrado de cada um, mesmo critério já usado no WhatsApp.
+  const areaCadastralPorNome = {}
+  ;(talhoesCatalogo||[]).forEach(t=>{ areaCadastralPorNome[t.nome] = parseFloat(t.area_ha)||0 })
+  const talhoesParaListar = talhoesSelecionados || (talhoesCatalogo||[]).map(t=>t.nome)
+  const aplicadaPorTalhao = {}
+  talhoesParaListar.forEach(nome=>{ aplicadaPorTalhao[nome]=0 })
+  voosOrd.forEach(r=>{
+    const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+    const somaCad = nomesVoo.reduce((a,n)=>a+(areaCadastralPorNome[n]||0),0)
+    const areaVoo = areaLiquida(r)
+    nomesVoo.forEach(n=>{
+      if(!(n in aplicadaPorTalhao)) return
+      const fracao = somaCad>0 ? (areaCadastralPorNome[n]||0)/somaCad : 1/nomesVoo.length
+      aplicadaPorTalhao[n] += areaVoo*fracao
+    })
+  })
 
   function fundoBranco(){ doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F') }
 
@@ -721,17 +756,17 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, 
     return y+8.5
   }
 
-  // ═══ COL 1 — header + resumo do período + ranking por piloto (só na página 1) ═══
+  // ═══ CAPA — COL 1: header + resumo do período + ranking por piloto ═══
   fundoBranco()
   let y=M
   try{doc.addImage(LOGO_B64,'PNG',C1+1,y+1,48,27)}catch(e){
     doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C1+4,y+18)
   }
   doc.setFontSize(12);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-  doc.text('RELATÓRIO DE ÁREA',C1+77,y+10,{align:'center'})
-  doc.text('APLICADA NO PERÍODO',C1+77,y+16.5,{align:'center'})
+  doc.text('RELATÓRIO CONSOLIDADO',C1+77,y+10,{align:'center'})
+  doc.text('DE ÁREA APLICADA NO PERÍODO',C1+77,y+16.5,{align:'center'})
   doc.setDrawColor(...G);doc.setLineWidth(0.3)
-  doc.line(C1+54,y+18.5,C1+100,y+18.5)
+  doc.line(C1+50,y+18.5,C1+104,y+18.5)
   doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
   doc.text('PULVERIZAÇÃO AGRÍCOLA',C1+77,y+23.5,{align:'center'})
   doc.setDrawColor(...G);doc.setLineWidth(0.5)
@@ -761,13 +796,13 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, 
   })
   y+=15
 
-  // 1 RESUMO DO PERÍODO
+  // 1 RESUMO DO PERÍODO — área, volume e vazão consolidados + tempo total voado
   y=sec(C1,y,CW,1,'RESUMO DO PERÍODO')
   const cards=[
     ['ÁREA APLICADA',areaAplicada.toFixed(2),'ha',IC_AREA,G],
-    ['VOOS REALIZADOS',String(voosOrd.length),'',IC_DRONE,G],
-    ['AVANÇO DA FAZENDA',pct!=null?pct.toFixed(0):'—',pct!=null?'%':'',null,pct!=null?(pct>=100?[14,159,110]:[163,105,10]):GR],
-    ['ÁREA CADASTRADA',areaTotalCadastrada?areaTotalCadastrada.toFixed(2):'—','ha',null,G],
+    ['VOLUME TOTAL',volumeTotal>0?volumeTotal.toFixed(0):'—','L',IC_VOLUME,G],
+    ['VAZÃO MÉDIA',vazaoMedia!=null?vazaoMedia.toFixed(1):'—','L/ha',IC_VAZAO,G],
+    ['TEMPO TOTAL',tempoTotalMin>0?fmtMin(tempoTotalMin):'—','',IC_TEMPO,G],
   ]
   const rW=CW/4-1.5
   cards.forEach(([lbl,val,unit,ic,cor],i)=>{
@@ -777,11 +812,14 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, 
     if(ic){ try{doc.addImage(ic,'PNG',rx+(rW-8)/2,y+2,8,8)}catch(e){} }
     doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR)
     doc.text(lbl,rx+rW/2,y+13,{align:'center',maxWidth:rW-2})
-    doc.setFontSize(unit?13:14);doc.setFont('helvetica','bold');doc.setTextColor(...cor)
+    doc.setFontSize(unit?11:14);doc.setFont('helvetica','bold');doc.setTextColor(...cor)
     doc.text(String(val),rx+rW/2,y+19,{align:'center'})
     if(unit){doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text(unit,rx+rW/2,y+24,{align:'center'})}
   })
   y+=28
+  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
+  doc.text(`${voosOrd.length} voo(s) finalizado(s) no período${pct!=null?` · Avanço da fazenda: ${pct.toFixed(0)}% (${areaAplicada.toFixed(1)} / ${areaTotalCadastrada.toFixed(1)} ha)`:''}`,C1,y)
+  y+=6
 
   // 2 ÁREA POR PILOTO
   y=sec(C1,y,CW,2,'ÁREA POR PILOTO')
@@ -811,59 +849,61 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, 
   doc.text(EMPRESA.email,C1+46,PH-M-3)
   doc.text(EMPRESA.telefone,C1+96,PH-M-3)
 
-  // ═══ COL 2 — tabela com cada voo do período (pagina sozinha se precisar) ═══
-  const rodapeY = PH-M-8
-  function cabecalhoTabela(pagina){
-    doc.setDrawColor(200,230,215);doc.setLineWidth(0.5);doc.line(C2-2,M,C2-2,PH-M)
-    try{doc.addImage(LOGO_B64,'PNG',C2,M,42,24)}catch(e){
-      doc.setFontSize(14);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C2+4,M+18)
-    }
-    doc.setFillColor(...G);doc.roundedRect(C2+CW-28,M+1,27,10,2,2,'F')
-    doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...W)
-    doc.text(`PÁG. ${pagina}`,C2+CW-14.5,M+7.5,{align:'center'})
-    let yy=M+28
-    doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C2,yy,C2+CW,yy);yy+=3
-    yy=sec(C2,yy,CW,1,'VOOS NO PERÍODO')
-    doc.setFillColor(240,248,243);doc.rect(C2,yy,CW,6,'F')
-    doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
-    doc.text('DATA',C2+3,yy+4.5)
-    doc.text('TALHÃO',C2+CW*0.24,yy+4.5)
-    doc.text('PILOTO',C2+CW*0.55,yy+4.5)
-    doc.text('ÁREA',C2+CW-3,yy+4.5,{align:'right'})
-    yy+=7
-    return yy
+  // ═══ CAPA — COL 2: foto geral (opcional) + talhões incluídos + observação do admin ═══
+  let y2=M
+  doc.setDrawColor(200,230,215);doc.setLineWidth(0.5);doc.line(C2-2,M,C2-2,PH-M)
+  if(fotoGeralBase64){
+    try{
+      const p=doc.getImageProperties(fotoGeralBase64)
+      const maxW=CW,maxH=55,r=Math.min(maxW/p.width,maxH/p.height)
+      const iw=p.width*r,ih=p.height*r
+      doc.addImage(fotoGeralBase64,'JPEG',C2+(maxW-iw)/2,y2,iw,ih)
+      y2+=ih+4
+    }catch(e){}
   }
-  function rodapeTabela(){
-    doc.setFillColor(...G);doc.rect(C2,rodapeY,CW,9,'F')
-    doc.setFillColor(45,155,75);doc.circle(C2+5,rodapeY+4.5,3,'F')
-    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
-    doc.text('Orofly — Tecnologia que protege, resultados que voam.',C2+11,rodapeY+5.5)
-  }
-
-  let pagina=1
-  let y2=cabecalhoTabela(pagina)
-  if(voosOrd.length===0){
+  y2=sec(C2,y2,CW,3,'TALHÕES NESTE RELATÓRIO')
+  if(talhoesParaListar.length===0){
     doc.setFillColor(255,255,255);doc.rect(C2,y2,CW,7,'F')
     doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
-    doc.text('Nenhum voo finalizado nesse período.',C2+3,y2+5)
+    doc.text('Nenhum talhão selecionado.',C2+3,y2+5)
+    y2+=7
   }
-  voosOrd.forEach((r,i)=>{
-    if(y2+7 > rodapeY-2){
-      rodapeTabela()
-      doc.addPage([297,210],'l')
-      fundoBranco()
-      pagina++
-      y2=cabecalhoTabela(pagina)
-    }
+  talhoesParaListar.forEach((nome,i)=>{
+    if(y2+7 > PH-M-70){ doc.setFontSize(7.5);doc.setFont('helvetica','italic');doc.setTextColor(...GR);doc.text(`+ ${talhoesParaListar.length-i} talhão(ões)...`,C2+3,y2+5);y2+=7;return }
     doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C2,y2,CW,7,'F')
-    doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(fmtDcurta(r.dt_inicio||r.created_at),C2+3,y2+5)
-    doc.text(truncFit(doc,r.localizacao||'—',CW*0.28),C2+CW*0.24,y2+5)
-    doc.text(truncFit(doc,nomeCurto(r.piloto_nome),CW*0.24),C2+CW*0.55,y2+5)
-    doc.text(`${areaLiquida(r).toFixed(2)} ha`,C2+CW-3,y2+5,{align:'right'})
+    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
+    doc.text(truncFit(doc,nome,CW*0.65-4),C2+3,y2+5)
+    doc.text(`${(aplicadaPorTalhao[nome]||0).toFixed(2)} ha`,C2+CW-3,y2+5,{align:'right'})
     y2+=7
   })
-  rodapeTabela()
+  y2+=4
+
+  if(observacaoAdmin && observacaoAdmin.trim()){
+    y2=sec(C2,y2,CW,4,'OBSERVAÇÕES')
+    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
+    const linhas = doc.splitTextToSize(observacaoAdmin.trim(), CW-6)
+    doc.text(linhas, C2+3, y2+4)
+    y2 += linhas.length*4.5+4
+  }
+
+  // Rodapé col2
+  doc.setFillColor(...G);doc.rect(C2,PH-M-8,CW,9,'F')
+  doc.setFillColor(45,155,75);doc.circle(C2+5,PH-M-3.5,3,'F')
+  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
+  doc.text('Orofly — Tecnologia que protege, resultados que voam.',C2+11,PH-M-2.5)
+
+  // ═══ PÁGINAS SEGUINTES — um relatório completo por voo (igual o PDF Cliente
+  // individual: mapa, produtos, clima, dados do voo), agrupado por talhão. ═══
+  const voosParaAnexar = [...voosOrd].sort((a,b)=>{
+    const ta=(a.localizacao||'').trim(), tb=(b.localizacao||'').trim()
+    if(ta!==tb) return ta<tb?-1:1
+    return new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at)
+  })
+  for(const rel of voosParaAnexar){
+    try{
+      await gerarPDFCliente(rel, { supabase, pdfConfig, doc })
+    }catch(e){ console.error('Falha ao anexar relatório do voo no consolidado:', rel.id, e) }
+  }
 
   return doc
 }
