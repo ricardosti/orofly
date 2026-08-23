@@ -239,7 +239,7 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   dados.push(`*Período:* ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`)
   dados.push(`*Piloto:* ${rel.piloto_nome || '—'}`)
   if (rel.drone) dados.push(`*Drone:* ${rel.drone}`)
-  if (cfg.statusOperacao) dados.push(`*Status:* ${parcial ? 'Finalizado Parcial — aplicação continua em outro voo' : 'Finalizado'}`)
+  if (cfg.statusOperacao) dados.push(`*Status:* ${parcial ? 'Parcial' : 'Finalizado'}`)
   blocos.push(dados.join('\n'))
 
   if (cfg.area) {
@@ -247,12 +247,12 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
     if (talhoes.length > 1) {
       dadosPorTalhao.forEach(({ nome, total, bord, aplicada }, i) => {
         area.push(total != null
-          ? `Tal. ${nome}: Tot ${fmtHa(total)} ha | Bord ${fmtHa(bord)} | Aplic ${fmtHa(aplicada)} ha${parcial ? ' (parcial)' : ''}`
+          ? `Tal. ${nome}: Tot ${fmtHa(total)} ha | Bord ${fmtHa(bord)} | Aplic ${fmtHa(aplicada)} ha`
           : `Tal. ${nome}: Bord ${fmtHa(bord)}`)
         if (i < dadosPorTalhao.length - 1) area.push('')
       })
     } else {
-      area.push(`Tot ${fmtHa(rel.area_ha)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha${parcial ? ' (parcial)' : ''}`)
+      area.push(`Tot ${fmtHa(rel.area_ha)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
     }
     blocos.push(`*Áreas*\n${area.join('\n')}`)
   }

@@ -471,6 +471,10 @@ export default function PilotApp({onSwitchMode}) {
   const [sosConfirm,setSosConfirm] = useState(false)
   const [modalOpen,setModalOpen] = useState(false)
   const [parcialModalOpen,setParcialModalOpen] = useState(false)
+  // Escolha ao apertar "Finalizar": fechar tudo (finalizado) ou registrar como Finalizado
+  // Parcial — antes eram 2 botões separados (um deles enorme, sempre visível); agora os dois
+  // caminhos partem do mesmo botão "Finalizar", perguntando na hora.
+  const [finalizarEscolhaOpen,setFinalizarEscolhaOpen] = useState(false)
   const [horarioModalOpen,setHorarioModalOpen] = useState(false)
   const [exitConfirm,setExitConfirm] = useState(false)
   const [finalizeConfirm,setFinalizeConfirm] = useState(false)
@@ -3584,13 +3588,19 @@ Quando: ${tempoErroDebug.quando}`}
                 // Bordadura conta como "feito" pro fim de fechamento — ela é área deliberadamente
                 // não pulverizada (faixa de segurança), não trabalho pendente.
                 const feito = areaRealizada + bordaduraRealizada
-                return { areaTotal, areaRealizada, bordaduraRealizada, pct: Math.min(100,(feito/areaTotal)*100) }
+                const falta = Math.max(0, areaTotal-feito)
+                // Tolerância de 0,05 ha: abaixo disso a tela já arredonda "falta" pra 0,0 (1 casa
+                // decimal) — sem essa margem, um talhão que já bateu 99,97% (erro de arredondamento
+                // acumulado ao dividir área entre voos com vários talhões) ficava preso mostrando
+                // "faltam 0.0 ha" pra sempre em vez de sumir da lista como concluído.
+                const concluido = falta <= 0.05
+                return { areaTotal, areaRealizada, bordaduraRealizada, falta, concluido, pct: Math.min(100,(feito/areaTotal)*100) }
               }
               // Fazenda some da lista só quando TODOS os talhões dela estiverem concluídos
               const fazendaCompleta = (fz) => {
                 const talhoesDaFazenda = talhoesDB.filter(t=>t.fazenda_id===fz.id)
                 if(talhoesDaFazenda.length===0) return false
-                return talhoesDaFazenda.every(t=>(progressoTalhao(fz,t,talhoesDaFazenda)?.pct??0) >= 100)
+                return talhoesDaFazenda.every(t=>progressoTalhao(fz,t,talhoesDaFazenda)?.concluido ?? false)
               }
               // Permissão de fazenda — individual (Usuários > 📍) tem prioridade sobre o time: se
               // o admin marcou fazendas específicas pra esse piloto, só essas aparecem, ignorando
@@ -3643,7 +3653,7 @@ Quando: ${tempoErroDebug.quando}`}
                     const talhoesDisponiveis = talhoesFaz.filter(t=>{
                       if(selecionados.includes(t.nome)) return true
                       const prog = fazendaSel ? progressoTalhao(fazendaSel,t,talhoesFaz) : null
-                      return !(prog && prog.pct>=100)
+                      return !(prog && prog.concluido)
                     })
                     const todosSelecionados = talhoesDisponiveis.length>0 && talhoesDisponiveis.every(t=>selecionados.includes(t.nome))
                     const toggleTodos = () => aplicarSelecao(todosSelecionados ? [] : talhoesDisponiveis.map(t=>t.nome))
@@ -3681,9 +3691,9 @@ Quando: ${tempoErroDebug.quando}`}
                                 ) : talhoesVisiveis.map(t=>{
                                   const sel = selecionados.includes(t.nome)
                                   const prog = fazendaSel ? progressoTalhao(fazendaSel, t, talhoesFaz) : null
-                                  const finalizado = prog && prog.pct>=100
-                                  const parcial = prog && prog.pct>0 && prog.pct<100
-                                  const falta = prog ? Math.max(0, prog.areaTotal-prog.areaRealizada-prog.bordaduraRealizada) : 0
+                                  const finalizado = prog && prog.concluido
+                                  const parcial = prog && !prog.concluido && prog.pct>0
+                                  const feito = prog ? prog.areaRealizada+prog.bordaduraRealizada : 0
                                   const bg = sel ? theme.successBg : finalizado ? '#eafaf0' : parcial ? '#fff8e6' : '#fff'
                                   return (
                                     <div key={t.id} onClick={()=>toggleTalhao(t)}
@@ -3691,12 +3701,18 @@ Quando: ${tempoErroDebug.quando}`}
                                       <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${sel?'#00A86B':'#c3d4c9'}`,background:sel?'#00A86B':'#fff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
                                         {sel&&<span style={{color:'#fff',fontSize:11,fontWeight:700}}>✓</span>}
                                       </div>
-                                      <span style={{fontSize:14,color:theme.text,flex:1}}>
-                                        {t.nome}
-                                        {finalizado&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:'#fff',background:'#00A86B',padding:'2px 7px',borderRadius:20}}>✓ Concluído</span>}
-                                        {parcial&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:theme.warningText2,background:'#ffe9b8',padding:'2px 7px',borderRadius:20}}>faltam {falta.toFixed(1)} ha</span>}
-                                      </span>
-                                      {t.area_ha&&<span style={{fontSize:12,color:'#00A86B',fontWeight:600}}>{t.area_ha} ha</span>}
+                                      <div style={{flex:1,minWidth:0}}>
+                                        <span style={{fontSize:14,color:theme.text}}>
+                                          {t.nome}
+                                          {finalizado&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:'#fff',background:'#00A86B',padding:'2px 7px',borderRadius:20}}>✓ Concluído</span>}
+                                        </span>
+                                        {parcial&&(
+                                          <div style={{fontSize:10.5,color:theme.warningText2,marginTop:2}}>
+                                            {prog.pct.toFixed(0)}% feito · {feito.toFixed(1)} de {prog.areaTotal.toFixed(1)} ha · faltam {prog.falta.toFixed(1)} ha
+                                          </div>
+                                        )}
+                                      </div>
+                                      {t.area_ha&&<span style={{fontSize:12,color:'#00A86B',fontWeight:600,flexShrink:0}}>{t.area_ha} ha</span>}
                                     </div>
                                   )
                                 })}
@@ -4063,13 +4079,7 @@ Quando: ${tempoErroDebug.quando}`}
                 </button>
                 <button style={{flex:1,background:theme.dangerBg,border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
                   disabled={opState!=='running'&&opState!=='paused'}
-                  onClick={()=>{
-                    const n=nowParts()
-                    setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                    opFinalizar()
-                    setWizardStep(3)
-                    showToast('🌤️ Preencha as condições climáticas do FIM da operação')
-                  }}>
+                  onClick={()=>setFinalizarEscolhaOpen(true)}>
                   <span style={{fontSize:18}}>⏹️</span>
                   <span style={{fontSize:11,fontWeight:700,color:theme.dangerText}}>Finalizar</span>
                 </button>
@@ -4159,14 +4169,6 @@ Quando: ${tempoErroDebug.quando}`}
               onClick={()=>setHorarioModalOpen(true)}>
               🕐 Editar Horário
             </button>
-
-            {/* Finalizado Parcial */}
-            {(opState==='running'||opState==='paused')&&(
-              <button style={{background:'#1a1a2e',color:'#fff',border:'none',borderRadius:20,padding:'12px',width:'100%',fontFamily:"'Poppins',sans-serif",fontSize:14,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:12}}
-                onClick={()=>setParcialModalOpen(true)}>
-                🌙 Finalizado Parcial (continua amanhã)
-              </button>
-            )}
 
             {/* Retomar de finalizado parcial */}
             {opState==='paused_day'&&(()=>{
@@ -4580,6 +4582,27 @@ Quando: ${tempoErroDebug.quando}`}
                 ))}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ESCOLHA AO FINALIZAR — fechar tudo ou registrar como parcial */}
+      {finalizarEscolhaOpen&&(
+        <div style={s.modalOverlay} onClick={()=>setFinalizarEscolhaOpen(false)}>
+          <div style={s.modal} onClick={e=>e.stopPropagation()}>
+            <div style={s.modalTitle}>Finalizar operação <button style={s.modalClose} onClick={()=>setFinalizarEscolhaOpen(false)}>✕</button></div>
+            <p style={{fontSize:13,color:theme.textMuted,marginBottom:18,lineHeight:1.5}}>Já terminou o talhão inteiro, ou só uma parte por hoje?</p>
+            <button style={{...s.shareBtn,background:'#00A86B',marginBottom:10}}
+              onClick={()=>{
+                setFinalizarEscolhaOpen(false)
+                const n=nowParts()
+                setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                opFinalizar()
+                setWizardStep(3)
+                showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+              }}>✅ Finalizar tudo</button>
+            <button style={{...s.shareBtn,background:'#1a1a2e'}}
+              onClick={()=>{ setFinalizarEscolhaOpen(false); setParcialModalOpen(true) }}>🌙 Finalizado Parcial (continua depois)</button>
           </div>
         </div>
       )}

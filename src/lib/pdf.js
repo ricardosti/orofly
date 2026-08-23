@@ -281,20 +281,12 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   })
   y+=14
 
-  // Aviso de Finalizado Parcial — deixa claro que a Área Aplicada abaixo é só o trecho
-  // realmente pulverizado até o encerramento daquele dia, não o talhão inteiro.
-  if(rel.status==='pausado_dia'){
-    doc.setFillColor(255,247,224);doc.roundedRect(C1,y,CW,6,1.2,1.2,'F')
-    doc.setDrawColor(240,192,64);doc.setLineWidth(0.3);doc.roundedRect(C1,y,CW,6,1.2,1.2,'S')
-    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(178,124,10)
-    doc.text('FINALIZADO PARCIAL — aplicação continua em outro voo',C1+3,y+4)
-    y+=8
-  }
-
-  // Tipo de serviço / qtde de voos (opcional)
+  // Tipo de serviço / qtde de voos / status (parcial) — mesmo estilo neutro de sempre, sem
+  // destaque especial: relatório parcial fica idêntico ao finalizado, só muda esse campo.
   const tsLabelC = rel.tipo_servico==='catacao' ? 'Catação' : rel.tipo_servico==='area_total' ? 'Área Total' : null
-  if(tsLabelC || (rel.qtd_voos && rel.qtd_voos>1)){
+  if(tsLabelC || (rel.qtd_voos && rel.qtd_voos>1) || rel.status==='pausado_dia'){
     const partsC=[]
+    if(rel.status==='pausado_dia') partsC.push('Status: Parcial')
     if(tsLabelC) partsC.push(`Tipo de Serviço: ${tsLabelC}`)
     if(rel.qtd_voos && rel.qtd_voos>1) partsC.push(`Qtde de Voos: ${rel.qtd_voos}`)
     doc.setFillColor(245,251,247);doc.roundedRect(C1,y,CW,6,1.2,1.2,'F')
@@ -1082,7 +1074,6 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
   .obs-fotos img { width:30%; border-radius:6px; }
   .footer { margin-top: 32px; border-top: 2px solid #2da05e; padding-top: 10px; font-size:9pt; color:#888; display:flex; justify-content:space-between; }
   .badge { display:inline-block; background:#e8f5ee; color:#2da05e; padding:2px 10px; border-radius:20px; font-size:9pt; font-weight:bold; }
-  .badge-parcial { display:block; background:#fff7e0; color:#b27c0a; border:1px solid #f0c040; padding:8px 14px; border-radius:6px; font-size:10pt; font-weight:bold; margin-bottom:16px; }
 </style>
 </head>
 <body>
@@ -1096,12 +1087,11 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
 </div>
 <div class="gold-line"></div>
 
-${rel.status==='pausado_dia'?`<div class="badge-parcial">FINALIZADO PARCIAL — aplicação continua em outro voo. A Área Realizada abaixo é só o trecho aplicado até o encerramento desse dia.</div>`:''}
-
 <h2>Dados da Operação</h2>
 <table>
   <tr><td>Cliente</td><td>${rel.cliente||'—'}</td></tr>
   <tr><td>Fazenda</td><td>${rel.fazenda||'—'}</td></tr>
+  ${rel.status==='pausado_dia'?`<tr><td>Status</td><td>Parcial</td></tr>`:''}
   ${rel.tipo_servico?`<tr><td>Tipo de Serviço</td><td>${rel.tipo_servico==='catacao'?'Catação':'Área Total'}</td></tr>`:''}
   ${rel.qtd_voos&&rel.qtd_voos>1?`<tr><td>Qtde de Voos</td><td>${rel.qtd_voos}</td></tr>`:''}
   ${areaBrutaW?`<tr><td>Área Total (talhões)</td><td>${areaBrutaW} ha</td></tr>`:''}
