@@ -387,7 +387,7 @@ export default function PilotApp({onSwitchMode}) {
   // Passo 5 — categoria escolhida pra diferença entre Área do Talhão e Área Total Aplicada
   // (lida direto do controle da DJI): 'bordadura' (padrão) ou 'nao_aplicada'. É estado de UI
   // só, não persiste — o que persiste é o resultado (form.bordadura + texto em form.obs1).
-  const [areaDifCategoria,setAreaDifCategoria] = useState('bordadura')
+  const [areaDifCategoria,setAreaDifCategoria] = useState('')
   const [areaDifCategoriaPorTalhao,setAreaDifCategoriaPorTalhao] = useState({})
   const [opState,setOpState] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).opState||'idle' } catch{}
@@ -4276,7 +4276,7 @@ Quando: ${tempoErroDebug.quando}`}
                       const aplicadaN = parseFloat(form.areaAplicadaPorTalhao?.[nome])||0
                       const temAplicada = !!form.areaAplicadaPorTalhao?.[nome]
                       const diferenca = temAplicada && areaTalhaoN>0 ? Math.max(0, +(areaTalhaoN-aplicadaN).toFixed(2)) : 0
-                      const categoria = areaDifCategoriaPorTalhao[nome]||'bordadura'
+                      const categoria = areaDifCategoriaPorTalhao[nome]||''
                       return (
                         <div key={nome} style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${theme.divider}`}}>
                           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
@@ -4286,7 +4286,7 @@ Quando: ${tempoErroDebug.quando}`}
                                 const v = e.target.value
                                 setForm(f=>{
                                   const diff = areaTalhaoN>0 ? Math.max(0, +(areaTalhaoN-(parseFloat(v)||0)).toFixed(2)) : 0
-                                  const cat = areaDifCategoriaPorTalhao[nome]||'bordadura'
+                                  const cat = areaDifCategoriaPorTalhao[nome]||''
                                   const novaBord = diff<=0 ? '0' : (cat==='bordadura' ? String(diff) : f.bordaduraPorTalhao?.[nome]||'')
                                   return {...f, areaAplicadaPorTalhao:{...f.areaAplicadaPorTalhao,[nome]:v}, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:novaBord}}
                                 })
@@ -4329,9 +4329,9 @@ Quando: ${tempoErroDebug.quando}`}
                 )
               }
               // Área Total Aplicada = o valor bruto que o piloto lê direto no controle da DJI,
-              // sem precisar calcular bordadura de cabeça. A diferença pro Área do Talhão vira
-              // bordadura automaticamente — o piloto só escolhe SE quer documentar o motivo
-              // (quando a diferença não é bordadura normal, e sim voo incompleto por algum problema).
+              // sem precisar calcular bordadura de cabeça. A diferença pro Área do Talhão só vira
+              // bordadura quando o piloto escolhe manualmente "🟢 Bordadura" — sem escolha, o campo
+              // fica em branco pra evitar que sobra/área não aplicada seja categorizada errado.
               const areaTalhaoN = parseFloat(form.area_ha)||0
               const areaAplicadaN = parseFloat(form.area_total_aplicada)||0
               const temAmbos = form.area_ha!=='' && form.area_total_aplicada!==''
@@ -4348,9 +4348,9 @@ Quando: ${tempoErroDebug.quando}`}
                       const v = e.target.value
                       setForm(f=>{
                         const diff = Math.max(0, +((parseFloat(f.area_ha)||0)-(parseFloat(v)||0)).toFixed(2))
-                        // Sem diferença (aplicou tudo ou mais): bordadura zera sozinha. Com diferença
-                        // e categoria "bordadura" (padrão), preenche a bordadura automaticamente — o
-                        // piloto não precisa mais fazer essa conta de cabeça.
+                        // Sem diferença (aplicou tudo ou mais): bordadura zera sozinha. Com diferença,
+                        // só preenche a bordadura se o piloto já tiver escolhido a categoria "bordadura"
+                        // manualmente — do contrário fica em branco até ele decidir.
                         const novaBordadura = diff<=0 ? '0' : (areaDifCategoria==='bordadura' ? String(diff) : f.bordadura)
                         return {...f, area_total_aplicada:v, bordadura:novaBordadura}
                       })
