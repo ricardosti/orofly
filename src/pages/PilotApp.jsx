@@ -4586,20 +4586,28 @@ Quando: ${tempoErroDebug.quando}`}
       {/* ESCOLHA AO FINALIZAR — fechar tudo ou registrar como parcial */}
       {finalizarEscolhaOpen&&(
         <div style={s.modalOverlay} onClick={()=>setFinalizarEscolhaOpen(false)}>
-          <div style={s.modal} onClick={e=>e.stopPropagation()}>
+          <div style={{...s.modal,maxWidth:380,padding:'22px 20px 26px'}} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>Finalizar operação <button style={s.modalClose} onClick={()=>setFinalizarEscolhaOpen(false)}>✕</button></div>
-            <p style={{fontSize:13,color:theme.textMuted,marginBottom:18,lineHeight:1.5}}>Já terminou o talhão inteiro, ou só uma parte por hoje?</p>
-            <button style={{...s.shareBtn,background:'#00A86B',marginBottom:10}}
-              onClick={()=>{
-                setFinalizarEscolhaOpen(false)
-                const n=nowParts()
-                setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                opFinalizar()
-                setWizardStep(3)
-                showToast('🌤️ Preencha as condições climáticas do FIM da operação')
-              }}>✅ Finalizar tudo</button>
-            <button style={{...s.shareBtn,background:'#1a1a2e'}}
-              onClick={()=>{ setFinalizarEscolhaOpen(false); setParcialModalOpen(true) }}>🌙 Finalizado Parcial (continua depois)</button>
+            <p style={{fontSize:13,color:theme.textMuted,marginBottom:16,lineHeight:1.5}}>Já terminou o talhão inteiro, ou só uma parte por hoje?</p>
+            <div style={{display:'flex',gap:10}}>
+              <button style={{flex:1,background:'linear-gradient(135deg,#00A86B,#22c476)',color:'#fff',border:'none',borderRadius:16,padding:'16px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,cursor:'pointer',fontFamily:"'Poppins',sans-serif",boxShadow:'0 6px 16px rgba(14,159,110,0.25)'}}
+                onClick={()=>{
+                  setFinalizarEscolhaOpen(false)
+                  const n=nowParts()
+                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                  opFinalizar()
+                  setWizardStep(3)
+                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+                }}>
+                <span style={{fontSize:22}}>✅</span>
+                <span style={{fontSize:13,fontWeight:700,textAlign:'center',lineHeight:1.3}}>Finalizar tudo</span>
+              </button>
+              <button style={{flex:1,background:theme.warningBg,color:theme.warningText,border:`1.5px solid ${theme.warningText}`,borderRadius:16,padding:'16px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,cursor:'pointer',fontFamily:"'Poppins',sans-serif"}}
+                onClick={()=>{ setFinalizarEscolhaOpen(false); setParcialModalOpen(true) }}>
+                <span style={{fontSize:22}}>🌙</span>
+                <span style={{fontSize:13,fontWeight:700,textAlign:'center',lineHeight:1.3}}>Parcial (continua depois)</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -4676,7 +4684,15 @@ Quando: ${tempoErroDebug.quando}`}
               const jaDeduzido = parseFloat(form.area_deduzida)||0
               const deltaBaixa = Math.max(0, feita-jaDeduzido)
               const n=nowParts()
-              setForm(f=>({...f,area_feita:String(feita),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+              // Pré-preenche a "Área Total Aplicada" do Passo 5 com o que já foi registrado aqui —
+              // sem isso, o Passo 5 comparava contra a área cheia do talhão e mostrava uma
+              // "diferença" gigante (ex: talhão de 100ha com 50ha feitos mostrava 100ha de diferença).
+              setForm(f=>({...f,area_feita:String(feita),
+                area_total_aplicada: multiTalhaoP ? f.area_total_aplicada : String(feita),
+                areaAplicadaPorTalhao: multiTalhaoP
+                  ? talhoesSelP.reduce((acc,nome)=>({...acc,[nome]:f.area_feita_por_talhao?.[nome]||acc[nome]||''}),{...f.areaAplicadaPorTalhao})
+                  : f.areaAplicadaPorTalhao,
+                dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
               const relSalvo = await saveToSupabase({status:'pausado_dia',area_feita:feita,area_deduzida:feita,dt_fim:n.iso})
               if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
               // O voo já está salvo no servidor — pode ser retomado depois por "Continuar voo" ou
