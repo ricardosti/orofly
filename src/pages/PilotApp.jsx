@@ -66,7 +66,7 @@ const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodã
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
-const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'✅ Finalizado' }
+const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado' }
 const LS_KEY = 'orofly_draft'
 
 function initForm(data) {
@@ -4037,8 +4037,8 @@ Quando: ${tempoErroDebug.quando}`}
               <div style={{display:'flex',gap:8}}>
                 <HomeExitBtn/>
                 <button style={{...sw.btnG,background:theme.bg,color:theme.textMuted,flex:'0 0 80px'}} onClick={()=>setWizardStep(2)}>← Voltar</button>
-                <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep(opState==='finished'?5:4) }}>
-                  {opState==='finished'?'Ir para Relatório →':'Próximo →'}
+                <button style={{...sw.btnG,flex:1}} onClick={()=>{ saveToSupabase({status:statusAtual()}); setWizardStep((opState==='finished'||opState==='paused_day')?5:4) }}>
+                  {(opState==='finished'||opState==='paused_day')?'Ir para Relatório →':'Próximo →'}
                 </button>
               </div>
             </div>
@@ -4253,7 +4253,6 @@ Quando: ${tempoErroDebug.quando}`}
                 Com mais de um talhão selecionado, permite uma bordadura por talhão. */}
             {(()=>{
               const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
-              const bordaduraTravada = opState==='paused_day'
               if (talhoesSel.length > 1) {
                 // Área Total Aplicada por talhão: mesma ideia do caso de talhão único, só que
                 // um campo por talhão (a soma dos talhões pode ter motivos diferentes de sobra
@@ -4282,7 +4281,7 @@ Quando: ${tempoErroDebug.quando}`}
                         <div key={nome} style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${theme.divider}`}}>
                           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                             <span style={{fontSize:13,color:theme.text,flex:1}}>{nome}{areaTalhaoN>0?` (${areaTalhaoN} ha)`:''}</span>
-                            <input type="number" style={{...sw.fi,width:90,...(bordaduraTravada?{opacity:.6,background:theme.bg}:{})}} placeholder="0" value={form.areaAplicadaPorTalhao?.[nome]||''} disabled={bordaduraTravada}
+                            <input type="number" style={{...sw.fi,width:90}} placeholder="0" value={form.areaAplicadaPorTalhao?.[nome]||''}
                               onChange={e=>{
                                 const v = e.target.value
                                 setForm(f=>{
@@ -4298,8 +4297,8 @@ Quando: ${tempoErroDebug.quando}`}
                               <div style={{fontSize:12,color:theme.text,marginBottom:8}}>💡 Diferença: <strong>{diferenca.toFixed(1)} ha</strong>. Foi:</div>
                               <div style={{display:'flex',flexDirection:'column',gap:6}}>
                                 {[['bordadura','🟢 Bordadura'],['nao_aplicada','⚠️ Área Não Aplicada / Incompleta']].map(([val,label])=>(
-                                  <label key={val} style={{display:'flex',alignItems:'center',gap:8,cursor:bordaduraTravada?'default':'pointer'}}>
-                                    <input type="radio" checked={categoria===val} disabled={bordaduraTravada}
+                                  <label key={val} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+                                    <input type="radio" checked={categoria===val}
                                       onChange={()=>{
                                         setAreaDifCategoriaPorTalhao(c=>({...c,[nome]:val}))
                                         setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]: val==='bordadura' ? String(diferenca) : ''}}))
@@ -4311,8 +4310,8 @@ Quando: ${tempoErroDebug.quando}`}
                               {categoria==='nao_aplicada' && (
                                 <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`,display:'flex',flexWrap:'wrap',gap:6}}>
                                   {MOTIVOS.map(m=>(
-                                    <button key={m} type="button" disabled={bordaduraTravada} onClick={()=>aplicarMotivoTalhao(nome,diferenca,m)}
-                                      style={{background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,padding:'5px 10px',fontSize:11.5,color:theme.text,cursor:bordaduraTravada?'default':'pointer'}}>{m}</button>
+                                    <button key={m} type="button" onClick={()=>aplicarMotivoTalhao(nome,diferenca,m)}
+                                      style={{background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,padding:'5px 10px',fontSize:11.5,color:theme.text,cursor:'pointer'}}>{m}</button>
                                   ))}
                                 </div>
                               )}
@@ -4326,7 +4325,6 @@ Quando: ${tempoErroDebug.quando}`}
                         Bordadura total: {total} ha · Área aplicada: {Math.max(0,parseFloat(form.area_ha)-total).toFixed(2)} ha
                       </div>
                     )}
-                    {bordaduraTravada&&<div style={{fontSize:11,color:theme.textFaint2,marginBottom:14}}>🔒 Trava após Finalizado Parcial, pra não bagunçar o progresso já registrado</div>}
                   </div>
                 )
               }
@@ -4356,15 +4354,15 @@ Quando: ${tempoErroDebug.quando}`}
                         const novaBordadura = diff<=0 ? '0' : (areaDifCategoria==='bordadura' ? String(diff) : f.bordadura)
                         return {...f, area_total_aplicada:v, bordadura:novaBordadura}
                       })
-                    }} type="number" disabled={bordaduraTravada}/>
+                    }} type="number"/>
 
                   {temAmbos && diferenca>0 && (
                     <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:14,marginTop:-8,marginBottom:14}}>
                       <div style={{fontSize:12.5,color:theme.text,marginBottom:10}}>💡 Diferença detectada: <strong>{diferenca.toFixed(1)} ha</strong>. Essa área restante foi:</div>
                       <div style={{display:'flex',flexDirection:'column',gap:8}}>
                         {[['bordadura','🟢 Bordadura'],['nao_aplicada','⚠️ Área Não Aplicada / Incompleta']].map(([val,label])=>(
-                          <label key={val} style={{display:'flex',alignItems:'center',gap:8,cursor:bordaduraTravada?'default':'pointer'}}>
-                            <input type="radio" checked={areaDifCategoria===val} disabled={bordaduraTravada}
+                          <label key={val} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+                            <input type="radio" checked={areaDifCategoria===val}
                               onChange={()=>{
                                 setAreaDifCategoria(val)
                                 setForm(f=>({...f,bordadura: val==='bordadura' ? String(diferenca) : ''}))
@@ -4378,8 +4376,8 @@ Quando: ${tempoErroDebug.quando}`}
                           <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>Motivo (adiciona automaticamente na Observação):</div>
                           <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                             {MOTIVOS.map(m=>(
-                              <button key={m} type="button" disabled={bordaduraTravada} onClick={()=>aplicarMotivo(m)}
-                                style={{background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,padding:'6px 12px',fontSize:12,color:theme.text,cursor:bordaduraTravada?'default':'pointer'}}>{m}</button>
+                              <button key={m} type="button" onClick={()=>aplicarMotivo(m)}
+                                style={{background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,padding:'6px 12px',fontSize:12,color:theme.text,cursor:'pointer'}}>{m}</button>
                             ))}
                           </div>
                         </div>
@@ -4388,11 +4386,10 @@ Quando: ${tempoErroDebug.quando}`}
                   )}
 
                   {form.bordadura&&form.area_ha&&(
-                    <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:-8,marginBottom:bordaduraTravada?4:14}}>
+                    <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:-8,marginBottom:14}}>
                       Bordadura: {form.bordadura} ha · Área aplicada: {areaLiquidaAtual(form)} ha
                     </div>
                   )}
-                  {bordaduraTravada&&<div style={{fontSize:11,color:theme.textFaint2,marginBottom:14}}>🔒 Trava após Finalizado Parcial, pra não bagunçar o progresso já registrado</div>}
                 </>
               )
             })()}
