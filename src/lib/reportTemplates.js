@@ -108,7 +108,10 @@ const linhaDiv16 = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 function areaLiquidaLocal(rel) {
   if (rel.status === 'pausado_dia') {
     const feita = parseFloat(rel.area_feita)
-    if (!isNaN(feita) && feita > 0) return +feita.toFixed(2)
+    if (!isNaN(feita) && feita > 0) {
+      const bordFeita = parseFloat(rel.bordadura) || 0
+      return Math.max(0, +(feita - bordFeita).toFixed(2))
+    }
   }
   const bruta = parseFloat(rel.area_ha) || 0
   const bord = parseFloat(rel.bordadura) || 0
@@ -219,12 +222,14 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
     ;(rel.area_feita_detalhe || []).forEach(d => { if (d?.talhao) feitaPorTalhao[d.talhao] = parseFloat(d.area_feita) || 0 })
     const temBreakdownReal = Object.keys(feitaPorTalhao).length > 0
     if (temBreakdownReal) {
-      dadosPorTalhao.forEach(d => { d.aplicada = feitaPorTalhao[d.nome] ?? 0 })
+      // A bordadura (quando informada) sai DE DENTRO do que já foi feito naquele talhão, não
+      // do talhão inteiro — ex: fez 50ha e 1ha foi bordadura → aplicada líquida é 49ha.
+      dadosPorTalhao.forEach(d => { d.aplicada = Math.max(0, +((feitaPorTalhao[d.nome] ?? 0) - d.bord).toFixed(2)) })
     } else {
       const areaFeitaRel = parseFloat(rel.area_feita)
       const somaTotais = dadosPorTalhao.reduce((a, d) => a + (d.total || 0), 0)
       if (!isNaN(areaFeitaRel) && areaFeitaRel > 0 && somaTotais > 0) {
-        dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = +(areaFeitaRel * (d.total / somaTotais)).toFixed(2) })
+        dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = Math.max(0, +(areaFeitaRel * (d.total / somaTotais) - d.bord).toFixed(2)) })
       }
     }
   }

@@ -4288,7 +4288,7 @@ Quando: ${tempoErroDebug.quando}`}
                                 setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:v}}))
                               }}/>
                             {bordN>0 && (
-                              <div style={{fontSize:11.5,color:'#00A86B',fontWeight:600,marginTop:6}}>Total: {(feitaN+bordN).toFixed(1)} ha ({feitaN.toFixed(1)} aplicado + {bordN.toFixed(1)} bordadura)</div>
+                              <div style={{fontSize:11.5,color:'#00A86B',fontWeight:600,marginTop:6}}>Aplicada líquida: {Math.max(0,feitaN-bordN).toFixed(1)} ha ({feitaN.toFixed(1)} feito − {bordN.toFixed(1)} bordadura)</div>
                             )}
                           </div>
                         )
@@ -4312,7 +4312,7 @@ Quando: ${tempoErroDebug.quando}`}
                       onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
                     {bordUnica>0 && (
                       <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:-8,marginBottom:14}}>
-                        Total: {(feitaUnica+bordUnica).toFixed(1)} ha ({feitaUnica.toFixed(1)} aplicado + {bordUnica.toFixed(1)} bordadura)
+                        Área aplicada líquida: {Math.max(0,feitaUnica-bordUnica).toFixed(1)} ha ({feitaUnica.toFixed(1)} feito − {bordUnica.toFixed(1)} bordadura)
                       </div>
                     )}
                   </div>

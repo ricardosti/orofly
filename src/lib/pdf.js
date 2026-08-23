@@ -45,15 +45,20 @@ export function parseDoseProduto(str) {
 // início ao fim numa tacada só), é a área bruta do(s) talhão(ões) selecionado(s) menos a
 // bordadura. MAS um voo "Finalizado Parcial" (status pausado_dia — o piloto encerrou o dia
 // sem terminar o talhão inteiro, e por algum motivo nunca retomou pra fechar 100%) grava
-// `area_ha`/`bordadura` do talhão INTEIRO (cadastro), não do trecho realmente pulverizado —
-// quem sabe quanto foi feito de fato é o campo `area_feita`, preenchido pelo piloto na hora
-// de encerrar aquele dia. Sem esse desvio, dose×área e o total de produto saem calculados
-// em cima da área toda do talhão mesmo quando só uma fração foi aplicada (bug real: 30 ha
-// aplicados de um talhão de 100 ha gerava relatório de 100 ha / 2x o produto usado de verdade).
+// `area_ha` do talhão INTEIRO (cadastro), não do trecho realmente pulverizado — quem sabe
+// quanto foi feito de fato é o campo `area_feita`, preenchido pelo piloto na hora de encerrar
+// aquele dia. `bordadura`, nesse caso, é opcional e sai DE DENTRO do que já foi feito (ex: fez
+// 50ha e 1ha foi bordadura → líquido aplicado é 49ha), não descontada do talhão inteiro. Sem
+// esse desvio, dose×área e o total de produto saem calculados em cima da área toda do talhão
+// mesmo quando só uma fração foi aplicada (bug real: 30 ha aplicados de um talhão de 100 ha
+// gerava relatório de 100 ha / 2x o produto usado de verdade).
 export function areaLiquida(rel) {
   if (rel.status === 'pausado_dia') {
     const feita = parseFloat(rel.area_feita)
-    if (!isNaN(feita) && feita > 0) return +feita.toFixed(2)
+    if (!isNaN(feita) && feita > 0) {
+      const bordFeita = parseFloat(rel.bordadura)||0
+      return Math.max(0, +(feita-bordFeita).toFixed(2))
+    }
   }
   const bruta = parseFloat(rel.area_ha)||0
   const bord = parseFloat(rel.bordadura)||0
