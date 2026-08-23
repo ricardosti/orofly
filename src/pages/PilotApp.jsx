@@ -4654,8 +4654,8 @@ Quando: ${tempoErroDebug.quando}`}
           <div style={{...s.modal,maxWidth:380,padding:'22px 20px 26px'}} onClick={e=>e.stopPropagation()}>
             <div style={s.modalTitle}>Finalizar operação <button style={s.modalClose} onClick={()=>setFinalizarEscolhaOpen(false)}>✕</button></div>
             <p style={{fontSize:13,color:theme.textMuted,marginBottom:16,lineHeight:1.5}}>Já terminou o talhão inteiro, ou só uma parte por hoje?</p>
-            <div style={{display:'flex',gap:10}}>
-              <button style={{flex:1,background:'linear-gradient(135deg,#00A86B,#22c476)',color:'#fff',border:'none',borderRadius:16,padding:'16px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,cursor:'pointer',fontFamily:"'Poppins',sans-serif",boxShadow:'0 6px 16px rgba(14,159,110,0.25)'}}
+            <div style={{display:'flex',flexDirection:'column',gap:10}}>
+              <button style={{display:'flex',alignItems:'center',gap:14,background:'linear-gradient(135deg,#00A86B,#0e9f6e)',color:'#fff',border:'none',borderRadius:18,padding:'14px 16px',cursor:'pointer',fontFamily:"'Poppins',sans-serif",textAlign:'left',boxShadow:'0 8px 20px rgba(14,159,110,0.28)'}}
                 onClick={()=>{
                   setFinalizarEscolhaOpen(false)
                   const n=nowParts()
@@ -4664,13 +4664,21 @@ Quando: ${tempoErroDebug.quando}`}
                   setWizardStep(3)
                   showToast('🌤️ Preencha as condições climáticas do FIM da operação')
                 }}>
-                <span style={{fontSize:22}}>✅</span>
-                <span style={{fontSize:13,fontWeight:700,textAlign:'center',lineHeight:1.3}}>Finalizar tudo</span>
+                <span style={{width:42,height:42,borderRadius:13,background:'rgba(255,255,255,.18)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>✅</span>
+                <span style={{flex:1}}>
+                  <span style={{display:'block',fontSize:14.5,fontWeight:700}}>Finalizar tudo</span>
+                  <span style={{display:'block',fontSize:11.5,opacity:.85,marginTop:1}}>Talhão inteiro concluído hoje</span>
+                </span>
+                <span style={{fontSize:17,opacity:.8}}>→</span>
               </button>
-              <button style={{flex:1,background:theme.warningBg,color:theme.warningText,border:`1.5px solid ${theme.warningText}`,borderRadius:16,padding:'16px 8px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6,cursor:'pointer',fontFamily:"'Poppins',sans-serif"}}
+              <button style={{display:'flex',alignItems:'center',gap:14,background:theme.card,color:theme.text,border:`1.5px solid ${theme.cardBorder2}`,borderRadius:18,padding:'14px 16px',cursor:'pointer',fontFamily:"'Poppins',sans-serif",textAlign:'left'}}
                 onClick={()=>{ setFinalizarEscolhaOpen(false); setParcialModalOpen(true) }}>
-                <span style={{fontSize:22}}>🌙</span>
-                <span style={{fontSize:13,fontWeight:700,textAlign:'center',lineHeight:1.3}}>Parcial (continua depois)</span>
+                <span style={{width:42,height:42,borderRadius:13,background:theme.warningBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🌙</span>
+                <span style={{flex:1}}>
+                  <span style={{display:'block',fontSize:14.5,fontWeight:700,color:theme.text}}>Finalizado parcial</span>
+                  <span style={{display:'block',fontSize:11.5,color:theme.textMuted,marginTop:1}}>Continua depois de onde parou</span>
+                </span>
+                <span style={{fontSize:17,color:theme.textFaint2}}>→</span>
               </button>
             </div>
           </div>
