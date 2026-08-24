@@ -6797,7 +6797,7 @@ function TemplateEditorModal({ template, onClose, onSalvar, invClientes, isMobil
     { titulo:'Cabeçalho & Identificação', itens:[['areaFazendaTalhao','Nome do Cliente/Fazenda/Talhão'],['dataHorario','Data e Horário da Operação'],['piloto','Nome do Piloto/Operador'],['statusOperacao','Status (Finalizado / Finalizado Parcial)'],['ordemServico','Número da OS'],['tipoServico','Tipo de Serviço / Qtde de Voos']] },
     { titulo:'Dados do Voo & Clima', itens:[['area','Área Aplicada (ha)'],['tempoVoo','Tempo Total de Voo'],['alturaVelocidade','Altura do Drone (m) e Velocidade (km/h)'],['faixaAplicacao','Faixa de Aplicação (m)'],['vazaoDetalhada','Vazão (L/ha)'],['tamanhoGota','Tamanho de Gota'],['climaBasico','Temperatura/Umidade/Vento'],['deltaT','Delta T']] },
     { titulo:'Insumos & Calda', itens:[['produtos','Produtos e Dosagens'],['volumeTotal','Volume Total Aplicado (L)']] },
-    { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['observacoes2','Observações 2'],['gpsLink','Coordenadas GPS + link do mapa'],['linkPdf','Link para o PDF no app']] },
+    { titulo:'Extras', itens:[['observacoes','Observações/Alertas'],['observacoes2','Observações 2'],['linkPdf','Link para o PDF no app']] },
   ]
 
   return (

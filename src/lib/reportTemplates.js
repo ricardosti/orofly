@@ -46,7 +46,6 @@ export const DEFAULT_WHATSAPP_CONFIG = {
   faixaAplicacao: true,
   vazaoDetalhada: true,
   tamanhoGota: true,
-  gpsLink: false,
   observacoes2: false,
 }
 
@@ -300,12 +299,9 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
 
   if (cfg.observacoes) {
     const obsTxt = [rel.obs1, cfg.observacoes2 ? rel.obs2 : null].filter(Boolean).join(' | ')
-    blocos.push(`*Obs:* ${obsTxt || 'Nenhuma'}`)
+    if (obsTxt) blocos.push(`*Obs:* ${obsTxt}`)
   }
 
-  if (cfg.gpsLink && rel.gps_lat && rel.gps_lng) {
-    blocos.push(`*Localização:*\n${rel.gps_lat}, ${rel.gps_lng}\nhttps://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`)
-  }
   if (cfg.linkPdf && opts.linkPdf) blocos.push(`*Relatório completo:* ${opts.linkPdf}`)
 
   return `🚁 *RELATÓRIO OROFLY*\n${linhaDiv16}\n` + blocos.join(`\n${linhaDiv16}\n`)
