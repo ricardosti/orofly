@@ -745,7 +745,7 @@ export default function PilotApp({onSwitchMode}) {
     // Inclui 'pausado_dia' (Finalizado Parcial) também — senão um voo parcial de outro piloto
     // fica invisível no progresso do talhão até alguém finalizar 100% (status/area_feita são
     // usados por areaLiquida() pra saber quanto desse voo parcial já foi líquido aplicado).
-    supabase.from('relatorios').select('cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita').in('status',['finalizado','pausado_dia'])
+    supabase.from('relatorios').select('id,cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita').in('status',['finalizado','pausado_dia'])
       .then(({data}) => { if(data) setRelatoriosFinalizadosOrg(data) })
     supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
@@ -1085,6 +1085,18 @@ export default function PilotApp({onSwitchMode}) {
       setSaveStatus('saved');pendingPayload.current=null
       if(pendingSync){setPendingSync(false);showToast('✅ Sincronizado com sucesso!')}
       if(retryTimer.current) clearTimeout(retryTimer.current)
+      // Atualiza o progresso "de todos os pilotos" em memória — sem isso, um voo recém-salvo
+      // (ex: Finalizado Parcial) só aparecia no progresso do talhão depois de recarregar a
+      // página inteira, porque essa lista é buscada uma única vez ao abrir o app.
+      if (result.data && (result.data.status==='finalizado' || result.data.status==='pausado_dia')) {
+        const rd = result.data
+        const entry = {id:rd.id,cliente:rd.cliente,fazenda:rd.fazenda,area_ha:rd.area_ha,bordadura:rd.bordadura,created_at:rd.created_at,localizacao:rd.localizacao,status:rd.status,area_feita:rd.area_feita}
+        setRelatoriosFinalizadosOrg(prev => {
+          const idx = prev.findIndex(r=>r.id===entry.id)
+          if (idx>=0) { const copy=[...prev]; copy[idx]=entry; return copy }
+          return [...prev, entry]
+        })
+      }
       return result.data
     } catch(err){
       setSaveStatus('error');pendingPayload.current={extraData};setPendingSync(true)
