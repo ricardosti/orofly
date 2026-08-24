@@ -742,7 +742,10 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
     // Leve, só o necessário pra calcular quanto já foi feito em cada fazenda (de todos os pilotos,
     // não só o logado) — usado pra tirar fazenda 100% concluída da lista e mostrar o que falta.
-    supabase.from('relatorios').select('cliente,fazenda,area_ha,bordadura,created_at,localizacao').eq('status','finalizado')
+    // Inclui 'pausado_dia' (Finalizado Parcial) também — senão um voo parcial de outro piloto
+    // fica invisível no progresso do talhão até alguém finalizar 100% (status/area_feita são
+    // usados por areaLiquida() pra saber quanto desse voo parcial já foi líquido aplicado).
+    supabase.from('relatorios').select('cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita').in('status',['finalizado','pausado_dia'])
       .then(({data}) => { if(data) setRelatoriosFinalizadosOrg(data) })
     supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
