@@ -372,6 +372,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzClienteFiltro, setFzClienteFiltro] = useState('')
   const [fzStatusFiltro, setFzStatusFiltro] = useState('') // '' | 'concluida' | 'parcial' | 'nao_iniciada'
   const [fzVisaoView, setFzVisaoView] = useState('tabela') // 'tabela' | 'cards' — visão das fazendas na aba Visão Geral
+  const [fzHistoricoModal, setFzHistoricoModal] = useState(null) // fazenda selecionada pra ver ciclos anteriores (ou null)
   const [fzExpandido, setFzExpandido] = useState({})
   const [invMovimentos, setInvMovimentos] = useState([])
   const [custos, setCustos] = useState([])
@@ -3673,7 +3674,13 @@ export default function AdminPanel({ onSwitchMode }) {
 
             async function zerarProgresso(fz) {
               if(!window.confirm(`Zerar o progresso de "${fz.nome}"?\n\nIsso reinicia a % de conclusão a partir de agora (o histórico de voos é mantido, só não conta mais pro cálculo). Use para uma nova aplicação/reaplicação na mesma área.`)) return
-              const { error } = await supabase.from('fazendas').update({ campanha_inicio: new Date().toISOString() }).eq('id', fz.id)
+              const agora = new Date().toISOString()
+              // Antes de reiniciar, grava um resumo do ciclo que está terminando (o cálculo de
+              // progresso em si só olha pra frente a partir de campanha_inicio — sem isso, os
+              // ciclos anteriores ficam "invisíveis" apesar dos voos continuarem no banco).
+              const cicloEncerrado = { inicio: fz.campanha_inicio||fz.created_at||null, fim: agora, voos: fz.numVoos||0, area_ha: +(fz.areaRealizada||0).toFixed(2) }
+              const ciclosHistorico = [cicloEncerrado, ...(fz.ciclos_historico||[])]
+              const { error } = await supabase.from('fazendas').update({ campanha_inicio: agora, ciclos_historico: ciclosHistorico }).eq('id', fz.id)
               if(error){ showToast('Erro: '+error.message,'error'); return }
               showToast('🔄 Progresso zerado!'); fetchInventario()
             }
@@ -3887,7 +3894,14 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={{padding:'9px 12px',textAlign:'right',color:theme.textMuted,whiteSpace:'nowrap'}}>
                                   {fz.pct!==null ? `${fz.areaRealizada.toFixed(1)} / ${fz.areaTotal.toFixed(1)}` : '—'}
                                 </td>
-                                <td style={{padding:'9px 12px',color:theme.textFaint,whiteSpace:'nowrap'}}>{fz.campanha_inicio ? new Date(fz.campanha_inicio).toLocaleDateString('pt-BR') : '—'}</td>
+                                <td style={{padding:'9px 12px',color:theme.textFaint,whiteSpace:'nowrap'}}>
+                                  {fz.campanha_inicio ? new Date(fz.campanha_inicio).toLocaleDateString('pt-BR') : '—'}
+                                  {fz.ciclos_historico?.length>0 && (
+                                    <button onClick={()=>setFzHistoricoModal(fz)} style={{marginLeft:6,background:'transparent',border:'none',color:theme.primary,fontSize:10.5,fontWeight:600,cursor:'pointer',padding:0}}>
+                                      · {fz.ciclos_historico.length} {fz.ciclos_historico.length===1?'ciclo anterior':'ciclos anteriores'}
+                                    </button>
+                                  )}
+                                </td>
                                 <td style={{padding:'9px 12px',whiteSpace:'nowrap'}}>
                                   <div style={{display:'flex',gap:6,justifyContent:'flex-end'}}>
                                     {fz.pct!==null && fz.numVoos>0 && (
@@ -3925,7 +3939,16 @@ export default function AdminPanel({ onSwitchMode }) {
                                   <span style={{color:theme.textMuted}}>{fz.areaRealizada.toFixed(1)} / {fz.areaTotal.toFixed(1)} ha</span>
                                   <span style={{fontWeight:700,color:theme.primary}}>{fz.pct.toFixed(0)}%</span>
                                 </div>
-                                {fz.campanha_inicio && <div style={{fontSize:10,color:theme.textFaint,marginTop:4}}>Ciclo desde {new Date(fz.campanha_inicio).toLocaleDateString('pt-BR')}</div>}
+                                {fz.campanha_inicio && (
+                                  <div style={{fontSize:10,color:theme.textFaint,marginTop:4}}>
+                                    Ciclo desde {new Date(fz.campanha_inicio).toLocaleDateString('pt-BR')}
+                                    {fz.ciclos_historico?.length>0 && (
+                                      <button onClick={()=>setFzHistoricoModal(fz)} style={{marginLeft:6,background:'transparent',border:'none',color:theme.primary,fontSize:10,fontWeight:600,cursor:'pointer',padding:0}}>
+                                        · 📜 {fz.ciclos_historico.length} {fz.ciclos_historico.length===1?'ciclo anterior':'ciclos anteriores'}
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                                 {fz.rankingPilotos.length>0 && (
                                   <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.divider}`}}>
                                     <div style={{fontSize:9,fontWeight:700,color:theme.textFaint2,letterSpacing:.3,marginBottom:4}}>QUEM FEZ</div>
@@ -3951,6 +3974,34 @@ export default function AdminPanel({ onSwitchMode }) {
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* ── HISTÓRICO DE CICLOS (modal) ── */}
+                {fzHistoricoModal && (
+                  <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setFzHistoricoModal(null)}>
+                    <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:400,padding:22,maxHeight:'80vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:2}}>📜 Ciclos de {fzHistoricoModal.nome}</div>
+                      <div style={{fontSize:11.5,color:theme.textMuted,marginBottom:16}}>Cada "Zerar" fecha um ciclo e começa outro — os voos de todos eles continuam em Relatórios.</div>
+                      <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                        {(fzHistoricoModal.ciclos_historico||[]).map((c,i)=>(
+                          <div key={i} style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'10px 12px'}}>
+                            <div style={{fontSize:12.5,fontWeight:600,color:theme.text}}>
+                              {c.inicio?new Date(c.inicio).toLocaleDateString('pt-BR'):'—'} → {c.fim?new Date(c.fim).toLocaleDateString('pt-BR'):'—'}
+                            </div>
+                            <div style={{fontSize:11.5,color:theme.textMuted,marginTop:2}}>{c.voos||0} {c.voos===1?'voo':'voos'} · {(c.area_ha||0).toFixed(1)} ha aplicados</div>
+                          </div>
+                        ))}
+                        <div style={{background:theme.successBg||theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'10px 12px'}}>
+                          <div style={{fontSize:12.5,fontWeight:600,color:theme.text}}>
+                            {fzHistoricoModal.campanha_inicio?new Date(fzHistoricoModal.campanha_inicio).toLocaleDateString('pt-BR'):'—'} → hoje
+                          </div>
+                          <div style={{fontSize:11.5,color:theme.textMuted,marginTop:2}}>Ciclo atual</div>
+                        </div>
+                      </div>
+                      <button style={{width:'100%',marginTop:16,background:'transparent',border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'10px',fontSize:13,fontWeight:600,color:theme.textMuted,cursor:'pointer'}}
+                        onClick={()=>setFzHistoricoModal(null)}>Fechar</button>
+                    </div>
                   </div>
                 )}
 
