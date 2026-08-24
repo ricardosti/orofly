@@ -240,10 +240,10 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   dados.push(`*Cliente:* ${rel.cliente || '—'}`)
   dados.push(`*Local:* ${rel.id_fazenda ? `[${rel.id_fazenda}] ` : ''}${rel.fazenda || '—'}`)
   if (talhoes.length) dados.push(`*Talhões:* ${talhoes.join(' | ')}`)
+  if (cfg.statusOperacao) dados.push(`*Status:* ${parcial ? 'Parcial' : 'Finalizado'}`)
   dados.push(`*Período:* ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`)
   dados.push(`*Piloto:* ${rel.piloto_nome || '—'}`)
   if (rel.drone) dados.push(`*Drone:* ${rel.drone}`)
-  if (cfg.statusOperacao) dados.push(`*Status:* ${parcial ? 'Parcial' : 'Finalizado'}`)
   blocos.push(dados.join('\n'))
 
   if (cfg.area) {
