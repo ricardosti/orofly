@@ -3791,10 +3791,15 @@ Quando: ${tempoErroDebug.quando}`}
               </div>
             </div>
 
-            <label style={{display:'flex',alignItems:'center',gap:8,background:form.teste?theme.warningBg:'#f9fbfa',border:`1px solid ${form.teste?theme.warningText:theme.divider}`,borderRadius:10,padding:'10px 14px',cursor:'pointer'}}>
-              <input type="checkbox" checked={!!form.teste} onChange={e=>setForm(f=>({...f,teste:e.target.checked}))} style={{width:16,height:16,accentColor:theme.warningText}}/>
-              <span style={{fontSize:12,color:form.teste?theme.warningText2:theme.textMuted,fontWeight:600}}>🧪 Voo teste?</span>
-            </label>
+            <div style={{display:'flex',gap:8,marginBottom:14}}>
+              <label style={{flex:1,display:'flex',alignItems:'center',gap:8,background:form.teste?theme.warningBg:'#f9fbfa',border:`1px solid ${form.teste?theme.warningText:theme.divider}`,borderRadius:10,padding:'10px 14px',cursor:'pointer',marginBottom:0}}>
+                <input type="checkbox" checked={!!form.teste} onChange={e=>setForm(f=>({...f,teste:e.target.checked}))} style={{width:16,height:16,accentColor:theme.warningText}}/>
+                <span style={{fontSize:12,color:form.teste?theme.warningText2:theme.textMuted,fontWeight:600}}>🧪 Voo teste?</span>
+              </label>
+              <button type="button" onClick={handleContinuarVoo} style={{display:'flex',alignItems:'center',gap:6,background:'#f9fbfa',border:`1px solid ${theme.divider}`,borderRadius:10,padding:'10px 14px',cursor:'pointer'}}>
+                <span style={{fontSize:12,color:theme.textMuted,fontWeight:600,whiteSpace:'nowrap'}}>▶️ Voos abertos</span>
+              </button>
+            </div>
 
             <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
               <option value="">Selecione o Drone...</option>
