@@ -102,15 +102,13 @@ const linhaDiv16 = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 
 // Área líquida REALMENTE aplicada — mesma lógica de `areaLiquida` em lib/pdf.js (duplicada
 // aqui de propósito pra manter esse builder de WhatsApp leve/sem depender do módulo de PDF).
-// Um voo Finalizado Parcial (status pausado_dia) grava area_ha/bordadura do talhão INTEIRO,
-// não do trecho pulverizado — quem sabe quanto foi aplicado de fato é `area_feita`.
+// area_feita é o que foi realmente FEITO (Finalizado ou Finalizado Parcial); bordadura sai de
+// dentro disso. Só cai pro talhão inteiro em registros antigos, sem area_feita preenchido.
 function areaLiquidaLocal(rel) {
-  if (rel.status === 'pausado_dia') {
-    const feita = parseFloat(rel.area_feita)
-    if (!isNaN(feita) && feita > 0) {
-      const bordFeita = parseFloat(rel.bordadura) || 0
-      return Math.max(0, +(feita - bordFeita).toFixed(2))
-    }
+  const feita = parseFloat(rel.area_feita)
+  if (!isNaN(feita) && feita > 0) {
+    const bordFeita = parseFloat(rel.bordadura) || 0
+    return Math.max(0, +(feita - bordFeita).toFixed(2))
   }
   const bruta = parseFloat(rel.area_ha) || 0
   const bord = parseFloat(rel.bordadura) || 0
@@ -212,24 +210,22 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
     const aplicada = total != null ? Math.max(0, total - bord) : null
     return { nome, total, bord, aplicada }
   })
-  // Se for Finalizado Parcial com mais de um talhão selecionado, usa o breakdown REAL digitado
-  // pelo piloto no modal (rel.area_feita_detalhe — um valor por talhão) quando existir. Só cai
-  // pra estimativa proporcional (dividir rel.area_feita pelo tamanho de cada talhão) em
-  // registros antigos, salvos antes desse breakdown existir.
-  if (parcial) {
-    const feitaPorTalhao = {}
-    ;(rel.area_feita_detalhe || []).forEach(d => { if (d?.talhao) feitaPorTalhao[d.talhao] = parseFloat(d.area_feita) || 0 })
-    const temBreakdownReal = Object.keys(feitaPorTalhao).length > 0
-    if (temBreakdownReal) {
-      // A bordadura (quando informada) sai DE DENTRO do que já foi feito naquele talhão, não
-      // do talhão inteiro — ex: fez 50ha e 1ha foi bordadura → aplicada líquida é 49ha.
-      dadosPorTalhao.forEach(d => { d.aplicada = Math.max(0, +((feitaPorTalhao[d.nome] ?? 0) - d.bord).toFixed(2)) })
-    } else {
-      const areaFeitaRel = parseFloat(rel.area_feita)
-      const somaTotais = dadosPorTalhao.reduce((a, d) => a + (d.total || 0), 0)
-      if (!isNaN(areaFeitaRel) && areaFeitaRel > 0 && somaTotais > 0) {
-        dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = Math.max(0, +(areaFeitaRel * (d.total / somaTotais) - d.bord).toFixed(2)) })
-      }
+  // Usa o breakdown REAL digitado pelo piloto no Passo 5 (rel.area_feita_detalhe — um valor por
+  // talhão) quando existir — vale tanto pro Finalizado quanto pro Finalizado Parcial. Só cai pra
+  // estimativa proporcional (dividir rel.area_feita pelo tamanho de cada talhão) em registros
+  // antigos, salvos antes desse breakdown existir.
+  const feitaPorTalhao = {}
+  ;(rel.area_feita_detalhe || []).forEach(d => { if (d?.talhao) feitaPorTalhao[d.talhao] = parseFloat(d.area_feita) || 0 })
+  const temBreakdownReal = Object.keys(feitaPorTalhao).length > 0
+  if (temBreakdownReal) {
+    // A bordadura (quando informada) sai DE DENTRO do que já foi feito naquele talhão, não
+    // do talhão inteiro — ex: fez 50ha e 1ha foi bordadura → aplicada líquida é 49ha.
+    dadosPorTalhao.forEach(d => { d.aplicada = Math.max(0, +((feitaPorTalhao[d.nome] ?? 0) - d.bord).toFixed(2)) })
+  } else {
+    const areaFeitaRel = parseFloat(rel.area_feita)
+    const somaTotais = dadosPorTalhao.reduce((a, d) => a + (d.total || 0), 0)
+    if (!isNaN(areaFeitaRel) && areaFeitaRel > 0 && somaTotais > 0) {
+      dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = Math.max(0, +(areaFeitaRel * (d.total / somaTotais) - d.bord).toFixed(2)) })
     }
   }
   const areaAplicadaGeral = areaLiquidaLocal(rel)
