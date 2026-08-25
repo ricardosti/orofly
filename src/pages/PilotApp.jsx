@@ -218,14 +218,25 @@ function DtRow({prefix,form,setForm,label}) {
 }
 
 // Componentes de campo — fora do PilotApp para não perder foco a cada render
-function FI({label,ph,val,onChange,type='text',styles,disabled}) {
+function FI({label,ph,val,onChange,type='text',styles,disabled,min,max}) {
   const { theme } = useTheme()
   return (
     <div style={{marginBottom:14}}>
       <label style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>{label}</label>
-      <input type={type} disabled={disabled} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:theme.text,outline:'none',background:disabled?theme.bg:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",opacity:disabled?.6:1}} placeholder={ph||''} value={val||''} onChange={onChange}/>
+      <input type={type} disabled={disabled} min={min} max={max} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:theme.text,outline:'none',background:disabled?theme.bg:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",opacity:disabled?.6:1}} placeholder={ph||''} value={val||''} onChange={onChange}/>
     </div>
   )
+}
+// Impede número negativo ou acima do que resta a fazer — o piloto digitando "1000" num talhão
+// de 10ha restantes é erro de digitação, não intenção. String vazia passa direto (o campo
+// precisa poder ficar em branco enquanto ele apaga pra redigitar).
+function limitarArea(v, max) {
+  if (v === '') return ''
+  const n = parseFloat(v)
+  if (isNaN(n)) return ''
+  if (n < 0) return '0'
+  if (max != null && n > max) return String(+max.toFixed(2))
+  return v
 }
 function FS({label,val,onChange,children}) {
   const { theme } = useTheme()
@@ -4347,16 +4358,21 @@ Quando: ${tempoErroDebug.quando}`}
                           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
                             <span style={{fontSize:13,color:theme.text,flex:1}}>{nome}{areaTalhaoN>0?` (${areaTalhaoN} ha${anteriorN>0?` · ${anteriorN.toFixed(1)} já feitos`:''})`:''}</span>
                             <input type="number" style={{...sw.fi,width:90}} placeholder="Aplicado" value={form.areaAplicadaPorTalhao?.[nome]||''}
+                              min={0} max={restanteN>0?restanteN:undefined}
                               onChange={e=>{
-                                const v = e.target.value
+                                const v = limitarArea(e.target.value, restanteN>0?restanteN:null)
                                 setForm(f=>({...f,
                                   areaAplicadaPorTalhao:{...f.areaAplicadaPorTalhao,[nome]:v},
                                   area_feita_por_talhao:{...f.area_feita_por_talhao,[nome]:String(anteriorN+(parseFloat(v)||0))}}))
                               }}/>
                             <input type="number" style={{...sw.fi,width:80}} placeholder="Bordadura" value={form.bordaduraPorTalhao?.[nome]||''}
-                              onChange={e=>setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:e.target.value}}))}/>
+                              min={0} max={aplicadaN>0?aplicadaN:undefined}
+                              onChange={e=>setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:limitarArea(e.target.value, aplicadaN>0?aplicadaN:null)}}))}/>
                           </div>
-                          {temAplicada && falta>0 && (
+                          {temAplicada && falta<=0.05 && aplicadaN>0 && (
+                            <div style={{fontSize:11.5,color:'#00A86B',fontWeight:600}}>✅ Talhão concluído</div>
+                          )}
+                          {temAplicada && falta>0.05 && (
                             <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:10}}>
                               <div style={{fontSize:12,color:theme.text}}>Falta: <strong>{falta.toFixed(1)} ha</strong> ainda não aplicados nesse talhão.</div>
                               <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`,display:'flex',flexWrap:'wrap',gap:6}}>
@@ -4394,18 +4410,27 @@ Quando: ${tempoErroDebug.quando}`}
                   {anteriorUnica>0 && (
                     <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:8}}>Já feito antes: <strong>{anteriorUnica.toFixed(1)} ha</strong> · falta {restanteUnica.toFixed(1)} ha</div>
                   )}
-                  <FI label="ÁREA APLICADA HOJE (Ha)" ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
+                  <FI label={`ÁREA APLICADA HOJE (Ha)${restanteUnica>0?` — máx. ${restanteUnica.toFixed(1)}`:''}`} ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
+                    min={0} max={restanteUnica>0?restanteUnica:undefined}
                     onChange={e=>{
-                      const v = e.target.value
+                      const v = limitarArea(e.target.value, restanteUnica>0?restanteUnica:null)
                       setForm(f=>{
                         const anteriorF = parseFloat(f.area_feita_anterior)||0
                         return {...f, area_total_aplicada:v, area_feita:String(anteriorF+(parseFloat(v)||0))}
                       })
                     }} type="number"/>
                   <FI label="BORDADURA (Ha) — dentro do que foi aplicado" ph="Ex: 2 — opcional" val={form.bordadura}
-                    onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
+                    min={0} max={areaAplicadaN>0?areaAplicadaN:undefined}
+                    onChange={e=>setForm(f=>({...f,bordadura:limitarArea(e.target.value, areaAplicadaN>0?areaAplicadaN:null)}))} type="number"/>
 
-                  {temAmbos && falta>0 && (
+                  {temAmbos && falta<=0.05 && areaAplicadaN>0 && (
+                    <div style={{background:'#eafaf0',border:'1px solid #c8ecd9',borderRadius:12,padding:'12px 14px',marginTop:-8,marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
+                      <span style={{fontSize:18}}>✅</span>
+                      <div style={{fontSize:12.5,color:'#0b1210'}}>Talhão <strong>concluído</strong> — nada pendente. Use "Finalizar" (não o parcial).</div>
+                    </div>
+                  )}
+
+                  {temAmbos && falta>0.05 && (
                     <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:14,marginTop:-8,marginBottom:14}}>
                       <div style={{fontSize:12.5,color:theme.text}}>Falta: <strong>{falta.toFixed(1)} ha</strong> ainda não aplicados.</div>
                       <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
@@ -4650,8 +4675,9 @@ Quando: ${tempoErroDebug.quando}`}
                         <span style={{fontSize:11,color:theme.textFaint2}}>{areaTotalN>0?`${areaTotalN.toFixed(1)} ha cadastrados`:'sem área cadastrada'}</span>
                       </div>
                       <input type="number" style={{...sw.fi,marginBottom:8}} placeholder="Ex: 32" value={form.area_feita_por_talhao?.[nome]||''}
+                        min={0} max={areaTotalN>0?areaTotalN:undefined}
                         onChange={e=>{
-                          const v=e.target.value
+                          const v=limitarArea(e.target.value, areaTotalN>0?areaTotalN:null)
                           setForm(f=>({...f,area_feita_por_talhao:{...f.area_feita_por_talhao,[nome]:v}}))
                         }}/>
                       {areaTotalN>0 && (<>
@@ -4668,7 +4694,9 @@ Quando: ${tempoErroDebug.quando}`}
                 })}
               </div>
             ) : (
-              <FI label="ÁREA FEITA ATÉ AGORA (HA)" ph="Ex: 32" val={form.area_feita} onChange={e=>setForm(f=>({...f,area_feita:e.target.value}))} type="number"/>
+              <FI label="ÁREA FEITA ATÉ AGORA (HA)" ph="Ex: 32" val={form.area_feita} type="number"
+                min={0} max={(parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):undefined}
+                onChange={e=>setForm(f=>({...f,area_feita:limitarArea(e.target.value, (parseFloat(f.area_ha)||0)>0?parseFloat(f.area_ha):null)}))}/>
             )}
 
             {total>0&&(
