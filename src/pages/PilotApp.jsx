@@ -108,6 +108,14 @@ function initForm(data) {
       area_feita:data.area_feita!=null?String(data.area_feita):'',
       area_deduzida:data.area_deduzida!=null?String(data.area_deduzida):'',
       teste:!!data.teste,
+      // Fotografia de quanto já tinha sido feito ANTES desta sessão (ex: retomando um voo
+      // Finalizado Parcial salvo em outro dia/por outro piloto) — nunca muda durante a sessão.
+      // O Passo 5 usa isso pra calcular o que falta AGORA, em vez de comparar contra o talhão
+      // inteiro de novo (senão um talhão de 100ha com 50ha já feitos mostrava "faltam 100ha").
+      area_feita_anterior: data.area_feita!=null?parseFloat(data.area_feita)||0:0,
+      area_feita_por_talhao_anterior: data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,parseFloat(d.area_feita)||0])) : {},
+      bordadura_anterior: data.bordadura!=null?parseFloat(data.bordadura)||0:0,
+      bordaduraPorTalhao_anterior: data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,parseFloat(d.bordadura)||0])) : {},
     }
   }
   return {
@@ -119,6 +127,7 @@ function initForm(data) {
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
     pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
     area_feita:'',area_deduzida:'',teste:false,
+    area_feita_anterior:0,area_feita_por_talhao_anterior:{},bordadura_anterior:0,bordaduraPorTalhao_anterior:{},
   }
 }
 
@@ -745,7 +754,7 @@ export default function PilotApp({onSwitchMode}) {
     // Inclui 'pausado_dia' (Finalizado Parcial) também — senão um voo parcial de outro piloto
     // fica invisível no progresso do talhão até alguém finalizar 100% (status/area_feita são
     // usados por areaLiquida() pra saber quanto desse voo parcial já foi líquido aplicado).
-    supabase.from('relatorios').select('id,cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita').in('status',['finalizado','pausado_dia'])
+    supabase.from('relatorios').select('id,cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita,piloto_nome').in('status',['finalizado','pausado_dia'])
       .then(({data}) => { if(data) setRelatoriosFinalizadosOrg(data) })
     supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
@@ -1090,7 +1099,7 @@ export default function PilotApp({onSwitchMode}) {
       // página inteira, porque essa lista é buscada uma única vez ao abrir o app.
       if (result.data && (result.data.status==='finalizado' || result.data.status==='pausado_dia')) {
         const rd = result.data
-        const entry = {id:rd.id,cliente:rd.cliente,fazenda:rd.fazenda,area_ha:rd.area_ha,bordadura:rd.bordadura,created_at:rd.created_at,localizacao:rd.localizacao,status:rd.status,area_feita:rd.area_feita}
+        const entry = {id:rd.id,cliente:rd.cliente,fazenda:rd.fazenda,area_ha:rd.area_ha,bordadura:rd.bordadura,created_at:rd.created_at,localizacao:rd.localizacao,status:rd.status,area_feita:rd.area_feita,piloto_nome:rd.piloto_nome}
         setRelatoriosFinalizadosOrg(prev => {
           const idx = prev.findIndex(r=>r.id===entry.id)
           if (idx>=0) { const copy=[...prev]; copy[idx]=entry; return copy }
@@ -2138,7 +2147,7 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
                   <span style={{width:40,height:40,borderRadius:12,background:theme.successBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🕐</span>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Poppins',sans-serif",color:theme.text}}>Operação em Andamento</div>
+                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Poppins',sans-serif",color:theme.text}}>Aplicação Parcial em Aberto</div>
                     <div style={{fontSize:12,color:theme.textFaint2,marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{form.fazenda||'—'}{total>0?` · ${feita.toFixed(2)} ha de ${total.toFixed(2)} ha`:''}</div>
                   </div>
                   <span style={{background:theme.successBg,color:'#00A86B',fontSize:10,fontWeight:700,borderRadius:20,padding:'4px 10px',flexShrink:0,fontFamily:"'Poppins',sans-serif"}}>PARCIAL</span>
@@ -3614,6 +3623,18 @@ Quando: ${tempoErroDebug.quando}`}
                 const concluido = falta <= 0.05
                 return { areaTotal, areaRealizada, bordaduraRealizada, falta, concluido, pct: Math.min(100,(feito/areaTotal)*100) }
               }
+              // Acha o voo Finalizado Parcial mais recente ainda em aberto pra esse talhão — de
+              // QUALQUER piloto, não só o logado (outro piloto pode complementar o que já foi
+              // feito). Usado pra oferecer "Continuar este voo" direto na lista de talhões.
+              const vooAbertoDoTalhao = (fz, t) => {
+                const abertos = relatoriosFinalizadosOrg.filter(r=>
+                  r.status==='pausado_dia' && r.cliente===fz.cliente && r.fazenda===fz.nome &&
+                  (!fz.campanha_inicio || new Date(r.created_at) >= new Date(fz.campanha_inicio)) &&
+                  (r.localizacao||'').split(',').map(s=>s.trim()).includes(t.nome)
+                )
+                if(!abertos.length) return null
+                return abertos.reduce((a,b)=> new Date(a.created_at)>new Date(b.created_at)?a:b)
+              }
               // Fazenda some da lista só quando TODOS os talhões dela estiverem concluídos
               const fazendaCompleta = (fz) => {
                 const talhoesDaFazenda = talhoesDB.filter(t=>t.fazenda_id===fz.id)
@@ -3724,11 +3745,18 @@ Quando: ${tempoErroDebug.quando}`}
                                           {t.nome}
                                           {finalizado&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:'#fff',background:'#00A86B',padding:'2px 7px',borderRadius:20}}>✓ Concluído</span>}
                                         </span>
-                                        {parcial&&(
-                                          <div style={{fontSize:10.5,color:theme.warningText2,marginTop:2}}>
-                                            {prog.pct.toFixed(0)}% feito · {feito.toFixed(1)} de {prog.areaTotal.toFixed(1)} ha · faltam {prog.falta.toFixed(1)} ha
-                                          </div>
-                                        )}
+                                        {parcial&&(()=>{
+                                          const vooAberto = fazendaSel ? vooAbertoDoTalhao(fazendaSel,t) : null
+                                          return (
+                                            <div style={{fontSize:10.5,color:theme.warningText2,marginTop:2,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                                              <span>{prog.pct.toFixed(0)}% feito · {feito.toFixed(1)} de {prog.areaTotal.toFixed(1)} ha · faltam {prog.falta.toFixed(1)} ha</span>
+                                              {vooAberto&&(
+                                                <span onClick={e=>{e.stopPropagation();setTalhaoDropdownOpen(false);abrirVooAberto(vooAberto.id)}}
+                                                  style={{color:'#00A86B',fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>▶️ Continuar{vooAberto.piloto_nome&&vooAberto.piloto_nome!==profile?.nome?` (${vooAberto.piloto_nome})`:''}</span>
+                                              )}
+                                            </div>
+                                          )
+                                        })()}
                                       </div>
                                       {t.area_ha&&<span style={{fontSize:12,color:'#00A86B',fontWeight:600,flexShrink:0}}>{t.area_ha} ha</span>}
                                     </div>
@@ -4095,12 +4123,36 @@ Quando: ${tempoErroDebug.quando}`}
                     return <>{opState==='paused'?'▶️ Retomar':'⏸️ Pausar'} · {pad(h)}:{pad(m)}:{pad(sec)}</>
                   })()}
                 </button>
-                <button style={{flex:1,background:theme.dangerBg,border:'none',borderRadius:16,padding:'10px 4px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:2,cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                  disabled={opState!=='running'&&opState!=='paused'}
-                  onClick={()=>setFinalizarEscolhaOpen(true)}>
-                  <span style={{fontSize:18}}>⏹️</span>
-                  <span style={{fontSize:11,fontWeight:700,color:theme.dangerText}}>Finalizar</span>
-                </button>
+                <div style={{flex:1,position:'relative',display:'flex',gap:3}}>
+                  <button style={{flex:1,background:theme.dangerBg,border:'none',borderRadius:16,padding:'10px 4px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                    disabled={opState!=='running'&&opState!=='paused'}
+                    onClick={()=>{
+                      const n=nowParts()
+                      setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+                      opFinalizar()
+                      setWizardStep(3)
+                      showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+                    }}>
+                    <span style={{fontSize:11,fontWeight:700,color:theme.dangerText}}>Finalizar</span>
+                  </button>
+                  <button style={{width:24,background:theme.dangerBg,border:'none',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
+                    disabled={opState!=='running'&&opState!=='paused'}
+                    onClick={e=>{e.stopPropagation();setFinalizarEscolhaOpen(v=>!v)}}>
+                    <span style={{fontSize:15,color:theme.dangerText,fontWeight:700,lineHeight:1}}>⋮</span>
+                  </button>
+                  {finalizarEscolhaOpen&&(
+                    <>
+                      <div style={{position:'fixed',inset:0,zIndex:98}} onClick={()=>setFinalizarEscolhaOpen(false)}/>
+                      <div style={{position:'absolute',top:'calc(100% + 6px)',right:0,zIndex:99,background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,.15)',minWidth:200,overflow:'hidden'}}>
+                        <button style={{display:'block',width:'100%',textAlign:'left',padding:'11px 14px',background:'transparent',border:'none',cursor:'pointer',fontFamily:"'Poppins',sans-serif"}}
+                          onClick={()=>{ setFinalizarEscolhaOpen(false); setParcialModalOpen(true) }}>
+                          <div style={{fontSize:13,fontWeight:600,color:theme.text}}>Finalizado parcial</div>
+                          <div style={{fontSize:11,color:theme.textMuted,marginTop:1}}>Continua depois de onde parou</div>
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             )}
 
@@ -4267,79 +4319,15 @@ Quando: ${tempoErroDebug.quando}`}
               </div>
             </div>
 
-            {/* Bordadura (Ha) — descontada da área dos talhões para chegar na área efetivamente aplicada.
-                Com mais de um talhão selecionado, permite uma bordadura por talhão. */}
+            {/* Área Aplicada / Bordadura (Ha) — mesma UI pro Finalizado e pro Finalizado Parcial
+                (só o Status do relatório muda). O piloto informa quanto aplicou NESTA rodada; a
+                diferença é calculada contra o que AINDA FALTA (área do talhão menos o que já
+                tinha sido feito antes desta sessão — ex: retomando um parcial de outro dia), não
+                contra o talhão inteiro de novo. A diferença vira Bordadura ou Área Não Aplicada
+                conforme o piloto escolher. Com mais de um talhão, um valor por talhão. */}
             {(()=>{
               const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
-              const parcialFlow = opState==='paused_day'
-              // Finalizado Parcial: a área aplicada já foi registrada no modal (form.area_feita /
-              // area_feita_por_talhao) — não faz sentido reabrir isso como "diferença detectada"
-              // contra o talhão inteiro (a sobra ali é só o que falta continuar, não bordadura nem
-              // área abandonada). Mostra o valor já feito como fixo e deixa a bordadura como um
-              // campo simples e opcional, somado por cima — não subtraído/recalculado.
-              if (parcialFlow) {
-                if (talhoesSel.length > 1) {
-                  const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
-                  const fazendaSelPF = fazendasDB.find(fz=>norm(fz.cliente)===norm(form.cliente==='Outros'?form.clienteOutro:form.cliente) && norm(fz.nome)===norm(form.fazenda))
-                  const talhoesFazPF = fazendaSelPF ? talhoesDB.filter(t=>t.fazenda_id===fazendaSelPF.id) : []
-                  const areaDoTalhaoPF = nome => parseFloat(talhoesFazPF.find(t=>t.nome===nome)?.area_ha)||0
-                  return (
-                    <div style={sw.fw}>
-                      <label style={sw.fl}>ÁREA APLICADA POR TALHÃO</label>
-                      <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,marginTop:-4}}>Valor registrado no Finalizado Parcial. A bordadura é opcional e soma por cima.</div>
-                      {talhoesSel.map(nome=>{
-                        const areaTalhaoN = areaDoTalhaoPF(nome)
-                        const feitaN = parseFloat(form.area_feita_por_talhao?.[nome])||0
-                        const bordN = parseFloat(form.bordaduraPorTalhao?.[nome])||0
-                        return (
-                          <div key={nome} style={{marginBottom:12,paddingBottom:12,borderBottom:`1px solid ${theme.divider}`}}>
-                            <div style={{background:'#eafaf0',border:'1px solid #c8ecd9',borderRadius:12,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                              <div>
-                                <div style={{fontSize:13,fontWeight:600,color:theme.text}}>{nome}{areaTalhaoN>0?` · ${areaTalhaoN} ha cadastrados`:''}</div>
-                                <div style={{fontSize:17,fontWeight:700,color:'#0b1210'}}>{feitaN.toFixed(1)} ha aplicados</div>
-                              </div>
-                              <span style={{fontSize:20}}>🌙</span>
-                            </div>
-                            <input type="number" style={sw.fi} placeholder="Bordadura opcional (ha)" value={form.bordaduraPorTalhao?.[nome]||''}
-                              onChange={e=>{
-                                const v = e.target.value
-                                setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:v}}))
-                              }}/>
-                            {bordN>0 && (
-                              <div style={{fontSize:11.5,color:'#00A86B',fontWeight:600,marginTop:6}}>Aplicada líquida: {Math.max(0,feitaN-bordN).toFixed(1)} ha ({feitaN.toFixed(1)} feito − {bordN.toFixed(1)} bordadura)</div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                }
-                const feitaUnica = parseFloat(form.area_feita)||0
-                const bordUnica = parseFloat(form.bordadura)||0
-                return (
-                  <div style={sw.fw}>
-                    <label style={sw.fl}>ÁREA APLICADA</label>
-                    <div style={{background:'#eafaf0',border:'1px solid #c8ecd9',borderRadius:14,padding:'14px 16px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <div>
-                        <div style={{fontSize:11,color:'#3f8f68',fontWeight:600,marginBottom:2,letterSpacing:.3}}>REGISTRADO NO FINALIZADO PARCIAL</div>
-                        <div style={{fontSize:22,fontWeight:700,color:'#0b1210'}}>{feitaUnica.toFixed(1)} ha</div>
-                      </div>
-                      <span style={{fontSize:28}}>🌙</span>
-                    </div>
-                    <FI label="BORDADURA (Ha) — opcional" ph="Ex: 2 — se sobrou faixa de segurança" val={form.bordadura}
-                      onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))} type="number"/>
-                    {bordUnica>0 && (
-                      <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:-8,marginBottom:14}}>
-                        Área aplicada líquida: {Math.max(0,feitaUnica-bordUnica).toFixed(1)} ha ({feitaUnica.toFixed(1)} feito − {bordUnica.toFixed(1)} bordadura)
-                      </div>
-                    )}
-                  </div>
-                )
-              }
               if (talhoesSel.length > 1) {
-                // Área Total Aplicada por talhão: mesma ideia do caso de talhão único, só que
-                // um campo por talhão (a soma dos talhões pode ter motivos diferentes de sobra
-                // em cada um — ex: um teve bordadura normal, outro ficou incompleto por vento).
                 const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
                 const fazendaSel5 = fazendasDB.find(fz=>norm(fz.cliente)===norm(form.cliente==='Outros'?form.clienteOutro:form.cliente) && norm(fz.nome)===norm(form.fazenda))
                 const talhoesFaz5 = fazendaSel5 ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel5.id) : []
@@ -4349,29 +4337,36 @@ Quando: ${tempoErroDebug.quando}`}
                   const nota = `Área incompleta em ${nome} (${diferenca.toFixed(1)} ha não aplicado): ${motivo}`
                   setForm(f=>({...f,obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}))
                 }
-                const total = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
+                const totalBord = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
+                const totalFeito = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.area_feita_por_talhao?.[nome])||0),0)
                 return (
                   <div style={sw.fw}>
                     <label style={sw.fl}>ÁREA APLICADA POR TALHÃO (Ha)</label>
-                    <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8,marginTop:-4}}>Digite o valor de cada talhão direto do controle da DJI — a bordadura de cada um é calculada sozinha.</div>
+                    <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8,marginTop:-4}}>Digite o valor aplicado HOJE em cada talhão, direto do controle da DJI — a bordadura de cada um é calculada sozinha.</div>
                     {talhoesSel.map(nome=>{
                       const areaTalhaoN = areaDoTalhao(nome)
+                      const anteriorN = parseFloat(form.area_feita_por_talhao_anterior?.[nome])||0
+                      const restanteN = Math.max(0, areaTalhaoN-anteriorN)
                       const aplicadaN = parseFloat(form.areaAplicadaPorTalhao?.[nome])||0
                       const temAplicada = !!form.areaAplicadaPorTalhao?.[nome]
-                      const diferenca = temAplicada && areaTalhaoN>0 ? Math.max(0, +(areaTalhaoN-aplicadaN).toFixed(2)) : 0
+                      const diferenca = temAplicada && restanteN>0 ? Math.max(0, +(restanteN-aplicadaN).toFixed(2)) : 0
                       const categoria = areaDifCategoriaPorTalhao[nome]||''
                       return (
                         <div key={nome} style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${theme.divider}`}}>
                           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                            <span style={{fontSize:13,color:theme.text,flex:1}}>{nome}{areaTalhaoN>0?` (${areaTalhaoN} ha)`:''}</span>
+                            <span style={{fontSize:13,color:theme.text,flex:1}}>{nome}{areaTalhaoN>0?` (${areaTalhaoN} ha${anteriorN>0?` · ${anteriorN.toFixed(1)} já feitos`:''})`:''}</span>
                             <input type="number" style={{...sw.fi,width:90}} placeholder="0" value={form.areaAplicadaPorTalhao?.[nome]||''}
                               onChange={e=>{
                                 const v = e.target.value
                                 setForm(f=>{
-                                  const diff = areaTalhaoN>0 ? Math.max(0, +(areaTalhaoN-(parseFloat(v)||0)).toFixed(2)) : 0
+                                  const diff = restanteN>0 ? Math.max(0, +(restanteN-(parseFloat(v)||0)).toFixed(2)) : 0
                                   const cat = areaDifCategoriaPorTalhao[nome]||''
-                                  const novaBord = diff<=0 ? '0' : (cat==='bordadura' ? String(diff) : f.bordaduraPorTalhao?.[nome]||'')
-                                  return {...f, areaAplicadaPorTalhao:{...f.areaAplicadaPorTalhao,[nome]:v}, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:novaBord}}
+                                  const anteriorBordN = parseFloat(f.bordaduraPorTalhao_anterior?.[nome])||0
+                                  const novaBord = diff<=0 ? String(anteriorBordN) : (cat==='bordadura' ? String(anteriorBordN+diff) : f.bordaduraPorTalhao?.[nome]||'')
+                                  return {...f,
+                                    areaAplicadaPorTalhao:{...f.areaAplicadaPorTalhao,[nome]:v},
+                                    area_feita_por_talhao:{...f.area_feita_por_talhao,[nome]:String(anteriorN+(parseFloat(v)||0))},
+                                    bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:novaBord}}
                                 })
                               }}/>
                           </div>
@@ -4384,7 +4379,8 @@ Quando: ${tempoErroDebug.quando}`}
                                     <input type="radio" checked={categoria===val}
                                       onChange={()=>{
                                         setAreaDifCategoriaPorTalhao(c=>({...c,[nome]:val}))
-                                        setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]: val==='bordadura' ? String(diferenca) : ''}}))
+                                        const anteriorBordN = parseFloat(form.bordaduraPorTalhao_anterior?.[nome])||0
+                                        setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]: val==='bordadura' ? String(anteriorBordN+diferenca) : String(anteriorBordN||'')}}))
                                       }}/>
                                     <span style={{fontSize:12.5,color:theme.text}}>{label}</span>
                                   </label>
@@ -4403,22 +4399,20 @@ Quando: ${tempoErroDebug.quando}`}
                         </div>
                       )
                     })}
-                    {total>0&&form.area_ha&&(
+                    {(totalBord>0||totalFeito>0)&&(
                       <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:4,marginBottom:4}}>
-                        Bordadura total: {total} ha · Área aplicada: {Math.max(0,parseFloat(form.area_ha)-total).toFixed(2)} ha
+                        Feito: {totalFeito.toFixed(1)} ha · Bordadura: {totalBord.toFixed(1)} ha
                       </div>
                     )}
                   </div>
                 )
               }
-              // Área Total Aplicada = o valor bruto que o piloto lê direto no controle da DJI,
-              // sem precisar calcular bordadura de cabeça. A diferença pro Área do Talhão só vira
-              // bordadura quando o piloto escolhe manualmente "🟢 Bordadura" — sem escolha, o campo
-              // fica em branco pra evitar que sobra/área não aplicada seja categorizada errado.
               const areaTalhaoN = parseFloat(form.area_ha)||0
+              const anteriorUnica = parseFloat(form.area_feita_anterior)||0
+              const restanteUnica = Math.max(0, areaTalhaoN-anteriorUnica)
               const areaAplicadaN = parseFloat(form.area_total_aplicada)||0
               const temAmbos = form.area_ha!=='' && form.area_total_aplicada!==''
-              const diferenca = temAmbos ? Math.max(0, +(areaTalhaoN-areaAplicadaN).toFixed(2)) : 0
+              const diferenca = temAmbos ? Math.max(0, +(restanteUnica-areaAplicadaN).toFixed(2)) : 0
               const MOTIVOS = ['Obstáculo / Fiação','Vento / Condição Climática','Fim do Insumo / Calda','Problema Técnico / Bateria','Outro']
               function aplicarMotivo(motivo) {
                 const nota = `Área incompleta (${diferenca.toFixed(1)} ha não aplicado): ${motivo}`
@@ -4426,16 +4420,23 @@ Quando: ${tempoErroDebug.quando}`}
               }
               return (
                 <>
-                  <FI label="ÁREA TOTAL APLICADA (Ha)" ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
+                  {anteriorUnica>0 && (
+                    <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:8}}>Já feito antes: <strong>{anteriorUnica.toFixed(1)} ha</strong> · falta {restanteUnica.toFixed(1)} ha</div>
+                  )}
+                  <FI label="ÁREA APLICADA HOJE (Ha)" ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
                     onChange={e=>{
                       const v = e.target.value
                       setForm(f=>{
-                        const diff = Math.max(0, +((parseFloat(f.area_ha)||0)-(parseFloat(v)||0)).toFixed(2))
-                        // Sem diferença (aplicou tudo ou mais): bordadura zera sozinha. Com diferença,
-                        // só preenche a bordadura se o piloto já tiver escolhido a categoria "bordadura"
-                        // manualmente — do contrário fica em branco até ele decidir.
-                        const novaBordadura = diff<=0 ? '0' : (areaDifCategoria==='bordadura' ? String(diff) : f.bordadura)
-                        return {...f, area_total_aplicada:v, bordadura:novaBordadura}
+                        const anteriorF = parseFloat(f.area_feita_anterior)||0
+                        const restanteF = Math.max(0, (parseFloat(f.area_ha)||0)-anteriorF)
+                        const diff = Math.max(0, +(restanteF-(parseFloat(v)||0)).toFixed(2))
+                        // Sem diferença (aplicou tudo ou mais): bordadura volta pro valor de antes
+                        // desta sessão. Com diferença, só soma na bordadura se o piloto já tiver
+                        // escolhido a categoria "bordadura" manualmente — do contrário fica em
+                        // branco até ele decidir (evita categorizar sobra errado).
+                        const anteriorBord = parseFloat(f.bordadura_anterior)||0
+                        const novaBordadura = diff<=0 ? String(anteriorBord) : (areaDifCategoria==='bordadura' ? String(anteriorBord+diff) : f.bordadura)
+                        return {...f, area_total_aplicada:v, area_feita:String(anteriorF+(parseFloat(v)||0)), bordadura:novaBordadura}
                       })
                     }} type="number"/>
 
@@ -4448,7 +4449,8 @@ Quando: ${tempoErroDebug.quando}`}
                             <input type="radio" checked={areaDifCategoria===val}
                               onChange={()=>{
                                 setAreaDifCategoria(val)
-                                setForm(f=>({...f,bordadura: val==='bordadura' ? String(diferenca) : ''}))
+                                const anteriorBord = parseFloat(form.bordadura_anterior)||0
+                                setForm(f=>({...f,bordadura: val==='bordadura' ? String(anteriorBord+diferenca) : String(anteriorBord||'')}))
                               }}/>
                             <span style={{fontSize:13,color:theme.text}}>{label}</span>
                           </label>
@@ -4666,43 +4668,6 @@ Quando: ${tempoErroDebug.quando}`}
         </div>
       )}
 
-      {/* ESCOLHA AO FINALIZAR — fechar tudo ou registrar como parcial */}
-      {finalizarEscolhaOpen&&(
-        <div style={s.modalOverlay} onClick={()=>setFinalizarEscolhaOpen(false)}>
-          <div style={{...s.modal,maxWidth:380,padding:'22px 20px 26px'}} onClick={e=>e.stopPropagation()}>
-            <div style={s.modalTitle}>Finalizar operação <button style={s.modalClose} onClick={()=>setFinalizarEscolhaOpen(false)}>✕</button></div>
-            <p style={{fontSize:13,color:theme.textMuted,marginBottom:16,lineHeight:1.5}}>Já terminou o talhão inteiro, ou só uma parte por hoje?</p>
-            <div style={{display:'flex',flexDirection:'column',gap:10}}>
-              <button style={{display:'flex',alignItems:'center',gap:14,background:'linear-gradient(135deg,#00A86B,#0e9f6e)',color:'#fff',border:'none',borderRadius:18,padding:'14px 16px',cursor:'pointer',fontFamily:"'Poppins',sans-serif",textAlign:'left',boxShadow:'0 8px 20px rgba(14,159,110,0.28)'}}
-                onClick={()=>{
-                  setFinalizarEscolhaOpen(false)
-                  const n=nowParts()
-                  setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                  opFinalizar()
-                  setWizardStep(3)
-                  showToast('🌤️ Preencha as condições climáticas do FIM da operação')
-                }}>
-                <span style={{width:42,height:42,borderRadius:13,background:'rgba(255,255,255,.18)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>✅</span>
-                <span style={{flex:1}}>
-                  <span style={{display:'block',fontSize:14.5,fontWeight:700}}>Finalizar tudo</span>
-                  <span style={{display:'block',fontSize:11.5,opacity:.85,marginTop:1}}>Talhão inteiro concluído hoje</span>
-                </span>
-                <span style={{fontSize:17,opacity:.8}}>→</span>
-              </button>
-              <button style={{display:'flex',alignItems:'center',gap:14,background:theme.card,color:theme.text,border:`1.5px solid ${theme.cardBorder2}`,borderRadius:18,padding:'14px 16px',cursor:'pointer',fontFamily:"'Poppins',sans-serif",textAlign:'left'}}
-                onClick={()=>{ setFinalizarEscolhaOpen(false); setParcialModalOpen(true) }}>
-                <span style={{width:42,height:42,borderRadius:13,background:theme.warningBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>🌙</span>
-                <span style={{flex:1}}>
-                  <span style={{display:'block',fontSize:14.5,fontWeight:700,color:theme.text}}>Finalizado parcial</span>
-                  <span style={{display:'block',fontSize:11.5,color:theme.textMuted,marginTop:1}}>Continua depois de onde parou</span>
-                </span>
-                <span style={{fontSize:17,color:theme.textFaint2}}>→</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* FINALIZADO PARCIAL — marcar progresso */}
       {parcialModalOpen&&(()=>{
         const {total,feita,pct}=progressoParcial(form)
@@ -4775,7 +4740,14 @@ Quando: ${tempoErroDebug.quando}`}
               const jaDeduzido = parseFloat(form.area_deduzida)||0
               const deltaBaixa = Math.max(0, feita-jaDeduzido)
               const n=nowParts()
-              setForm(f=>({...f,area_feita:String(feita),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
+              // Pré-preenche o Passo 5 com o que já foi digitado aqui (a diferença entre o que já
+              // tinha antes desta sessão e o total agora) — assim o piloto não responde a mesma
+              // pergunta duas vezes; ele só precisa ajustar se a leitura real da DJI for diferente.
+              setForm(f=>({...f,area_feita:String(feita),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm,
+                area_total_aplicada: multiTalhaoP ? f.area_total_aplicada : String(Math.max(0,feita-(parseFloat(f.area_feita_anterior)||0))),
+                areaAplicadaPorTalhao: multiTalhaoP
+                  ? talhoesSelP.reduce((acc,nome)=>({...acc,[nome]:String(Math.max(0,(parseFloat(f.area_feita_por_talhao?.[nome])||0)-(parseFloat(f.area_feita_por_talhao_anterior?.[nome])||0)))}),{...f.areaAplicadaPorTalhao})
+                  : f.areaAplicadaPorTalhao}))
               const relSalvo = await saveToSupabase({status:'pausado_dia',area_feita:feita,area_deduzida:feita,dt_fim:n.iso})
               if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
               // O voo já está salvo no servidor — pode ser retomado depois por "Continuar voo" ou
