@@ -2139,27 +2139,11 @@ export default function PilotApp({onSwitchMode}) {
         </div>
 
         <div style={{padding:'14px 16px 100px',flex:1,display:'flex',flexDirection:'column',gap:14}}>
-          {/* Voo em andamento */}
-          {draftAtivo && (opState==='paused_day' ? (()=>{
-            const {total,feita,pct} = progressoParcial(form)
-            return (
-              <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,borderLeft:'4px solid #00A86B',padding:'14px 16px',cursor:'pointer',boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}} onClick={()=>{setView('form');setWizardStep(4)}}>
-                <div style={{display:'flex',alignItems:'center',gap:12}}>
-                  <span style={{width:40,height:40,borderRadius:12,background:theme.successBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🕐</span>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:15,fontWeight:700,fontFamily:"'Poppins',sans-serif",color:theme.text}}>Aplicação Parcial em Aberto</div>
-                    <div style={{fontSize:12,color:theme.textFaint2,marginTop:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{form.fazenda||'—'}{total>0?` · ${feita.toFixed(2)} ha de ${total.toFixed(2)} ha`:''}</div>
-                  </div>
-                  <span style={{background:theme.successBg,color:'#00A86B',fontSize:10,fontWeight:700,borderRadius:20,padding:'4px 10px',flexShrink:0,fontFamily:"'Poppins',sans-serif"}}>PARCIAL</span>
-                </div>
-                {total>0&&(
-                  <div style={{height:8,background:theme.divider,borderRadius:20,overflow:'hidden',marginTop:12}}>
-                    <div style={{height:'100%',width:`${pct}%`,background:'#00A86B',borderRadius:20,transition:'width .3s'}}/>
-                  </div>
-                )}
-              </div>
-            )
-          })() : (
+          {/* Voo em andamento — só quando algo está realmente rodando/pausado agora. Um voo
+              Finalizado Parcial (opState==='paused_day') não está "em andamento" de verdade —
+              fica parado esperando ser retomado, e é acessado pela aba Voos, não por esse
+              banner de destaque. */}
+          {draftAtivo && opState!=='paused_day' && (
             <div style={{background:'linear-gradient(135deg,#00A86B,#00875A)',borderRadius:22,padding:18,color:'#fff',cursor:'pointer',boxShadow:'0 10px 26px rgba(14,159,110,0.35)',position:'relative',overflow:'hidden'}} onClick={()=>{setView('form');setWizardStep(4)}}>
               <span style={{position:'absolute',right:-10,bottom:-14,fontSize:64,opacity:.15}}>🚁</span>
               <div style={{fontSize:11,fontWeight:700,opacity:.85,letterSpacing:.5}}>{opState==='paused'?'🟡 VOO PAUSADO':'🟢 VOO EM ANDAMENTO'}</div>
@@ -2167,7 +2151,7 @@ export default function PilotApp({onSwitchMode}) {
               {osAtual&&<div style={{fontSize:10,fontFamily:'ui-monospace,monospace',opacity:.8,marginTop:2}}>OS {osAtual}</div>}
               <div style={{fontSize:12,opacity:.9,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
             </div>
-          ))}
+          )}
 
           {/* Ações rápidas — 6 atalhos compactos (estilo DJI) */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 5px'}}>
@@ -4386,6 +4370,12 @@ Quando: ${tempoErroDebug.quando}`}
                                   </label>
                                 ))}
                               </div>
+                              {categoria==='bordadura' && (
+                                <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>Bordadura (Ha) — ajuste se o valor real for diferente do calculado:</div>
+                                  <input type="number" style={sw.fi} value={form.bordaduraPorTalhao?.[nome]||''} onChange={e=>setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:e.target.value}}))}/>
+                                </div>
+                              )}
                               {categoria==='nao_aplicada' && (
                                 <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`,display:'flex',flexWrap:'wrap',gap:6}}>
                                   {MOTIVOS.map(m=>(
@@ -4456,6 +4446,12 @@ Quando: ${tempoErroDebug.quando}`}
                           </label>
                         ))}
                       </div>
+                      {areaDifCategoria==='bordadura' && (
+                        <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                          <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>Bordadura (Ha) — ajuste se o valor real for diferente do calculado:</div>
+                          <input type="number" style={sw.fi} value={form.bordadura||''} onChange={e=>setForm(f=>({...f,bordadura:e.target.value}))}/>
+                        </div>
+                      )}
                       {areaDifCategoria==='nao_aplicada' && (
                         <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
                           <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>Motivo (adiciona automaticamente na Observação):</div>
