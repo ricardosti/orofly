@@ -67,6 +67,9 @@ const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado' }
+// Motivos da área não aplicada — "Bordadura" vem PRIMEIRO por ser de longe o caso mais comum,
+// e é o único que não vira texto de Observação (vai pro campo de bordadura do relatório).
+const MOTIVOS_NAO_APLICADA = ['Bordadura','Obstáculo / Fiação','Vento / Condição Climática','Fim do Insumo / Calda','Problema Técnico / Bateria','Outro']
 const LS_KEY = 'orofly_draft'
 
 function initForm(data) {
@@ -103,6 +106,7 @@ function initForm(data) {
       area_total_aplicada:data.area_total_aplicada!=null?String(data.area_total_aplicada):'',
       bordaduraPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       areaAplicadaPorTalhao:{},
+      areaNaoAplicadaPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       area_feita_por_talhao:data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,String(d.area_feita)])) : {},
       evid_meta:data.evidencia_meta||{},
       area_feita:data.area_feita!=null?String(data.area_feita):'',
@@ -112,6 +116,10 @@ function initForm(data) {
       // Finalizado Parcial salvo em outro dia/por outro piloto) — nunca muda durante a sessão.
       // O Passo 5 usa isso pra calcular o que falta AGORA, em vez de comparar contra o talhão
       // inteiro de novo (senão um talhão de 100ha com 50ha já feitos mostrava "faltam 100ha").
+      // Área não aplicada é campo de tela: no banco ela só existe como `bordadura` (quando o
+      // motivo foi Bordadura) ou como texto na Observação (demais motivos). Ao reabrir um voo,
+      // reconstrói a partir da bordadura salva — o único valor que dá pra recuperar com certeza.
+      area_nao_aplicada: data.bordadura!=null&&data.bordadura!=='' ? String(data.bordadura) : '',
       area_feita_anterior: data.area_feita!=null?parseFloat(data.area_feita)||0:0,
       area_feita_por_talhao_anterior: data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,parseFloat(d.area_feita)||0])) : {},
       bordadura_anterior: data.bordadura!=null?parseFloat(data.bordadura)||0:0,
@@ -125,8 +133,8 @@ function initForm(data) {
     localizacao:'',gps_lat:null,gps_lng:null,...cond,
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
-    pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
-    area_feita:'',area_deduzida:'',teste:false,
+    pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},areaNaoAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
+    area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',
     area_feita_anterior:0,area_feita_por_talhao_anterior:{},bordadura_anterior:0,bordaduraPorTalhao_anterior:{},
   }
 }
@@ -411,6 +419,11 @@ export default function PilotApp({onSwitchMode}) {
     return initForm()
   })
   const [condTab,setCondTab] = useState('inicio')
+  // Passo 5 — motivo da ÁREA NÃO APLICADA. "Bordadura" é um motivo como os outros, mas com
+  // destino diferente: vai pro campo `bordadura` do relatório (aparece como "Bord" no PDF/zap)
+  // e NÃO escreve nada na Observação. Qualquer outro motivo é ocorrência: vira texto em obs1.
+  const [motivoNaoAplicada,setMotivoNaoAplicada] = useState('')
+  const [motivoNaoAplicadaPorTalhao,setMotivoNaoAplicadaPorTalhao] = useState({})
   const [opState,setOpState] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).opState||'idle' } catch{}
     return 'idle'
@@ -1700,6 +1713,10 @@ export default function PilotApp({onSwitchMode}) {
 
   function openFlight(rel){
     setForm(initForm(rel)); setRelId(rel.id); setOsAtual(rel.ordem_servico||null)
+    // Bordadura salva > 0 só acontece quando o motivo escolhido foi "Bordadura" — reconstrói a
+    // seleção pra o piloto reabrir o voo já vendo o motivo marcado, não em branco.
+    setMotivoNaoAplicada(parseFloat(rel.bordadura)>0 ? 'Bordadura' : '')
+    setMotivoNaoAplicadaPorTalhao(Object.fromEntries((rel.bordadura_detalhe||[]).filter(d=>parseFloat(d?.bordadura)>0).map(d=>[d.talhao,'Bordadura'])))
     const st = rel.status==='finalizado'?'finished':rel.status==='em_operacao'?'running':rel.status==='pausado'?'paused':rel.status==='pausado_dia'?'paused_day':'idle'
     setOpState(st)
     setObsFotos([null,null,null]); setObsFotoFiles([null,null,null])
@@ -3798,6 +3815,20 @@ Quando: ${tempoErroDebug.quando}`}
               )
             })()}
             <FI label="ÁREA (HA)" ph="Ex: 50.5" val={form.area_ha} onChange={e=>{setForm(f=>({...f,area_ha:e.target.value}));autoGPS()}} type="number"/>
+            {/* Retomando um voo parcial, o piloto precisa saber o SALDO (é o que ele vai voar),
+                mas o relatório do cliente continua com o tamanho real do talhão — por isso os
+                dois números aparecem, em vez de trocar um pelo outro. */}
+            {(()=>{
+              const jaFeito = parseFloat(form.area_feita_anterior)||0
+              const totalTalhao = parseFloat(form.area_ha)||0
+              if (jaFeito<=0 || totalTalhao<=0) return null
+              const saldo = Math.max(0, totalTalhao-jaFeito)
+              return (
+                <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:14,fontSize:11.5,color:theme.warningText2}}>
+                  🌙 Aplicação parcial · Talhão tem <strong>{totalTalhao.toFixed(1)} ha</strong> · já aplicados <strong>{jaFeito.toFixed(1)} ha</strong> · <strong>saldo {saldo.toFixed(1)} ha</strong>
+                </div>
+              )
+            })()}
 
             <div style={sw.fw}>
               <label style={sw.fl}>TIPO DE SERVIÇO</label>
@@ -4342,10 +4373,16 @@ Quando: ${tempoErroDebug.quando}`}
                 const fazendaSel5 = fazendasDB.find(fz=>norm(fz.cliente)===norm(form.cliente==='Outros'?form.clienteOutro:form.cliente) && norm(fz.nome)===norm(form.fazenda))
                 const talhoesFaz5 = fazendaSel5 ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel5.id) : []
                 const areaDoTalhao = nome => parseFloat(talhoesFaz5.find(t=>t.nome===nome)?.area_ha)||0
-                const MOTIVOS = ['Obstáculo / Fiação','Vento / Condição Climática','Fim do Insumo / Calda','Problema Técnico / Bateria','Outro']
-                function aplicarMotivoTalhao(nome, falta, motivo) {
-                  const nota = `Área incompleta em ${nome} (${falta.toFixed(1)} ha não aplicado): ${motivo}`
-                  setForm(f=>({...f,obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}))
+                // Mesma regra do talhão único: Bordadura alimenta o campo do relatório; os demais
+                // motivos viram ocorrência na Observação e zeram a bordadura daquele talhão.
+                function escolherMotivoTalhao(nome, motivo) {
+                  setMotivoNaoAplicadaPorTalhao(c=>({...c,[nome]:motivo}))
+                  setForm(f=>{
+                    const qtd = parseFloat(f.areaNaoAplicadaPorTalhao?.[nome])||0
+                    if (motivo==='Bordadura') return {...f, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:String(qtd)}}
+                    const nota = `Área não aplicada em ${nome} (${qtd.toFixed(1)} ha): ${motivo}`
+                    return {...f, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:''}, obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}
+                  })
                 }
                 const totalBord = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
                 const totalFeito = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.area_feita_por_talhao?.[nome])||0),0)
@@ -4359,6 +4396,7 @@ Quando: ${tempoErroDebug.quando}`}
                       const restanteN = Math.max(0, areaTalhaoN-anteriorN)
                       const aplicadaN = parseFloat(form.areaAplicadaPorTalhao?.[nome])||0
                       const temAplicada = !!form.areaAplicadaPorTalhao?.[nome]
+                      const naoAplicadaN = parseFloat(form.areaNaoAplicadaPorTalhao?.[nome])||0
                       const falta = temAplicada && restanteN>0 ? Math.max(0, +(restanteN-aplicadaN).toFixed(2)) : 0
                       return (
                         <div key={nome} style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${theme.divider}`}}>
@@ -4372,22 +4410,35 @@ Quando: ${tempoErroDebug.quando}`}
                                   areaAplicadaPorTalhao:{...f.areaAplicadaPorTalhao,[nome]:v},
                                   area_feita_por_talhao:{...f.area_feita_por_talhao,[nome]:String(anteriorN+(parseFloat(v)||0))}}))
                               }}/>
-                            <input type="number" style={{...sw.fi,width:80}} placeholder="Bordadura" value={form.bordaduraPorTalhao?.[nome]||''}
+                            <input type="number" style={{...sw.fi,width:80}} placeholder="Não aplic." value={form.areaNaoAplicadaPorTalhao?.[nome]||''}
                               min={0} max={aplicadaN>0?aplicadaN:undefined}
-                              onChange={e=>setForm(f=>({...f,bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:limitarArea(e.target.value, aplicadaN>0?aplicadaN:null)}}))}/>
+                              onChange={e=>{
+                                const v = limitarArea(e.target.value, aplicadaN>0?aplicadaN:null)
+                                setForm(f=>({...f,
+                                  areaNaoAplicadaPorTalhao:{...f.areaNaoAplicadaPorTalhao,[nome]:v},
+                                  bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]: motivoNaoAplicadaPorTalhao[nome]==='Bordadura' ? v : f.bordaduraPorTalhao?.[nome]||''}}))
+                              }}/>
                           </div>
                           {temAplicada && falta<=0.05 && aplicadaN>0 && (
-                            <div style={{fontSize:11.5,color:'#00A86B',fontWeight:600}}>✅ Talhão concluído</div>
+                            <div style={{fontSize:11.5,color:'#00A86B',fontWeight:600,marginBottom:6}}>✅ Talhão concluído</div>
                           )}
-                          {temAplicada && falta>0.05 && (
+                          {naoAplicadaN>0 && (
                             <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:10}}>
-                              <div style={{fontSize:12,color:theme.text}}>Falta: <strong>{falta.toFixed(1)} ha</strong> ainda não aplicados nesse talhão.</div>
-                              <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`,display:'flex',flexWrap:'wrap',gap:6}}>
-                                {MOTIVOS.map(m=>(
-                                  <button key={m} type="button" onClick={()=>aplicarMotivoTalhao(nome,falta,m)}
-                                    style={{background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,padding:'5px 10px',fontSize:11.5,color:theme.text,cursor:'pointer'}}>{m}</button>
-                                ))}
+                              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:7}}>Por que esses {naoAplicadaN.toFixed(1)} ha não foram aplicados?</div>
+                              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                                {MOTIVOS_NAO_APLICADA.map(m=>{
+                                  const ativo = motivoNaoAplicadaPorTalhao[nome]===m
+                                  return (
+                                    <button key={m} type="button" onClick={()=>escolherMotivoTalhao(nome,m)}
+                                      style={{background:ativo?'#00A86B':theme.card,color:ativo?'#fff':theme.text,border:`1px solid ${ativo?'#00A86B':theme.cardBorder2}`,borderRadius:20,padding:'5px 10px',fontSize:11.5,fontWeight:ativo?700:400,cursor:'pointer'}}>{m}</button>
+                                  )
+                                })}
                               </div>
+                              {motivoNaoAplicadaPorTalhao[nome] && (
+                                <div style={{fontSize:11.5,color:'#0b1210',marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                                  Não foi aplicado <strong>{naoAplicadaN.toFixed(1)} ha</strong> por causa {motivoNaoAplicadaPorTalhao[nome]==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicadaPorTalhao[nome]}`}.
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -4405,50 +4456,76 @@ Quando: ${tempoErroDebug.quando}`}
               const anteriorUnica = parseFloat(form.area_feita_anterior)||0
               const restanteUnica = Math.max(0, areaTalhaoN-anteriorUnica)
               const areaAplicadaN = parseFloat(form.area_total_aplicada)||0
-              const temAmbos = form.area_ha!=='' && form.area_total_aplicada!==''
-              const falta = temAmbos ? Math.max(0, +(restanteUnica-areaAplicadaN).toFixed(2)) : 0
-              const MOTIVOS = ['Obstáculo / Fiação','Vento / Condição Climática','Fim do Insumo / Calda','Problema Técnico / Bateria','Outro']
-              function aplicarMotivo(motivo) {
-                const nota = `Área incompleta (${falta.toFixed(1)} ha não aplicado): ${motivo}`
-                setForm(f=>({...f,obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}))
+              const naoAplicadaN = parseFloat(form.area_nao_aplicada)||0
+              const ehParcial = opState==='paused_day'
+              // Escolher o motivo é o que decide o destino do valor: "Bordadura" alimenta o campo
+              // `bordadura` (sai como "Bord" no relatório, sem escrever nada na Observação);
+              // qualquer outro motivo é ocorrência e vira texto em obs1, zerando a bordadura.
+              function escolherMotivo(motivo) {
+                setMotivoNaoAplicada(motivo)
+                setForm(f=>{
+                  const qtd = parseFloat(f.area_nao_aplicada)||0
+                  if (motivo==='Bordadura') return {...f, bordadura:String(qtd)}
+                  const nota = `Área não aplicada (${qtd.toFixed(1)} ha): ${motivo}`
+                  return {...f, bordadura:'', obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}
+                })
               }
               return (
                 <>
                   {anteriorUnica>0 && (
-                    <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:8}}>Já feito antes: <strong>{anteriorUnica.toFixed(1)} ha</strong> · falta {restanteUnica.toFixed(1)} ha</div>
+                    <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:8}}>Já feito antes: <strong>{anteriorUnica.toFixed(1)} ha</strong> · saldo do talhão {restanteUnica.toFixed(1)} ha</div>
                   )}
-                  <FI label={`ÁREA APLICADA HOJE (Ha)${restanteUnica>0?` — máx. ${restanteUnica.toFixed(1)}`:''}`} ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
-                    min={0} max={restanteUnica>0?restanteUnica:undefined}
-                    onChange={e=>{
-                      const v = limitarArea(e.target.value, restanteUnica>0?restanteUnica:null)
-                      setForm(f=>{
-                        const anteriorF = parseFloat(f.area_feita_anterior)||0
-                        return {...f, area_total_aplicada:v, area_feita:String(anteriorF+(parseFloat(v)||0))}
-                      })
-                    }} type="number"/>
-                  <FI label="BORDADURA (Ha) — dentro do que foi aplicado" ph="Ex: 2 — opcional" val={form.bordadura}
-                    min={0} max={areaAplicadaN>0?areaAplicadaN:undefined}
-                    onChange={e=>setForm(f=>({...f,bordadura:limitarArea(e.target.value, areaAplicadaN>0?areaAplicadaN:null)}))} type="number"/>
+                  {/* No Finalizado Parcial a área já foi digitada no modal — reabrir como campo
+                      editável aqui confundia o piloto (parecia que precisava responder de novo). */}
+                  {ehParcial ? (
+                    <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
+                      <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:3}}>ÁREA APLICADA HOJE</div>
+                      <div style={{fontSize:19,fontWeight:700,color:theme.text}}>{areaAplicadaN.toFixed(1)} ha</div>
+                    </div>
+                  ) : (
+                    <FI label={`ÁREA APLICADA HOJE (Ha)${restanteUnica>0?` — máx. ${restanteUnica.toFixed(1)}`:''}`} ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
+                      min={0} max={restanteUnica>0?restanteUnica:undefined}
+                      onChange={e=>{
+                        const v = limitarArea(e.target.value, restanteUnica>0?restanteUnica:null)
+                        setForm(f=>{
+                          const anteriorF = parseFloat(f.area_feita_anterior)||0
+                          return {...f, area_total_aplicada:v, area_feita:String(anteriorF+(parseFloat(v)||0))}
+                        })
+                      }} type="number"/>
+                  )}
 
-                  {temAmbos && falta<=0.05 && areaAplicadaN>0 && (
+                  {areaAplicadaN>0 && restanteUnica>0 && (restanteUnica-areaAplicadaN)<=0.05 && (
                     <div style={{background:'#eafaf0',border:'1px solid #c8ecd9',borderRadius:12,padding:'12px 14px',marginTop:-8,marginBottom:14,display:'flex',alignItems:'center',gap:10}}>
                       <span style={{fontSize:18}}>✅</span>
                       <div style={{fontSize:12.5,color:'#0b1210'}}>Talhão <strong>concluído</strong> — nada pendente. Use "Finalizar" (não o parcial).</div>
                     </div>
                   )}
 
-                  {temAmbos && falta>0.05 && (
+                  <FI label="ÁREA NÃO APLICADA (Ha) — opcional" ph="Ex: 2 — bordadura, obstáculo..." val={form.area_nao_aplicada}
+                    min={0} max={areaAplicadaN>0?areaAplicadaN:undefined}
+                    onChange={e=>{
+                      const v = limitarArea(e.target.value, areaAplicadaN>0?areaAplicadaN:null)
+                      // Mantém a bordadura em sincronia enquanto o motivo escolhido for "Bordadura"
+                      setForm(f=>({...f, area_nao_aplicada:v, bordadura: motivoNaoAplicada==='Bordadura' ? v : f.bordadura}))
+                    }} type="number"/>
+
+                  {naoAplicadaN>0 && (
                     <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:14,marginTop:-8,marginBottom:14}}>
-                      <div style={{fontSize:12.5,color:theme.text}}>Falta: <strong>{falta.toFixed(1)} ha</strong> ainda não aplicados.</div>
-                      <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
-                        <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>Motivo (opcional — adiciona automaticamente na Observação):</div>
-                        <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                          {MOTIVOS.map(m=>(
-                            <button key={m} type="button" onClick={()=>aplicarMotivo(m)}
-                              style={{background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,padding:'6px 12px',fontSize:12,color:theme.text,cursor:'pointer'}}>{m}</button>
-                          ))}
-                        </div>
+                      <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8}}>Por que esses {naoAplicadaN.toFixed(1)} ha não foram aplicados?</div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                        {MOTIVOS_NAO_APLICADA.map(m=>{
+                          const ativo = motivoNaoAplicada===m
+                          return (
+                            <button key={m} type="button" onClick={()=>escolherMotivo(m)}
+                              style={{background:ativo?'#00A86B':theme.card,color:ativo?'#fff':theme.text,border:`1px solid ${ativo?'#00A86B':theme.cardBorder2}`,borderRadius:20,padding:'6px 12px',fontSize:12,fontWeight:ativo?700:400,cursor:'pointer'}}>{m}</button>
+                          )
+                        })}
                       </div>
+                      {motivoNaoAplicada && (
+                        <div style={{fontSize:12.5,color:'#0b1210',marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                          Não foi aplicado <strong>{naoAplicadaN.toFixed(1)} ha</strong> por causa {motivoNaoAplicada==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicada}`}.
+                        </div>
+                      )}
                     </div>
                   )}
 
