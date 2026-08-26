@@ -252,7 +252,16 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
         if (i < dadosPorTalhao.length - 1) area.push('')
       })
     } else {
-      area.push(`Tot ${fmtHa(rel.area_ha)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
+      // `rel.area_ha` guarda o escopo DESTE voo (num talhão parcial, é o saldo que faltava, não o
+      // tamanho cheio). Quando o cadastro do talhão diz outro número, mostra os dois — senão o
+      // cliente lê "Tot 40 ha" num talhão que tem 100 e fica sem referência do todo.
+      const totalCadastro = catalogo.find(t => t.nome === talhoes[0])
+      const totalCad = totalCadastro ? parseFloat(totalCadastro.area_ha) || 0 : 0
+      const escopoVoo = parseFloat(rel.area_ha) || 0
+      const totalTxt = totalCad > 0 && Math.abs(totalCad - escopoVoo) > 0.05
+        ? `Talhão ${fmtHa(totalCad)} ha | Neste voo ${fmtHa(escopoVoo)} ha`
+        : `Tot ${fmtHa(rel.area_ha)} ha`
+      area.push(`${totalTxt} | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
     }
     blocos.push(`*Áreas*\n${area.join('\n')}`)
   }
