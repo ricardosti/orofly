@@ -120,6 +120,9 @@ function initForm(data) {
       // motivo foi Bordadura) ou como texto na Observação (demais motivos). Ao reabrir um voo,
       // reconstrói a partir da bordadura salva — o único valor que dá pra recuperar com certeza.
       area_nao_aplicada: data.bordadura!=null&&data.bordadura!=='' ? String(data.bordadura) : '',
+      // Só existem em sessão (vêm da seleção de talhão no Passo 1) — ao reabrir um voo salvo,
+      // area_ha já é o saldo gravado na criação, então não há o que reconstruir aqui.
+      area_talhao_total:0, saldoPorTalhao:{},
       area_feita_anterior: data.area_feita!=null?parseFloat(data.area_feita)||0:0,
       area_feita_por_talhao_anterior: data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,parseFloat(d.area_feita)||0])) : {},
       bordadura_anterior: data.bordadura!=null?parseFloat(data.bordadura)||0:0,
@@ -134,7 +137,7 @@ function initForm(data) {
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
     pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},areaNaoAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
-    area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',
+    area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',area_talhao_total:0,saldoPorTalhao:{},
     area_feita_anterior:0,area_feita_por_talhao_anterior:{},bordadura_anterior:0,bordaduraPorTalhao_anterior:{},
   }
 }
@@ -3697,10 +3700,26 @@ Quando: ${tempoErroDebug.quando}`}
                     const talhoesFaz = fazendaSel ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel.id) : []
                     const temTalhoes = talhoesFaz.length>0
                     const selecionados = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
+                    // ÁREA (HA) recebe o SALDO do talhão (o que ainda falta aplicar), não o tamanho
+                    // cheio: num talhão de 100 ha com 60 já feitos por outros voos, o piloto vai
+                    // voar 40 — e é 40 que precisa aparecer aqui e limitar o Passo 5. O tamanho
+                    // real fica guardado em `area_talhao_total` só pra exibição.
                     const aplicarSelecao = (novos) => {
-                      const soma = talhoesFaz.filter(x=>novos.includes(x.nome)).reduce((a,x)=>a+parseFloat(x.area_ha||0),0)
+                      const escolhidos = talhoesFaz.filter(x=>novos.includes(x.nome))
+                      const somaTotal = escolhidos.reduce((a,x)=>a+(parseFloat(x.area_ha)||0),0)
+                      const saldos = {}
+                      let somaSaldo = 0
+                      escolhidos.forEach(x=>{
+                        const prog = fazendaSel ? progressoTalhao(fazendaSel,x,talhoesFaz) : null
+                        const saldo = prog ? Math.max(0,prog.falta) : (parseFloat(x.area_ha)||0)
+                        saldos[x.nome] = +saldo.toFixed(2)
+                        somaSaldo += saldo
+                      })
                       const joined = novos.join(', ')
-                      setForm(f=>({...f,talhao:joined,localizacao:joined,area_ha:soma>0?String(parseFloat(soma.toFixed(2))):f.area_ha}))
+                      setForm(f=>({...f,talhao:joined,localizacao:joined,
+                        area_ha: somaSaldo>0?String(parseFloat(somaSaldo.toFixed(2))):f.area_ha,
+                        area_talhao_total: somaTotal>0?+somaTotal.toFixed(2):0,
+                        saldoPorTalhao: saldos}))
                       autoGPS()
                     }
                     const toggleTalhao = (t) => {
@@ -3804,7 +3823,7 @@ Quando: ${tempoErroDebug.quando}`}
 
                         {selecionados.length>0&&(
                           <div style={{marginTop:6,fontSize:12,color:'#00A86B',fontWeight:600}}>
-                            ✅ {selecionados.length} talhão(ões) · Área total: {form.area_ha||'—'} ha
+                            ✅ {selecionados.length} talhão(ões) · A aplicar: {form.area_ha||'—'} ha{parseFloat(form.area_talhao_total)>parseFloat(form.area_ha||0)?` (talhão tem ${parseFloat(form.area_talhao_total).toFixed(1)} ha)`:''}
                           </div>
                         )}
                       </div>
@@ -3819,10 +3838,10 @@ Quando: ${tempoErroDebug.quando}`}
                 mas o relatório do cliente continua com o tamanho real do talhão — por isso os
                 dois números aparecem, em vez de trocar um pelo outro. */}
             {(()=>{
-              const jaFeito = parseFloat(form.area_feita_anterior)||0
-              const totalTalhao = parseFloat(form.area_ha)||0
-              if (jaFeito<=0 || totalTalhao<=0) return null
-              const saldo = Math.max(0, totalTalhao-jaFeito)
+              const totalTalhao = parseFloat(form.area_talhao_total)||0
+              const saldo = parseFloat(form.area_ha)||0
+              const jaFeito = +(totalTalhao-saldo).toFixed(2)
+              if (totalTalhao<=0 || jaFeito<=0.05) return null
               return (
                 <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:14,fontSize:11.5,color:theme.warningText2}}>
                   🌙 Aplicação parcial · Talhão tem <strong>{totalTalhao.toFixed(1)} ha</strong> · já aplicados <strong>{jaFeito.toFixed(1)} ha</strong> · <strong>saldo {saldo.toFixed(1)} ha</strong>
@@ -4393,7 +4412,11 @@ Quando: ${tempoErroDebug.quando}`}
                     {talhoesSel.map(nome=>{
                       const areaTalhaoN = areaDoTalhao(nome)
                       const anteriorN = parseFloat(form.area_feita_por_talhao_anterior?.[nome])||0
-                      const restanteN = Math.max(0, areaTalhaoN-anteriorN)
+                      // Saldo capturado na seleção do talhão (já desconta o que outros voos fizeram).
+                      // Sem ele (voo reaberto), cai no comportamento antigo: área cheia menos o que
+                      // este mesmo voo já registrou.
+                      const saldoSel = parseFloat(form.saldoPorTalhao?.[nome])
+                      const restanteN = !isNaN(saldoSel) ? Math.max(0, saldoSel-anteriorN) : Math.max(0, areaTalhaoN-anteriorN)
                       const aplicadaN = parseFloat(form.areaAplicadaPorTalhao?.[nome])||0
                       const temAplicada = !!form.areaAplicadaPorTalhao?.[nome]
                       const naoAplicadaN = parseFloat(form.areaNaoAplicadaPorTalhao?.[nome])||0
