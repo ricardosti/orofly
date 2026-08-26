@@ -1776,10 +1776,17 @@ export default function PilotApp({onSwitchMode}) {
 
   async function abrirVooAberto(id){
     if(id===relId){ setContinuarModalOpen(false); setView('form'); setWizardStep(4); return }
+    if(!id){ showToast('Voo sem identificador — não consegui abrir.','error'); return }
     try {
-      const {data} = await supabase.from('relatorios').select('*').eq('id',id).single()
-      if(data){ setContinuarModalOpen(false); openFlight(data) }
-    } catch(e){ showToast('Erro ao abrir voo: '+e.message,'error') }
+      // O cliente do Supabase NÃO lança exceção em erro de query: retorna {data:null,error}.
+      // Sem ler o `error` aqui, qualquer falha (RLS, rede, linha apagada) virava clique morto —
+      // nada acontecia na tela e o piloto ficava clicando sem entender. Agora sempre há resposta.
+      showToast('⏳ Abrindo voo...')
+      const {data,error} = await supabase.from('relatorios').select('*').eq('id',id).maybeSingle()
+      if(error){ showToast('Não consegui abrir o voo: '+error.message,'error'); return }
+      if(!data){ showToast('Voo não encontrado — pode ter sido excluído.','error'); return }
+      setContinuarModalOpen(false); openFlight(data)
+    } catch(e){ showToast('Erro ao abrir voo: '+(e?.message||e),'error') }
   }
 
   async function deletarRascunho(rel) {
