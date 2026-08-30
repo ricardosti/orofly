@@ -84,7 +84,7 @@ export default function LoginPage() {
 
         <div style={{ flex: '0 1 380px', minWidth: 300, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           {Card}
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#4a6e56', marginTop: 16 }}>v3.9</div>
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#4a6e56', marginTop: 16 }}>v4.0</div>
         </div>
       </div>
     </div>
