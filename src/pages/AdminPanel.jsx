@@ -11,6 +11,7 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
+import { NOVIDADES } from '../lib/changelog'
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
@@ -418,6 +419,12 @@ export default function AdminPanel({ onSwitchMode }) {
     return () => { cancelled = true }
   }, [agendaForm.fazenda, agendaForm.cliente, agendaForm.data_prevista, invFazendas])
   const [agendaFiltros, setAgendaFiltros] = useState({piloto:'',status:''})
+  // Visão de calendário da Agenda (só admin). Começa em 'lista' de propósito: quem já usa a
+  // Agenda continua caindo na tela de sempre, e o calendário é uma escolha, não uma troca.
+  const [agendaVista, setAgendaVista] = useState('lista')
+  const [agendaMesRef, setAgendaMesRef] = useState(() => { const h=new Date(); return new Date(h.getFullYear(), h.getMonth(), 1) })
+  const [agendaDiaSel, setAgendaDiaSel] = useState('')
+  const agendaFormRef = useRef(null)
   const [mapaSubTab, setMapaSubTab] = useState('voos')
   const [gpsLogins, setGpsLogins] = useState([])
   const [veiculos, setVeiculos] = useState([])
@@ -1531,6 +1538,7 @@ export default function AdminPanel({ onSwitchMode }) {
             ['configuracoes', '⚙️', 'Configurações do Sistema', ''],
           ]],
           ['dev', '🛠️ Desenvolvedor', [
+            ['novidades', '✨', 'Novidades', NOVIDADES[0]?.versao||''],
             ['dev', '🩺', 'Benchmark Clima & Logs', ''],
           ]],
         ])
@@ -5359,13 +5367,27 @@ export default function AdminPanel({ onSwitchMode }) {
 
             return (
               <div>
-                <div style={{ marginBottom:18 }}>
-                  <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>📅 Agenda</div>
-                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{agenda.filter(a=>a.status==='pendente').length} pendentes · {agenda.length} no total</div>
+                <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12 }}>
+                  <div>
+                    <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>📅 Agenda</div>
+                    <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{agenda.filter(a=>a.status==='pendente').length} pendentes · {agenda.length} no total</div>
+                  </div>
+                  {/* Lista ↔ Calendário — só admin. O supervisor cai na Agenda por padrão e a
+                      visão dele é a lista de sempre. */}
+                  {!isSupervisor && (
+                    <div style={{ display:'flex', background:theme.bg, border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:3, gap:2 }}>
+                      {[['lista','☰ Lista'],['calendario','🗓️ Calendário']].map(([id,label]) => (
+                        <button key={id} type="button" onClick={()=>setAgendaVista(id)}
+                          style={{ background: agendaVista===id?'#059669':'transparent', color: agendaVista===id?'#fff':theme.textMuted,
+                            border:'none', borderRadius:8, padding:'7px 14px', fontSize:12, fontWeight:700, cursor:'pointer',
+                            fontFamily:"'Syne',sans-serif", whiteSpace:'nowrap' }}>{label}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Novo agendamento */}
-                <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                <div ref={agendaFormRef} style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                   <div style={{fontSize:13,fontWeight:700,color:theme.text,marginBottom:12,fontFamily:"'Syne',sans-serif"}}>+ Novo Agendamento</div>
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}}>
                     <select style={{...sG.fi,flex:'1 1 160px'}} value={agendaForm.piloto_id} onChange={e=>{
@@ -5558,8 +5580,75 @@ export default function AdminPanel({ onSwitchMode }) {
                   </button>
                 </div>
 
-                {/* Lista */}
-                {agendaFiltrada.length===0 ? (
+                {/* ── CALENDÁRIO (só admin, e só quando escolhido) ── */}
+                {agendaVista==='calendario' && !isSupervisor && (
+                  <>
+                    <AgendaCalendario
+                      agendamentos={agendaFiltrada}
+                      mesRef={agendaMesRef}
+                      onMudarMes={setAgendaMesRef}
+                      diaSel={agendaDiaSel}
+                      onSelecionarDia={dia => {
+                        // Escolher o dia já prepara o planejamento: a data cai no form de Novo
+                        // Agendamento, então só falta o admin completar piloto e fazenda.
+                        setAgendaDiaSel(dia)
+                        setAgendaForm(f => ({...f, data_prevista: dia}))
+                      }}
+                      statusBadge={STATUS_BADGE}
+                      isMobile={isMobile}
+                      theme={theme}
+                    />
+
+                    {/* Painel do dia escolhido */}
+                    {agendaDiaSel && (()=>{
+                      const doDia = agendaFiltrada.filter(a=>a.data_prevista===agendaDiaSel)
+                      // Só a primeira letra sobe. O capitalize do CSS subiria a de cada palavra
+                      // e daria "Quarta-Feira, 12 De Agosto".
+                      const rotuloBruto = new Date(agendaDiaSel+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})
+                      const rotuloDia = rotuloBruto.charAt(0).toUpperCase() + rotuloBruto.slice(1)
+                      return (
+                        <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10, marginBottom:12 }}>
+                            <div style={{fontSize:13,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>{rotuloDia}</div>
+                            <button type="button"
+                              onClick={()=>agendaFormRef.current?.scrollIntoView({behavior:'smooth',block:'center'})}
+                              style={{background:'#059669',color:'#fff',border:'none',borderRadius:10,padding:'8px 14px',fontSize:12,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                              + Agendar neste dia
+                            </button>
+                          </div>
+                          {doDia.length===0 ? (
+                            <div style={{ fontSize:12.5, color:theme.textFaint2 }}>Nada marcado nesse dia. A data já está no formulário acima — é só escolher o piloto e a fazenda.</div>
+                          ) : (
+                            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                              {doDia.map(a=>{
+                                const c = corDoPiloto(a.piloto_id)
+                                const badge = STATUS_BADGE[a.status]||STATUS_BADGE.pendente
+                                return (
+                                  <div key={a.id} style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', background:theme.bg, borderRadius:12, padding:'10px 12px', borderLeft:`4px solid ${c.cor}` }}>
+                                    <div style={{ flex:'1 1 200px', minWidth:0 }}>
+                                      <div style={{ fontSize:13, fontWeight:700, color:theme.text }}>{a.piloto_nome}</div>
+                                      <div style={{ fontSize:11.5, color:theme.textMuted }}>{a.cliente} / {a.fazenda}{a.talhao?` · ${a.talhao}`:''}</div>
+                                    </div>
+                                    <span style={{ background:badge.bg, color:badge.cor, fontSize:10.5, fontWeight:700, padding:'4px 10px', borderRadius:20, whiteSpace:'nowrap' }}>{badge.label}</span>
+                                    {a.status==='pendente' && (
+                                      <div style={{ display:'flex', gap:6 }}>
+                                        <button style={{background:theme.successBg,color:'#059669',border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'concluido')}>✓ Concluído</button>
+                                        <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'6px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}} onClick={()=>mudarStatus(a,'cancelado')}>Cancelar</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+                  </>
+                )}
+
+                {/* ── LISTA (visão de sempre) ── */}
+                {(agendaVista==='lista' || isSupervisor) && (agendaFiltrada.length===0 ? (
                   <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:40,textAlign:'center',color:theme.textMuted}}>Nenhum agendamento encontrado.</div>
                 ) : (
                   <div style={{display:'flex',flexDirection:'column',gap:10}}>
@@ -5593,7 +5682,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       )
                     })}
                   </div>
-                )}
+                ))}
               </div>
             )
           })()}
@@ -5973,6 +6062,53 @@ export default function AdminPanel({ onSwitchMode }) {
                 isMobile={isMobile}
               />
             </ArquivosErrorBoundary>
+          )}
+
+          {tab === 'novidades' && (
+            <div>
+              <div style={{ marginBottom:18 }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>✨ Novidades</div>
+                <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>O que mudou em cada versão do app. Você está na v{APP_VERSION}.</div>
+              </div>
+
+              {NOVIDADES.length===0 ? (
+                <div style={{ background:theme.card, borderRadius:20, border:`1px solid ${theme.cardBorder}`, padding:40, textAlign:'center', color:theme.textMuted }}>Nenhuma novidade registrada ainda.</div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:16, maxWidth:820 }}>
+                  {NOVIDADES.map(v => {
+                    const atual = v.versao === APP_VERSION
+                    return (
+                      <div key={v.versao} style={{ background:theme.card, borderRadius:20, border:`1px solid ${atual?'#059669':theme.cardBorder}`, borderWidth:atual?2:1, padding:isMobile?14:18, boxShadow:'0 6px 20px rgba(11,18,16,0.05)' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap', marginBottom:14 }}>
+                          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:20, fontWeight:700, color:theme.text }}>v{v.versao}</div>
+                          {atual && <span style={{ background:theme.successBg, color:'#059669', fontSize:10.5, fontWeight:700, padding:'4px 10px', borderRadius:20 }}>versão atual</span>}
+                          <div style={{ flex:1 }}/>
+                          {v.data && <div style={{ fontSize:11.5, color:theme.textMuted }}>{new Date(v.data+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'})}</div>}
+                        </div>
+                        <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                          {v.itens.map((it, i) => {
+                            const TAG = {
+                              novo:     { label:'novo',     bg:theme.successBg, cor:'#059669' },
+                              melhoria: { label:'melhoria', bg:'#dbeafe',       cor:'#1d4ed8' },
+                              correcao: { label:'correção', bg:theme.warningBg, cor:theme.warningText },
+                            }[it.tipo] || { label:it.tipo||'novo', bg:theme.bg, cor:theme.textMuted }
+                            return (
+                              <div key={i} style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+                                <span style={{ background:TAG.bg, color:TAG.cor, fontSize:10, fontWeight:700, padding:'3px 9px', borderRadius:20, whiteSpace:'nowrap', marginTop:2, flexShrink:0 }}>{TAG.label}</span>
+                                <div style={{ minWidth:0 }}>
+                                  <div style={{ fontSize:13.5, fontWeight:700, color:theme.text }}>{it.titulo}</div>
+                                  {it.texto && <div style={{ fontSize:12.5, color:theme.textMuted, marginTop:3, lineHeight:1.5 }}>{it.texto}</div>}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {tab === 'dev' && (
@@ -6372,6 +6508,156 @@ export default function AdminPanel({ onSwitchMode }) {
 
       {toast && <div style={{ position:'fixed', bottom:24, left:'50%', transform:'translateX(-50%)', background: toast.type==='error'?theme.dangerText:theme.text, color:'#fff', padding:'12px 24px', borderRadius:100, fontSize:13, fontWeight:500, zIndex:400, whiteSpace:'nowrap', borderBottom:'3px solid #D97706', boxShadow:'0 4px 20px rgba(0,0,0,.2)' }}>{toast.msg}</div>}
       {showPerfil && <ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CALENDÁRIO DA AGENDA (só admin)
+// Grade do mês com um chip por agendamento. A cor do chip identifica o piloto —
+// é o que deixa "quem está onde" legível de relance, que a lista não dá. Clicar
+// num dia seleciona ele: o painel abaixo mostra o que já tem marcado e o form de
+// Novo Agendamento já vem com a data preenchida.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Paleta fixa de 8 cores. O piloto recebe sempre a mesma pelo hash do id, então a
+// cor não dança quando alguém entra ou sai da lista de pilotos.
+// Oito matizes separados de propósito. A primeira versão tinha índigo junto de azul e
+// laranja junto de âmbar — dois pilotos caíam em tons quase iguais e a cor deixava de
+// distinguir, que é a única razão dela existir aqui.
+const PALETA_PILOTO = [
+  { bg:'#dbeafe', cor:'#1d4ed8' }, // azul
+  { bg:'#dcfce7', cor:'#15803d' }, // verde
+  { bg:'#fef3c7', cor:'#b45309' }, // âmbar
+  { bg:'#fae8ff', cor:'#a21caf' }, // fúcsia
+  { bg:'#ffe4e6', cor:'#be123c' }, // rosa
+  { bg:'#ccfbf1', cor:'#0f766e' }, // teal
+  { bg:'#ede9fe', cor:'#6d28d9' }, // violeta
+  { bg:'#ecfccb', cor:'#4d7c0f' }, // oliva
+]
+function corDoPiloto(id) {
+  const s = String(id||'')
+  let h = 0
+  for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0
+  return PALETA_PILOTO[h % PALETA_PILOTO.length]
+}
+
+// 'YYYY-MM-DD' montado à mão. new Date().toISOString() daria o dia errado pra quem
+// está a oeste de Greenwich depois das 21h — o Brasil inteiro, toda noite.
+function chaveDia(ano, mes, dia) {
+  return `${ano}-${String(mes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`
+}
+const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+
+function AgendaCalendario({ agendamentos, mesRef, onMudarMes, diaSel, onSelecionarDia, statusBadge, isMobile, theme }) {
+  const ano = mesRef.getFullYear()
+  const mes = mesRef.getMonth()
+  const primeiroDiaSemana = new Date(ano, mes, 1).getDay()   // 0 = domingo
+  const diasNoMes = new Date(ano, mes+1, 0).getDate()
+  const hoje = new Date()
+  const chaveHoje = chaveDia(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
+
+  // Agrupa por dia uma vez só, em vez de varrer a lista inteira em cada uma das 42 células.
+  const porDia = {}
+  ;(agendamentos||[]).forEach(a => {
+    if (!a.data_prevista) return
+    ;(porDia[a.data_prevista] = porDia[a.data_prevista] || []).push(a)
+  })
+
+  // Legenda: só os pilotos que aparecem neste mês, pra não virar uma lista de todo mundo.
+  const pilotosDoMes = []
+  Object.entries(porDia).forEach(([dia, itens]) => {
+    if (!dia.startsWith(`${ano}-${String(mes+1).padStart(2,'0')}`)) return
+    itens.forEach(a => {
+      if (!pilotosDoMes.some(p => p.id === a.piloto_id)) pilotosDoMes.push({ id:a.piloto_id, nome:a.piloto_nome })
+    })
+  })
+
+  const maxChips = isMobile ? 2 : 3
+  const celulas = []
+  for (let i=0;i<primeiroDiaSemana;i++) celulas.push(null)
+  for (let d=1; d<=diasNoMes; d++) celulas.push(d)
+  while (celulas.length % 7 !== 0) celulas.push(null)
+
+  const navBtn = {
+    background:theme.card, border:`1px solid ${theme.cardBorder2}`, borderRadius:8,
+    padding:'6px 12px', fontSize:14, cursor:'pointer', color:theme.text, lineHeight:1,
+  }
+
+  return (
+    <div style={{ background:theme.card, borderRadius:20, border:`1px solid ${theme.cardBorder}`, padding:isMobile?12:16, marginBottom:16, boxShadow:'0 6px 20px rgba(11,18,16,0.05)' }}>
+      {/* Navegação do mês */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, marginBottom:14 }}>
+        <button type="button" style={navBtn} onClick={()=>onMudarMes(new Date(ano, mes-1, 1))} aria-label="Mês anterior">‹</button>
+        <div style={{ textAlign:'center' }}>
+          <div style={{ fontFamily:"'Syne',sans-serif", fontSize:isMobile?15:17, fontWeight:700, color:theme.text }}>{MESES_PT[mes]} {ano}</div>
+          <button type="button" onClick={()=>onMudarMes(new Date(hoje.getFullYear(), hoje.getMonth(), 1))}
+            style={{ background:'none', border:'none', color:'#059669', fontSize:11, fontWeight:600, cursor:'pointer', padding:0, marginTop:2 }}>hoje</button>
+        </div>
+        <button type="button" style={navBtn} onClick={()=>onMudarMes(new Date(ano, mes+1, 1))} aria-label="Próximo mês">›</button>
+      </div>
+
+      {/* Cabeçalho dos dias da semana */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:isMobile?3:6, marginBottom:6 }}>
+        {['dom','seg','ter','qua','qui','sex','sáb'].map(d => (
+          <div key={d} style={{ textAlign:'center', fontSize:10, fontWeight:700, color:theme.textMuted, letterSpacing:.5, textTransform:'uppercase', fontFamily:"'Syne',sans-serif" }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Grade */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:isMobile?3:6 }}>
+        {celulas.map((d, i) => {
+          if (d === null) return <div key={`v${i}`} />
+          const chave = chaveDia(ano, mes, d)
+          const itens = porDia[chave] || []
+          const ehHoje = chave === chaveHoje
+          const selecionado = chave === diaSel
+          return (
+            <button key={chave} type="button" onClick={()=>onSelecionarDia(chave)}
+              style={{
+                minHeight: isMobile?62:92, textAlign:'left', cursor:'pointer', padding:isMobile?4:6,
+                background: selecionado ? theme.successBg : theme.bg,
+                border: `1px solid ${selecionado ? '#059669' : (ehHoje ? theme.warningText : theme.cardBorder2)}`,
+                borderWidth: (selecionado||ehHoje) ? 2 : 1,
+                borderRadius:10, display:'flex', flexDirection:'column', gap:2, overflow:'hidden',
+                fontFamily:"'DM Sans',sans-serif",
+              }}>
+              <div style={{ fontSize:11, fontWeight:ehHoje?800:600, color: ehHoje ? theme.warningText : theme.text }}>{d}</div>
+              {itens.slice(0, maxChips).map(a => {
+                const c = corDoPiloto(a.piloto_id)
+                const morto = a.status==='cancelado' || a.status==='recusado'
+                return (
+                  <div key={a.id} title={`${a.piloto_nome} — ${a.cliente} / ${a.fazenda}${a.talhao?` (${a.talhao})`:''} · ${(statusBadge[a.status]||statusBadge.pendente).label}`}
+                    style={{
+                      background:c.bg, color:c.cor, borderRadius:5, padding:isMobile?'1px 3px':'2px 5px',
+                      fontSize:isMobile?8.5:10, fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                      opacity: morto?.45:1, textDecoration: morto?'line-through':'none',
+                    }}>
+                    {(a.piloto_nome||'?').split(' ')[0]}{!isMobile && a.fazenda ? ` · ${a.fazenda}` : ''}
+                  </div>
+                )
+              })}
+              {itens.length > maxChips && (
+                <div style={{ fontSize:9, color:theme.textMuted, fontWeight:600 }}>+{itens.length-maxChips}</div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {pilotosDoMes.length > 0 && (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:14, paddingTop:12, borderTop:`1px solid ${theme.cardBorder2}` }}>
+          {pilotosDoMes.map(p => {
+            const c = corDoPiloto(p.id)
+            return (
+              <div key={p.id||p.nome} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:theme.textMuted }}>
+                <span style={{ width:10, height:10, borderRadius:3, background:c.bg, border:`1.5px solid ${c.cor}`, display:'inline-block' }}/>
+                {p.nome||'—'}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
