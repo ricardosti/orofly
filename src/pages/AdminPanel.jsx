@@ -10,6 +10,7 @@ import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo }
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
+import { APP_VERSION } from '../lib/version'
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
@@ -1615,7 +1616,7 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           </>
         )}
-        <div style={{ textAlign:'center', fontSize:9, color:'#334155', marginTop:6, letterSpacing:1 }}>v3.8</div>
+        <div style={{ textAlign:'center', fontSize:9, color:'#334155', marginTop:6, letterSpacing:1 }}>v{APP_VERSION}</div>
       </div>
     </>
   )

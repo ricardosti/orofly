@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../lib/theme'
+import { APP_VERSION } from '../lib/version'
 
 function useIsMobile() {
   const [m, setM] = useState(() => window.innerWidth < 860)
@@ -84,7 +85,7 @@ export default function LoginPage() {
 
         <div style={{ flex: '0 1 380px', minWidth: 300, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           {Card}
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#4a6e56', marginTop: 16 }}>v4.0</div>
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#4a6e56', marginTop: 16 }}>v{APP_VERSION}</div>
         </div>
       </div>
     </div>
