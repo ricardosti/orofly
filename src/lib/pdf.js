@@ -708,35 +708,78 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, 
   function fmtMin(m){ const h=Math.floor(m/60), mm=m%60; return h>0?`${h}h ${String(mm).padStart(2,'0')}min`:`${mm}min` }
 
   const voosOrd = [...(voos||[])].sort((a,b)=>new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at))
-  const areaAplicada = voosOrd.reduce((a,r)=>a+areaLiquida(r),0)
-  const volumeTotal = voosOrd.reduce((a,r)=>{
-    const vazao = parseFloat(r.vazao_i||r.vazao_f)||0
-    return a + vazao*areaLiquida(r)
-  },0)
-  const vazaoMedia = areaAplicada>0 ? volumeTotal/areaAplicada : null
   const tempoTotalMin = voosOrd.reduce((a,r)=>a+calcTempoMin(r.dt_inicio,r.dt_fim),0)
-  const porPiloto = {}
-  voosOrd.forEach(r=>{ const n=r.piloto_nome||'—'; porPiloto[n]=(porPiloto[n]||0)+areaLiquida(r) })
-  const rankingPilotos = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1])
-  const pct = areaTotalCadastrada>0 ? Math.min(100,(areaAplicada/areaTotalCadastrada)*100) : null
+  // areaAplicada, volumeTotal, vazaoMedia e pct são calculados logo abaixo, DEPOIS da
+  // normalização por talhão — senão o resumo da fazenda mostra o número inflado enquanto a
+  // tabela de talhões mostra o corrigido, e os dois se contradizem no mesmo PDF.
 
-  // Área aplicada por talhão (só os selecionados) — voo com mais de um talhão divide
-  // proporcional ao tamanho cadastrado de cada um, mesmo critério já usado no WhatsApp.
+  // ── Área aplicada por talhão, e por piloto dentro de cada talhão ──
+  //
+  // Duas etapas. Primeiro o rateio de sempre: um voo com mais de um talhão divide sua área
+  // proporcional ao tamanho cadastrado de cada um (mesmo critério do WhatsApp).
+  //
+  // Depois vem a normalização, que é o que conserta a inflação. Registros antigos, salvos
+  // antes de `area_feita` existir, fazem o areaLiquida() cair pro talhão INTEIRO (area_ha).
+  // Quando dois pilotos dividem um talhão de 15,26 ha, os dois voos carregam 15,26 e a soma
+  // dá 30,52 — o dobro do que existe no chão. Como o banco desses registros não guarda
+  // quanto cada um fez, não há como recuperar a divisão real; o que dá pra afirmar com
+  // certeza é que a soma não pode passar do tamanho cadastrado do talhão. Então, quando
+  // passa, as parcelas são reduzidas proporcionalmente até fechar no tamanho do talhão.
+  //
+  // Ressalva: se houver reaplicação proposital no MESMO período (duas passadas no mesmo
+  // talhão), o teto aparece como se fosse erro. O campo `campanha_inicio` da fazenda existe
+  // pra delimitar isso — se esse caso virar rotina, o filtro do período é onde tratar.
   const areaCadastralPorNome = {}
   ;(talhoesCatalogo||[]).forEach(t=>{ areaCadastralPorNome[t.nome] = parseFloat(t.area_ha)||0 })
   const talhoesParaListar = talhoesSelecionados || (talhoesCatalogo||[]).map(t=>t.nome)
-  const aplicadaPorTalhao = {}
-  talhoesParaListar.forEach(nome=>{ aplicadaPorTalhao[nome]=0 })
+
+  // parcelas[talhao] = [{ piloto, area }] — antes de normalizar
+  const parcelas = {}
+  talhoesParaListar.forEach(nome=>{ parcelas[nome]=[] })
   voosOrd.forEach(r=>{
     const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
     const somaCad = nomesVoo.reduce((a,n)=>a+(areaCadastralPorNome[n]||0),0)
     const areaVoo = areaLiquida(r)
     nomesVoo.forEach(n=>{
-      if(!(n in aplicadaPorTalhao)) return
+      if(!(n in parcelas)) return
       const fracao = somaCad>0 ? (areaCadastralPorNome[n]||0)/somaCad : 1/nomesVoo.length
-      aplicadaPorTalhao[n] += areaVoo*fracao
+      parcelas[n].push({ piloto: r.piloto_nome||'—', area: areaVoo*fracao, vazao: parseFloat(r.vazao_i||r.vazao_f)||0 })
     })
   })
+
+  const aplicadaPorTalhao = {}
+  const porPiloto = {}
+  let areaAplicada = 0
+  let volumeTotal = 0
+  talhoesParaListar.forEach(nome=>{
+    const lista = parcelas[nome]
+    const soma = lista.reduce((a,p)=>a+p.area,0)
+    const cad = areaCadastralPorNome[nome]||0
+    // Só reduz quando estoura o cadastrado; nunca infla um talhão que ficou pela metade.
+    const ajuste = (cad>0 && soma>cad) ? cad/soma : 1
+    aplicadaPorTalhao[nome] = soma*ajuste
+    areaAplicada += soma*ajuste
+    lista.forEach(p=>{
+      const areaAj = p.area*ajuste
+      porPiloto[p.piloto] = (porPiloto[p.piloto]||0) + areaAj
+      volumeTotal += p.vazao*areaAj
+    })
+  })
+  const rankingPilotos = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1])
+
+  // Voos cujo talhão não está entre os selecionados ficam fora do rateio acima, mas ainda
+  // contam no resumo — senão o total do período muda só por causa do filtro de talhões.
+  const nomesListados = new Set(talhoesParaListar)
+  voosOrd.forEach(r=>{
+    const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+    if(nomesVoo.length>0 && nomesVoo.some(n=>nomesListados.has(n))) return
+    const a = areaLiquida(r)
+    areaAplicada += a
+    volumeTotal += (parseFloat(r.vazao_i||r.vazao_f)||0)*a
+  })
+
+  const vazaoMedia = areaAplicada>0 ? volumeTotal/areaAplicada : null
+  const pct = areaTotalCadastrada>0 ? Math.min(100,(areaAplicada/areaTotalCadastrada)*100) : null
 
   function fundoBranco(){ doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F') }
 

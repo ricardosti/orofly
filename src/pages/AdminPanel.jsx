@@ -12,6 +12,7 @@ import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
 import { NOVIDADES } from '../lib/changelog'
+import ImageAnnotator from '../components/ImageAnnotator'
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
@@ -300,6 +301,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [editModal, setEditModal] = useState(null)
   const [editFotoMapa, setEditFotoMapa] = useState(null)
   const [editFotoMapaFile, setEditFotoMapaFile] = useState(null)
+  // Enquadramento do mapa: reaproveita o ImageAnnotator do app do piloto (canvas com corte e
+  // compressão) em vez de um cropper novo. Guarda o dataURL de origem e o que fazer com o
+  // blob que voltar do editor.
+  const [editAnnotator, setEditAnnotator] = useState(null)
   const [editObsFotos, setEditObsFotos] = useState([null,null,null])
   const [editObsFotoFiles, setEditObsFotoFiles] = useState([null,null,null])
   const [confirmDelete, setConfirmDelete] = useState(null)
@@ -726,6 +731,7 @@ export default function AdminPanel({ onSwitchMode }) {
   function resetEdit() {
     setEditModal(null); setEditFotoMapa(null); setEditFotoMapaFile(null)
     setEditObsFotos([null,null,null]); setEditObsFotoFiles([null,null,null])
+    setEditAnnotator(null)
   }
 
   async function salvarEdicao() {
@@ -746,6 +752,11 @@ export default function AdminPanel({ onSwitchMode }) {
       }
     }
     const { id, created_at, updated_at, ...campos } = editModal
+    // Linha de produto adicionada e deixada em branco não vai pro banco — senão o PDF
+    // imprime uma linha vazia na tabela de produtos.
+    if (Array.isArray(campos.produtos)) {
+      campos.produtos = campos.produtos.map(p => String(p||'').trim()).filter(Boolean)
+    }
     const { error } = await supabase.from('relatorios').update({ ...campos, foto_mapa_url: fotoMapaUrl, obs_fotos_urls: obsUrls }).eq('id', id)
     if (error) { showToast('Erro: ' + error.message, 'error'); setSaving(false); return }
     showToast('✅ Salvo!'); resetEdit(); fetchAll(); setSaving(false)
@@ -803,19 +814,29 @@ export default function AdminPanel({ onSwitchMode }) {
         const talhoesDoVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
         return talhoesDoVoo.length===0 || talhoesDoVoo.some(n=>talhoesSel.includes(n))
       })
+      // Datas EFETIVAS: o filtro pode ser largo (28/05 a 05/09), mas o cabeçalho e o nome do
+      // arquivo devem mostrar quando houve operação de verdade — a primeira e a última.
+      // Sem voo no período, mantém o intervalo escolhido pra não sair um cabeçalho vazio.
+      const datasVoos = voosPeriodo
+        .map(r => (r.dt_inicio || r.created_at || '').slice(0,10))
+        .filter(Boolean)
+        .sort()
+      const iniEfetivo = datasVoos[0] || dataIni
+      const fimEfetivo = datasVoos[datasVoos.length-1] || dataFim
+
       let pdfConfig
       try {
         const tpl = await resolverTemplate(supabase, fz.cliente)
         if (tpl?.pdf_config && Object.keys(tpl.pdf_config).length) pdfConfig = tpl.pdf_config
       } catch (e) { console.warn('Falha ao resolver template de PDF, usando padrão:', e) }
       const doc = await gerarPDFFazendaPeriodo({
-        fazenda: fz, voos: voosPeriodo, dataIni, dataFim, areaTotalCadastrada: fz.areaTotal,
+        fazenda: fz, voos: voosPeriodo, dataIni: iniEfetivo, dataFim: fimEfetivo, areaTotalCadastrada: fz.areaTotal,
         talhoesCatalogo, talhoesSelecionados: talhoesSel, observacaoAdmin: relatorioPeriodoObs,
         fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
       })
-      const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${dataIni}-a-${dataFim}`
+      const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${iniEfetivo}-a-${fimEfetivo}`
       if(tipo==='whats'){
-        const texto = buildTxtFazendaPeriodo(fz, voosPeriodo, dataIni, dataFim, fz.areaTotal)
+        const texto = buildTxtFazendaPeriodo(fz, voosPeriodo, iniEfetivo, fimEfetivo, fz.areaTotal)
         const file = new File([doc.output('blob')], `relatorio-${nomeBase}.pdf`, {type:'application/pdf'})
         await compartilharNativo({ text: texto, file, filename: `relatorio-${nomeBase}.pdf`, webFallbackUrl: 'https://wa.me/?text='+encodeURIComponent(texto) })
       } else {
@@ -6264,8 +6285,8 @@ export default function AdminPanel({ onSwitchMode }) {
             <div style={{ padding:'16px 20px', overflowY:'auto', flex:1 }}>
               <SecTitle>IDENTIFICAÇÃO</SecTitle>
               <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr 1fr':'repeat(3,1fr)', gap:10, marginBottom:14 }}>
-                {[['Cliente','cliente'],['Fazenda','fazenda'],['Área (ha)','area_ha'],['Piloto','piloto_nome'],['Drone','drone']].map(([l,k]) => (
-                  <div key={k}><div style={sG.label}>{l.toUpperCase()}</div><input style={sG.input} value={editModal[k]||''} onChange={e => setEditModal(m => ({ ...m, [k]: e.target.value }))} /></div>
+                {[['Cliente','cliente'],['Fazenda','fazenda'],['Talhão','localizacao'],['Área do escopo (ha)','area_ha'],['Área FEITA (ha)','area_feita'],['Bordadura (ha)','bordadura'],['Piloto','piloto_nome'],['Drone','drone']].map(([l,k]) => (
+                  <div key={k}><div style={sG.label}>{l.toUpperCase()}</div><input style={sG.input} value={editModal[k]??''} onChange={e => setEditModal(m => ({ ...m, [k]: e.target.value }))} /></div>
                 ))}
                 <div>
                   <div style={sG.label}>STATUS</div>
@@ -6274,6 +6295,15 @@ export default function AdminPanel({ onSwitchMode }) {
                     <option value="pausado">Pausado</option><option value="finalizado">Finalizado</option>
                   </select>
                 </div>
+              </div>
+              {/* É a ÁREA FEITA que manda no relatório: dose × área, total de produto e o
+                  consolidado do período saem dela. Quando fica vazia (registro antigo), o
+                  cálculo cai pra área do escopo e um talhão dividido entre dois pilotos conta
+                  em dobro. Preencher aqui é o que conserta a divisão por piloto. */}
+              <div style={{ fontSize:11.5, color:theme.textMuted, marginTop:-6, marginBottom:14, lineHeight:1.5 }}>
+                <b>Área FEITA</b> é o que esse voo aplicou de fato — é ela que o relatório usa.
+                Se estiver vazia, o sistema assume a área do escopo inteira, e um talhão dividido
+                entre dois pilotos aparece contado em dobro no consolidado.
               </div>
               <SecTitle>CONDIÇÕES</SecTitle>
               <div style={{ display:'grid', gridTemplateColumns: isMobile?'repeat(3,1fr)':'repeat(6,1fr)', gap:8, marginBottom:8 }}>
@@ -6285,22 +6315,94 @@ export default function AdminPanel({ onSwitchMode }) {
               <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr':'1fr 1fr', gap:10, marginBottom:14 }}>
                 {[['Obs 1','obs1'],['Obs 2','obs2']].map(([l,k]) => (<div key={k}><div style={sG.label}>{l}</div><textarea style={{ ...sG.input, resize:'none', minHeight:56 }} value={editModal[k]||''} onChange={e => setEditModal(m => ({ ...m, [k]: e.target.value }))} /></div>))}
               </div>
+              {/* PRODUTOS — o piloto às vezes finaliza o voo sem preencher, e o PDF sai com a
+                  seção vazia. Aqui o admin completa depois e reemite. O formato gravado é o
+                  mesmo do app ("NOME - DOSE UNIDADE/ha"), senão o parseDoseProduto do PDF não
+                  acha a dose e o total de produto sai em branco. */}
+              <SecTitle>PRODUTOS APLICADOS</SecTitle>
+              {(() => {
+                const lista = editModal.produtos || []
+                const partes = p => {
+                  const i = String(p||'').indexOf(' - ')
+                  return i >= 0 ? [String(p).slice(0,i), String(p).slice(i+3)] : [String(p||''), '']
+                }
+                const escrever = (i, nome, dose) => {
+                  const novos = [...lista]
+                  novos[i] = dose.trim() ? `${nome.trim()} - ${dose.trim()}` : nome.trim()
+                  setEditModal(m => ({ ...m, produtos: novos }))
+                }
+                return (
+                  <div style={{ marginBottom:14 }}>
+                    {lista.length === 0 && (
+                      <div style={{ fontSize:12, color:theme.textMuted, marginBottom:8 }}>
+                        Nenhum produto registrado neste voo — o PDF sai com a seção vazia.
+                      </div>
+                    )}
+                    {lista.map((p, i) => {
+                      const [nome, dose] = partes(p)
+                      return (
+                        <div key={i} style={{ display:'flex', gap:8, marginBottom:8, alignItems:'center' }}>
+                          <input style={{ ...sG.input, flex:'2 1 160px' }} placeholder="Produto (ex: ESSENZA)"
+                            value={nome} onChange={e => escrever(i, e.target.value, dose)} />
+                          <input style={{ ...sG.input, flex:'1 1 110px' }} placeholder="Dose (ex: 0.08 L/ha)"
+                            value={dose} onChange={e => escrever(i, nome, e.target.value)} />
+                          <button title="Remover produto"
+                            style={{ background:theme.dangerBg, color:theme.dangerText, border:'none', borderRadius:8, width:32, height:32, cursor:'pointer', flexShrink:0 }}
+                            onClick={() => setEditModal(m => ({ ...m, produtos: lista.filter((_,j) => j!==i) }))}>🗑️</button>
+                        </div>
+                      )
+                    })}
+                    <button style={{ ...sG.actBtn('#059669'), marginTop:2 }}
+                      onClick={() => setEditModal(m => ({ ...m, produtos: [...(m.produtos||[]), ''] }))}>
+                      + Adicionar produto
+                    </button>
+                    <div style={{ fontSize:11, color:theme.textFaint2, marginTop:6 }}>
+                      A dose precisa da unidade pro PDF calcular o total — escreva como <b>0.08 L/ha</b>.
+                    </div>
+                  </div>
+                )
+              })()}
+
               <SecTitle>FOTOS</SecTitle>
               <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr':'1fr 1fr', gap:14 }}>
                 <div>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:4 }}>
                     <div style={sG.label}>MAPA</div>
-                    {(editFotoMapa || editModal.foto_mapa_url) && (
-                      <button style={{ background:'none', border:'none', color:theme.dangerText, fontSize:11, cursor:'pointer', padding:'2px 6px' }}
-                        onClick={async () => {
-                          if (editModal.foto_mapa_url && !editFotoMapaFile) {
-                            await supabase.storage.from('relatorios').remove([editModal.foto_mapa_url])
-                            setEditModal(m => ({ ...m, foto_mapa_url: null }))
-                          }
-                          setEditFotoMapa(null); setEditFotoMapaFile(null)
-                          showToast('🗑️ Foto mapa removida')
-                        }}>🗑️ Remover</button>
-                    )}
+                    <div style={{ display:'flex', gap:2 }}>
+                      {(editFotoMapa || editModal.foto_mapa_url) && (
+                        <button style={{ background:'none', border:'none', color:'#059669', fontSize:11, fontWeight:600, cursor:'pointer', padding:'2px 6px' }}
+                          onClick={async () => {
+                            // Precisa de um dataURL pro canvas. Se a foto ainda está só no
+                            // storage, baixa via URL assinada antes de abrir o editor.
+                            let src = editFotoMapa
+                            if (!src && editModal.foto_mapa_url) {
+                              try {
+                                const { data, error } = await supabase.storage.from('relatorios')
+                                  .createSignedUrl(editModal.foto_mapa_url, 120)
+                                if (error || !data?.signedUrl) throw error || new Error('sem URL')
+                                const resp = await fetch(data.signedUrl)
+                                const blob = await resp.blob()
+                                src = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(blob) })
+                              } catch (e) {
+                                console.error(e); showToast('Não consegui abrir a imagem pra editar', 'error'); return
+                              }
+                            }
+                            if (!src) return
+                            setEditAnnotator({ src })
+                          }}>✂️ Enquadrar</button>
+                      )}
+                      {(editFotoMapa || editModal.foto_mapa_url) && (
+                        <button style={{ background:'none', border:'none', color:theme.dangerText, fontSize:11, cursor:'pointer', padding:'2px 6px' }}
+                          onClick={async () => {
+                            if (editModal.foto_mapa_url && !editFotoMapaFile) {
+                              await supabase.storage.from('relatorios').remove([editModal.foto_mapa_url])
+                              setEditModal(m => ({ ...m, foto_mapa_url: null }))
+                            }
+                            setEditFotoMapa(null); setEditFotoMapaFile(null)
+                            showToast('🗑️ Foto mapa removida')
+                          }}>🗑️ Remover</button>
+                      )}
+                    </div>
                   </div>
                   <label style={{ display:'block', border:`1.5px dashed ${theme.cardBorder2}`, borderRadius:10, padding:10, textAlign:'center', cursor:'pointer', marginTop:4 }}>
                     <input type="file" accept="image/*" style={{ display:'none' }} onChange={e => { const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>setEditFotoMapa(ev.target.result); r.readAsDataURL(f); setEditFotoMapaFile(f) }} />
@@ -6436,6 +6538,22 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Editor de enquadramento do mapa — zIndex 500 no próprio componente, fica por cima
+          do modal de edição (300). O blob que volta já sai comprimido em JPEG. */}
+      {editAnnotator && (
+        <ImageAnnotator src={editAnnotator.src}
+          onSave={blob => {
+            const arquivo = new File([blob], 'mapa.jpg', { type:'image/jpeg' })
+            setEditFotoMapaFile(arquivo)
+            const r = new FileReader()
+            r.onload = ev => setEditFotoMapa(ev.target.result)
+            r.readAsDataURL(blob)
+            setEditAnnotator(null)
+            showToast('✂️ Enquadramento aplicado — salve pra valer')
+          }}
+          onCancel={() => setEditAnnotator(null)} />
       )}
 
       {showNotifs && (
