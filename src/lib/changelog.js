@@ -10,7 +10,7 @@
 export const NOVIDADES = [
   {
     versao: '4.1',
-    data: '2026-08-30',
+    data: '2026-09-04',
     itens: [
       {
         tipo: 'correcao',
