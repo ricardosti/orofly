@@ -14,6 +14,19 @@ import { APP_VERSION } from '../lib/version'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { agregarConsolidado } from '../lib/consolidado'
+
+// Campos do modal de edição que representam número. Alguns são `numeric` no banco
+// (area_feita, area_deduzida) e outros `text` (area_ha, bordadura) — a normalização de
+// vírgula decimal em salvarEdicao vale pros dois, por motivos diferentes: nos numeric a
+// vírgula quebra o INSERT; nos text ela passa e o parseFloat trunca depois.
+// Um voo Finalizado Parcial já aplicou área de verdade — ficar de fora do consolidado
+// escondia hectare trabalhado e fazia o avanço da fazenda parecer menor do que é.
+const STATUS_NO_CONSOLIDADO = ['finalizado', 'pausado_dia']
+
+const CAMPOS_NUMERICOS_EDICAO = [
+  'area_ha', 'area_feita', 'bordadura', 'area_deduzida', 'area_nao_aplicada',
+  'vazao_i', 'vazao_f', 'altura', 'velocidade_drone', 'faixa_aplicacao',
+]
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
@@ -369,6 +382,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [relatorioPeriodoTalhoesSel, setRelatorioPeriodoTalhoesSel] = useState(null)
   const [relatorioPeriodoObs, setRelatorioPeriodoObs] = useState('')
   const [relatorioPeriodoFotoBase64, setRelatorioPeriodoFotoBase64] = useState(null)
+  // Talhão não iniciado é o terceiro status. Fora do relatório por padrão — o consolidado
+  // responde "o que foi feito"; listar o que nunca começou é uma escolha de quem envia,
+  // porque muda a leitura do documento pro cliente.
+  const [relatorioPeriodoIncluirPendentes, setRelatorioPeriodoIncluirPendentes] = useState(false)
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
@@ -758,6 +775,18 @@ export default function AdminPanel({ onSwitchMode }) {
     if (Array.isArray(campos.produtos)) {
       campos.produtos = campos.produtos.map(p => String(p||'').trim()).filter(Boolean)
     }
+    // Vírgula decimal: quem digita "12,06" quebrava o salvamento com
+    // `invalid input syntax for type numeric` nos campos que são numeric no banco
+    // (area_feita, area_deduzida). Nos que são text (area_ha, bordadura) era pior — salvava
+    // e o parseFloat depois lia 12, perdendo os centavos sem erro nenhum. Normaliza os dois.
+    CAMPOS_NUMERICOS_EDICAO.forEach(k => {
+      if (campos[k] == null) return
+      const txt = String(campos[k]).trim()
+      if (txt === '') { campos[k] = null; return }
+      const norm = txt.replace(/\./g, '').replace(',', '.')
+      const n = parseFloat(/,/.test(txt) ? norm : txt)
+      campos[k] = isNaN(n) ? null : String(n)
+    })
     const { error } = await supabase.from('relatorios').update({ ...campos, foto_mapa_url: fotoMapaUrl, obs_fotos_urls: obsUrls }).eq('id', id)
     if (error) { showToast('Erro: ' + error.message, 'error'); setSaving(false); return }
     showToast('✅ Salvo!'); resetEdit(); fetchAll(); setSaving(false)
@@ -809,7 +838,7 @@ export default function AdminPanel({ onSwitchMode }) {
       const talhoesCatalogo = talhoesFzAtual.map(t=>({nome:t.nome, area_ha:t.area_ha}))
       const talhoesSel = relatorioPeriodoTalhoesSel ?? talhoesFzAtual.map(t=>t.nome)
       const voosPeriodo = relatorios.filter(r=>{
-        if(r.cliente!==fz.cliente || r.fazenda!==fz.nome || r.status!=='finalizado') return false
+        if(r.cliente!==fz.cliente || r.fazenda!==fz.nome || !STATUS_NO_CONSOLIDADO.includes(r.status)) return false
         const dRef = (r.dt_inicio || r.created_at || '').slice(0,10)
         if(!(dRef && dRef>=dataIni && dRef<=dataFim)) return false
         const talhoesDoVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
@@ -838,7 +867,8 @@ export default function AdminPanel({ onSwitchMode }) {
         areaTotalCadastrada: fz.areaTotal, produtosCatalogo: invProdutos,
       })
       const doc = await gerarPDFFazendaPeriodo({
-        fazenda: fz, voos: voosPeriodo, cons, observacaoAdmin: relatorioPeriodoObs,
+        fazenda: fz, voos: voosPeriodo, cons, incluirPendentes: relatorioPeriodoIncluirPendentes,
+        observacaoAdmin: relatorioPeriodoObs,
         fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
       })
       const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${iniEfetivo}-a-${fimEfetivo}`
@@ -4057,7 +4087,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   // então avisa antes pra não pegar o admin de surpresa com um arquivo enorme.
                   const { dataIni: diPrev, dataFim: dfPrev } = relatorioPeriodoForm
                   const voosPreviewCount = (diPrev && dfPrev) ? relatorios.filter(r=>{
-                    if(r.cliente!==relatorioPeriodoFz.cliente || r.fazenda!==relatorioPeriodoFz.nome || r.status!=='finalizado') return false
+                    if(r.cliente!==relatorioPeriodoFz.cliente || r.fazenda!==relatorioPeriodoFz.nome || !STATUS_NO_CONSOLIDADO.includes(r.status)) return false
                     const dRef = (r.dt_inicio || r.created_at || '').slice(0,10)
                     if(!(dRef && dRef>=diPrev && dRef<=dfPrev)) return false
                     const talhoesDoVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
@@ -4125,6 +4155,18 @@ export default function AdminPanel({ onSwitchMode }) {
                           </div>
                         )}
                       </div>
+
+                      {/* Terceiro status: talhão que nunca começou. Fica fora por padrão
+                          porque muda a leitura do documento pro cliente — quem envia decide. */}
+                      <label style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:14,cursor:'pointer',background:theme.bg,borderRadius:10,padding:'10px 12px'}}>
+                        <input type="checkbox" style={{marginTop:2,cursor:'pointer',flexShrink:0}}
+                          checked={relatorioPeriodoIncluirPendentes}
+                          onChange={e=>setRelatorioPeriodoIncluirPendentes(e.target.checked)}/>
+                        <span>
+                          <span style={{fontSize:12.5,fontWeight:600,color:theme.text,display:'block'}}>Incluir talhões não iniciados</span>
+                          <span style={{fontSize:11,color:theme.textMuted}}>Lista na tabela também os talhões sem nenhuma aplicação no período, com status <b>NÃO INICIADO</b>. Desmarcado, eles aparecem só na nota de pendentes embaixo da tabela.</span>
+                        </span>
+                      </label>
 
                       <div style={{marginBottom:14}}>
                         <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>OBSERVAÇÕES (opcional, aparece na capa)</div>

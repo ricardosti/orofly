@@ -9,6 +9,42 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.2',
+    data: '2026-09-04',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Erro ao salvar edição com vírgula decimal',
+        texto: 'Digitar uma área como "12,06" no painel derrubava o salvamento com erro do banco. Nos campos que aceitavam era pior: salvava e o sistema lia 12, perdendo os centavos sem avisar. Agora vírgula e ponto valem os dois.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Voo parcial ficava de fora do relatório da fazenda',
+        texto: 'O consolidado só considerava voo finalizado, então o hectare aplicado em Finalizado Parcial não entrava e o avanço da fazenda parecia menor do que era. Agora os dois contam.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Tabela de talhões mostra total, aplicada e bordadura',
+        texto: 'A tabela do consolidado ganhou as colunas Área Total e Bordadura, e o status passou a distinguir FINALIZADO de PARCIAL pela área coberta — não pelo rótulo do voo. Ao gerar o relatório dá pra escolher se os talhões não iniciados entram na tabela, com o status NÃO INICIADO.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Relatório consolidado abre com um resumo executivo',
+        texto: 'A primeira página do relatório da fazenda deixou de ser uma folha de rosto e virou um painel: área aplicada, volume, vazão média e tempo total em destaque, barra de avanço da fazenda, balanço de talhões com os pendentes, rendimento por piloto e equipamento, e o balanço de insumos do período. As páginas seguintes seguem com o detalhe de cada voo, como antes.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Função / classe do produto',
+        texto: 'O cadastro de produtos ganhou o campo Função / Classe (Herbicida, Adjuvante, Fungicida...). Ele aparece na tabela de insumos do relatório consolidado. Produto sem classe preenchida sai com "—".',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Dados cadastrais da empresa no rodapé',
+        texto: 'Configurações → Dados da Empresa agora guarda razão social, CNPJ, cidade/UF e os registros MAPA e ANAC, que passam a sair no rodapé do relatório consolidado. O que ficar em branco simplesmente não é impresso.',
+      },
+    ],
+  },
+  {
     versao: '4.1',
     data: '2026-09-04',
     itens: [

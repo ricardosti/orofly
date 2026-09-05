@@ -4,4 +4,4 @@
 //
 // O package.json não dá pra importar aqui: o Create React App bloqueia import de fora
 // da pasta src/. Se um dia sair do CRA, dá pra ler do package.json e apagar esta constante.
-export const APP_VERSION = '4.1'
+export const APP_VERSION = '4.2'

@@ -61,11 +61,12 @@ export function agregarConsolidado({
     nomesVoo.forEach(n => {
       if (!(n in parcelas)) return
       const fracao = somaCad > 0 ? (areaCadastral[n] || 0) / somaCad : 1 / nomesVoo.length
-      parcelas[n].push({ rel: r, area: areaVoo * fracao })
+      parcelas[n].push({ rel: r, area: areaVoo * fracao, bordadura: (parseFloat(r.bordadura) || 0) * fracao })
     })
   })
 
   const aplicadaPorTalhao = {}
+  const bordaduraPorTalhao = {}
   const porPiloto = {}
   let areaAplicada = 0
   let volumeTotal = 0
@@ -76,6 +77,9 @@ export function agregarConsolidado({
     const cad = areaCadastral[nome] || 0
     const ajuste = (cad > 0 && soma > cad) ? cad / soma : 1
     aplicadaPorTalhao[nome] = soma * ajuste
+    // A bordadura acompanha o mesmo ajuste da área: se a parcela foi reduzida, a bordadura
+    // dela também foi, senão a soma das duas passa a não fechar com o talhão.
+    bordaduraPorTalhao[nome] = lista.reduce((a, p) => a + p.bordadura, 0) * ajuste
     areaAplicada += soma * ajuste
     lista.forEach(p => {
       const areaAj = p.area * ajuste
@@ -113,15 +117,23 @@ export function agregarConsolidado({
   const tempoTotalMin = voosOrd.reduce((a, r) => a + minutosEntre(r.dt_inicio, r.dt_fim), 0)
 
   // ── Talhões: aplicados e pendentes ──
+  // Status por COBERTURA, não pelo status do voo: um talhão pode ter sido fechado por dois
+  // voos parciais (aí está FINALIZADO) ou ter um voo "finalizado" que cobriu só um pedaço
+  // (aí está PARCIAL). É a área no chão que decide, não o rótulo do registro.
   const talhoes = nomesListar
-    .map(nome => ({
-      nome,
-      area: +(aplicadaPorTalhao[nome] || 0).toFixed(2),
-      cadastrado: +(areaCadastral[nome] || 0).toFixed(2),
-      status: (aplicadaPorTalhao[nome] || 0) > 0.005 ? 'APLICADO' : 'PENDENTE',
-    }))
+    .map(nome => {
+      const area = +(aplicadaPorTalhao[nome] || 0).toFixed(2)
+      const cad = +(areaCadastral[nome] || 0).toFixed(2)
+      let status = 'PENDENTE'
+      if (area > 0.005) status = (cad > 0 && area < cad - 0.05) ? 'PARCIAL' : 'FINALIZADO'
+      return {
+        nome, area, cadastrado: cad,
+        bordadura: +(bordaduraPorTalhao[nome] || 0).toFixed(2),
+        status,
+      }
+    })
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }))
-  const aplicados = talhoes.filter(t => t.status === 'APLICADO')
+  const aplicados = talhoes.filter(t => t.status !== 'PENDENTE')
   const pendentes = talhoes.filter(t => t.status === 'PENDENTE')
 
   // ── Pilotos ──

@@ -696,7 +696,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // Página 1 é o dashboard executivo em RETRATO; as páginas de detalhe por voo continuam
 // paisagem (o renderRelatorioCompleto adiciona cada uma com addPage([297,210],'l')).
 // `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
-export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
   const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
   const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
@@ -818,36 +818,54 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, observacaoAd
   let y1 = tituloSecao(M, y, COLW, 1, 'BALANÇO DE TALHÕES NO PERÍODO')
   doc.setFillColor(238, 246, 241); doc.rect(M, y1, COLW, 5.5, 'F')
   doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
-  doc.text('TALHÃO', M + 2.5, y1 + 3.8)
-  doc.text('ÁREA', M + COLW * 0.55, y1 + 3.8, { align: 'right' })
+  const cT = { nome: M + 2.5, total: M + COLW * 0.38, aplic: M + COLW * 0.60, bord: M + COLW * 0.78 }
+  doc.text('TALHÃO', cT.nome, y1 + 3.8)
+  doc.text('ÁREA TOTAL', cT.total, y1 + 3.8, { align: 'right' })
+  doc.text('APLICADA', cT.aplic, y1 + 3.8, { align: 'right' })
+  doc.text('BORD.', cT.bord, y1 + 3.8, { align: 'right' })
   doc.text('STATUS', M + COLW - 2.5, y1 + 3.8, { align: 'right' })
   y1 += 5.5
   const limiteTalhoes = 14
-  cons.aplicados.slice(0, limiteTalhoes).forEach((t, i) => {
+  // Com a opção ligada, o não iniciado entra como linha da tabela; senão fica só na nota
+  // de pendentes embaixo, como sempre foi.
+  const linhasTalhoes = incluirPendentes ? cons.talhoes : cons.aplicados
+  linhasTalhoes.slice(0, limiteTalhoes).forEach((t, i) => {
     if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(M, y1, COLW, 5.6, 'F') }
     doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
-    doc.text(truncFit(doc, t.nome, COLW * 0.5), M + 2.5, y1 + 3.9)
-    doc.setFont('helvetica', 'bold')
-    doc.text(`${nHa(t.area)} ha`, M + COLW * 0.55, y1 + 3.9, { align: 'right' })
-    doc.setFillColor(224, 244, 232); doc.roundedRect(M + COLW - 20, y1 + 1, 17.5, 3.8, 1, 1, 'F')
-    doc.setFontSize(5.2); doc.setTextColor(...G)
-    doc.text('APLICADO', M + COLW - 11.2, y1 + 3.7, { align: 'center' })
+    doc.text(truncFit(doc, t.nome, COLW * 0.33), cT.nome, y1 + 3.9)
+    doc.setFontSize(6.4); doc.setTextColor(...GR)
+    doc.text(nHa(t.cadastrado), cT.total, y1 + 3.9, { align: 'right' })
+    doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+    doc.text(nHa(t.area), cT.aplic, y1 + 3.9, { align: 'right' })
+    doc.setFontSize(6.4); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    doc.text(t.bordadura > 0 ? nHa(t.bordadura) : '—', cT.bord, y1 + 3.9, { align: 'right' })
+    const est = t.status === 'PARCIAL' ? { bg:[253,240,221], cor:[176,112,20], txt:'PARCIAL' }
+      : t.status === 'PENDENTE' ? { bg:[238,238,234], cor:[130,130,120], txt:'NÃO INICIADO' }
+      : { bg:[224,244,232], cor:G, txt:'FINALIZADO' }
+    doc.setFillColor(...est.bg)
+    doc.roundedRect(M + COLW - 19, y1 + 1, 16.5, 3.8, 1, 1, 'F')
+    doc.setFontSize(4.8); doc.setTextColor(...est.cor)
+    doc.text(est.txt, M + COLW - 10.75, y1 + 3.7, { align: 'center' })
     y1 += 5.6
   })
-  if (cons.aplicados.length > limiteTalhoes) {
+  if (linhasTalhoes.length > limiteTalhoes) {
     doc.setFontSize(6); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
-    doc.text(`+ ${cons.aplicados.length - limiteTalhoes} talhão(ões) na listagem completa`, M + 2.5, y1 + 3.6); y1 += 5.6
+    doc.text(`+ ${linhasTalhoes.length - limiteTalhoes} talhão(ões) na listagem completa`, M + 2.5, y1 + 3.6); y1 += 5.6
   }
   doc.setDrawColor(...G); doc.setLineWidth(0.4); doc.line(M, y1 + 0.5, M + COLW, y1 + 0.5); y1 += 1
   doc.setFillColor(240, 248, 243); doc.rect(M, y1, COLW, 6.5, 'F')
   doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
-  doc.text('Total Realizado', M + 2.5, y1 + 4.4)
-  doc.setTextColor(...G)
-  doc.text(`${nHa(kp.areaAplicada)} ha`, M + COLW * 0.55, y1 + 4.4, { align: 'right' })
+  doc.text('Total Realizado', cT.nome, y1 + 4.4)
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.4); doc.setTextColor(...GR)
+  doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.cadastrado, 0)), cT.total, y1 + 4.4, { align: 'right' })
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...G)
+  doc.text(nHa(kp.areaAplicada), cT.aplic, y1 + 4.4, { align: 'right' })
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.4); doc.setTextColor(...GR)
+  doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.bordadura, 0)), cT.bord, y1 + 4.4, { align: 'right' })
   doc.setFontSize(5.8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
   doc.text(`${cons.aplicados.length} de ${cons.totalTalhoesCatalogo} talhões`, M + COLW - 2.5, y1 + 4.4, { align: 'right' })
   y1 += 8
-  if (cons.pendentes.length) {
+  if (cons.pendentes.length && !incluirPendentes) {
     doc.setFontSize(5.8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
     const txt = 'Pendentes no lote: ' + cons.pendentes.map(t => `${t.nome} (${nHa(t.cadastrado)} ha)`).join(', ')
     const ls = doc.splitTextToSize(txt, COLW - 5)
