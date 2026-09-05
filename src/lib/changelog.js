@@ -13,6 +13,11 @@ export const NOVIDADES = [
     data: '2026-09-04',
     itens: [
       {
+        tipo: 'novo',
+        titulo: 'Voo compartilhado entre dois pilotos',
+        texto: 'No Passo 1 o piloto escolhe se vai cobrir o talhão sozinho ou dividido com outra frente. Em compartilhado, o campo ÁREA passa a ser a parcela dele — não o talhão inteiro —, e é ela que o relatório usa pra dividir a área entre os pilotos. Quem termina em Finalizado Parcial vira compartilhado automaticamente, porque o saldo vai sobrar pra outra frente. No relatório, o talhão dividido aparece com "2 frentes" ao lado do nome.',
+      },
+      {
         tipo: 'correcao',
         titulo: 'Erro ao salvar edição com vírgula decimal',
         texto: 'Digitar uma área como "12,06" no painel derrubava o salvamento com erro do banco. Nos campos que aceitavam era pior: salvava e o sistema lia 12, perdendo os centavos sem avisar. Agora vírgula e ponto valem os dois.',
