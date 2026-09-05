@@ -832,7 +832,14 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   linhasTalhoes.slice(0, limiteTalhoes).forEach((t, i) => {
     if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(M, y1, COLW, 5.6, 'F') }
     doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
+    // "2 frentes" marca o talhão dividido entre pilotos — o leitor do relatório não tem como
+    // deduzir isso da tabela de talhões, só da de pilotos, e as duas ficam lado a lado.
     doc.text(truncFit(doc, t.nome, COLW * 0.33), cT.nome, y1 + 3.9)
+    if (t.compartilhado && t.pilotos.length > 1) {
+      const wNome = doc.getTextWidth(truncFit(doc, t.nome, COLW * 0.33))
+      doc.setFontSize(4.8); doc.setTextColor(...GR)
+      doc.text(`${t.pilotos.length} frentes`, cT.nome + wNome + 1.5, y1 + 3.9)
+    }
     doc.setFontSize(6.4); doc.setTextColor(...GR)
     doc.text(nHa(t.cadastrado), cT.total, y1 + 3.9, { align: 'right' })
     doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)

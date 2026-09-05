@@ -88,6 +88,7 @@ function initForm(data) {
       fazenda:data.fazenda||'',produto:data.produto||'',area_ha:data.area_ha||'',talhao:data.talhao||data.localizacao||'',
       qtd_voos:data.qtd_voos||1,tipo_servico:data.tipo_servico||'area_total',
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
+      compartilhado:!!data.compartilhado,
       produtos:data.produtos?.length
         ? data.produtos.map(p=>{
             // Remove unidade da dosagem para edição: "Moddus - 1.1 Kg/ha" → "Moddus - 1.1"
@@ -1092,6 +1093,9 @@ export default function PilotApp({onSwitchMode}) {
       ? talhoesSel.map(nome=>({talhao:nome,area_feita:Math.max(0,parseFloat(form.area_feita_por_talhao?.[nome])||0)})).filter(d=>d.area_feita>0)
       : null
     const bordaduraTotal = bordaduraAtual(form)
+    // O status pode vir no extraData (executarFinalizacao/executarFinalizacaoDia mandam
+    // explícito) ou do estado atual do wizard.
+    const statusSalvando = extraData.status || statusAtual()
     // Fallback defensivo: relId deveria sempre existir (gerado em opIniciar), mas se por algum
     // motivo ainda estiver nulo aqui, gera agora em vez de deixar o registro órfão.
     const idAtual = relId || crypto.randomUUID()
@@ -1103,6 +1107,10 @@ export default function PilotApp({onSwitchMode}) {
       area_feita:form.area_feita?parseFloat(form.area_feita):null,
       area_deduzida:form.area_deduzida?parseFloat(form.area_deduzida):null,
       piloto_nome:profile.nome||profile.email,
+      // Finalizado Parcial implica compartilhado: o saldo que sobrou vai ser voado por outra
+      // frente, então o talhão passa a ter mais de um responsável mesmo que o piloto tenha
+      // marcado "sozinho" no Passo 1.
+      compartilhado: !!form.compartilhado || statusSalvando === 'pausado_dia',
       drone:droneVal,produtos:form.produtos.filter(Boolean).map(produtoComUnidade),
       tamanho_gota:form.tamanho_gota,velocidade_drone:form.velocidade_drone,altura:form.altura,
       localizacao:form.talhao||form.localizacao,gps_lat:form.gps_lat,gps_lng:form.gps_lng,
@@ -3857,6 +3865,36 @@ Quando: ${tempoErroDebug.quando}`}
                     onClick={()=>setForm(f=>({...f,tipo_servico:v}))}>{lbl}</button>
                 ))}
               </div>
+            </div>
+
+            {/* COMO ESTE VOO COBRE O TALHÃO — decidido aqui, no começo, porque muda o que o
+                Passo 5 vai perguntar. Em Compartilhado a ÁREA passa a ser a SUA parcela, e
+                não o saldo inteiro do talhão; é essa parcela que o relatório usa pra dividir
+                a área entre os pilotos. Quem terminar em Finalizado Parcial vira compartilhado
+                de qualquer forma (ver executarFinalizacaoDia), porque o resto vai sobrar pra
+                outra frente — a escolha aqui só adianta isso quando já se sabe. */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6}}>COMO VOCÊ VAI COBRIR ESTE TALHÃO</div>
+              <div style={{display:'flex',gap:8}}>
+                {[
+                  [false,'👤 Sozinho','Você faz o talhão inteiro'],
+                  [true,'👥 Compartilhado','Dividido com outro piloto'],
+                ].map(([val,titulo,sub])=>{
+                  const ativo = !!form.compartilhado === val
+                  return (
+                    <button key={String(val)} type="button" onClick={()=>setForm(f=>({...f,compartilhado:val}))}
+                      style={{flex:1,textAlign:'left',background:ativo?'#e8f6ee':'#f9fbfa',border:`1.5px solid ${ativo?'#00A86B':theme.divider}`,borderRadius:10,padding:'9px 12px',cursor:'pointer'}}>
+                      <div style={{fontSize:12.5,fontWeight:700,color:ativo?'#00A86B':theme.textMuted}}>{titulo}</div>
+                      <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:2}}>{sub}</div>
+                    </button>
+                  )
+                })}
+              </div>
+              {form.compartilhado && (
+                <div style={{fontSize:11,color:theme.warningText2,background:theme.warningBg,border:`1px solid ${theme.warningText}`,borderRadius:8,padding:'8px 11px',marginTop:8}}>
+                  Preencha em <strong>ÁREA (HA)</strong> só a <strong>sua parcela</strong> — não o talhão todo. É ela que vai pro relatório como o que você aplicou.
+                </div>
+              )}
             </div>
 
             <div style={{display:'flex',gap:8,marginBottom:14}}>
