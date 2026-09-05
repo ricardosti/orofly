@@ -81,7 +81,7 @@ export function calcularGastoProdutos(produtos, areaHa) {
 // config do Supabase; até lá (ou se nunca foi configurado), usa os valores padrão atuais.
 // O logo continua fixo (imagem embutida em base64) — trocar isso exigiria upload de
 // arquivo e replumbing considerável em todas as chamadas de addImage, fora de escopo aqui.
-export const EMPRESA_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br', logo_url: '' }
+export const EMPRESA_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br', logo_url: '', razao_social: '', cnpj: '', cidade_uf: '', registro_mapa: '', registro_anac: '' }
 export let EMPRESA = { ...EMPRESA_PADRAO }
 export function setEmpresaConfig(cfg) { EMPRESA = { ...EMPRESA_PADRAO, ...cfg } }
 
@@ -693,239 +693,272 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // mapa, produtos, clima, dados do voo), agrupado por talhão. É literalmente um PDF
 // "empilhado em cima do outro" num arquivo único, pra download ou WhatsApp.
 // ============================================================
-export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, areaTotalCadastrada, talhoesCatalogo=[], talhoesSelecionados=null, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
-  const doc = new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
-  const PW=297, PH=210, C1=8, CW=136, C2=157, M=8
+// Página 1 é o dashboard executivo em RETRATO; as páginas de detalhe por voo continuam
+// paisagem (o renderRelatorioCompleto adiciona cada uma com addPage([297,210],'l')).
+// `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
+  const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
   const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
   const fmtD = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'
   const nomeCurto = n => { if(!n) return '—'; const p=String(n).trim().split(/\s+/).filter(Boolean); return p.length<=1?(p[0]||'—'):`${p[0]} ${p[p.length-1]}` }
-  function calcTempoMin(ini,fim){
-    if(!ini||!fim) return 0
-    const t=Math.round((new Date(fim)-new Date(ini))/60000)
-    return t>0?t:0
-  }
   function fmtMin(m){ const h=Math.floor(m/60), mm=m%60; return h>0?`${h}h ${String(mm).padStart(2,'0')}min`:`${mm}min` }
 
   const voosOrd = [...(voos||[])].sort((a,b)=>new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at))
-  const tempoTotalMin = voosOrd.reduce((a,r)=>a+calcTempoMin(r.dt_inicio,r.dt_fim),0)
-  // areaAplicada, volumeTotal, vazaoMedia e pct são calculados logo abaixo, DEPOIS da
-  // normalização por talhão — senão o resumo da fazenda mostra o número inflado enquanto a
-  // tabela de talhões mostra o corrigido, e os dois se contradizem no mesmo PDF.
-
-  // ── Área aplicada por talhão, e por piloto dentro de cada talhão ──
-  //
-  // Duas etapas. Primeiro o rateio de sempre: um voo com mais de um talhão divide sua área
-  // proporcional ao tamanho cadastrado de cada um (mesmo critério do WhatsApp).
-  //
-  // Depois vem a normalização, que é o que conserta a inflação. Registros antigos, salvos
-  // antes de `area_feita` existir, fazem o areaLiquida() cair pro talhão INTEIRO (area_ha).
-  // Quando dois pilotos dividem um talhão de 15,26 ha, os dois voos carregam 15,26 e a soma
-  // dá 30,52 — o dobro do que existe no chão. Como o banco desses registros não guarda
-  // quanto cada um fez, não há como recuperar a divisão real; o que dá pra afirmar com
-  // certeza é que a soma não pode passar do tamanho cadastrado do talhão. Então, quando
-  // passa, as parcelas são reduzidas proporcionalmente até fechar no tamanho do talhão.
-  //
-  // Ressalva: se houver reaplicação proposital no MESMO período (duas passadas no mesmo
-  // talhão), o teto aparece como se fosse erro. O campo `campanha_inicio` da fazenda existe
-  // pra delimitar isso — se esse caso virar rotina, o filtro do período é onde tratar.
-  const areaCadastralPorNome = {}
-  ;(talhoesCatalogo||[]).forEach(t=>{ areaCadastralPorNome[t.nome] = parseFloat(t.area_ha)||0 })
-  const talhoesParaListar = talhoesSelecionados || (talhoesCatalogo||[]).map(t=>t.nome)
-
-  // parcelas[talhao] = [{ piloto, area }] — antes de normalizar
-  const parcelas = {}
-  talhoesParaListar.forEach(nome=>{ parcelas[nome]=[] })
-  voosOrd.forEach(r=>{
-    const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
-    const somaCad = nomesVoo.reduce((a,n)=>a+(areaCadastralPorNome[n]||0),0)
-    const areaVoo = areaLiquida(r)
-    nomesVoo.forEach(n=>{
-      if(!(n in parcelas)) return
-      const fracao = somaCad>0 ? (areaCadastralPorNome[n]||0)/somaCad : 1/nomesVoo.length
-      parcelas[n].push({ piloto: r.piloto_nome||'—', area: areaVoo*fracao, vazao: parseFloat(r.vazao_i||r.vazao_f)||0 })
-    })
-  })
-
-  const aplicadaPorTalhao = {}
-  const porPiloto = {}
-  let areaAplicada = 0
-  let volumeTotal = 0
-  talhoesParaListar.forEach(nome=>{
-    const lista = parcelas[nome]
-    const soma = lista.reduce((a,p)=>a+p.area,0)
-    const cad = areaCadastralPorNome[nome]||0
-    // Só reduz quando estoura o cadastrado; nunca infla um talhão que ficou pela metade.
-    const ajuste = (cad>0 && soma>cad) ? cad/soma : 1
-    aplicadaPorTalhao[nome] = soma*ajuste
-    areaAplicada += soma*ajuste
-    lista.forEach(p=>{
-      const areaAj = p.area*ajuste
-      porPiloto[p.piloto] = (porPiloto[p.piloto]||0) + areaAj
-      volumeTotal += p.vazao*areaAj
-    })
-  })
-  const rankingPilotos = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1])
-
-  // Voos cujo talhão não está entre os selecionados ficam fora do rateio acima, mas ainda
-  // contam no resumo — senão o total do período muda só por causa do filtro de talhões.
-  const nomesListados = new Set(talhoesParaListar)
-  voosOrd.forEach(r=>{
-    const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
-    if(nomesVoo.length>0 && nomesVoo.some(n=>nomesListados.has(n))) return
-    const a = areaLiquida(r)
-    areaAplicada += a
-    volumeTotal += (parseFloat(r.vazao_i||r.vazao_f)||0)*a
-  })
-
-  const vazaoMedia = areaAplicada>0 ? volumeTotal/areaAplicada : null
-  const pct = areaTotalCadastrada>0 ? Math.min(100,(areaAplicada/areaTotalCadastrada)*100) : null
 
   function fundoBranco(){ doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F') }
 
-  function sec(x,y,w,num,title){
-    doc.setFillColor(240,248,243);doc.roundedRect(x,y,w,7,1.5,1.5,'F')
-    doc.setFillColor(...G);doc.circle(x+4.5,y+3.5,3.5,'F')
-    doc.setFontSize(7.5);doc.setFont('helvetica','bold');doc.setTextColor(...W);doc.text(String(num),x+4.5,y+4.8,{align:'center'})
-    doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text(title,x+11,y+5.5)
-    return y+8.5
+
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  // PÁGINA 1 — DASHBOARD EXECUTIVO (A4 RETRATO)
+  //
+  // O documento nasce retrato por causa desta página. As páginas de detalhe por voo,
+  // logo abaixo, continuam paisagem — o renderRelatorioCompleto já faz addPage([297,210],'l')
+  // por conta própria, então a orientação alterna sozinha.
+  //
+  // Todos os números vêm do `cons` (src/lib/consolidado.js). Esta função não calcula nada:
+  // se um valor sair errado aqui, o defeito está no agregador, que é testável sem PDF.
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  const PW = 210, PH = 297, M = 10, CW = PW - M * 2
+  const COLW = (CW - 8) / 2, C2X = M + COLW + 8
+
+  const nHa = v => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+  const nInt = v => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 }))
+  const nDose = v => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 3 }))
+
+  function tituloSecao(x, y, w, num, txt) {
+    doc.setFillColor(240, 248, 243); doc.rect(x, y, w, 7, 'F')
+    doc.setFillColor(...G); doc.rect(x, y, 1.6, 7, 'F')
+    doc.setFontSize(8.2); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
+    doc.text(`${num}. ${txt}`, x + 4, y + 4.8)
+    return y + 9.5
   }
 
-  // ═══ CAPA — COL 1: header + resumo do período + ranking por piloto ═══
   fundoBranco()
-  let y=M
-  try{doc.addImage(LOGO_B64,'PNG',C1+1,y+1,48,27)}catch(e){
-    doc.setFontSize(16);doc.setFont('helvetica','bold');doc.setTextColor(...G);doc.text('OROFLY',C1+4,y+18)
+  let y = M
+
+  // ── Cabeçalho executivo ──
+  try { doc.addImage(LOGO_B64, 'PNG', M, y, 42, 23) } catch (e) {
+    doc.setFontSize(17); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G); doc.text('OROFLY', M, y + 14)
   }
-  doc.setFontSize(12);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-  doc.text('RELATÓRIO CONSOLIDADO',C1+77,y+10,{align:'center'})
-  doc.text('DE ÁREA APLICADA NO PERÍODO',C1+77,y+16.5,{align:'center'})
-  doc.setDrawColor(...G);doc.setLineWidth(0.3)
-  doc.line(C1+50,y+18.5,C1+104,y+18.5)
-  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
-  doc.text('PULVERIZAÇÃO AGRÍCOLA',C1+77,y+23.5,{align:'center'})
-  doc.setDrawColor(...G);doc.setLineWidth(0.5)
-  doc.roundedRect(C1+106,y+2,30,24,2,2,'S')
-  doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...G)
-  doc.text('PERÍODO',C1+121,y+6,{align:'center'})
-  doc.setDrawColor(180,220,200);doc.line(C1+108,y+7.5,C1+134,y+7.5)
-  doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-  doc.text(fmtD(dataIni),C1+121,y+13.5,{align:'center'})
-  doc.setFontSize(6.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
-  doc.text('até',C1+121,y+17.5,{align:'center'})
-  doc.setFontSize(8.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-  doc.text(fmtD(dataFim),C1+121,y+22.5,{align:'center'})
-  y+=29
+  doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+  doc.text('RELATÓRIO CONSOLIDADO DE OPERAÇÃO', PW - M, y + 9, { align: 'right' })
+  doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+  doc.text('Pulverização com Drones • Resumo Executivo da Fazenda', PW - M, y + 15, { align: 'right' })
+  doc.setFontSize(6.5); doc.setTextColor(...G)
+  doc.text('T E C N O L O G I A   A G R Í C O L A   A E R O A P L I C A D A', PW - M, y + 20.5, { align: 'right' })
+  y += 26
+  doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, y, PW - M, y); y += 5
 
-  doc.setDrawColor(210,235,220);doc.setLineWidth(0.3);doc.line(C1,y,C1+CW,y);y+=2
-
-  // Cliente/Fazenda
-  doc.setFillColor(245,251,247);doc.roundedRect(C1,y,CW,12,1.5,1.5,'F')
-  doc.setDrawColor(200,235,215);doc.roundedRect(C1,y,CW,12,1.5,1.5,'S')
-  const tw2=CW/2
-  ;[['CLIENTE',fazenda.cliente||'—'],['FAZENDA',fazenda.nome||'—']].forEach(([lbl,val],i)=>{
-    const x=C1+i*tw2+3
-    doc.setFontSize(6.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR);doc.text(lbl,x,y+5)
-    doc.setFontSize(9.5);doc.setFont('helvetica','bold');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,val,tw2-6),x,y+10)
-  })
-  y+=15
-
-  // 1 RESUMO DO PERÍODO — área, volume e vazão consolidados + tempo total voado
-  y=sec(C1,y,CW,1,'RESUMO DO PERÍODO')
-  const cards=[
-    ['ÁREA APLICADA',areaAplicada.toFixed(2),'ha',IC_AREA,G],
-    ['VOLUME TOTAL',volumeTotal>0?volumeTotal.toFixed(0):'—','L',IC_VOLUME,G],
-    ['VAZÃO MÉDIA',vazaoMedia!=null?vazaoMedia.toFixed(1):'—','L/ha',IC_VAZAO,G],
-    ['TEMPO TOTAL',tempoTotalMin>0?fmtMin(tempoTotalMin):'—','',IC_TEMPO,G],
+  // ── Faixa de identificação ──
+  doc.setFillColor(245, 251, 247); doc.roundedRect(M, y, CW, 15, 1.5, 1.5, 'F')
+  doc.setDrawColor(200, 235, 215); doc.setLineWidth(0.3); doc.roundedRect(M, y, CW, 15, 1.5, 1.5, 'S')
+  const periodoTxt = cons.periodo.ini
+    ? (cons.periodo.ini === cons.periodo.fim ? fmtD(cons.periodo.ini) : `${fmtD(cons.periodo.ini)} a ${fmtD(cons.periodo.fim)}`)
+    : '—'
+  const ident = [
+    ['CLIENTE CONTRATANTE', fazenda.cliente || '—'],
+    ['PROPRIEDADE / FAZENDA', fazenda.nome || '—'],
+    ['PERÍODO OPERACIONAL', periodoTxt],
+    ['MODALIDADE DE SERVIÇO', cons.modalidade],
   ]
-  const rW=CW/4-1.5
-  cards.forEach(([lbl,val,unit,ic,cor],i)=>{
-    const rx=C1+i*(rW+2)
-    doc.setFillColor(...W);doc.setDrawColor(200,235,215);doc.setLineWidth(0.3)
-    doc.roundedRect(rx,y,rW,26,2,2,'FD')
-    if(ic){ try{doc.addImage(ic,'PNG',rx+(rW-8)/2,y+2,8,8)}catch(e){} }
-    doc.setFontSize(5.5);doc.setFont('helvetica','bold');doc.setTextColor(...GR)
-    doc.text(lbl,rx+rW/2,y+13,{align:'center',maxWidth:rW-2})
-    doc.setFontSize(unit?11:14);doc.setFont('helvetica','bold');doc.setTextColor(...cor)
-    doc.text(String(val),rx+rW/2,y+19,{align:'center'})
-    if(unit){doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text(unit,rx+rW/2,y+24,{align:'center'})}
+  const idW = CW / 4
+  ident.forEach(([lbl, val], i) => {
+    const x = M + i * idW + 3
+    if (i > 0) { doc.setDrawColor(215, 238, 226); doc.line(M + i * idW, y + 2.5, M + i * idW, y + 12.5) }
+    doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR); doc.text(lbl, x, y + 5)
+    doc.setFontSize(8.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+    doc.text(truncFit(doc, val, idW - 6), x, y + 11)
   })
-  y+=28
-  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...GR)
-  doc.text(`${voosOrd.length} voo(s) finalizado(s) no período${pct!=null?` · Avanço da fazenda: ${pct.toFixed(0)}% (${areaAplicada.toFixed(1)} / ${areaTotalCadastrada.toFixed(1)} ha)`:''}`,C1,y)
-  y+=6
+  y += 19
 
-  // 2 ÁREA POR PILOTO
-  y=sec(C1,y,CW,2,'ÁREA POR PILOTO')
-  doc.setFillColor(240,248,243);doc.rect(C1,y,CW,6,'F')
-  doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
-  doc.text('PILOTO',C1+3,y+4.5);doc.text('ÁREA',C1+CW-30,y+4.5,{align:'right'});doc.text('%',C1+CW-3,y+4.5,{align:'right'})
-  y+=7
-  if(rankingPilotos.length===0){
-    doc.setFillColor(255,255,255);doc.rect(C1,y,CW,7,'F')
-    doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
-    doc.text('Nenhum voo finalizado no período',C1+3,y+5)
-    y+=7
+  // ── KPIs globais ──
+  const kp = cons.kpis
+  const faixa = (kp.vazaoMin != null && kp.vazaoMax != null)
+    ? (kp.vazaoMin === kp.vazaoMax ? `Faixa observada: ${nDose(kp.vazaoMin)} L/ha` : `Faixa observada: ${nDose(kp.vazaoMin)} - ${nDose(kp.vazaoMax)} L/ha`)
+    : 'Faixa não informada'
+  const kpis = [
+    ['ÁREA APLICADA NO PERÍODO', nHa(kp.areaAplicada), 'HECTARES (HA)', `${kp.talhoesTrabalhados} talhões trabalhados`],
+    ['VOLUME TOTAL APLICADO', nInt(kp.volumeTotal), 'LITROS DE CALDA', `${kp.voos} voos / ordens`],
+    ['VAZÃO MÉDIA EFETIVA', kp.vazaoMedia != null ? nDose(kp.vazaoMedia) : '—', 'L / HA', faixa],
+    ['TEMPO TOTAL EM OPERAÇÃO', fmtMin(kp.tempoTotalMin), 'TEMPO ACUMULADO', kp.rendimento != null ? `Média: ${nDose(kp.rendimento)} ha/h global` : '—'],
+  ]
+  const kW = CW / 4 - 2.25
+  kpis.forEach(([lbl, val, unid, nota], i) => {
+    const x = M + i * (kW + 3)
+    doc.setFillColor(252, 254, 253); doc.roundedRect(x, y, kW, 27, 1.5, 1.5, 'F')
+    doc.setDrawColor(210, 235, 222); doc.roundedRect(x, y, kW, 27, 1.5, 1.5, 'S')
+    doc.setFillColor(...G); doc.rect(x, y, kW, 0.9, 'F')
+    doc.setFontSize(5.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+    doc.text(doc.splitTextToSize(lbl, kW - 5), x + 2.5, y + 5)
+    doc.setFontSize(15); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
+    doc.text(String(val), x + 2.5, y + 16)
+    doc.setFontSize(5.6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    doc.text(unid, x + 2.5, y + 20)
+    doc.setFontSize(5.4); doc.setTextColor(140, 155, 148)
+    doc.text(doc.splitTextToSize(nota, kW - 5), x + 2.5, y + 24)
+  })
+  y += 31
+
+  // ── Avanço físico ──
+  const av = cons.avanco
+  doc.setFillColor(245, 251, 247); doc.roundedRect(M, y, CW, 14, 1.5, 1.5, 'F')
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+  doc.text(`AVANÇO FÍSICO NA FAZENDA: ${av.pct != null ? nDose(av.pct) + '% CONCLUÍDO' : 'ÁREA CONTRATADA NÃO CADASTRADA'}`, M + 3, y + 5)
+  const barX = M + 3, barW = CW - 6
+  doc.setFillColor(224, 236, 229); doc.rect(barX, y + 7, barW, 3.2, 'F')
+  if (av.pct != null) { doc.setFillColor(...G); doc.rect(barX, y + 7, barW * (av.pct / 100), 3.2, 'F') }
+  doc.setFontSize(6.2); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+  doc.text(`${nHa(av.executado)} ha executados de um total contratado de ${nHa(av.contratado)} ha  •  Restam: ${nHa(av.saldo)} ha`, barX, y + 13)
+  y += 18
+
+  const yColunas = y
+
+  // ── Seção 1 — Balanço de talhões ──
+  let y1 = tituloSecao(M, y, COLW, 1, 'BALANÇO DE TALHÕES NO PERÍODO')
+  doc.setFillColor(238, 246, 241); doc.rect(M, y1, COLW, 5.5, 'F')
+  doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+  doc.text('TALHÃO', M + 2.5, y1 + 3.8)
+  doc.text('ÁREA', M + COLW * 0.55, y1 + 3.8, { align: 'right' })
+  doc.text('STATUS', M + COLW - 2.5, y1 + 3.8, { align: 'right' })
+  y1 += 5.5
+  const limiteTalhoes = 14
+  cons.aplicados.slice(0, limiteTalhoes).forEach((t, i) => {
+    if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(M, y1, COLW, 5.6, 'F') }
+    doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
+    doc.text(truncFit(doc, t.nome, COLW * 0.5), M + 2.5, y1 + 3.9)
+    doc.setFont('helvetica', 'bold')
+    doc.text(`${nHa(t.area)} ha`, M + COLW * 0.55, y1 + 3.9, { align: 'right' })
+    doc.setFillColor(224, 244, 232); doc.roundedRect(M + COLW - 20, y1 + 1, 17.5, 3.8, 1, 1, 'F')
+    doc.setFontSize(5.2); doc.setTextColor(...G)
+    doc.text('APLICADO', M + COLW - 11.2, y1 + 3.7, { align: 'center' })
+    y1 += 5.6
+  })
+  if (cons.aplicados.length > limiteTalhoes) {
+    doc.setFontSize(6); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
+    doc.text(`+ ${cons.aplicados.length - limiteTalhoes} talhão(ões) na listagem completa`, M + 2.5, y1 + 3.6); y1 += 5.6
   }
-  rankingPilotos.forEach(([nome,area],i)=>{
-    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C1,y,CW,7,'F')
-    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,nomeCurto(nome),CW*0.5-4),C1+3,y+5)
-    doc.text(`${area.toFixed(2)} ha`,C1+CW-30,y+5,{align:'right'})
-    doc.text(areaAplicada>0?`${((area/areaAplicada)*100).toFixed(0)}%`:'—',C1+CW-3,y+5,{align:'right'})
-    y+=7
+  doc.setDrawColor(...G); doc.setLineWidth(0.4); doc.line(M, y1 + 0.5, M + COLW, y1 + 0.5); y1 += 1
+  doc.setFillColor(240, 248, 243); doc.rect(M, y1, COLW, 6.5, 'F')
+  doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+  doc.text('Total Realizado', M + 2.5, y1 + 4.4)
+  doc.setTextColor(...G)
+  doc.text(`${nHa(kp.areaAplicada)} ha`, M + COLW * 0.55, y1 + 4.4, { align: 'right' })
+  doc.setFontSize(5.8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+  doc.text(`${cons.aplicados.length} de ${cons.totalTalhoesCatalogo} talhões`, M + COLW - 2.5, y1 + 4.4, { align: 'right' })
+  y1 += 8
+  if (cons.pendentes.length) {
+    doc.setFontSize(5.8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
+    const txt = 'Pendentes no lote: ' + cons.pendentes.map(t => `${t.nome} (${nHa(t.cadastrado)} ha)`).join(', ')
+    const ls = doc.splitTextToSize(txt, COLW - 5)
+    doc.text(ls.slice(0, 3), M + 2.5, y1 + 2.5)
+    y1 += ls.slice(0, 3).length * 3 + 2
+  }
+
+  // ── Seção 2 — Rendimento por piloto ──
+  let y2 = tituloSecao(C2X, yColunas, COLW, 2, 'RENDIMENTO POR PILOTO & EQUIPAMENTO')
+  doc.setFillColor(238, 246, 241); doc.rect(C2X, y2, COLW, 5.5, 'F')
+  doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+  doc.text('PILOTO', C2X + 2.5, y2 + 3.8)
+  doc.text('DRONE', C2X + COLW * 0.36, y2 + 3.8)
+  doc.text('ÁREA', C2X + COLW * 0.70, y2 + 3.8, { align: 'right' })
+  doc.text('PART.', C2X + COLW * 0.82, y2 + 3.8, { align: 'right' })
+  doc.text('TEMPO', C2X + COLW - 2.5, y2 + 3.8, { align: 'right' })
+  y2 += 5.5
+  cons.pilotos.slice(0, 10).forEach((p, i) => {
+    const alt = p.drones.length > 1 ? 8.4 : 5.6
+    if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(C2X, y2, COLW, alt, 'F') }
+    doc.setFontSize(6.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+    doc.text(truncFit(doc, nomeCurto(p.piloto), COLW * 0.33), C2X + 2.5, y2 + 3.9)
+    doc.setFontSize(5.8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    const dr = doc.splitTextToSize(p.drones.length ? p.drones.join(', ') : '—', COLW * 0.32)
+    doc.text(dr.slice(0, 2), C2X + COLW * 0.36, y2 + 3.6)
+    doc.setFontSize(6.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+    doc.text(`${nHa(p.area)} ha`, C2X + COLW * 0.70, y2 + 3.9, { align: 'right' })
+    doc.setTextColor(...G)
+    doc.text(`${nDose(p.participacao)}%`, C2X + COLW * 0.82, y2 + 3.9, { align: 'right' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR)
+    doc.text(fmtMin(p.minutos), C2X + COLW - 2.5, y2 + 3.9, { align: 'right' })
+    y2 += alt
+  })
+  doc.setDrawColor(...G); doc.setLineWidth(0.4); doc.line(C2X, y2 + 0.5, C2X + COLW, y2 + 0.5); y2 += 1
+  doc.setFillColor(240, 248, 243); doc.rect(C2X, y2, COLW, 6.5, 'F')
+  doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+  doc.text('Totais da Operação', C2X + 2.5, y2 + 4.4)
+  doc.setTextColor(...G)
+  doc.text(`${nHa(kp.areaAplicada)} ha`, C2X + COLW * 0.70, y2 + 4.4, { align: 'right' })
+  doc.text('100%', C2X + COLW * 0.82, y2 + 4.4, { align: 'right' })
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(...GR)
+  doc.text(fmtMin(kp.tempoTotalMin), C2X + COLW - 2.5, y2 + 4.4, { align: 'right' })
+  y2 += 8.5
+  cons.destaques.forEach(d => {
+    doc.setFontSize(5.8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    const ls = doc.splitTextToSize('• ' + d, COLW - 4)
+    doc.text(ls, C2X + 2, y2 + 2.4)
+    y2 += ls.length * 3 + 1.4
   })
 
-  // Rodapé col1
-  doc.setFillColor(...G);doc.rect(C1,PH-M-8,CW,9,'F')
-  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
-  doc.text(EMPRESA.site,C1+4,PH-M-3)
-  doc.text(EMPRESA.email,C1+46,PH-M-3)
-  doc.text(EMPRESA.telefone,C1+96,PH-M-3)
-
-  // ═══ CAPA — COL 2: foto geral (opcional) + talhões incluídos + observação do admin ═══
-  let y2=M
-  doc.setDrawColor(200,230,215);doc.setLineWidth(0.5);doc.line(C2-2,M,C2-2,PH-M)
-  if(fotoGeralBase64){
-    try{
-      const p=doc.getImageProperties(fotoGeralBase64)
-      const maxW=CW,maxH=55,r=Math.min(maxW/p.width,maxH/p.height)
-      const iw=p.width*r,ih=p.height*r
-      doc.addImage(fotoGeralBase64,'JPEG',C2+(maxW-iw)/2,y2,iw,ih)
-      y2+=ih+4
-    }catch(e){}
+  // ── Seção 3 — Insumos (largura cheia) ──
+  let y3 = Math.max(y1, y2) + 4
+  y3 = tituloSecao(M, y3, CW, 3, 'BALANÇO CONSOLIDADO DE INSUMOS APLICADOS NO PERÍODO')
+  const colsIns = [
+    ['DEFENSIVO / PRODUTO', M + 2.5, 'left', CW * 0.26],
+    ['FUNÇÃO / CLASSE', M + CW * 0.28, 'left', CW * 0.26],
+    ['DOSE OPERADA', M + CW * 0.66, 'right', CW * 0.14],
+    ['VOLUME CONSOLIDADO', M + CW * 0.82, 'right', CW * 0.14],
+    ['STATUS', M + CW - 2.5, 'right', CW * 0.14],
+  ]
+  doc.setFillColor(238, 246, 241); doc.rect(M, y3, CW, 5.5, 'F')
+  doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+  colsIns.forEach(([t, x, al]) => doc.text(t, x, y3 + 3.8, { align: al }))
+  y3 += 5.5
+  if (cons.insumos.length === 0) {
+    doc.setFontSize(7); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
+    doc.text('Nenhum produto registrado nos voos do período.', M + 2.5, y3 + 4); y3 += 6.5
   }
-  y2=sec(C2,y2,CW,3,'TALHÕES NESTE RELATÓRIO')
-  if(talhoesParaListar.length===0){
-    doc.setFillColor(255,255,255);doc.rect(C2,y2,CW,7,'F')
-    doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
-    doc.text('Nenhum talhão selecionado.',C2+3,y2+5)
-    y2+=7
-  }
-  talhoesParaListar.forEach((nome,i)=>{
-    if(y2+7 > PH-M-70){ doc.setFontSize(7.5);doc.setFont('helvetica','italic');doc.setTextColor(...GR);doc.text(`+ ${talhoesParaListar.length-i} talhão(ões)...`,C2+3,y2+5);y2+=7;return }
-    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C2,y2,CW,7,'F')
-    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,nome,CW*0.65-4),C2+3,y2+5)
-    doc.text(`${(aplicadaPorTalhao[nome]||0).toFixed(2)} ha`,C2+CW-3,y2+5,{align:'right'})
-    y2+=7
+  cons.insumos.slice(0, 8).forEach((ins, i) => {
+    if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(M, y3, CW, 6.2, 'F') }
+    doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+    doc.text(truncFit(doc, ins.nome, CW * 0.25), M + 2.5, y3 + 4.2)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.4); doc.setTextColor(...GR)
+    doc.text(truncFit(doc, ins.classe || '—', CW * 0.36), M + CW * 0.28, y3 + 4.2)
+    doc.setFontSize(6.6); doc.setTextColor(...DK)
+    const dose = ins.doseMin == null ? '—'
+      : (ins.doseMin === ins.doseMax ? `${nDose(ins.doseMin)} ${ins.unidade}/ha` : `${nDose(ins.doseMin)} a ${nDose(ins.doseMax)} ${ins.unidade}/ha`)
+    doc.text(dose, M + CW * 0.66, y3 + 4.2, { align: 'right' })
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
+    doc.text(`${nHa(ins.volume)} ${ins.unidade}`, M + CW * 0.82, y3 + 4.2, { align: 'right' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.6); doc.setTextColor(...GR)
+    doc.text('CONFORME CALDA', M + CW - 2.5, y3 + 4.2, { align: 'right' })
+    y3 += 6.2
   })
-  y2+=4
 
-  if(observacaoAdmin && observacaoAdmin.trim()){
-    y2=sec(C2,y2,CW,4,'OBSERVAÇÕES')
-    doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    const linhas = doc.splitTextToSize(observacaoAdmin.trim(), CW-6)
-    doc.text(linhas, C2+3, y2+4)
-    y2 += linhas.length*4.5+4
+  if (observacaoAdmin && observacaoAdmin.trim()) {
+    y3 += 3
+    y3 = tituloSecao(M, y3, CW, 4, 'OBSERVAÇÕES')
+    doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
+    const ls = doc.splitTextToSize(observacaoAdmin.trim(), CW - 6)
+    doc.text(ls.slice(0, 4), M + 2.5, y3 + 3.5)
   }
 
-  // Rodapé col2
-  doc.setFillColor(...G);doc.rect(C2,PH-M-8,CW,9,'F')
-  doc.setFillColor(45,155,75);doc.circle(C2+5,PH-M-3.5,3,'F')
-  doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...W)
-  doc.text('Orofly — Tecnologia que protege, resultados que voam.',C2+11,PH-M-2.5)
+  // ── Rodapé corporativo ──
+  const rodY = PH - M - 13
+  doc.setDrawColor(...G); doc.setLineWidth(0.5); doc.line(M, rodY, PW - M, rodY)
+  doc.setFontSize(6.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+  doc.text((EMPRESA.razao_social || EMPRESA.nome || 'OROFLY').toUpperCase(), M, rodY + 4.5)
+  const cadastrais = [
+    EMPRESA.cnpj ? `CNPJ ${EMPRESA.cnpj}` : null,
+    EMPRESA.registro_mapa ? `MAPA ${EMPRESA.registro_mapa}` : null,
+    EMPRESA.registro_anac ? `ANAC ${EMPRESA.registro_anac}` : null,
+    EMPRESA.cidade_uf || null,
+  ].filter(Boolean).join('  •  ')
+  doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+  if (cadastrais) doc.text(cadastrais, M, rodY + 8.5)
+  const contato = [EMPRESA.email, EMPRESA.telefone, EMPRESA.site].filter(Boolean).join('  •  ')
+  doc.text(contato, PW - M, rodY + 4.5, { align: 'right' })
+  doc.setTextColor(...G)
+  doc.text('Tecnologia que protege, resultados que voam.', PW - M, rodY + 8.5, { align: 'right' })
+
 
   // ═══ PÁGINAS SEGUINTES — um relatório completo por voo (igual o PDF Cliente
   // individual: mapa, produtos, clima, dados do voo), agrupado por talhão. ═══
@@ -939,6 +972,12 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, dataIni, dataFim, 
       await gerarPDFCliente(rel, { supabase, pdfConfig, doc })
     }catch(e){ console.error('Falha ao anexar relatório do voo no consolidado:', rel.id, e) }
   }
+
+  // "Página 1 de X" — só dá pra escrever agora, depois que as páginas de detalhe entraram e
+  // o total é conhecido. Volta na página 1 e carimba no rodapé.
+  doc.setPage(1)
+  doc.setFontSize(5.6); doc.setFont('helvetica','normal'); doc.setTextColor(...GR)
+  doc.text(`Página 1 de ${doc.getNumberOfPages()}`, 210/2, 297-10+8.5, { align:'center' })
 
   return doc
 }

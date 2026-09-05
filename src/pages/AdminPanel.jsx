@@ -13,6 +13,7 @@ import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
+import { agregarConsolidado } from '../lib/consolidado'
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
@@ -182,7 +183,7 @@ export default function AdminPanel({ onSwitchMode }) {
   // (chave 'config_geral') pra não multiplicar linhas na tabela. Carregada uma vez ao abrir
   // o app (não só na tela de Configurações), porque empresa/limites afetam PDF e telas de
   // clima usadas em qualquer lugar do Admin.
-  const EMPRESA_CFG_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br', logo_url: '' }
+  const EMPRESA_CFG_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br', logo_url: '', razao_social: '', cnpj: '', cidade_uf: '', registro_mapa: '', registro_anac: '' }
   const LIMITES_CFG_PADRAO = { ventoMin: 3, ventoMax: 15, deltaTMin: 2, deltaTIdealMax: 7, deltaTAlertaMax: 8 }
   const WIZARD_CFG_PADRAO = { velocidadeDrone: '', altura: '', faixa: '' }
   const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO })
@@ -829,9 +830,15 @@ export default function AdminPanel({ onSwitchMode }) {
         const tpl = await resolverTemplate(supabase, fz.cliente)
         if (tpl?.pdf_config && Object.keys(tpl.pdf_config).length) pdfConfig = tpl.pdf_config
       } catch (e) { console.warn('Falha ao resolver template de PDF, usando padrão:', e) }
+      // Agrega primeiro, gera depois. O PDF virou renderizador puro — quem calcula área,
+      // tempo, participação e insumos é o consolidado.js, que roda no Node sem jsPDF e por
+      // isso dá pra auditar os números sem abrir documento.
+      const cons = agregarConsolidado({
+        voos: voosPeriodo, talhoesCatalogo, talhoesSelecionados: talhoesSel,
+        areaTotalCadastrada: fz.areaTotal, produtosCatalogo: invProdutos,
+      })
       const doc = await gerarPDFFazendaPeriodo({
-        fazenda: fz, voos: voosPeriodo, dataIni: iniEfetivo, dataFim: fimEfetivo, areaTotalCadastrada: fz.areaTotal,
-        talhoesCatalogo, talhoesSelecionados: talhoesSel, observacaoAdmin: relatorioPeriodoObs,
+        fazenda: fz, voos: voosPeriodo, cons, observacaoAdmin: relatorioPeriodoObs,
         fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
       })
       const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${iniEfetivo}-a-${fimEfetivo}`
@@ -3565,7 +3572,9 @@ export default function AdminPanel({ onSwitchMode }) {
                         {produtoModal==='novo'?'🧪 Novo Produto':'✏️ Editar Produto'}
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                        {[['NOME DO PRODUTO','nome','text','Ex: Triclon'],['FABRICANTE','fabricante','text','Syngenta'],['UNIDADE','unidade','text','L'],['REGISTRO MAPA','registro_mapa','text','BR-00000']].map(([lbl,key,type,ph])=>(
+                        {/* CLASSE alimenta a coluna "Função / Classe" da seção de insumos do
+                            relatório consolidado. Vazia, a coluna sai com "—". */}
+                        {[['NOME DO PRODUTO','nome','text','Ex: Triclon'],['FUNÇÃO / CLASSE','classe','text','Ex: Herbicida Sistêmico'],['FABRICANTE','fabricante','text','Syngenta'],['UNIDADE','unidade','text','L'],['REGISTRO MAPA','registro_mapa','text','BR-00000']].map(([lbl,key,type,ph])=>(
                           <div key={key} style={{gridColumn:key==='nome'?'1/-1':'auto'}}>
                             <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>{lbl}</div>
                             <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
@@ -7173,6 +7182,25 @@ function PersonalizacaoRelatorios({ configGeral, onSalvarConfigGeral, configGera
             <div><label style={labelSt}>SITE</label><input style={inputSt} value={draftEmpresa.site} onChange={e=>setDraftEmpresa(d=>({...d,site:e.target.value}))}/></div>
           </div>
           <div><label style={labelSt}>E-MAIL</label><input style={inputSt} value={draftEmpresa.email} onChange={e=>setDraftEmpresa(d=>({...d,email:e.target.value}))}/></div>
+
+          {/* Dados cadastrais — rodapé corporativo do Relatório Consolidado. Ficam no mesmo
+              JSON de config_geral, sem migração. Campo vazio simplesmente não é impresso. */}
+          <div style={{ borderTop:`1px solid ${theme.cardBorder2}`, paddingTop:12, marginTop:4 }}>
+            <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:10 }}>
+              Dados cadastrais do rodapé do Relatório Consolidado. O que ficar em branco não é impresso.
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <div><label style={labelSt}>RAZÃO SOCIAL</label><input style={inputSt} placeholder="Ex: Orofly Serviços Agrícolas Ltda" value={draftEmpresa.razao_social||''} onChange={e=>setDraftEmpresa(d=>({...d,razao_social:e.target.value}))}/></div>
+              <div style={grid2}>
+                <div><label style={labelSt}>CNPJ</label><input style={inputSt} placeholder="00.000.000/0001-00" value={draftEmpresa.cnpj||''} onChange={e=>setDraftEmpresa(d=>({...d,cnpj:e.target.value}))}/></div>
+                <div><label style={labelSt}>CIDADE / UF</label><input style={inputSt} placeholder="Ribeirão Preto - SP" value={draftEmpresa.cidade_uf||''} onChange={e=>setDraftEmpresa(d=>({...d,cidade_uf:e.target.value}))}/></div>
+              </div>
+              <div style={grid2}>
+                <div><label style={labelSt}>REGISTRO MAPA</label><input style={inputSt} placeholder="Nº do registro" value={draftEmpresa.registro_mapa||''} onChange={e=>setDraftEmpresa(d=>({...d,registro_mapa:e.target.value}))}/></div>
+                <div><label style={labelSt}>REGISTRO ANAC</label><input style={inputSt} placeholder="Nº do registro" value={draftEmpresa.registro_anac||''} onChange={e=>setDraftEmpresa(d=>({...d,registro_anac:e.target.value}))}/></div>
+              </div>
+            </div>
+          </div>
         </div>
         {alteradoEmpresa && (
           <div style={{display:'flex',gap:8,marginTop:14}}>
