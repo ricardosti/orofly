@@ -386,6 +386,10 @@ export default function AdminPanel({ onSwitchMode }) {
   // responde "o que foi feito"; listar o que nunca começou é uma escolha de quem envia,
   // porque muda a leitura do documento pro cliente.
   const [relatorioPeriodoIncluirPendentes, setRelatorioPeriodoIncluirPendentes] = useState(false)
+  // Mapa de cobertura: junta os KML dos voos do período num mapa só. Fora por padrão porque
+  // depende de requisição externa (Geoapify) — sem sinal ou com o serviço fora, o relatório
+  // continua saindo, só sem o mapa.
+  const [relatorioPeriodoIncluirMapa, setRelatorioPeriodoIncluirMapa] = useState(false)
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
@@ -867,7 +871,9 @@ export default function AdminPanel({ onSwitchMode }) {
         areaTotalCadastrada: fz.areaTotal, produtosCatalogo: invProdutos,
       })
       const doc = await gerarPDFFazendaPeriodo({
-        fazenda: fz, voos: voosPeriodo, cons, incluirPendentes: relatorioPeriodoIncluirPendentes,
+        fazenda: fz, voos: voosPeriodo, cons,
+        incluirPendentes: relatorioPeriodoIncluirPendentes,
+        incluirMapa: relatorioPeriodoIncluirMapa,
         observacaoAdmin: relatorioPeriodoObs,
         fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
       })
@@ -4165,6 +4171,19 @@ export default function AdminPanel({ onSwitchMode }) {
                         <span>
                           <span style={{fontSize:12.5,fontWeight:600,color:theme.text,display:'block'}}>Incluir talhões não iniciados</span>
                           <span style={{fontSize:11,color:theme.textMuted}}>Lista na tabela também os talhões sem nenhuma aplicação no período, com status <b>NÃO INICIADO</b>. Desmarcado, eles aparecem só na nota de pendentes embaixo da tabela.</span>
+                        </span>
+                      </label>
+
+                      {/* Mapa de cobertura — página "Geral da Fazenda". Depende de requisição
+                          externa, então fica desligado por padrão: sem ele o relatório sai
+                          igual, só sem a página do mapa. */}
+                      <label style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:14,cursor:'pointer',background:theme.bg,borderRadius:10,padding:'10px 12px'}}>
+                        <input type="checkbox" style={{marginTop:2,cursor:'pointer',flexShrink:0}}
+                          checked={relatorioPeriodoIncluirMapa}
+                          onChange={e=>setRelatorioPeriodoIncluirMapa(e.target.checked)}/>
+                        <span>
+                          <span style={{fontSize:12.5,fontWeight:600,color:theme.text,display:'block'}}>Incluir mapa de cobertura (KML dos voos)</span>
+                          <span style={{fontSize:11,color:theme.textMuted}}>Junta os trajetos KML dos voos do período num mapa só, numa página <b>Geral da Fazenda</b> — junto com a foto, se você escolher uma. Cada voo sai de uma cor. Demora alguns segundos a mais porque o mapa é buscado na internet.</span>
                         </span>
                       </label>
 

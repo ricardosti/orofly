@@ -168,6 +168,71 @@ async function gerarMapaKML(supabase, rel) {
   }
 }
 
+// ── Mapa consolidado da fazenda: TODOS os trajetos do período num mapa só ──
+//
+// Diferente do gerarMapaKML, que desenha um voo. Aqui a graça é ver a fazenda inteira e
+// entender a cobertura — quais talhões foram varridos e quais ficaram de fora.
+//
+// Dois cuidados que decidem se isso funciona ou quebra:
+//  1. A URL da Geoapify é GET. Um voo de 3h gera milhares de pontos; jogar todos derruba a
+//     requisição no limite de tamanho. Por isso cada trajeto é reduzido a no máximo
+//     MAX_PONTOS pontos, pegando um a cada N — a forma do trajeto se mantém.
+//  2. Muitos voos também estouram. Acima de MAX_TRAJETOS o mapa sai com os primeiros e o
+//     PDF avisa, em vez de vir quebrado sem explicação.
+const MAPA_MAX_PONTOS = 60
+const MAPA_MAX_TRAJETOS = 12
+const MAPA_CORES = ['%23e74c3c','%232980b9','%2327ae60','%238e44ad','%23d35400','%2316a085']
+
+export async function gerarMapaKMLConsolidado(supabase, voos) {
+  if (!supabase) return null
+  const comKml = (voos || []).filter(r => (r.kml_paths || []).length > 0)
+  if (!comKml.length) return null
+
+  const trajetos = []
+  for (const rel of comKml.slice(0, MAPA_MAX_TRAJETOS)) {
+    try {
+      const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(rel.kml_paths[0], 300)
+      if (!signed?.signedUrl) continue
+      const texto = await (await fetch(signed.signedUrl)).text()
+      const pontos = parseKMLCoords(texto)
+      if (pontos.length < 2) continue
+      const passo = Math.max(1, Math.ceil(pontos.length / MAPA_MAX_PONTOS))
+      const reduzido = pontos.filter((_, i) => i % passo === 0)
+      if (reduzido[reduzido.length - 1] !== pontos[pontos.length - 1]) reduzido.push(pontos[pontos.length - 1])
+      trajetos.push(reduzido)
+    } catch (e) { console.warn('KML do voo ignorado no mapa consolidado:', rel.id, e) }
+  }
+  if (!trajetos.length) return null
+
+  const todos = trajetos.flat()
+  const lats = todos.map(p => p.lat), lngs = todos.map(p => p.lng)
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
+  const maxDiff = Math.max(maxLat - minLat, maxLng - minLng)
+  const zoom = maxDiff > 0.08 ? 12 : maxDiff > 0.05 ? 13 : maxDiff > 0.02 ? 14 : maxDiff > 0.01 ? 15 : 16
+
+  const geometrias = trajetos.map((pts, i) => {
+    const gj = encodeURIComponent(JSON.stringify({ type:'Feature', geometry:{ type:'LineString', coordinates: pts.map(p => [p.lng, p.lat]) } }))
+    return `geometry=polyline:${gj};linecolor:${MAPA_CORES[i % MAPA_CORES.length]};linewidth:3;lineopacity:0.9`
+  }).join('&')
+
+  const apiKey = 'a30b45f023014b63bc0db4a88e6a15fd'
+  const url = `https://maps.geoapify.com/v1/staticmap?style=osm-bright&width=900&height=640`
+    + `&center=lonlat:${(minLng+maxLng)/2},${(minLat+maxLat)/2}&zoom=${zoom}&${geometrias}&apiKey=${apiKey}`
+
+  try {
+    const res = await fetch(url)
+    if (!res.ok) { console.warn('Geoapify recusou o mapa consolidado:', res.status); return null }
+    const blob = await res.blob()
+    const img = await new Promise(resolve => {
+      const r = new FileReader()
+      r.onload = () => resolve(r.result); r.onerror = () => resolve(null)
+      r.readAsDataURL(blob)
+    })
+    return img ? { img, trajetos: trajetos.length, total: comKml.length } : null
+  } catch (e) { console.warn('Erro no mapa consolidado:', e); return null }
+}
+
 // ============================================================
 // PDF CLIENTE v7 — layout fiel icones corrigidos
 // ============================================================
@@ -696,7 +761,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // Página 1 é o dashboard executivo em RETRATO; as páginas de detalhe por voo continuam
 // paisagem (o renderRelatorioCompleto adiciona cada uma com addPage([297,210],'l')).
 // `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
-export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
   const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
   const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
@@ -705,6 +770,9 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   function fmtMin(m){ const h=Math.floor(m/60), mm=m%60; return h>0?`${h}h ${String(mm).padStart(2,'0')}min`:`${mm}min` }
 
   const voosOrd = [...(voos||[])].sort((a,b)=>new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at))
+  // Busca o mapa ANTES de desenhar: é uma requisição externa que pode falhar ou demorar, e
+  // saber o resultado agora evita criar a página 2 e descobrir depois que não há o que pôr.
+  const mapaConsolidado = incluirMapa ? await gerarMapaKMLConsolidado(supabase, voosOrd) : null
 
   function fundoBranco(){ doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F') }
 
@@ -984,6 +1052,67 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   doc.setTextColor(...G)
   doc.text('Tecnologia que protege, resultados que voam.', PW - M, rodY + 8.5, { align: 'right' })
 
+
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  // PÁGINA 2 — GERAL DA FAZENDA (retrato): foto e mapa de cobertura
+  //
+  // Só existe quando há o que mostrar. Sem foto e sem KML, a página não é criada — relatório
+  // não ganha folha em branco por causa de uma opção que ninguém usou.
+  // ═══════════════════════════════════════════════════════════════════════════════════
+  if (fotoGeralBase64 || mapaConsolidado) {
+    doc.addPage('a4', 'p')
+    fundoBranco()
+    let yg = M
+
+    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+    doc.text('GERAL DA FAZENDA', M, yg + 6)
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    doc.text(`${fazenda.cliente || '—'} • ${fazenda.nome || '—'}`, PW - M, yg + 6, { align: 'right' })
+    yg += 9
+    doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, yg, PW - M, yg); yg += 6
+
+    // A foto e o mapa dividem a altura útil. Com os dois, cada um fica com metade; com um
+    // só, ele ocupa o espaço todo — senão sobra um vazio esquisito no meio da página.
+    const alturaUtil = PH - yg - M - 14
+    const alturaBloco = (fotoGeralBase64 && mapaConsolidado) ? (alturaUtil - 8) / 2 : alturaUtil
+
+    if (fotoGeralBase64) {
+      yg = tituloSecao(M, yg, CW, 1, 'FOTO GERAL DA FAZENDA')
+      try {
+        const prop = doc.getImageProperties(fotoGeralBase64)
+        const escala = Math.min(CW / prop.width, (alturaBloco - 12) / prop.height)
+        const w = prop.width * escala, h = prop.height * escala
+        doc.addImage(fotoGeralBase64, 'JPEG', M + (CW - w) / 2, yg, w, h)
+        yg += h + 6
+      } catch (e) {
+        doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
+        doc.text('Não foi possível carregar a foto.', M + 2, yg + 5); yg += 10
+      }
+    }
+
+    if (mapaConsolidado) {
+      yg = tituloSecao(M, yg, CW, fotoGeralBase64 ? 2 : 1, 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
+      try {
+        const prop = doc.getImageProperties(mapaConsolidado.img)
+        const escala = Math.min(CW / prop.width, (alturaBloco - 16) / prop.height)
+        const w = prop.width * escala, h = prop.height * escala
+        doc.addImage(mapaConsolidado.img, 'PNG', M + (CW - w) / 2, yg, w, h)
+        yg += h + 4
+      } catch (e) {
+        doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
+        doc.text('Não foi possível carregar o mapa.', M + 2, yg + 5); yg += 10
+      }
+      doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+      const legenda = mapaConsolidado.trajetos < mapaConsolidado.total
+        ? `Trajetos de ${mapaConsolidado.trajetos} dos ${mapaConsolidado.total} voos com KML no período — cada cor é um voo. Os demais ficaram de fora do desenho por limite do mapa.`
+        : `Trajetos dos ${mapaConsolidado.trajetos} voos com KML no período — cada cor é um voo.`
+      doc.text(doc.splitTextToSize(legenda, CW), M, yg + 3)
+    }
+
+    doc.setDrawColor(...G); doc.setLineWidth(0.5); doc.line(M, PH - M - 6, PW - M, PH - M - 6)
+    doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    doc.text((EMPRESA.razao_social || EMPRESA.nome || 'OROFLY').toUpperCase(), M, PH - M - 2)
+  }
 
   // ═══ PÁGINAS SEGUINTES — um relatório completo por voo (igual o PDF Cliente
   // individual: mapa, produtos, clima, dados do voo), agrupado por talhão. ═══
