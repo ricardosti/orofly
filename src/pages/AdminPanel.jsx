@@ -389,7 +389,12 @@ export default function AdminPanel({ onSwitchMode }) {
   // Mapa de cobertura: junta os KML dos voos do período num mapa só. Fora por padrão porque
   // depende de requisição externa (Geoapify) — sem sinal ou com o serviço fora, o relatório
   // continua saindo, só sem o mapa.
-  const [relatorioPeriodoIncluirMapa, setRelatorioPeriodoIncluirMapa] = useState(false)
+  // 'nenhum' | 'voos' | 'upload'. O upload existe porque nem todo voo tem KML anexado — na
+  // prática é a minoria —, e a fazenda quase sempre tem o contorno dela em algum arquivo.
+  const [relatorioPeriodoMapaModo, setRelatorioPeriodoMapaModo] = useState('nenhum')
+  const [relatorioPeriodoKmlTexto, setRelatorioPeriodoKmlTexto] = useState(null)
+  const [relatorioPeriodoKmlNome, setRelatorioPeriodoKmlNome] = useState('')
+  const [relatorioPeriodoMidiaPag1, setRelatorioPeriodoMidiaPag1] = useState(true)
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
   const [fzGeoLoading, setFzGeoLoading] = useState(false)
@@ -873,7 +878,9 @@ export default function AdminPanel({ onSwitchMode }) {
       const doc = await gerarPDFFazendaPeriodo({
         fazenda: fz, voos: voosPeriodo, cons,
         incluirPendentes: relatorioPeriodoIncluirPendentes,
-        incluirMapa: relatorioPeriodoIncluirMapa,
+        incluirMapa: relatorioPeriodoMapaModo === 'voos',
+        kmlFazendaTexto: relatorioPeriodoMapaModo === 'upload' ? relatorioPeriodoKmlTexto : null,
+        midiaNaPagina1: relatorioPeriodoMidiaPag1,
         observacaoAdmin: relatorioPeriodoObs,
         fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
       })
@@ -4174,18 +4181,78 @@ export default function AdminPanel({ onSwitchMode }) {
                         </span>
                       </label>
 
-                      {/* Mapa de cobertura — página "Geral da Fazenda". Depende de requisição
-                          externa, então fica desligado por padrão: sem ele o relatório sai
-                          igual, só sem a página do mapa. */}
-                      <label style={{display:'flex',alignItems:'flex-start',gap:8,marginBottom:14,cursor:'pointer',background:theme.bg,borderRadius:10,padding:'10px 12px'}}>
-                        <input type="checkbox" style={{marginTop:2,cursor:'pointer',flexShrink:0}}
-                          checked={relatorioPeriodoIncluirMapa}
-                          onChange={e=>setRelatorioPeriodoIncluirMapa(e.target.checked)}/>
-                        <span>
-                          <span style={{fontSize:12.5,fontWeight:600,color:theme.text,display:'block'}}>Incluir mapa de cobertura (KML dos voos)</span>
-                          <span style={{fontSize:11,color:theme.textMuted}}>Junta os trajetos KML dos voos do período num mapa só, numa página <b>Geral da Fazenda</b> — junto com a foto, se você escolher uma. Cada voo sai de uma cor. Demora alguns segundos a mais porque o mapa é buscado na internet.</span>
-                        </span>
-                      </label>
+                      {/* Mapa da página "Geral da Fazenda" — duas origens possíveis. Depende
+                          de requisição externa, então nenhum é o padrão: sem mapa o relatório
+                          sai igual, só sem essa parte da página. */}
+                      <div style={{marginBottom:14,background:theme.bg,borderRadius:10,padding:'10px 12px'}}>
+                        <div style={{fontSize:12.5,fontWeight:600,color:theme.text,marginBottom:8}}>Mapa na página Geral da Fazenda</div>
+                        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                          {[
+                            ['nenhum','Sem mapa','A página sai só com a foto, se você escolher uma.'],
+                            ['voos','Juntar os KML dos voos','Mostra por onde o drone passou de fato no período, cada voo de uma cor. Só funciona nos voos que têm KML anexado.'],
+                            ['upload','Enviar um KML da fazenda','Um arquivo só com o contorno ou a talhonagem da fazenda. Use quando os voos não têm KML.'],
+                          ].map(([val,titulo,sub])=>(
+                            <label key={val} style={{display:'flex',alignItems:'flex-start',gap:8,cursor:'pointer'}}>
+                              <input type="radio" name="mapaModo" style={{marginTop:3,cursor:'pointer',flexShrink:0}}
+                                checked={relatorioPeriodoMapaModo===val}
+                                onChange={()=>setRelatorioPeriodoMapaModo(val)}/>
+                              <span>
+                                <span style={{fontSize:12,fontWeight:600,color:theme.text,display:'block'}}>{titulo}</span>
+                                <span style={{fontSize:10.5,color:theme.textMuted}}>{sub}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        {relatorioPeriodoMapaModo==='upload' && (
+                          <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                            <label style={{display:'block',border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:10,padding:'10px 12px',textAlign:'center',cursor:'pointer',background:theme.card}}>
+                              <input type="file" accept=".kml,application/vnd.google-earth.kml+xml,text/xml" style={{display:'none'}}
+                                onChange={async e=>{
+                                  const f=e.target.files?.[0]; if(!f) return
+                                  try{
+                                    const txt=await f.text()
+                                    setRelatorioPeriodoKmlTexto(txt); setRelatorioPeriodoKmlNome(f.name)
+                                  }catch(err){ console.error(err); showToast('Não consegui ler esse arquivo','error') }
+                                }}/>
+                              <span style={{fontSize:12,color:relatorioPeriodoKmlNome?'#059669':theme.textMuted,fontWeight:relatorioPeriodoKmlNome?600:400}}>
+                                {relatorioPeriodoKmlNome ? `🛰️ ${relatorioPeriodoKmlNome}` : '🛰️ Escolher arquivo .kml'}
+                              </span>
+                            </label>
+                            {relatorioPeriodoKmlNome && (
+                              <button type="button" style={{background:'none',border:'none',color:theme.dangerText,fontSize:11,cursor:'pointer',padding:'6px 0 0'}}
+                                onClick={()=>{setRelatorioPeriodoKmlTexto(null);setRelatorioPeriodoKmlNome('')}}>Remover arquivo</button>
+                            )}
+                            <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:6}}>
+                              O arquivo é usado só pra desenhar este relatório — não fica salvo no cadastro da fazenda.
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Onde a foto e o mapa entram. Na página 1 eles ocupam a sobra
+                            abaixo dos insumos; se não couber (fazenda com muitos talhões),
+                            o gerador cai sozinho pra página separada em vez de espremer. */}
+                        {(relatorioPeriodoMapaModo!=='nenhum' || relatorioPeriodoFotoBase64) && (
+                          <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                            <div style={{fontSize:11.5,fontWeight:600,color:theme.text,marginBottom:6}}>Onde colocar a foto e o mapa</div>
+                            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                              {[
+                                [true,'Na página 1','Lado a lado, no espaço que sobra abaixo dos insumos. Relatório mais enxuto.'],
+                                [false,'Em página separada','Página 2 "Geral da Fazenda", com a foto e o mapa maiores.'],
+                              ].map(([val,titulo,sub])=>(
+                                <label key={String(val)} style={{display:'flex',alignItems:'flex-start',gap:8,cursor:'pointer'}}>
+                                  <input type="radio" name="midiaOnde" style={{marginTop:3,cursor:'pointer',flexShrink:0}}
+                                    checked={relatorioPeriodoMidiaPag1===val}
+                                    onChange={()=>setRelatorioPeriodoMidiaPag1(val)}/>
+                                  <span>
+                                    <span style={{fontSize:12,fontWeight:600,color:theme.text,display:'block'}}>{titulo}</span>
+                                    <span style={{fontSize:10.5,color:theme.textMuted}}>{sub}</span>
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       <div style={{marginBottom:14}}>
                         <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>OBSERVAÇÕES (opcional, aparece na capa)</div>

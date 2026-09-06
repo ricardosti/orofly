@@ -181,56 +181,97 @@ async function gerarMapaKML(supabase, rel) {
 //     PDF avisa, em vez de vir quebrado sem explicação.
 const MAPA_MAX_PONTOS = 60
 const MAPA_MAX_TRAJETOS = 12
-const MAPA_CORES = ['%23e74c3c','%232980b9','%2327ae60','%238e44ad','%23d35400','%2316a085']
+const MAPA_CORES = [[231,76,60],[41,128,185],[39,174,96],[142,68,173],[211,84,0],[22,160,133]]
 
-export async function gerarMapaKMLConsolidado(supabase, voos) {
-  if (!supabase) return null
-  const comKml = (voos || []).filter(r => (r.kml_paths || []).length > 0)
-  if (!comKml.length) return null
+// Reduz um traçado a no máximo MAPA_MAX_PONTOS pontos mantendo início e fim — a forma
+// sobrevive e a URL não estoura.
+function reduzirPontos(pontos) {
+  if (pontos.length <= MAPA_MAX_PONTOS) return pontos
+  const passo = Math.ceil(pontos.length / MAPA_MAX_PONTOS)
+  const out = pontos.filter((_, i) => i % passo === 0)
+  const ultimo = pontos[pontos.length - 1]
+  if (out[out.length - 1] !== ultimo) out.push(ultimo)
+  return out
+}
 
-  const trajetos = []
-  for (const rel of comKml.slice(0, MAPA_MAX_TRAJETOS)) {
-    try {
-      const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(rel.kml_paths[0], 300)
-      if (!signed?.signedUrl) continue
-      const texto = await (await fetch(signed.signedUrl)).text()
-      const pontos = parseKMLCoords(texto)
-      if (pontos.length < 2) continue
-      const passo = Math.max(1, Math.ceil(pontos.length / MAPA_MAX_PONTOS))
-      const reduzido = pontos.filter((_, i) => i % passo === 0)
-      if (reduzido[reduzido.length - 1] !== pontos[pontos.length - 1]) reduzido.push(pontos[pontos.length - 1])
-      trajetos.push(reduzido)
-    } catch (e) { console.warn('KML do voo ignorado no mapa consolidado:', rel.id, e) }
-  }
-  if (!trajetos.length) return null
-
+// Duas origens possíveis pro mapa, escolhidas pelo admin na hora de gerar:
+//  - kmlTexto: um KML único da fazenda (contorno, talhonagem) que ele sobe no momento.
+//    Serve quando os voos não têm KML anexado, que é o caso mais comum.
+//  - os KML dos próprios voos, que mostram por onde o drone passou de fato.
+// Desenha os traçados como vetor no próprio PDF, sem serviço externo.
+//
+// A versão anterior buscava uma imagem de mapa na Geoapify com uma chave "free tier" fixa no
+// código — que responde 401. Ou seja, o mapa nunca aparecia: a função devolvia null e o PDF
+// saía sem ele, em silêncio. Desenhar aqui elimina a chave, a rede, o limite diário e o modo
+// de falha. Não tem imagem de satélite por baixo, mas pra contorno de talhão e cobertura de
+// voo a forma é o que importa.
+//
+// Projeção: equirretangular simples com correção de longitude por cos(lat). Numa fazenda
+// (poucos km) a distorção é irrelevante e evita depender de biblioteca de projeção.
+function desenharTrajetos(doc, x, y, w, h, trajetos, cores) {
   const todos = trajetos.flat()
+  if (!todos.length) return
   const lats = todos.map(p => p.lat), lngs = todos.map(p => p.lng)
   const minLat = Math.min(...lats), maxLat = Math.max(...lats)
   const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
-  const maxDiff = Math.max(maxLat - minLat, maxLng - minLng)
-  const zoom = maxDiff > 0.08 ? 12 : maxDiff > 0.05 ? 13 : maxDiff > 0.02 ? 14 : maxDiff > 0.01 ? 15 : 16
+  const latMed = (minLat + maxLat) / 2
+  const kx = Math.cos(latMed * Math.PI / 180)
 
-  const geometrias = trajetos.map((pts, i) => {
-    const gj = encodeURIComponent(JSON.stringify({ type:'Feature', geometry:{ type:'LineString', coordinates: pts.map(p => [p.lng, p.lat]) } }))
-    return `geometry=polyline:${gj};linecolor:${MAPA_CORES[i % MAPA_CORES.length]};linewidth:3;lineopacity:0.9`
-  }).join('&')
+  const larguraGeo = Math.max((maxLng - minLng) * kx, 1e-9)
+  const alturaGeo = Math.max(maxLat - minLat, 1e-9)
+  // Mantém a proporção real do terreno — sem isso um talhão comprido sai achatado.
+  const escala = Math.min((w - 8) / larguraGeo, (h - 8) / alturaGeo)
+  const offX = x + (w - larguraGeo * escala) / 2
+  const offY = y + (h - alturaGeo * escala) / 2
+  const px = p => [offX + (p.lng - minLng) * kx * escala, offY + (maxLat - p.lat) * escala]
 
-  const apiKey = 'a30b45f023014b63bc0db4a88e6a15fd'
-  const url = `https://maps.geoapify.com/v1/staticmap?style=osm-bright&width=900&height=640`
-    + `&center=lonlat:${(minLng+maxLng)/2},${(minLat+maxLat)/2}&zoom=${zoom}&${geometrias}&apiKey=${apiKey}`
+  doc.setFillColor(248, 250, 248); doc.rect(x, y, w, h, 'F')
+  doc.setDrawColor(...cores.GR); doc.setLineWidth(0.2); doc.rect(x, y, w, h, 'S')
 
-  try {
-    const res = await fetch(url)
-    if (!res.ok) { console.warn('Geoapify recusou o mapa consolidado:', res.status); return null }
-    const blob = await res.blob()
-    const img = await new Promise(resolve => {
-      const r = new FileReader()
-      r.onload = () => resolve(r.result); r.onerror = () => resolve(null)
-      r.readAsDataURL(blob)
-    })
-    return img ? { img, trajetos: trajetos.length, total: comKml.length } : null
-  } catch (e) { console.warn('Erro no mapa consolidado:', e); return null }
+  trajetos.forEach((pts, i) => {
+    const cor = MAPA_CORES[i % MAPA_CORES.length]
+    doc.setDrawColor(...cor); doc.setLineWidth(0.45)
+    for (let k = 1; k < pts.length; k++) {
+      const [x1, y1] = px(pts[k - 1]), [x2, y2] = px(pts[k])
+      doc.line(x1, y1, x2, y2)
+    }
+  })
+
+  // Escala: sem ela o leitor não tem como saber se está vendo 200 m ou 5 km.
+  const metrosPorMm = 111320 * alturaGeo / (alturaGeo * escala)
+  const alvo = [100, 250, 500, 1000, 2000, 5000].find(m => m / metrosPorMm < w * 0.3) || 5000
+  const mmBarra = alvo / metrosPorMm
+  const bx = x + 4, by = y + h - 4
+  doc.setDrawColor(60, 60, 60); doc.setLineWidth(0.5)
+  doc.line(bx, by, bx + mmBarra, by)
+  doc.line(bx, by - 1, bx, by + 1); doc.line(bx + mmBarra, by - 1, bx + mmBarra, by + 1)
+  doc.setFontSize(5.5); doc.setTextColor(60, 60, 60)
+  doc.text(alvo >= 1000 ? `${alvo / 1000} km` : `${alvo} m`, bx + mmBarra + 1.5, by + 1)
+}
+
+// Extrai os traçados de um KML de fazenda (upload) ou dos KML dos voos do período.
+// Devolve arrays de pontos {lat,lng} — o desenho é feito depois, em vetor, no próprio PDF.
+export async function coletarTrajetos(supabase, voos, kmlTexto = null) {
+  if (kmlTexto) {
+    // KML de fazenda traz um <coordinates> por talhão. Cada bloco vira um traçado próprio,
+    // senão os talhões saem ligados por uma linha reta atravessando a fazenda.
+    const blocos = kmlTexto.match(/<coordinates>[\s\S]*?<\/coordinates>/gi) || []
+    const out = blocos.map(b => reduzirPontos(parseKMLCoords(b))).filter(t => t.length >= 2)
+    return { trajetos: out.slice(0, MAPA_MAX_TRAJETOS), total: out.length, origem: "fazenda" }
+  }
+  if (!supabase) return null
+  const comKml = (voos || []).filter(r => (r.kml_paths || []).length > 0)
+  if (!comKml.length) return null
+  const out = []
+  for (const rel of comKml.slice(0, MAPA_MAX_TRAJETOS)) {
+    try {
+      const { data: signed } = await supabase.storage.from("relatorios").createSignedUrl(rel.kml_paths[0], 300)
+      if (!signed?.signedUrl) continue
+      const pontos = parseKMLCoords(await (await fetch(signed.signedUrl)).text())
+      if (pontos.length >= 2) out.push(reduzirPontos(pontos))
+    } catch (e) { console.warn("KML do voo ignorado:", rel.id, e) }
+  }
+  return out.length ? { trajetos: out, total: comKml.length, origem: "voos" } : null
 }
 
 // ============================================================
@@ -761,7 +802,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // Página 1 é o dashboard executivo em RETRATO; as páginas de detalhe por voo continuam
 // paisagem (o renderRelatorioCompleto adiciona cada uma com addPage([297,210],'l')).
 // `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
-export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, kmlFazendaTexto=null, midiaNaPagina1=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
   const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
   const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
@@ -772,7 +813,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   const voosOrd = [...(voos||[])].sort((a,b)=>new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at))
   // Busca o mapa ANTES de desenhar: é uma requisição externa que pode falhar ou demorar, e
   // saber o resultado agora evita criar a página 2 e descobrir depois que não há o que pôr.
-  const mapaConsolidado = incluirMapa ? await gerarMapaKMLConsolidado(supabase, voosOrd) : null
+  const mapaConsolidado = (incluirMapa || kmlFazendaTexto) ? await coletarTrajetos(supabase, voosOrd, kmlFazendaTexto) : null
 
   function fundoBranco(){ doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F') }
 
@@ -1036,6 +1077,39 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
 
   // ── Rodapé corporativo ──
   const rodY = PH - M - 13
+
+  // ── Foto e mapa NA PÁGINA 1, quando escolhido ──
+  //
+  // Ocupa o espaço que sobra entre os insumos e o rodapé, os dois lado a lado. Só entra se
+  // couber: abaixo de ALTURA_MINIMA_MIDIA o resultado fica ilegível, e aí é melhor cair pra
+  // página separada do que espremer. Uma fazenda com muitos talhões come essa sobra.
+  const ALTURA_MINIMA_MIDIA = 38
+  const espacoLivre = rodY - y3 - 6
+  const cabeNaPagina1 = midiaNaPagina1 && (fotoGeralBase64 || mapaConsolidado) && espacoLivre >= ALTURA_MINIMA_MIDIA
+  if (cabeNaPagina1) {
+    let ym = y3 + 3
+    const dois = fotoGeralBase64 && mapaConsolidado
+    const wBloco = dois ? (CW - 6) / 2 : CW
+    const hBloco = Math.min(espacoLivre - 9, 78)
+
+    if (fotoGeralBase64) {
+      doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+      doc.text('FOTO GERAL DA FAZENDA', M, ym + 3)
+      try {
+        const prop = doc.getImageProperties(fotoGeralBase64)
+        const esc = Math.min(wBloco / prop.width, hBloco / prop.height)
+        const w = prop.width * esc, h = prop.height * esc
+        doc.addImage(fotoGeralBase64, 'JPEG', M + (wBloco - w) / 2, ym + 5, w, h)
+      } catch (e) { console.warn('Foto não pôde ser desenhada na página 1:', e) }
+    }
+    if (mapaConsolidado) {
+      const mx = dois ? M + wBloco + 6 : M
+      doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+      doc.text(mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS', mx, ym + 3)
+      desenharTrajetos(doc, mx, ym + 5, wBloco, hBloco, mapaConsolidado.trajetos, { G, GR })
+    }
+  }
+
   doc.setDrawColor(...G); doc.setLineWidth(0.5); doc.line(M, rodY, PW - M, rodY)
   doc.setFontSize(6.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
   doc.text((EMPRESA.razao_social || EMPRESA.nome || 'OROFLY').toUpperCase(), M, rodY + 4.5)
@@ -1059,7 +1133,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   // Só existe quando há o que mostrar. Sem foto e sem KML, a página não é criada — relatório
   // não ganha folha em branco por causa de uma opção que ninguém usou.
   // ═══════════════════════════════════════════════════════════════════════════════════
-  if (fotoGeralBase64 || mapaConsolidado) {
+  if ((fotoGeralBase64 || mapaConsolidado) && !cabeNaPagina1) {
     doc.addPage('a4', 'p')
     fundoBranco()
     let yg = M
@@ -1091,21 +1165,16 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     }
 
     if (mapaConsolidado) {
-      yg = tituloSecao(M, yg, CW, fotoGeralBase64 ? 2 : 1, 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
-      try {
-        const prop = doc.getImageProperties(mapaConsolidado.img)
-        const escala = Math.min(CW / prop.width, (alturaBloco - 16) / prop.height)
-        const w = prop.width * escala, h = prop.height * escala
-        doc.addImage(mapaConsolidado.img, 'PNG', M + (CW - w) / 2, yg, w, h)
-        yg += h + 4
-      } catch (e) {
-        doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
-        doc.text('Não foi possível carregar o mapa.', M + 2, yg + 5); yg += 10
-      }
+      yg = tituloSecao(M, yg, CW, fotoGeralBase64 ? 2 : 1, mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
+      const hMapa = alturaBloco - 16
+      desenharTrajetos(doc, M, yg, CW, hMapa, mapaConsolidado.trajetos, { G, GR })
+      yg += hMapa + 4
       doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-      const legenda = mapaConsolidado.trajetos < mapaConsolidado.total
-        ? `Trajetos de ${mapaConsolidado.trajetos} dos ${mapaConsolidado.total} voos com KML no período — cada cor é um voo. Os demais ficaram de fora do desenho por limite do mapa.`
-        : `Trajetos dos ${mapaConsolidado.trajetos} voos com KML no período — cada cor é um voo.`
+      const legenda = mapaConsolidado.origem === 'fazenda'
+        ? 'Contorno da fazenda a partir do KML enviado no momento da geração do relatório.'
+        : mapaConsolidado.trajetos < mapaConsolidado.total
+          ? `Trajetos de ${mapaConsolidado.trajetos} dos ${mapaConsolidado.total} voos com KML no período — cada cor é um voo. Os demais ficaram de fora do desenho por limite do mapa.`
+          : `Trajetos dos ${mapaConsolidado.trajetos} voos com KML no período — cada cor é um voo.`
       doc.text(doc.splitTextToSize(legenda, CW), M, yg + 3)
     }
 
