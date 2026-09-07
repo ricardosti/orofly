@@ -15,7 +15,7 @@ export const NOVIDADES = [
       {
         tipo: 'melhoria',
         titulo: 'Mapa do relatório com imagem de satélite',
-        texto: 'O mapa da fazenda no relatório consolidado agora sai sobre imagem de satélite, com os trajetos por cima. Dá pra usar os KML dos próprios voos ou enviar um KML da fazenda na hora de gerar. Sem internet, o mapa sai como desenho — o relatório nunca fica sem ele.',
+        texto: 'O mapa da fazenda no relatório consolidado agora sai sobre imagem de satélite, com os trajetos por cima. Dá pra usar os KML dos próprios voos ou enviar arquivos na hora de gerar — um KML com a fazenda inteira ou vários, um por talhão, dá no mesmo. Sem internet, o mapa sai como desenho: o relatório nunca fica sem ele.',
       },
       {
         tipo: 'correcao',
