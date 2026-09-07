@@ -392,8 +392,7 @@ export default function AdminPanel({ onSwitchMode }) {
   // 'nenhum' | 'voos' | 'upload'. O upload existe porque nem todo voo tem KML anexado — na
   // prática é a minoria —, e a fazenda quase sempre tem o contorno dela em algum arquivo.
   const [relatorioPeriodoMapaModo, setRelatorioPeriodoMapaModo] = useState('nenhum')
-  const [relatorioPeriodoKmlTexto, setRelatorioPeriodoKmlTexto] = useState(null)
-  const [relatorioPeriodoKmlNome, setRelatorioPeriodoKmlNome] = useState('')
+  const [relatorioPeriodoKmls, setRelatorioPeriodoKmls] = useState([])
   const [relatorioPeriodoMidiaPag1, setRelatorioPeriodoMidiaPag1] = useState(true)
   const [fzModal, setFzModal] = useState(false)
   const [fzEditId, setFzEditId] = useState(null)
@@ -879,7 +878,7 @@ export default function AdminPanel({ onSwitchMode }) {
         fazenda: fz, voos: voosPeriodo, cons,
         incluirPendentes: relatorioPeriodoIncluirPendentes,
         incluirMapa: relatorioPeriodoMapaModo === 'voos',
-        kmlFazendaTexto: relatorioPeriodoMapaModo === 'upload' ? relatorioPeriodoKmlTexto : null,
+        kmlsFazenda: relatorioPeriodoMapaModo === 'upload' ? relatorioPeriodoKmls.map(k=>k.texto) : null,
         midiaNaPagina1: relatorioPeriodoMidiaPag1,
         observacaoAdmin: relatorioPeriodoObs,
         fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
@@ -4205,25 +4204,38 @@ export default function AdminPanel({ onSwitchMode }) {
                         </div>
                         {relatorioPeriodoMapaModo==='upload' && (
                           <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                            {/* Aceita um arquivo com a fazenda toda OU um lote com um por
+                                talhão — dá no mesmo, porque cada <coordinates> vira um
+                                traçado. Seleção múltipla no próprio seletor do sistema. */}
                             <label style={{display:'block',border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:10,padding:'10px 12px',textAlign:'center',cursor:'pointer',background:theme.card}}>
-                              <input type="file" accept=".kml,application/vnd.google-earth.kml+xml,text/xml" style={{display:'none'}}
+                              <input type="file" multiple accept=".kml,application/vnd.google-earth.kml+xml,text/xml" style={{display:'none'}}
                                 onChange={async e=>{
-                                  const f=e.target.files?.[0]; if(!f) return
+                                  const fs=[...(e.target.files||[])]; if(!fs.length) return
                                   try{
-                                    const txt=await f.text()
-                                    setRelatorioPeriodoKmlTexto(txt); setRelatorioPeriodoKmlNome(f.name)
-                                  }catch(err){ console.error(err); showToast('Não consegui ler esse arquivo','error') }
+                                    const lidos=await Promise.all(fs.map(async f=>({nome:f.name, texto:await f.text()})))
+                                    // Soma aos que já estavam: dá pra escolher em levas, e o
+                                    // seletor do sistema não lembra da seleção anterior.
+                                    setRelatorioPeriodoKmls(prev=>[...prev, ...lidos])
+                                  }catch(err){ console.error(err); showToast('Não consegui ler algum dos arquivos','error') }
+                                  e.target.value=''
                                 }}/>
-                              <span style={{fontSize:12,color:relatorioPeriodoKmlNome?'#059669':theme.textMuted,fontWeight:relatorioPeriodoKmlNome?600:400}}>
-                                {relatorioPeriodoKmlNome ? `🛰️ ${relatorioPeriodoKmlNome}` : '🛰️ Escolher arquivo .kml'}
-                              </span>
+                              <span style={{fontSize:12,color:theme.textMuted}}>🛰️ Escolher arquivo(s) .kml</span>
                             </label>
-                            {relatorioPeriodoKmlNome && (
-                              <button type="button" style={{background:'none',border:'none',color:theme.dangerText,fontSize:11,cursor:'pointer',padding:'6px 0 0'}}
-                                onClick={()=>{setRelatorioPeriodoKmlTexto(null);setRelatorioPeriodoKmlNome('')}}>Remover arquivo</button>
+                            {relatorioPeriodoKmls.length>0 && (
+                              <div style={{marginTop:8,display:'flex',flexDirection:'column',gap:4}}>
+                                {relatorioPeriodoKmls.map((k,i)=>(
+                                  <div key={i} style={{display:'flex',alignItems:'center',gap:6,fontSize:11,color:'#059669',fontWeight:600}}>
+                                    <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>🛰️ {k.nome}</span>
+                                    <button type="button" title="Remover" style={{background:'none',border:'none',color:theme.dangerText,fontSize:13,cursor:'pointer',padding:'0 4px'}}
+                                      onClick={()=>setRelatorioPeriodoKmls(prev=>prev.filter((_,j)=>j!==i))}>×</button>
+                                  </div>
+                                ))}
+                                <button type="button" style={{background:'none',border:'none',color:theme.textMuted,fontSize:10.5,cursor:'pointer',padding:'2px 0 0',textAlign:'left'}}
+                                  onClick={()=>setRelatorioPeriodoKmls([])}>Limpar todos</button>
+                              </div>
                             )}
                             <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:6}}>
-                              O arquivo é usado só pra desenhar este relatório — não fica salvo no cadastro da fazenda.
+                              Pode ser um arquivo com a fazenda inteira ou vários, um por talhão — dá no mesmo no desenho. Os arquivos valem só pra este relatório, não ficam salvos no cadastro.
                             </div>
                           </div>
                         )}

@@ -180,7 +180,10 @@ async function gerarMapaKML(supabase, rel) {
 //  2. Muitos voos também estouram. Acima de MAX_TRAJETOS o mapa sai com os primeiros e o
 //     PDF avisa, em vez de vir quebrado sem explicação.
 const MAPA_MAX_PONTOS = 60
-const MAPA_MAX_TRAJETOS = 12
+// Teto de traçados desenhados. Era 12 por causa do tamanho da URL do serviço de mapa
+// estático; agora que o desenho é local, o limite é só legibilidade e custo de canvas — um
+// lote de KML pode trazer um arquivo por talhão.
+const MAPA_MAX_TRAJETOS = 60
 const MAPA_CORES = [[231,76,60],[41,128,185],[39,174,96],[142,68,173],[211,84,0],[22,160,133]]
 
 // Reduz um traçado a no máximo MAPA_MAX_PONTOS pontos mantendo início e fim — a forma
@@ -354,13 +357,23 @@ function desenharTrajetos(doc, x, y, w, h, trajetos, cores) {
 
 // Extrai os traçados de um KML de fazenda (upload) ou dos KML dos voos do período.
 // Devolve arrays de pontos {lat,lng} — o desenho é feito depois, em vetor, no próprio PDF.
-export async function coletarTrajetos(supabase, voos, kmlTexto = null) {
-  if (kmlTexto) {
-    // KML de fazenda traz um <coordinates> por talhão. Cada bloco vira um traçado próprio,
-    // senão os talhões saem ligados por uma linha reta atravessando a fazenda.
-    const blocos = kmlTexto.match(/<coordinates>[\s\S]*?<\/coordinates>/gi) || []
-    const out = blocos.map(b => reduzirPontos(parseKMLCoords(b))).filter(t => t.length >= 2)
-    return { trajetos: out.slice(0, MAPA_MAX_TRAJETOS), total: out.length, origem: "fazenda" }
+export async function coletarTrajetos(supabase, voos, kmlsFazenda = null) {
+  const lista = Array.isArray(kmlsFazenda) ? kmlsFazenda : (kmlsFazenda ? [kmlsFazenda] : null)
+  if (lista && lista.length) {
+    // Aceita um arquivo com a fazenda toda ou um lote com um arquivo por talhão — o
+    // resultado é o mesmo, porque cada <coordinates> vira um traçado próprio de qualquer
+    // jeito. Sem essa separação os talhões sairiam ligados por uma reta atravessando a
+    // propriedade.
+    const out = []
+    lista.forEach(txt => {
+      const blocos = String(txt || '').match(/<coordinates>[\s\S]*?<\/coordinates>/gi) || []
+      blocos.forEach(b => {
+        const t = reduzirPontos(parseKMLCoords(b))
+        if (t.length >= 2) out.push(t)
+      })
+    })
+    if (!out.length) return null
+    return { trajetos: out.slice(0, MAPA_MAX_TRAJETOS), total: out.length, origem: 'fazenda' }
   }
   if (!supabase) return null
   const comKml = (voos || []).filter(r => (r.kml_paths || []).length > 0)
@@ -905,7 +918,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // Página 1 é o dashboard executivo em RETRATO; as páginas de detalhe por voo continuam
 // paisagem (o renderRelatorioCompleto adiciona cada uma com addPage([297,210],'l')).
 // `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
-export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, kmlFazendaTexto=null, midiaNaPagina1=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, kmlsFazenda=null, midiaNaPagina1=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
   const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
   const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
@@ -916,7 +929,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   const voosOrd = [...(voos||[])].sort((a,b)=>new Date(a.dt_inicio||a.created_at)-new Date(b.dt_inicio||b.created_at))
   // Busca o mapa ANTES de desenhar: é uma requisição externa que pode falhar ou demorar, e
   // saber o resultado agora evita criar a página 2 e descobrir depois que não há o que pôr.
-  const mapaConsolidado = (incluirMapa || kmlFazendaTexto) ? await coletarTrajetos(supabase, voosOrd, kmlFazendaTexto) : null
+  const mapaConsolidado = (incluirMapa || (kmlsFazenda && kmlsFazenda.length)) ? await coletarTrajetos(supabase, voosOrd, kmlsFazenda) : null
   // Satélite por trás quando dá: depende de canvas (só navegador) e dos tiles carregarem.
   // Falhando qualquer coisa, o desenho vetorial assume — o mapa sai sempre.
   if (mapaConsolidado) {
