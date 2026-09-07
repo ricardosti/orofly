@@ -124,15 +124,19 @@ export function agregarConsolidado({
     .map(nome => {
       const area = +(aplicadaPorTalhao[nome] || 0).toFixed(2)
       const cad = +(areaCadastral[nome] || 0).toFixed(2)
+      // A bordadura conta como talhão coberto. `area` é a área LÍQUIDA (já descontou a
+      // bordadura), então comparar só ela contra o cadastrado marcava como PARCIAL um talhão
+      // que foi todo percorrido e só deixou a borda — que na prática está finalizado.
+      const bord = +(bordaduraPorTalhao[nome] || 0).toFixed(2)
       let status = 'PENDENTE'
-      if (area > 0.005) status = (cad > 0 && area < cad - 0.05) ? 'PARCIAL' : 'FINALIZADO'
+      if (area > 0.005) status = (cad > 0 && (area + bord) < cad - 0.05) ? 'PARCIAL' : 'FINALIZADO'
       // Compartilhado é DERIVADO de quem realmente voou, não só da flag que o piloto marcou —
       // dois pilotos no mesmo talhão é fato, independente de alguém ter lembrado de marcar.
       // A flag entra como reforço pro caso de um piloto só que declarou divisão adiantado.
       const frentes = [...new Set((parcelas[nome] || []).map(p => p.rel.piloto_nome || '—'))]
       return {
         nome, area, cadastrado: cad,
-        bordadura: +(bordaduraPorTalhao[nome] || 0).toFixed(2),
+        bordadura: bord,
         status,
         pilotos: frentes,
         compartilhado: frentes.length > 1 || (parcelas[nome] || []).some(p => p.rel.compartilhado),

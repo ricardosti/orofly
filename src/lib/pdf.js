@@ -198,6 +198,96 @@ function reduzirPontos(pontos) {
 //  - kmlTexto: um KML único da fazenda (contorno, talhonagem) que ele sobe no momento.
 //    Serve quando os voos não têm KML anexado, que é o caso mais comum.
 //  - os KML dos próprios voos, que mostram por onde o drone passou de fato.
+// ── Mapa com imagem de satélite por trás dos traçados ──
+//
+// Monta a imagem aqui mesmo, com canvas: baixa os tiles, cola num canvas e desenha o KML por
+// cima. Roda só no navegador (precisa de canvas e Image) — no Node cai fora e o PDF usa o
+// desenho vetorial.
+//
+// Fonte: Esri World Imagery, que é aberto para uso com atribuição. NÃO dá pra usar os tiles
+// do Google Earth/Maps: o licenciamento deles proíbe consumo fora das APIs pagas do Google,
+// e embutir num PDF que vai pro cliente é exatamente o caso proibido.
+const TILE = 256
+const SAT_URL = (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
+const lngParaTile = (lng, z) => (lng + 180) / 360 * Math.pow(2, z)
+const latParaTile = (lat, z) => {
+  const r = lat * Math.PI / 180
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z)
+}
+
+async function renderMapaSatelite(trajetos, larguraAlvo = 1000, alturaAlvo = 700) {
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return null
+  const todos = trajetos.flat()
+  if (!todos.length) return null
+
+  const lats = todos.map(p => p.lat), lngs = todos.map(p => p.lng)
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
+  // 6% de folga pra área aplicada não encostar na borda do mapa.
+  const folgaLat = (maxLat - minLat) * 0.06 || 0.0005
+  const folgaLng = (maxLng - minLng) * 0.06 || 0.0005
+  const bb = { s: minLat - folgaLat, n: maxLat + folgaLat, o: minLng - folgaLng, l: maxLng + folgaLng }
+
+  // Maior zoom em que a área ainda cabe no tamanho alvo. Zoom demais = dezenas de tiles.
+  let zoom = 18
+  for (; zoom > 10; zoom--) {
+    const w = (lngParaTile(bb.l, zoom) - lngParaTile(bb.o, zoom)) * TILE
+    const h = (latParaTile(bb.s, zoom) - latParaTile(bb.n, zoom)) * TILE
+    if (w <= larguraAlvo && h <= alturaAlvo) break
+  }
+
+  const x0 = lngParaTile(bb.o, zoom), x1 = lngParaTile(bb.l, zoom)
+  const y0 = latParaTile(bb.n, zoom), y1 = latParaTile(bb.s, zoom)
+  const tx0 = Math.floor(x0), tx1 = Math.floor(x1), ty0 = Math.floor(y0), ty1 = Math.floor(y1)
+  const qtd = (tx1 - tx0 + 1) * (ty1 - ty0 + 1)
+  if (qtd > 48) return null // proteção: área grande demais viraria dezenas de requisições
+
+  const cv = document.createElement('canvas')
+  cv.width = (tx1 - tx0 + 1) * TILE
+  cv.height = (ty1 - ty0 + 1) * TILE
+  const ctx = cv.getContext('2d')
+  ctx.fillStyle = '#0d1a12'; ctx.fillRect(0, 0, cv.width, cv.height)
+
+  const baixar = (z, x, y) => new Promise(resolve => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'   // sem isso o canvas fica "tainted" e o toDataURL falha
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = SAT_URL(z, x, y)
+  })
+
+  const pedidos = []
+  for (let tx = tx0; tx <= tx1; tx++) {
+    for (let ty = ty0; ty <= ty1; ty++) {
+      pedidos.push(baixar(zoom, tx, ty).then(img => {
+        if (img) ctx.drawImage(img, (tx - tx0) * TILE, (ty - ty0) * TILE, TILE, TILE)
+        return !!img
+      }))
+    }
+  }
+  const ok = await Promise.all(pedidos)
+  if (!ok.some(Boolean)) return null   // nenhum tile veio: sem internet ou serviço fora
+
+  // Traçados por cima, nas mesmas cores da legenda.
+  const px = p => [(lngParaTile(p.lng, zoom) - tx0) * TILE, (latParaTile(p.lat, zoom) - ty0) * TILE]
+  trajetos.forEach((pts, i) => {
+    const [r, g, b] = MAPA_CORES[i % MAPA_CORES.length]
+    ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.lineCap = 'round'
+    // Contorno escuro por baixo: linha fina sobre satélite some no claro e no escuro.
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 5
+    ctx.beginPath(); pts.forEach((p, k) => { const [a, c] = px(p); k ? ctx.lineTo(a, c) : ctx.moveTo(a, c) }); ctx.stroke()
+    ctx.strokeStyle = `rgb(${r},${g},${b})`; ctx.lineWidth = 2.5
+    ctx.beginPath(); pts.forEach((p, k) => { const [a, c] = px(p); k ? ctx.lineTo(a, c) : ctx.moveTo(a, c) }); ctx.stroke()
+  })
+
+  // Atribuição é exigência da licença do Esri — não é enfeite.
+  ctx.font = '13px sans-serif'; ctx.textAlign = 'right'
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(cv.width - 210, cv.height - 20, 210, 20)
+  ctx.fillStyle = '#fff'; ctx.fillText('Imagem: Esri World Imagery', cv.width - 6, cv.height - 6)
+
+  try { return cv.toDataURL('image/jpeg', 0.82) } catch (e) { console.warn('Canvas do mapa bloqueado:', e); return null }
+}
+
 // Desenha os traçados como vetor no próprio PDF, sem serviço externo.
 //
 // A versão anterior buscava uma imagem de mapa na Geoapify com uma chave "free tier" fixa no
@@ -208,6 +298,19 @@ function reduzirPontos(pontos) {
 //
 // Projeção: equirretangular simples com correção de longitude por cos(lat). Numa fazenda
 // (poucos km) a distorção é irrelevante e evita depender de biblioteca de projeção.
+function desenharMapa(doc, x, y, w, h, mapa, cores) {
+  if (mapa.satelite) {
+    try {
+      const prop = doc.getImageProperties(mapa.satelite)
+      const esc = Math.min(w / prop.width, h / prop.height)
+      const iw = prop.width * esc, ih = prop.height * esc
+      doc.addImage(mapa.satelite, "JPEG", x + (w - iw) / 2, y + (h - ih) / 2, iw, ih)
+      return
+    } catch (e) { console.warn("Falha ao inserir o satélite, caindo pro vetor:", e) }
+  }
+  desenharTrajetos(doc, x, y, w, h, mapa.trajetos, cores)
+}
+
 function desenharTrajetos(doc, x, y, w, h, trajetos, cores) {
   const todos = trajetos.flat()
   if (!todos.length) return
@@ -814,6 +917,12 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   // Busca o mapa ANTES de desenhar: é uma requisição externa que pode falhar ou demorar, e
   // saber o resultado agora evita criar a página 2 e descobrir depois que não há o que pôr.
   const mapaConsolidado = (incluirMapa || kmlFazendaTexto) ? await coletarTrajetos(supabase, voosOrd, kmlFazendaTexto) : null
+  // Satélite por trás quando dá: depende de canvas (só navegador) e dos tiles carregarem.
+  // Falhando qualquer coisa, o desenho vetorial assume — o mapa sai sempre.
+  if (mapaConsolidado) {
+    try { mapaConsolidado.satelite = await renderMapaSatelite(mapaConsolidado.trajetos) }
+    catch (e) { console.warn("Satélite indisponível, usando desenho vetorial:", e); mapaConsolidado.satelite = null }
+  }
 
   function fundoBranco(){ doc.setFillColor(...W); doc.rect(0,0,PW,PH,'F') }
 
@@ -927,12 +1036,13 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   let y1 = tituloSecao(M, y, COLW, 1, 'BALANÇO DE TALHÕES NO PERÍODO')
   doc.setFillColor(238, 246, 241); doc.rect(M, y1, COLW, 5.5, 'F')
   doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
-  const cT = { nome: M + 2.5, total: M + COLW * 0.38, aplic: M + COLW * 0.60, bord: M + COLW * 0.78 }
-  doc.text('TALHÃO', cT.nome, y1 + 3.8)
-  doc.text('ÁREA TOTAL', cT.total, y1 + 3.8, { align: 'right' })
-  doc.text('APLICADA', cT.aplic, y1 + 3.8, { align: 'right' })
-  doc.text('BORD.', cT.bord, y1 + 3.8, { align: 'right' })
-  doc.text('STATUS', M + COLW - 2.5, y1 + 3.8, { align: 'right' })
+  // Cada posição é o CENTRO da coluna, não a borda — cabeçalho e valores centralizados.
+  const cT = { nome: M + COLW * 0.15, total: M + COLW * 0.36, aplic: M + COLW * 0.545, bord: M + COLW * 0.71, status: M + COLW * 0.885 }
+  doc.text('TALHÃO', cT.nome, y1 + 3.8, { align: 'center' })
+  doc.text('ÁREA TOTAL', cT.total, y1 + 3.8, { align: 'center' })
+  doc.text('APLICADA', cT.aplic, y1 + 3.8, { align: 'center' })
+  doc.text('BORD.', cT.bord, y1 + 3.8, { align: 'center' })
+  doc.text('STATUS', cT.status, y1 + 3.8, { align: 'center' })
   y1 += 5.5
   const limiteTalhoes = 14
   // Com a opção ligada, o não iniciado entra como linha da tabela; senão fica só na nota
@@ -941,27 +1051,20 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   linhasTalhoes.slice(0, limiteTalhoes).forEach((t, i) => {
     if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(M, y1, COLW, 5.6, 'F') }
     doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
-    // "2 frentes" marca o talhão dividido entre pilotos — o leitor do relatório não tem como
-    // deduzir isso da tabela de talhões, só da de pilotos, e as duas ficam lado a lado.
-    doc.text(truncFit(doc, t.nome, COLW * 0.33), cT.nome, y1 + 3.9)
-    if (t.compartilhado && t.pilotos.length > 1) {
-      const wNome = doc.getTextWidth(truncFit(doc, t.nome, COLW * 0.33))
-      doc.setFontSize(4.8); doc.setTextColor(...GR)
-      doc.text(`${t.pilotos.length} frentes`, cT.nome + wNome + 1.5, y1 + 3.9)
-    }
+    doc.text(truncFit(doc, t.nome, COLW * 0.28), cT.nome, y1 + 3.9, { align: 'center' })
     doc.setFontSize(6.4); doc.setTextColor(...GR)
-    doc.text(nHa(t.cadastrado), cT.total, y1 + 3.9, { align: 'right' })
+    doc.text(nHa(t.cadastrado), cT.total, y1 + 3.9, { align: 'center' })
     doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
-    doc.text(nHa(t.area), cT.aplic, y1 + 3.9, { align: 'right' })
+    doc.text(nHa(t.area), cT.aplic, y1 + 3.9, { align: 'center' })
     doc.setFontSize(6.4); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-    doc.text(t.bordadura > 0 ? nHa(t.bordadura) : '—', cT.bord, y1 + 3.9, { align: 'right' })
+    doc.text(t.bordadura > 0 ? nHa(t.bordadura) : '—', cT.bord, y1 + 3.9, { align: 'center' })
     const est = t.status === 'PARCIAL' ? { bg:[253,240,221], cor:[176,112,20], txt:'PARCIAL' }
       : t.status === 'PENDENTE' ? { bg:[238,238,234], cor:[130,130,120], txt:'NÃO INICIADO' }
       : { bg:[224,244,232], cor:G, txt:'FINALIZADO' }
     doc.setFillColor(...est.bg)
-    doc.roundedRect(M + COLW - 19, y1 + 1, 16.5, 3.8, 1, 1, 'F')
+    doc.roundedRect(cT.status - 8.25, y1 + 1, 16.5, 3.8, 1, 1, 'F')
     doc.setFontSize(4.8); doc.setTextColor(...est.cor)
-    doc.text(est.txt, M + COLW - 10.75, y1 + 3.7, { align: 'center' })
+    doc.text(est.txt, cT.status, y1 + 3.7, { align: 'center' })
     y1 += 5.6
   })
   if (linhasTalhoes.length > limiteTalhoes) {
@@ -971,15 +1074,15 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   doc.setDrawColor(...G); doc.setLineWidth(0.4); doc.line(M, y1 + 0.5, M + COLW, y1 + 0.5); y1 += 1
   doc.setFillColor(240, 248, 243); doc.rect(M, y1, COLW, 6.5, 'F')
   doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
-  doc.text('Total Realizado', cT.nome, y1 + 4.4)
+  doc.text('Total Realizado', cT.nome, y1 + 4.4, { align: 'center' })
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6.4); doc.setTextColor(...GR)
-  doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.cadastrado, 0)), cT.total, y1 + 4.4, { align: 'right' })
+  doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.cadastrado, 0)), cT.total, y1 + 4.4, { align: 'center' })
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...G)
-  doc.text(nHa(kp.areaAplicada), cT.aplic, y1 + 4.4, { align: 'right' })
+  doc.text(nHa(kp.areaAplicada), cT.aplic, y1 + 4.4, { align: 'center' })
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6.4); doc.setTextColor(...GR)
-  doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.bordadura, 0)), cT.bord, y1 + 4.4, { align: 'right' })
+  doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.bordadura, 0)), cT.bord, y1 + 4.4, { align: 'center' })
   doc.setFontSize(5.8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-  doc.text(`${cons.aplicados.length} de ${cons.totalTalhoesCatalogo} talhões`, M + COLW - 2.5, y1 + 4.4, { align: 'right' })
+  doc.text(`${cons.aplicados.length} de ${cons.totalTalhoesCatalogo}`, cT.status, y1 + 4.4, { align: 'center' })
   y1 += 8
   if (cons.pendentes.length && !incluirPendentes) {
     doc.setFontSize(5.8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
@@ -1106,7 +1209,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
       const mx = dois ? M + wBloco + 6 : M
       doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
       doc.text(mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS', mx, ym + 3)
-      desenharTrajetos(doc, mx, ym + 5, wBloco, hBloco, mapaConsolidado.trajetos, { G, GR })
+      desenharMapa(doc, mx, ym + 5, wBloco, hBloco, mapaConsolidado, { G, GR })
     }
   }
 
@@ -1167,7 +1270,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     if (mapaConsolidado) {
       yg = tituloSecao(M, yg, CW, fotoGeralBase64 ? 2 : 1, mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
       const hMapa = alturaBloco - 16
-      desenharTrajetos(doc, M, yg, CW, hMapa, mapaConsolidado.trajetos, { G, GR })
+      desenharMapa(doc, M, yg, CW, hMapa, mapaConsolidado, { G, GR })
       yg += hMapa + 4
       doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
       const legenda = mapaConsolidado.origem === 'fazenda'

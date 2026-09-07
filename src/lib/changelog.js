@@ -10,8 +10,18 @@
 export const NOVIDADES = [
   {
     versao: '4.2',
-    data: '2026-09-04',
+    data: '2026-09-05',
     itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Mapa do relatório com imagem de satélite',
+        texto: 'O mapa da fazenda no relatório consolidado agora sai sobre imagem de satélite, com os trajetos por cima. Dá pra usar os KML dos próprios voos ou enviar um KML da fazenda na hora de gerar. Sem internet, o mapa sai como desenho — o relatório nunca fica sem ele.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Talhão que só deixou bordadura estava saindo como parcial',
+        texto: 'A área aplicada já desconta a bordadura, então um talhão percorrido por inteiro aparecia com área menor que a cadastrada e era marcado PARCIAL. Agora bordadura conta como coberto: se só ela ficou, o talhão está FINALIZADO.',
+      },
       {
         tipo: 'novo',
         titulo: 'Voo compartilhado entre dois pilotos',
