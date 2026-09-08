@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.3',
+    data: '2026-09-08',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Bordadura estava sendo descontada duas vezes',
+        texto: 'A área aplicada de um voo já vem sem a bordadura — ela é lançada à parte. O sistema descontava de novo, então o relatório saía com menos hectare e menos produto do que o piloto usou de fato, e o talhão aparecia como parcial mesmo estando fechado. Quatro relatórios da Bracell foram afetados, somando 4,55 ha. Ao gerar de novo, eles saem corretos.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Coluna de talhão na lista de relatórios',
+        texto: 'Em Administrativo & Financeiro → Relatórios, o talhão agora aparece em coluna própria, sem precisar abrir o detalhe de cada voo.',
+      },
+    ],
+  },
+  {
     versao: '4.2',
     data: '2026-09-05',
     itens: [

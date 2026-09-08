@@ -51,10 +51,13 @@ export function parseDoseProduto(str) {
 // 100 ha / 2x o produto usado de verdade).
 export function areaLiquida(rel) {
   const feita = parseFloat(rel.area_feita)
-  if (!isNaN(feita) && feita > 0) {
-    const bordFeita = parseFloat(rel.bordadura)||0
-    return Math.max(0, +(feita-bordFeita).toFixed(2))
-  }
+  // `area_feita` JÁ É a área pulverizada — a bordadura fica ao lado dela, não dentro.
+  // Confirmado com a operação em 08/09/2026, no talhão 005-01 do REMANSO I: aplicada 15,20 +
+  // bordadura 1,52 = 16,72, o talhão inteiro. Subtrair aqui descontava a bordadura duas vezes
+  // e o relatório saía com menos produto do que o piloto usou de fato.
+  if (!isNaN(feita) && feita > 0) return +feita.toFixed(2)
+  // Sem `area_feita` (registros antigos), o que existe é `area_ha` = o ESCOPO do voo, que
+  // inclui a bordadura. Aí sim ela sai de dentro pra chegar no que foi pulverizado.
   const bruta = parseFloat(rel.area_ha)||0
   const bord = parseFloat(rel.bordadura)||0
   return Math.max(0, +(bruta-bord).toFixed(2))
