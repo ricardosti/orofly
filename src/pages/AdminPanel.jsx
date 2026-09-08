@@ -1861,7 +1861,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead>
                         <tr style={{ background:theme.bg }}>
-                          {['Cliente','Fazenda','Piloto','Drone','Status','Data','Tempo','Custo','Ações'].map(h => (
+                          {['Cliente','Fazenda','Talhão','Piloto','Drone','Status','Data','Tempo','Custo','Ações'].map(h => (
                             <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:theme.textFaint2, letterSpacing:0.4, textTransform:'uppercase', borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'DM Sans',sans-serif" }}>{h}</th>
                           ))}
                         </tr>
@@ -1888,6 +1888,22 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {rel.qtd_voos>1?`${rel.qtd_voos} voos`:''}
                                     </div>
                                   )}
+                                </td>
+                                {/* Talhão em coluna própria: um voo pode cobrir vários, e
+                                    achá-los só abrindo o detalhe dava trabalho demais numa
+                                    lista de 165 registros. */}
+                                <td style={sG.td}>
+                                  {(() => {
+                                    const nomes = (rel.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+                                    if (!nomes.length) return <span style={{color:'#c3d4c9'}}>—</span>
+                                    return (
+                                      <div style={{display:'flex',flexWrap:'wrap',gap:3,maxWidth:150}}>
+                                        {nomes.map(n=>(
+                                          <span key={n} style={{fontFamily:'ui-monospace,monospace',fontSize:10.5,fontWeight:600,color:theme.text,background:theme.divider,padding:'1px 6px',borderRadius:20,whiteSpace:'nowrap'}}>{n}</span>
+                                        ))}
+                                      </div>
+                                    )
+                                  })()}
                                 </td>
                                 <td style={sG.td}>{rel.piloto_nome||'—'}</td>
                                 <td style={sG.td}>{rel.drone||'—'}</td>
@@ -1926,7 +1942,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 const CAT_ICON = CATEGORIA_ICON
                                 return (
                                 <tr>
-                                  <td colSpan={8} style={{ background:'#f0f8f4', borderBottom:`2px solid ${theme.cardBorder2}`, padding:0 }}>
+                                  <td colSpan={10} style={{ background:'#f0f8f4', borderBottom:`2px solid ${theme.cardBorder2}`, padding:0 }}>
                                     <div style={{ display:'flex', gap:20, padding:'16px 20px', flexWrap:'wrap' }}>
                                       <DetailCol title="Localização" items={[['Local',rel.localizacao],['GPS',rel.gps_lat?`${rel.gps_lat}, ${rel.gps_lng}`:'—'],['Área Total',rel.area_ha?`${rel.area_ha} ha`:null],['Área Aplicada',rel.area_ha?`${areaLiquida(rel)} ha`:null]]} />
                                       <DetailCol title="Cond. Início" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_i']])} />
