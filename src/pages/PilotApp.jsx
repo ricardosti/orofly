@@ -3658,15 +3658,8 @@ Quando: ${tempoErroDebug.quando}`}
               // Acha o voo Finalizado Parcial mais recente ainda em aberto pra esse talhão — de
               // QUALQUER piloto, não só o logado (outro piloto pode complementar o que já foi
               // feito). Usado pra oferecer "Continuar este voo" direto na lista de talhões.
-              const vooAbertoDoTalhao = (fz, t) => {
-                const abertos = relatoriosFinalizadosOrg.filter(r=>
-                  r.status==='pausado_dia' && r.cliente===fz.cliente && r.fazenda===fz.nome &&
-                  (!fz.campanha_inicio || new Date(r.created_at) >= new Date(fz.campanha_inicio)) &&
-                  (r.localizacao||'').split(',').map(s=>s.trim()).includes(t.nome)
-                )
-                if(!abertos.length) return null
-                return abertos.reduce((a,b)=> new Date(a.created_at)>new Date(b.created_at)?a:b)
-              }
+              // Removido o vooAbertoDoTalhao: ele servia só pro atalho "Continuar (Fulano)" no
+              // seletor de talhão, que agora não existe. Quem pega o resto abre o próprio voo.
               // Fazenda some da lista só quando TODOS os talhões dela estiverem concluídos
               const fazendaCompleta = (fz) => {
                 const talhoesDaFazenda = talhoesDB.filter(t=>t.fazenda_id===fz.id)
@@ -3793,20 +3786,29 @@ Quando: ${tempoErroDebug.quando}`}
                                           {t.nome}
                                           {finalizado&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:'#fff',background:'#00A86B',padding:'2px 7px',borderRadius:20}}>✓ Concluído</span>}
                                         </span>
-                                        {parcial&&(()=>{
-                                          const vooAberto = fazendaSel ? vooAbertoDoTalhao(fazendaSel,t) : null
-                                          return (
-                                            <div style={{fontSize:10.5,color:theme.warningText2,marginTop:2,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
-                                              <span>{prog.pct.toFixed(0)}% feito · {feito.toFixed(1)} de {prog.areaTotal.toFixed(1)} ha · faltam {prog.falta.toFixed(1)} ha</span>
-                                              {vooAberto&&(
-                                                <span onClick={e=>{e.stopPropagation();setTalhaoDropdownOpen(false);abrirVooAberto(vooAberto.id)}}
-                                                  style={{color:'#00A86B',fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>▶️ Continuar{vooAberto.piloto_nome&&vooAberto.piloto_nome!==profile?.nome?` (${vooAberto.piloto_nome})`:''}</span>
-                                              )}
-                                            </div>
-                                          )
-                                        })()}
+                                        {/* Sem "Continuar (Fulano)": quem pega o resto NÃO entra
+                                            no voo do outro piloto. Entrando, herdava o escopo
+                                            dele — o talhão inteiro — e o relatório saía com o
+                                            tamanho todo em vez da parte que essa pessoa fez.
+                                            Cada um abre o seu voo, e o talhão vale o saldo. */}
+                                        {parcial&&(
+                                          <div style={{fontSize:10.5,color:theme.warningText2,marginTop:2}}>
+                                            {prog.pct.toFixed(0)}% feito · {feito.toFixed(1)} de {prog.areaTotal.toFixed(1)} ha
+                                          </div>
+                                        )}
                                       </div>
-                                      {t.area_ha&&<span style={{fontSize:12,color:'#00A86B',fontWeight:600,flexShrink:0}}>{t.area_ha} ha</span>}
+                                      {/* Num talhão já iniciado, o número que vale pra quem está
+                                          entrando agora é o SALDO — é ele que vira o escopo do
+                                          voo. O tamanho cheio fica embaixo, menor, pra não
+                                          perder a referência do todo. */}
+                                      {parcial ? (
+                                        <span style={{flexShrink:0,textAlign:'right'}}>
+                                          <span style={{fontSize:13,color:theme.warningText2,fontWeight:700,display:'block'}}>{prog.falta.toFixed(2)} ha</span>
+                                          <span style={{fontSize:9.5,color:theme.textFaint2,display:'block'}}>de {prog.areaTotal.toFixed(2)}</span>
+                                        </span>
+                                      ) : t.area_ha ? (
+                                        <span style={{fontSize:12,color:'#00A86B',fontWeight:600,flexShrink:0}}>{t.area_ha} ha</span>
+                                      ) : null}
                                     </div>
                                   )
                                 })}
