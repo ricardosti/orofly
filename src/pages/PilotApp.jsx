@@ -158,13 +158,15 @@ function bordaduraAtual(form) {
   if (talhoesSel.length > 1) return talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
   return parseFloat(form.bordadura)||0
 }
-// Área líquida = o que foi FEITO (aplicado até agora, cumulativo) menos a bordadura — não o
-// talhão inteiro menos a bordadura. Só cai pro talhão inteiro quando ainda não há nada digitado
-// como "aplicado" (ex: tela recém-aberta, antes do piloto preencher qualquer coisa no Passo 5).
+// Área líquida = o que foi FEITO, e ponto: a área aplicada do Passo 5 JÁ EXCLUI a bordadura (o
+// piloto lança a faixa de segurança ao lado dela — 15,20 aplicados + 1,52 de bordadura = 16,72
+// percorridos). Descontar de novo tirava o hectare duas vezes, do relatório e da baixa de estoque.
+// Só quando não há nada digitado como "aplicado" cai pro escopo do voo, e aí sim a bordadura sai
+// de dentro — porque area_ha é o que havia a percorrer, bordadura inclusa.
 function areaLiquidaAtual(form) {
   const feita = areaFeitaAtual(form)
-  const base = feita>0 ? feita : (parseFloat(form.area_ha)||0)
-  return Math.max(0, +((base-bordaduraAtual(form))).toFixed(2))
+  if (feita > 0) return +feita.toFixed(2)
+  return Math.max(0, +(((parseFloat(form.area_ha)||0)-bordaduraAtual(form))).toFixed(2))
 }
 // Área feita até agora: com mais de um talhão selecionado, soma o que foi digitado em cada um
 // (form.area_feita_por_talhao); com um só, usa o valor único de sempre (form.area_feita).

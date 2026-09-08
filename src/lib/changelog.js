@@ -25,7 +25,7 @@ export const NOVIDADES = [
       {
         tipo: 'correcao',
         titulo: 'Bordadura estava sendo descontada duas vezes',
-        texto: 'A área aplicada de um voo já vem sem a bordadura — ela é lançada à parte. O sistema descontava de novo, então o relatório saía com menos hectare e menos produto do que o piloto usou de fato, e o talhão aparecia como parcial mesmo estando fechado. Quatro relatórios da Bracell foram afetados, somando 4,55 ha. Ao gerar de novo, eles saem corretos.',
+        texto: 'A área aplicada de um voo já vem sem a bordadura — ela é lançada à parte. O sistema descontava de novo no PDF, no texto do WhatsApp e na baixa de estoque, então saía menos hectare e menos produto do que o piloto usou de fato, e o talhão aparecia como parcial mesmo estando fechado. Agora os números fecham: aplicada + bordadura = a área do voo. Basta gerar o relatório de novo.',
       },
       {
         tipo: 'novo',
