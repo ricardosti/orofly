@@ -14,6 +14,16 @@ export const NOVIDADES = [
     itens: [
       {
         tipo: 'correcao',
+        titulo: 'Talhão continuado por outro piloto vinha com a área cheia',
+        texto: 'Quem pegava um talhão já iniciado herdava o escopo inteiro do primeiro piloto — um talhão de 50,87 ha com 11,7 já feitos abria de novo com 50,87. Agora o campo ÁREA já vem com o saldo (39,17 no exemplo), e a lista de talhões mostra em destaque quanto falta, não o tamanho total. O atalho "Continuar (nome do piloto)" saiu: cada frente lança o que fez, e o consolidado soma.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Avanço da fazenda não chegava a 100%',
+        texto: 'A barra de avanço media só a área pulverizada, então uma fazenda com todos os talhões fechados parava em 94% por causa da bordadura. Agora o avanço mede a área coberta (aplicada + bordadura) e o resumo mostra as duas parcelas separadas.',
+      },
+      {
+        tipo: 'correcao',
         titulo: 'Bordadura estava sendo descontada duas vezes',
         texto: 'A área aplicada de um voo já vem sem a bordadura — ela é lançada à parte. O sistema descontava de novo, então o relatório saía com menos hectare e menos produto do que o piloto usou de fato, e o talhão aparecia como parcial mesmo estando fechado. Quatro relatórios da Bracell foram afetados, somando 4,55 ha. Ao gerar de novo, eles saem corretos.',
       },
