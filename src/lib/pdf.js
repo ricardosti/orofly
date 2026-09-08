@@ -1043,7 +1043,12 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   doc.setFillColor(224, 236, 229); doc.rect(barX, y + 7, barW, 3.2, 'F')
   if (av.pct != null) { doc.setFillColor(...G); doc.rect(barX, y + 7, barW * (av.pct / 100), 3.2, 'F') }
   doc.setFontSize(6.2); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-  doc.text(`${nHa(av.executado)} ha executados de um total contratado de ${nHa(av.contratado)} ha  •  Restam: ${nHa(av.saldo)} ha`, barX, y + 13)
+  // O avanço é COBERTURA. Mostrar a composição evita a leitura de que os dois números
+  // (aplicado no KPI, coberto aqui) se contradizem.
+  const detalheAvanco = av.bordadura > 0.005
+    ? `${nHa(av.executado)} ha cobertos — ${nHa(av.aplicado)} aplicados + ${nHa(av.bordadura)} de bordadura — de ${nHa(av.contratado)} ha contratados`
+    : `${nHa(av.executado)} ha executados de um total contratado de ${nHa(av.contratado)} ha`
+  doc.text(`${detalheAvanco}  •  Restam: ${nHa(av.saldo)} ha`, barX, y + 13)
   y += 18
 
   const yColunas = y

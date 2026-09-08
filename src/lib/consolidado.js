@@ -134,9 +134,16 @@ export function agregarConsolidado({
       // dois pilotos no mesmo talhão é fato, independente de alguém ter lembrado de marcar.
       // A flag entra como reforço pro caso de um piloto só que declarou divisão adiantado.
       const frentes = [...new Set((parcelas[nome] || []).map(p => p.rel.piloto_nome || '—'))]
+      // Coberto = o quanto do talhão foi tratado, pulverizado ou deixado como bordadura. É
+      // isso que mede o avanço da fazenda; a área APLICADA (sem bordadura) é outra coisa, e
+      // é ela que multiplica a dose. Sem essa distinção o avanço nunca fechava 100% num
+      // talhão com bordadura, mesmo com todos finalizados.
+      // O teto evita passar do talhão quando os lançamentos dos pilotos se sobrepõem.
+      const coberto = cad > 0 ? Math.min(cad, +(area + bord).toFixed(2)) : +(area + bord).toFixed(2)
       return {
         nome, area, cadastrado: cad,
         bordadura: bord,
+        coberto,
         status,
         pilotos: frentes,
         compartilhado: frentes.length > 1 || (parcelas[nome] || []).some(p => p.rel.compartilhado),
@@ -199,6 +206,10 @@ export function agregarConsolidado({
   const vazaoMax = vazoes.length ? Math.max(...vazoes) : null
 
   const contratado = parseFloat(areaTotalCadastrada) || 0
+  // Soma do que foi coberto em cada talhão. Voo fora dos talhões selecionados não tem
+  // cobertura pra somar, então entra pela área aplicada mesmo.
+  const coberturaTotal = talhoes.reduce((a, t) => a + t.coberto, 0)
+    + Math.max(0, areaAplicada - talhoes.reduce((a, t) => a + t.area, 0))
   const horas = tempoTotalMin / 60
 
   return {
@@ -214,11 +225,16 @@ export function agregarConsolidado({
       tempoTotalMin,
       rendimento: horas > 0 ? +(areaAplicada / horas).toFixed(2) : null,
     },
+    // Avanço mede COBERTURA, não área pulverizada: talhão tratado por inteiro que deixou
+    // bordadura está pronto, e tem que fechar 100%. Só talhão realmente parcial derruba o
+    // número. A área aplicada continua nos KPIs, separada — é ela que multiplica a dose.
     avanco: {
       contratado: +contratado.toFixed(2),
-      executado: +areaAplicada.toFixed(2),
-      saldo: +Math.max(0, contratado - areaAplicada).toFixed(2),
-      pct: contratado > 0 ? +Math.min(100, (areaAplicada / contratado) * 100).toFixed(2) : null,
+      executado: +coberturaTotal.toFixed(2),
+      aplicado: +areaAplicada.toFixed(2),
+      bordadura: +Math.max(0, coberturaTotal - areaAplicada).toFixed(2),
+      saldo: +Math.max(0, contratado - coberturaTotal).toFixed(2),
+      pct: contratado > 0 ? +Math.min(100, (coberturaTotal / contratado) * 100).toFixed(2) : null,
     },
     talhoes, aplicados, pendentes,
     totalTalhoesCatalogo: talhoesCatalogo.length,
