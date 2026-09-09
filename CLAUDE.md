@@ -81,6 +81,17 @@ npm install
 Depois descompacte o zip dos segredos por cima da pasta. **Sem o `.env.local` o
 app sobe mas não conecta no Supabase** — parece quebrado, e não é.
 
+**Só para gerar APK/AAB:** o `android/local.properties` também não vem no clone (é
+gitignored) e sem ele o Gradle para com *"SDK location not found"*. Ele tem uma linha
+só, apontando para o SDK do Android:
+
+```
+sdk.dir=C:/Users/ricar/AppData/Local/Android/Sdk
+```
+
+No Ubuntu o caminho costuma ser `/home/<user>/Android/Sdk`. Barras normais funcionam
+nos dois sistemas — não precisa escapar nada.
+
 **O que instalar:** Node.js (aqui roda o v24), Git, Claude Code e — apenas se
 for gerar APK — o Android Studio mais o **JDK 21** (ver seção 5: o JDK que vem
 dentro do Android Studio não serve mais).
