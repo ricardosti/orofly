@@ -418,6 +418,21 @@ function hexToRgb(hex, fallback = [26,122,74]) {
 }
 
 // Helper: trunca texto para caber em largura máxima (jsPDF)
+// Diminui o corpo da fonte até o texto caber em `maxW`, em vez de cortá-lo. É pra nome de
+// pessoa, onde encurtar é pior que reduzir: "PAULO HENRIQUE SERRA MUNIZ" estourava a faixa
+// de assinatura de 55mm e escrevia por cima do texto vizinho. Devolve o tamanho aplicado —
+// já deixa a fonte setada, então basta chamar antes do doc.text().
+function fontFit(doc, txt, maxW, tam, tamMin = 5.5) {
+  let t = tam
+  while (t > tamMin) {
+    doc.setFontSize(t)
+    if (doc.getStringUnitWidth(String(txt)) * t / doc.internal.scaleFactor <= maxW) return t
+    t -= 0.25
+  }
+  doc.setFontSize(tamMin)
+  return tamMin
+}
+
 function truncFit(doc, txt, maxW) {
   let s = String(txt)
   while (doc.getStringUnitWidth(s) * doc.getFontSize() / doc.internal.scaleFactor > maxW && s.length > 2) {
@@ -764,9 +779,12 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   const sigX=C2+CW-55
   const sigMidX=sigX+27.5
   doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',sigMidX,y2+4,{align:'center'})
-  doc.setFontSize(10);doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigMidX,y2+12,{align:'center'})
+  // Nome longo encolhe pra caber na faixa em vez de vazar por cima do que está ao lado.
+  doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK)
+  fontFit(doc,rel.piloto_nome||'',51,10);doc.text(rel.piloto_nome||'',sigMidX,y2+12,{align:'center'})
   doc.setDrawColor(...GR);doc.setLineWidth(0.3);doc.line(sigX,y2+13.5,C2+CW,y2+13.5)
-  doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK);doc.text(rel.piloto_nome||'',sigMidX,y2+19,{align:'center'})
+  doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+  fontFit(doc,rel.piloto_nome||'',51,8);doc.text(rel.piloto_nome||'',sigMidX,y2+19,{align:'center'})
   }
 
   // Rodapé col2
@@ -894,9 +912,11 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
       const tSigX=C2+CW-55
       const tSigMidX=tSigX+27.5
       doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',tSigMidX,yR+4,{align:'center'})
-      doc.setFontSize(10);doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK);doc.text(t.piloto_nome||'',tSigMidX,yR+12,{align:'center'})
+      doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK)
+      fontFit(doc,t.piloto_nome||'',51,10);doc.text(t.piloto_nome||'',tSigMidX,yR+12,{align:'center'})
       doc.setDrawColor(...GR);doc.setLineWidth(0.3);doc.line(tSigX,yR+13.5,C2+CW,yR+13.5)
-      doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...DK);doc.text(t.piloto_nome||'',tSigMidX,yR+19,{align:'center'})
+      doc.setFont('helvetica','bold');doc.setTextColor(...DK)
+      fontFit(doc,t.piloto_nome||'',51,8);doc.text(t.piloto_nome||'',tSigMidX,yR+19,{align:'center'})
 
       // Rodapé
       doc.setFillColor(...G);doc.rect(C1,PH-M-8,PW-M-C1,9,'F')
@@ -918,11 +938,12 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // mapa, produtos, clima, dados do voo), agrupado por talhão. É literalmente um PDF
 // "empilhado em cima do outro" num arquivo único, pra download ou WhatsApp.
 // ============================================================
-// Página 1 é o dashboard executivo em RETRATO; as páginas de detalhe por voo continuam
-// paisagem (o renderRelatorioCompleto adiciona cada uma com addPage([297,210],'l')).
+// Documento inteiro em PAISAGEM. As páginas de detalhe por voo sempre foram deitadas; a
+// página 1 era a única em pé, e quem abria o PDF tinha que girar a tela na primeira folha
+// e desgirar na segunda.
 // `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
 export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, kmlsFazenda=null, midiaNaPagina1=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
-  const doc = new jsPDF({ orientation:'p', unit:'mm', format:'a4' })
+  const doc = new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
   const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
   const fmtD = v => v ? new Date(v+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'
@@ -944,17 +965,20 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
 
 
   // ═══════════════════════════════════════════════════════════════════════════════════
-  // PÁGINA 1 — DASHBOARD EXECUTIVO (A4 RETRATO)
+  // PÁGINA 1 — DASHBOARD EXECUTIVO (A4 PAISAGEM)
   //
-  // O documento nasce retrato por causa desta página. As páginas de detalhe por voo,
-  // logo abaixo, continuam paisagem — o renderRelatorioCompleto já faz addPage([297,210],'l')
-  // por conta própria, então a orientação alterna sozinha.
+  // Deitada, a folha perde 87mm de altura e ganha 87mm de largura. Foi o que mudou o
+  // desenho: as seções saíram de DUAS colunas para TRÊS (talhões | pilotos | insumos),
+  // lado a lado. O que antes empilhava agora corre na horizontal, e a página continua
+  // fechando numa folha só. A barra de avanço, que era uma faixa própria, virou o quinto
+  // cartão da linha de KPIs — os 16mm que ela ocupava fazem falta nas tabelas.
   //
   // Todos os números vêm do `cons` (src/lib/consolidado.js). Esta função não calcula nada:
   // se um valor sair errado aqui, o defeito está no agregador, que é testável sem PDF.
   // ═══════════════════════════════════════════════════════════════════════════════════
-  const PW = 210, PH = 297, M = 10, CW = PW - M * 2
-  const COLW = (CW - 8) / 2, C2X = M + COLW + 8
+  const PW = 297, PH = 210, M = 10, CW = PW - M * 2
+  const COLW = (CW - 12) / 3
+  const C2X = M + COLW + 6, C3X = M + (COLW + 6) * 2
 
   const nHa = v => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
   const nInt = v => (v == null ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 }))
@@ -972,21 +996,24 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   let y = M
 
   // ── Cabeçalho executivo ──
-  try { doc.addImage(LOGO_B64, 'PNG', M, y, 42, 23) } catch (e) {
-    doc.setFontSize(17); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G); doc.text('OROFLY', M, y + 14)
+  // O topo é 10mm mais baixo que na versão retrato. Não é capricho: deitada, a folha tem
+  // 87mm a menos de altura, e cada milímetro economizado aqui é uma linha a mais na tabela
+  // de talhões lá embaixo.
+  try { doc.addImage(LOGO_B64, 'PNG', M, y, 38, 21) } catch (e) {
+    doc.setFontSize(16); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G); doc.text('OROFLY', M, y + 13)
   }
   doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
-  doc.text('RELATÓRIO CONSOLIDADO DE OPERAÇÃO', PW - M, y + 9, { align: 'right' })
+  doc.text('RELATÓRIO CONSOLIDADO DE OPERAÇÃO', PW - M, y + 8, { align: 'right' })
   doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-  doc.text('Pulverização com Drones • Resumo Executivo da Fazenda', PW - M, y + 15, { align: 'right' })
+  doc.text('Pulverização com Drones • Resumo Executivo da Fazenda', PW - M, y + 13.5, { align: 'right' })
   doc.setFontSize(6.5); doc.setTextColor(...G)
-  doc.text('T E C N O L O G I A   A G R Í C O L A   A E R O A P L I C A D A', PW - M, y + 20.5, { align: 'right' })
-  y += 26
-  doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, y, PW - M, y); y += 5
+  doc.text('T E C N O L O G I A   A G R Í C O L A   A E R O A P L I C A D A', PW - M, y + 18.5, { align: 'right' })
+  y += 23
+  doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, y, PW - M, y); y += 4
 
   // ── Faixa de identificação ──
-  doc.setFillColor(245, 251, 247); doc.roundedRect(M, y, CW, 15, 1.5, 1.5, 'F')
-  doc.setDrawColor(200, 235, 215); doc.setLineWidth(0.3); doc.roundedRect(M, y, CW, 15, 1.5, 1.5, 'S')
+  doc.setFillColor(245, 251, 247); doc.roundedRect(M, y, CW, 13, 1.5, 1.5, 'F')
+  doc.setDrawColor(200, 235, 215); doc.setLineWidth(0.3); doc.roundedRect(M, y, CW, 13, 1.5, 1.5, 'S')
   const periodoTxt = cons.periodo.ini
     ? (cons.periodo.ini === cons.periodo.fim ? fmtD(cons.periodo.ini) : `${fmtD(cons.periodo.ini)} a ${fmtD(cons.periodo.fim)}`)
     : '—'
@@ -999,12 +1026,12 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   const idW = CW / 4
   ident.forEach(([lbl, val], i) => {
     const x = M + i * idW + 3
-    if (i > 0) { doc.setDrawColor(215, 238, 226); doc.line(M + i * idW, y + 2.5, M + i * idW, y + 12.5) }
-    doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR); doc.text(lbl, x, y + 5)
+    if (i > 0) { doc.setDrawColor(215, 238, 226); doc.line(M + i * idW, y + 2, M + i * idW, y + 11) }
+    doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR); doc.text(lbl, x, y + 4.5)
     doc.setFontSize(8.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
-    doc.text(truncFit(doc, val, idW - 6), x, y + 11)
+    doc.text(truncFit(doc, val, idW - 6), x, y + 10)
   })
-  y += 19
+  y += 16
 
   // ── KPIs globais ──
   const kp = cons.kpis
@@ -1017,41 +1044,56 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     ['VAZÃO MÉDIA EFETIVA', kp.vazaoMedia != null ? nDose(kp.vazaoMedia) : '—', 'L / HA', faixa],
     ['TEMPO TOTAL EM OPERAÇÃO', fmtMin(kp.tempoTotalMin), 'TEMPO ACUMULADO', kp.rendimento != null ? `Média: ${nDose(kp.rendimento)} ha/h global` : '—'],
   ]
-  const kW = CW / 4 - 2.25
+  // Cinco colunas: os quatro KPIs e, na quinta, o avanço da fazenda. Na folha em pé o
+  // avanço era uma faixa própria logo abaixo; deitado, cabe na mesma linha.
+  const av = cons.avanco
+  const kW = (CW - 12) / 5
   kpis.forEach(([lbl, val, unid, nota], i) => {
     const x = M + i * (kW + 3)
-    doc.setFillColor(252, 254, 253); doc.roundedRect(x, y, kW, 27, 1.5, 1.5, 'F')
-    doc.setDrawColor(210, 235, 222); doc.roundedRect(x, y, kW, 27, 1.5, 1.5, 'S')
+    doc.setFillColor(252, 254, 253); doc.roundedRect(x, y, kW, 24, 1.5, 1.5, 'F')
+    doc.setDrawColor(210, 235, 222); doc.roundedRect(x, y, kW, 24, 1.5, 1.5, 'S')
     doc.setFillColor(...G); doc.rect(x, y, kW, 0.9, 'F')
     doc.setFontSize(5.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
-    doc.text(doc.splitTextToSize(lbl, kW - 5), x + 2.5, y + 5)
-    doc.setFontSize(15); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
-    doc.text(String(val), x + 2.5, y + 16)
+    doc.text(doc.splitTextToSize(lbl, kW - 5), x + 2.5, y + 4.5)
+    doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
+    doc.text(String(val), x + 2.5, y + 14.5)
     doc.setFontSize(5.6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-    doc.text(unid, x + 2.5, y + 20)
+    doc.text(unid, x + 2.5, y + 18)
     doc.setFontSize(5.4); doc.setTextColor(140, 155, 148)
-    doc.text(doc.splitTextToSize(nota, kW - 5), x + 2.5, y + 24)
+    doc.text(doc.splitTextToSize(nota, kW - 5), x + 2.5, y + 21.5)
   })
-  y += 31
+  // ── Avanço físico — o quinto cartão da linha ──
+  const avX = M + 4 * (kW + 3)
+  doc.setFillColor(245, 251, 247); doc.roundedRect(avX, y, kW, 24, 1.5, 1.5, 'F')
+  doc.setDrawColor(200, 235, 215); doc.roundedRect(avX, y, kW, 24, 1.5, 1.5, 'S')
+  doc.setFillColor(...G); doc.rect(avX, y, kW, 0.9, 'F')
+  doc.setFontSize(5.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+  doc.text('AVANÇO FÍSICO NA FAZENDA', avX + 2.5, y + 4.5)
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
+  doc.text(av.pct != null ? `${nDose(av.pct)}%` : '—', avX + 2.5, y + 14.5)
+  doc.setFontSize(5.6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+  doc.text(av.pct != null ? 'CONCLUÍDO' : 'ÁREA CONTRATADA NÃO CADASTRADA', avX + 2.5, y + 18)
+  const barX = avX + 2.5, barW = kW - 5
+  doc.setFillColor(224, 236, 229); doc.rect(barX, y + 20, barW, 2.4, 'F')
+  if (av.pct != null) { doc.setFillColor(...G); doc.rect(barX, y + 20, barW * (av.pct / 100), 2.4, 'F') }
+  y += 27
 
-  // ── Avanço físico ──
-  const av = cons.avanco
-  doc.setFillColor(245, 251, 247); doc.roundedRect(M, y, CW, 14, 1.5, 1.5, 'F')
-  doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
-  doc.text(`AVANÇO FÍSICO NA FAZENDA: ${av.pct != null ? nDose(av.pct) + '% CONCLUÍDO' : 'ÁREA CONTRATADA NÃO CADASTRADA'}`, M + 3, y + 5)
-  const barX = M + 3, barW = CW - 6
-  doc.setFillColor(224, 236, 229); doc.rect(barX, y + 7, barW, 3.2, 'F')
-  if (av.pct != null) { doc.setFillColor(...G); doc.rect(barX, y + 7, barW * (av.pct / 100), 3.2, 'F') }
+  // A composição do avanço não cabe dentro do cartão e vem em linha cheia logo abaixo.
+  // O avanço é COBERTURA: sem essa linha, o número parece contradizer o KPI de aplicada.
   doc.setFontSize(6.2); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-  // O avanço é COBERTURA. Mostrar a composição evita a leitura de que os dois números
-  // (aplicado no KPI, coberto aqui) se contradizem.
   const detalheAvanco = av.bordadura > 0.005
     ? `${nHa(av.executado)} ha cobertos — ${nHa(av.aplicado)} aplicados + ${nHa(av.bordadura)} de bordadura — de ${nHa(av.contratado)} ha contratados`
     : `${nHa(av.executado)} ha executados de um total contratado de ${nHa(av.contratado)} ha`
-  doc.text(`${detalheAvanco}  •  Restam: ${nHa(av.saldo)} ha`, barX, y + 13)
-  y += 18
+  doc.text(`${detalheAvanco}  •  Restam: ${nHa(av.saldo)} ha`, M, y + 2)
+  y += 5.5
 
+  // Altura útil das colunas. O rodapé é âncora fixa e as Observações, quando existem,
+  // moram na faixa entre as colunas e ele — reservar esse espaço ANTES de desenhar é o
+  // que impede a tabela de invadir o rodapé. Na folha deitada a sobra é de milímetros.
   const yColunas = y
+  const rodY = PH - M - 13
+  const alturaObs = (observacaoAdmin && observacaoAdmin.trim()) ? 20 : 0
+  const fimColunas = rodY - 4 - alturaObs
 
   // ── Seção 1 — Balanço de talhões ──
   let y1 = tituloSecao(M, y, COLW, 1, 'BALANÇO DE TALHÕES NO PERÍODO')
@@ -1065,7 +1107,10 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   doc.text('BORD.', cT.bord, y1 + 3.8, { align: 'center' })
   doc.text('STATUS', cT.status, y1 + 3.8, { align: 'center' })
   y1 += 5.5
-  const limiteTalhoes = 14
+  // Quantas linhas cabem, medido e não chutado: o que sobra depois do título (9,5mm), do
+  // cabeçalho (5,5) e da linha de total (8), dividido pela altura da linha. O excedente
+  // vira a nota de "+ N talhões na listagem completa".
+  const limiteTalhoes = Math.max(4, Math.floor((fimColunas - yColunas - 23) / 5.6))
   // Com a opção ligada, o não iniciado entra como linha da tabela; senão fica só na nota
   // de pendentes embaixo, como sempre foi.
   const linhasTalhoes = incluirPendentes ? cons.talhoes : cons.aplicados
@@ -1156,51 +1201,60 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     y2 += ls.length * 3 + 1.4
   })
 
-  // ── Seção 3 — Insumos (largura cheia) ──
-  let y3 = Math.max(y1, y2) + 4
-  y3 = tituloSecao(M, y3, CW, 3, 'BALANÇO CONSOLIDADO DE INSUMOS APLICADOS NO PERÍODO')
-  const colsIns = [
-    ['DEFENSIVO / PRODUTO', M + 2.5, 'left', CW * 0.26],
-    ['FUNÇÃO / CLASSE', M + CW * 0.28, 'left', CW * 0.26],
-    ['DOSE OPERADA', M + CW * 0.66, 'right', CW * 0.14],
-    ['VOLUME CONSOLIDADO', M + CW * 0.82, 'right', CW * 0.14],
-    ['STATUS', M + CW - 2.5, 'right', CW * 0.14],
-  ]
-  doc.setFillColor(238, 246, 241); doc.rect(M, y3, CW, 5.5, 'F')
+  // ── Seção 3 — Insumos (terceira coluna) ──
+  //
+  // Na folha em pé esta tabela ocupava a largura toda, embaixo das outras duas. Deitada
+  // ela sobe pra terceira coluna, e com 88mm em vez de 277 as cinco colunas não cabem
+  // mais lado a lado: a classe do produto virou subtítulo do nome, e o "CONFORME CALDA"
+  // desceu pra baixo do volume. Nenhuma informação saiu — só mudou de lugar.
+  let y3 = tituloSecao(C3X, yColunas, COLW, 3, 'BALANÇO DE INSUMOS NO PERÍODO')
+  doc.setFillColor(238, 246, 241); doc.rect(C3X, y3, COLW, 5.5, 'F')
   doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
-  colsIns.forEach(([t, x, al]) => doc.text(t, x, y3 + 3.8, { align: al }))
+  doc.text('DEFENSIVO / PRODUTO', C3X + 2.5, y3 + 3.8)
+  doc.text('DOSE OPERADA', C3X + COLW * 0.72, y3 + 3.8, { align: 'right' })
+  doc.text('VOLUME', C3X + COLW - 2.5, y3 + 3.8, { align: 'right' })
   y3 += 5.5
   if (cons.insumos.length === 0) {
     doc.setFontSize(7); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
-    doc.text('Nenhum produto registrado nos voos do período.', M + 2.5, y3 + 4); y3 += 6.5
+    doc.text('Nenhum produto registrado', C3X + 2.5, y3 + 4)
+    doc.text('nos voos do período.', C3X + 2.5, y3 + 7.5); y3 += 10
   }
-  cons.insumos.slice(0, 8).forEach((ins, i) => {
-    if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(M, y3, CW, 6.2, 'F') }
+  // Mesma conta da tabela de talhões, com a linha mais alta (nome + classe embaixo).
+  const limiteInsumos = Math.max(3, Math.floor((fimColunas - yColunas - 15) / 8.4))
+  cons.insumos.slice(0, limiteInsumos).forEach((ins, i) => {
+    if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(C3X, y3, COLW, 8.4, 'F') }
     doc.setFontSize(7); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
-    doc.text(truncFit(doc, ins.nome, CW * 0.25), M + 2.5, y3 + 4.2)
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.4); doc.setTextColor(...GR)
-    doc.text(truncFit(doc, ins.classe || '—', CW * 0.36), M + CW * 0.28, y3 + 4.2)
-    doc.setFontSize(6.6); doc.setTextColor(...DK)
+    doc.text(truncFit(doc, ins.nome, COLW * 0.66), C3X + 2.5, y3 + 3.9)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.4); doc.setTextColor(...GR)
+    doc.text(truncFit(doc, ins.classe || '—', COLW * 0.66), C3X + 2.5, y3 + 7.2)
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.4); doc.setTextColor(...DK)
     const dose = ins.doseMin == null ? '—'
       : (ins.doseMin === ins.doseMax ? `${nDose(ins.doseMin)} ${ins.unidade}/ha` : `${nDose(ins.doseMin)} a ${nDose(ins.doseMax)} ${ins.unidade}/ha`)
-    doc.text(dose, M + CW * 0.66, y3 + 4.2, { align: 'right' })
-    doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
-    doc.text(`${nHa(ins.volume)} ${ins.unidade}`, M + CW * 0.82, y3 + 4.2, { align: 'right' })
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.6); doc.setTextColor(...GR)
-    doc.text('CONFORME CALDA', M + CW - 2.5, y3 + 4.2, { align: 'right' })
-    y3 += 6.2
+    doc.text(truncFit(doc, dose, COLW * 0.32), C3X + COLW * 0.72, y3 + 3.9, { align: 'right' })
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.6); doc.setTextColor(...G)
+    doc.text(`${nHa(ins.volume)} ${ins.unidade}`, C3X + COLW - 2.5, y3 + 3.9, { align: 'right' })
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.2); doc.setTextColor(...GR)
+    doc.text('CONFORME CALDA', C3X + COLW - 2.5, y3 + 7.2, { align: 'right' })
+    y3 += 8.4
   })
-
-  if (observacaoAdmin && observacaoAdmin.trim()) {
-    y3 += 3
-    y3 = tituloSecao(M, y3, CW, 4, 'OBSERVAÇÕES')
-    doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
-    const ls = doc.splitTextToSize(observacaoAdmin.trim(), CW - 6)
-    doc.text(ls.slice(0, 4), M + 2.5, y3 + 3.5)
+  if (cons.insumos.length > limiteInsumos) {
+    doc.setFontSize(6); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
+    doc.text(`+ ${cons.insumos.length - limiteInsumos} produto(s) na listagem completa`, C3X + 2.5, y3 + 3.6); y3 += 5.6
   }
 
-  // ── Rodapé corporativo ──
-  const rodY = PH - M - 13
+  // Fim das três colunas: daqui pra baixo tudo volta a ser largura cheia. O `min` é rede
+  // de segurança — notas de rodapé de coluna (pendentes, destaques) podem passar do limite.
+  let yFim = Math.min(Math.max(y1, y2, y3), fimColunas)
+
+  if (observacaoAdmin && observacaoAdmin.trim()) {
+    yFim = tituloSecao(M, yFim + 4, CW, 4, 'OBSERVAÇÕES')
+    doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
+    const lsObs = doc.splitTextToSize(observacaoAdmin.trim(), CW - 6)
+    doc.text(lsObs.slice(0, 3), M + 2.5, yFim + 3.5)
+    yFim += lsObs.slice(0, 3).length * 3.4 + 2
+  }
+
+  // ── Rodapé corporativo ── (rodY foi definido junto com yColunas: é a âncora do layout)
 
   // ── Foto e mapa NA PÁGINA 1, quando escolhido ──
   //
@@ -1208,10 +1262,10 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   // couber: abaixo de ALTURA_MINIMA_MIDIA o resultado fica ilegível, e aí é melhor cair pra
   // página separada do que espremer. Uma fazenda com muitos talhões come essa sobra.
   const ALTURA_MINIMA_MIDIA = 38
-  const espacoLivre = rodY - y3 - 6
+  const espacoLivre = rodY - yFim - 6
   const cabeNaPagina1 = midiaNaPagina1 && (fotoGeralBase64 || mapaConsolidado) && espacoLivre >= ALTURA_MINIMA_MIDIA
   if (cabeNaPagina1) {
-    let ym = y3 + 3
+    let ym = yFim + 3
     const dois = fotoGeralBase64 && mapaConsolidado
     const wBloco = dois ? (CW - 6) / 2 : CW
     const hBloco = Math.min(espacoLivre - 9, 78)
@@ -1258,7 +1312,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   // não ganha folha em branco por causa de uma opção que ninguém usou.
   // ═══════════════════════════════════════════════════════════════════════════════════
   if ((fotoGeralBase64 || mapaConsolidado) && !cabeNaPagina1) {
-    doc.addPage('a4', 'p')
+    doc.addPage([297, 210], 'l')
     fundoBranco()
     let yg = M
 
@@ -1269,37 +1323,39 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     yg += 9
     doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, yg, PW - M, yg); yg += 6
 
-    // A foto e o mapa dividem a altura útil. Com os dois, cada um fica com metade; com um
-    // só, ele ocupa o espaço todo — senão sobra um vazio esquisito no meio da página.
+    // Numa folha deitada os dois blocos ficam LADO A LADO, não empilhados: empilhado, cada
+    // um vira uma faixa de 70mm de altura por 277 de largura, e nem foto de fazenda nem
+    // mapa de talhão têm esse formato — sobra branco dos dois lados e a imagem sai pequena.
     const alturaUtil = PH - yg - M - 14
-    const alturaBloco = (fotoGeralBase64 && mapaConsolidado) ? (alturaUtil - 8) / 2 : alturaUtil
+    const doisBlocos = fotoGeralBase64 && mapaConsolidado
+    const wBloco = doisBlocos ? (CW - 8) / 2 : CW
+    let xg = M
 
     if (fotoGeralBase64) {
-      yg = tituloSecao(M, yg, CW, 1, 'FOTO GERAL DA FAZENDA')
+      const yFoto = tituloSecao(xg, yg, wBloco, 1, 'FOTO GERAL DA FAZENDA')
       try {
         const prop = doc.getImageProperties(fotoGeralBase64)
-        const escala = Math.min(CW / prop.width, (alturaBloco - 12) / prop.height)
+        const escala = Math.min(wBloco / prop.width, (alturaUtil - 12) / prop.height)
         const w = prop.width * escala, h = prop.height * escala
-        doc.addImage(fotoGeralBase64, 'JPEG', M + (CW - w) / 2, yg, w, h)
-        yg += h + 6
+        doc.addImage(fotoGeralBase64, 'JPEG', xg + (wBloco - w) / 2, yFoto, w, h)
       } catch (e) {
         doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
-        doc.text('Não foi possível carregar a foto.', M + 2, yg + 5); yg += 10
+        doc.text('Não foi possível carregar a foto.', xg + 2, yFoto + 5)
       }
+      xg += wBloco + 8
     }
 
     if (mapaConsolidado) {
-      yg = tituloSecao(M, yg, CW, fotoGeralBase64 ? 2 : 1, mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
-      const hMapa = alturaBloco - 16
-      desenharMapa(doc, M, yg, CW, hMapa, mapaConsolidado, { G, GR })
-      yg += hMapa + 4
+      const yMapa = tituloSecao(xg, yg, wBloco, fotoGeralBase64 ? 2 : 1, mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
+      const hMapa = alturaUtil - 20
+      desenharMapa(doc, xg, yMapa, wBloco, hMapa, mapaConsolidado, { G, GR })
       doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
       const legenda = mapaConsolidado.origem === 'fazenda'
         ? 'Contorno da fazenda a partir do KML enviado no momento da geração do relatório.'
         : mapaConsolidado.trajetos < mapaConsolidado.total
           ? `Trajetos de ${mapaConsolidado.trajetos} dos ${mapaConsolidado.total} voos com KML no período — cada cor é um voo. Os demais ficaram de fora do desenho por limite do mapa.`
           : `Trajetos dos ${mapaConsolidado.trajetos} voos com KML no período — cada cor é um voo.`
-      doc.text(doc.splitTextToSize(legenda, CW), M, yg + 3)
+      doc.text(doc.splitTextToSize(legenda, wBloco), xg, yMapa + hMapa + 3)
     }
 
     doc.setDrawColor(...G); doc.setLineWidth(0.5); doc.line(M, PH - M - 6, PW - M, PH - M - 6)
@@ -1324,7 +1380,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   // o total é conhecido. Volta na página 1 e carimba no rodapé.
   doc.setPage(1)
   doc.setFontSize(5.6); doc.setFont('helvetica','normal'); doc.setTextColor(...GR)
-  doc.text(`Página 1 de ${doc.getNumberOfPages()}`, 210/2, 297-10+8.5, { align:'center' })
+  doc.text(`Página 1 de ${doc.getNumberOfPages()}`, 297/2, 210-10+8.5, { align:'center' })
 
   return doc
 }

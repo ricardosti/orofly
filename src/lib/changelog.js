@@ -14,6 +14,16 @@ export const NOVIDADES = [
     itens: [
       {
         tipo: 'melhoria',
+        titulo: 'Relatório da fazenda inteiro na horizontal',
+        texto: 'A primeira página era a única em pé: quem abria o PDF girava a tela nela e desgirava na seguinte. Agora o documento todo sai deitado. Deitada, a folha ganha largura e perde altura, então o resumo passou de duas para três colunas — talhões, pilotos e insumos lado a lado — e a barra de avanço virou o quinto cartão da linha de indicadores. Nada saiu do relatório, só mudou de lugar. Na página de fotos, a imagem da fazenda e o mapa também ficam lado a lado.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Nome comprido escrevia por cima da assinatura',
+        texto: 'Na faixa de assinatura do relatório de voo, nome que passava de 55mm vazava por cima do texto ao lado — acontecia com PAULO HENRIQUE SERRA MUNIZ e com ISAEL MATEUS SERRA MUNIZ. Agora a letra diminui o quanto precisar para caber, em vez de cortar ou invadir.',
+      },
+      {
+        tipo: 'melhoria',
         titulo: 'Texto do WhatsApp mostra só o que aquele piloto fez',
         texto: 'Num talhão dividido entre duas frentes, a linha de áreas trazia o tamanho cadastrado ao lado ("Talhão 50,87 ha | Neste voo 39,17 ha") e o cliente lia o número maior como pendência daquele piloto. Agora sai só o voo: Tot 39,17 | Bord 1,37 | Aplic 37,80 — e os três fecham entre si. Quem soma o montante do talhão é o relatório consolidado da fazenda.',
       },
