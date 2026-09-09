@@ -158,15 +158,14 @@ function bordaduraAtual(form) {
   if (talhoesSel.length > 1) return talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
   return parseFloat(form.bordadura)||0
 }
-// Área líquida = o que foi FEITO, e ponto: a área aplicada do Passo 5 JÁ EXCLUI a bordadura (o
-// piloto lança a faixa de segurança ao lado dela — 15,20 aplicados + 1,52 de bordadura = 16,72
-// percorridos). Descontar de novo tirava o hectare duas vezes, do relatório e da baixa de estoque.
-// Só quando não há nada digitado como "aplicado" cai pro escopo do voo, e aí sim a bordadura sai
-// de dentro — porque area_ha é o que havia a percorrer, bordadura inclusa.
+// Área líquida = o que foi percorrido menos a bordadura. O Passo 5 pergunta quanto o piloto
+// aplicou hoje e, dentro disso, quanto foi bordadura (o segundo campo é limitado ao primeiro),
+// então a faixa de segurança sai DE DENTRO: percorreu 20, 5 de bordadura, aplicou 15.
+// Sem nada digitado, o escopo do voo faz o papel do percorrido — ele também inclui a bordadura.
 function areaLiquidaAtual(form) {
   const feita = areaFeitaAtual(form)
-  if (feita > 0) return +feita.toFixed(2)
-  return Math.max(0, +(((parseFloat(form.area_ha)||0)-bordaduraAtual(form))).toFixed(2))
+  const base = feita>0 ? feita : (parseFloat(form.area_ha)||0)
+  return Math.max(0, +((base-bordaduraAtual(form))).toFixed(2))
 }
 // Área feita até agora: com mais de um talhão selecionado, soma o que foi digitado em cada um
 // (form.area_feita_por_talhao); com um só, usa o valor único de sempre (form.area_feita).
@@ -4596,7 +4595,7 @@ Quando: ${tempoErroDebug.quando}`}
 
                   {form.bordadura&&form.area_ha&&(
                     <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:-8,marginBottom:14}}>
-                      Bordadura: {form.bordadura} ha · Área aplicada líquida: {areaLiquidaAtual(form)} ha
+                      Percorrido: {(areaFeitaAtual(form)>0?areaFeitaAtual(form):(parseFloat(form.area_ha)||0)).toFixed(2)} ha · Bordadura: {bordaduraAtual(form).toFixed(2)} ha · Aplicado: {areaLiquidaAtual(form).toFixed(2)} ha
                     </div>
                   )}
                 </>
@@ -5121,19 +5120,26 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false,talhoesCatalogo
   const fmtHora=p=>{const hh=form[p+'_hh'],mm=form[p+'_mm'];return (hh||mm)?`${hh||'00'}:${mm||'00'}`:'—'}
   const fmtDataCurta=p=>{const d=form[p+'_data'];if(!d)return'—';const partes=d.split('-');return partes.length===3?`${partes[2]}/${partes[1]}`:d}
 
-  const areaTotal = parseFloat(form.area_ha)||0
+  // O "Tot" da linha de áreas é o PERCORRIDO nesta rodada, não o escopo que o piloto pegou:
+  // pegou 23,47 de saldo, percorreu 20 (5 de bordadura) → Tot 20 | Bord 5 | Aplic 15.
   const bordTotal = bordaduraAtual(form)
   const areaAplicada = areaLiquidaAtual(form)
+  const areaTotal = areaFeitaAtual(form) > 0 ? areaFeitaAtual(form) : (parseFloat(form.area_ha)||0)
   const {feita:areaFeita,pct:pctFeito} = progressoParcial(form)
   const produtosStrings = form.produtos.filter(Boolean).map(prodFmt||(p=>p))
   const talhoes = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
 
+  // Por talhão vale a mesma regra da linha única: "Tot" é o PERCORRIDO naquele talhão, que é o
+  // que o piloto digitou no Passo 5. Só quando ele não digitou (registro sem breakdown) o
+  // tamanho cadastrado faz esse papel.
   const dadosPorTalhao = talhoes.map(nome => {
     const doCatalogo = talhoesCatalogo.find(t=>t.nome===nome)
-    const total = doCatalogo ? parseFloat(doCatalogo.area_ha)||0 : null
+    const cadastrado = doCatalogo ? parseFloat(doCatalogo.area_ha)||0 : null
     const bord = parseFloat(form.bordaduraPorTalhao?.[nome])||0
-    const aplicada = total!=null ? Math.max(0,total-bord) : null
-    return { nome, total, bord, aplicada }
+    const feitaN = parseFloat(form.area_feita_por_talhao?.[nome])||0
+    const total = feitaN>0 ? +feitaN.toFixed(2) : cadastrado
+    const aplicada = total!=null ? Math.max(0,+(total-bord).toFixed(2)) : null
+    return { nome, total, cadastrado, bord, aplicada }
   })
 
   const blocos = []

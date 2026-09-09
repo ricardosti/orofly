@@ -50,14 +50,17 @@ export function parseDoseProduto(str) {
 // uma fração foi aplicada (bug real: 30 ha aplicados de um talhão de 100 ha gerava relatório de
 // 100 ha / 2x o produto usado de verdade).
 export function areaLiquida(rel) {
+  // `area_feita` é o que o piloto PERCORREU nesta rodada, bordadura inclusa — é assim que o
+  // Passo 5 pergunta ("quanto aplicou hoje" e, dentro disso, "quanto foi bordadura", com o
+  // segundo campo limitado ao primeiro). Então a bordadura sai DE DENTRO: percorreu 20, 5 de
+  // bordadura, aplicou 15. Regra confirmada com a operação em 09/09/2026.
+  //
+  // Em 08/09 isso chegou a ser invertido aqui, lendo "aplicada 15,20 + bordadura 1,52 = 16,72"
+  // como se 15,20 fosse o campo digitado. Era o contrário: 16,72 é o digitado, 15,20 o que sai.
   const feita = parseFloat(rel.area_feita)
-  // `area_feita` JÁ É a área pulverizada — a bordadura fica ao lado dela, não dentro.
-  // Confirmado com a operação em 08/09/2026, no talhão 005-01 do REMANSO I: aplicada 15,20 +
-  // bordadura 1,52 = 16,72, o talhão inteiro. Subtrair aqui descontava a bordadura duas vezes
-  // e o relatório saía com menos produto do que o piloto usou de fato.
-  if (!isNaN(feita) && feita > 0) return +feita.toFixed(2)
+  if (!isNaN(feita) && feita > 0) return Math.max(0, +(feita - (parseFloat(rel.bordadura)||0)).toFixed(2))
   // Sem `area_feita` (registros antigos), o que existe é `area_ha` = o ESCOPO do voo, que
-  // inclui a bordadura. Aí sim ela sai de dentro pra chegar no que foi pulverizado.
+  // também inclui a bordadura. A conta é a mesma.
   const bruta = parseFloat(rel.area_ha)||0
   const bord = parseFloat(rel.bordadura)||0
   return Math.max(0, +(bruta-bord).toFixed(2))
@@ -470,7 +473,12 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     return {total:f(t), efetivo:f(t-p)}
   }
   const tempo = calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)
-  const areaBrutaC = parseFloat(rel.area_ha)||0
+  // "TOTAL" no trio Total/Realizada/Bordadura é o PERCORRIDO neste voo, não o escopo que o
+  // piloto pegou: pegou 23,47 de saldo, percorreu 20 (5 de bordadura) → TOTAL 20, REALIZADA 15,
+  // BORDADURA 5. Assim os três fecham na cara do cliente. Sem `area_feita` (registro antigo) o
+  // escopo faz esse papel — ele também inclui a bordadura.
+  const feitaC = parseFloat(rel.area_feita)
+  const areaBrutaC = !isNaN(feitaC) && feitaC > 0 ? +feitaC.toFixed(2) : (parseFloat(rel.area_ha)||0)
   const bordaduraHaC = parseFloat(rel.bordadura)||0
   const area  = areaLiquida(rel) // já desconta a bordadura
   const vazao = parseFloat(rel.vazao_i||rel.vazao_f)||0
@@ -1502,7 +1510,9 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
     return {total:fmtM(total),efetivo:fmtM(total-p),temPausa:p>0}
   }
   const tempo = calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)
-  const areaBrutaW = parseFloat(rel.area_ha)||0
+  // Mesma regra do PDF: o total do Word é o percorrido, pra fechar com a líquida e a bordadura.
+  const feitaW = parseFloat(rel.area_feita)
+  const areaBrutaW = !isNaN(feitaW) && feitaW > 0 ? +feitaW.toFixed(2) : (parseFloat(rel.area_ha)||0)
   const areaNetaW = areaLiquida(rel)
   const gastosProdutosW = calcularGastoProdutos(rel.produtos, areaNetaW)
 
@@ -1579,7 +1589,7 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
   ${rel.status==='pausado_dia'?`<tr><td>Status</td><td>Parcial</td></tr>`:''}
   ${rel.tipo_servico?`<tr><td>Tipo de Serviço</td><td>${rel.tipo_servico==='catacao'?'Catação':'Área Total'}</td></tr>`:''}
   ${rel.qtd_voos&&rel.qtd_voos>1?`<tr><td>Qtde de Voos</td><td>${rel.qtd_voos}</td></tr>`:''}
-  ${areaBrutaW?`<tr><td>Área Total (talhões)</td><td>${areaBrutaW} ha</td></tr>`:''}
+  ${areaBrutaW?`<tr><td>Área Percorrida</td><td>${areaBrutaW} ha</td></tr>`:''}
   ${areaBrutaW?`<tr><td>Área Realizada</td><td>${areaNetaW} ha</td></tr>`:''}
   ${rel.bordadura?`<tr><td>Bordadura</td><td>${rel.bordadura} ha${rel.bordadura_detalhe?.length?' ('+rel.bordadura_detalhe.map(d=>`${d.talhao}: ${d.bordadura}ha`).join(', ')+')':''}</td></tr>`:''}
   <tr><td>Localização</td><td>${rel.localizacao||'—'}</td></tr>

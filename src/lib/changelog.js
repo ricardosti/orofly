@@ -13,6 +13,11 @@ export const NOVIDADES = [
     data: '2026-09-08',
     itens: [
       {
+        tipo: 'correcao',
+        titulo: 'Bordadura volta a sair de dentro da área feita',
+        texto: 'A bordadura é lançada como parte do que o piloto percorreu, não ao lado dela: percorreu 20 ha e 5 foram bordadura, então aplicou 15. Essa conta chegou a ser invertida por engano e o relatório passou a somar a bordadura por fora. Voltou ao certo. Junto, a linha de áreas passou a abrir o PERCORRIDO em vez do escopo do voo: onde saía Tot 23,47 · Bord 5,00 · Aplic 20,00 — e 23,47 era o saldo que o piloto pegou, não o que ele voou — agora sai Tot 20,00 · Bord 5,00 · Aplic 15,00, com os três números fechando entre si. Vale no PDF, no Word e no texto do WhatsApp. No Passo 5 o piloto passa a ver os três enquanto digita.',
+      },
+      {
         tipo: 'melhoria',
         titulo: 'Relatório da fazenda inteiro na horizontal',
         texto: 'A primeira página era a única em pé: quem abria o PDF girava a tela nela e desgirava na seguinte. Agora o documento todo sai deitado. Deitada, a folha ganha largura e perde altura, então o resumo passou de duas para três colunas — talhões, pilotos e insumos lado a lado — e a barra de avanço virou o quinto cartão da linha de indicadores. Nada saiu do relatório, só mudou de lugar. Na página de fotos, a imagem da fazenda e o mapa também ficam lado a lado.',

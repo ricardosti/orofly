@@ -102,12 +102,13 @@ const linhaDiv16 = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 
 // Área líquida REALMENTE aplicada — mesma lógica de `areaLiquida` em lib/pdf.js (duplicada
 // aqui de propósito pra manter esse builder de WhatsApp leve/sem depender do módulo de PDF).
-// area_feita é o que foi realmente FEITO (Finalizado ou Finalizado Parcial) e JÁ VEM sem a
-// bordadura — ela é lançada ao lado, não dentro. Só cai pro escopo do voo em registros antigos,
-// sem area_feita preenchido, e aí sim a bordadura sai de dentro.
+// area_feita é o que o piloto PERCORREU (Finalizado ou Finalizado Parcial), bordadura inclusa —
+// ela sai de dentro pra chegar no que foi pulverizado. Sem area_feita (registro antigo) o escopo
+// do voo faz o mesmo papel. Mesma regra de `areaLiquida` em lib/pdf.js, duplicada de propósito
+// pra este builder de WhatsApp não depender do módulo de PDF.
 function areaLiquidaLocal(rel) {
   const feita = parseFloat(rel.area_feita)
-  if (!isNaN(feita) && feita > 0) return +feita.toFixed(2)
+  if (!isNaN(feita) && feita > 0) return Math.max(0, +(feita - (parseFloat(rel.bordadura) || 0)).toFixed(2))
   const bruta = parseFloat(rel.area_ha) || 0
   const bord = parseFloat(rel.bordadura) || 0
   return Math.max(0, +(bruta - bord).toFixed(2))
@@ -216,14 +217,13 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   ;(rel.area_feita_detalhe || []).forEach(d => { if (d?.talhao) feitaPorTalhao[d.talhao] = parseFloat(d.area_feita) || 0 })
   const temBreakdownReal = Object.keys(feitaPorTalhao).length > 0
   if (temBreakdownReal) {
-    // O que o piloto digitou como feito naquele talhão já é a área aplicada — a bordadura fica
-    // ao lado dela, na coluna Bord, e não pode ser descontada de novo.
-    dadosPorTalhao.forEach(d => { d.aplicada = Math.max(0, +(feitaPorTalhao[d.nome] ?? 0).toFixed(2)) })
+    // O que o piloto digitou como feito naquele talhão é o percorrido; a bordadura sai de dentro.
+    dadosPorTalhao.forEach(d => { d.aplicada = Math.max(0, +((feitaPorTalhao[d.nome] ?? 0) - d.bord).toFixed(2)) })
   } else {
     const areaFeitaRel = parseFloat(rel.area_feita)
     const somaTotais = dadosPorTalhao.reduce((a, d) => a + (d.total || 0), 0)
     if (!isNaN(areaFeitaRel) && areaFeitaRel > 0 && somaTotais > 0) {
-      dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = Math.max(0, +(areaFeitaRel * (d.total / somaTotais)).toFixed(2)) })
+      dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = Math.max(0, +(areaFeitaRel * (d.total / somaTotais) - d.bord).toFixed(2)) })
     }
   }
   const areaAplicadaGeral = areaLiquidaLocal(rel)
@@ -244,9 +244,9 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
     const area = []
     if (talhoes.length > 1) {
       dadosPorTalhao.forEach(({ nome, total, bord, aplicada }, i) => {
-        // "Tot" é o que ESTA frente percorreu no talhão (aplicada + bordadura), não o tamanho
-        // cadastrado — mesma regra da linha de talhão único. Em registro sem breakdown por
-        // talhão os dois dão no mesmo, porque aí a aplicada já sai do cadastro menos a bordadura.
+        // "Tot" é o que ESTA frente percorreu no talhão — aplicada mais a bordadura que saiu de
+        // dentro dela, ou seja, de volta ao que o piloto digitou. Mesma regra da linha de talhão
+        // único: nunca o tamanho cadastrado.
         const percorrido = aplicada != null ? +(aplicada + bord).toFixed(2) : null
         area.push(percorrido != null
           ? `Tal. ${nome}: Tot ${fmtHa(percorrido)} ha | Bord ${fmtHa(bord)} | Aplic ${fmtHa(aplicada)} ha`
@@ -254,12 +254,16 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
         if (i < dadosPorTalhao.length - 1) area.push('')
       })
     } else {
-      // `rel.area_ha` guarda o escopo DESTE voo (num talhão dividido, é a parcela desta frente,
-      // não o tamanho cheio do talhão) — e é SÓ ele que sai aqui. O tamanho cadastrado do talhão
-      // chegou a aparecer ao lado ("Talhão 50,87 | Neste voo 39,17") e confundia: o relatório de
-      // um voo é o que AQUELE piloto fez, e o cliente lia o número maior como pendência dele.
-      // Quem fecha o montante do talhão é o consolidado da fazenda, que soma todas as frentes.
-      area.push(`Tot ${fmtHa(rel.area_ha)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
+      // "Tot" é o que esta frente PERCORREU neste voo, não o escopo que ela pegou: pegou 23,47
+      // de saldo, percorreu 20, sendo 5 de bordadura → Tot 20 | Bord 5 | Aplic 15. Os três
+      // fecham entre si, que é o que o cliente confere.
+      //
+      // Nem o escopo do voo nem o tamanho cadastrado do talhão saem aqui: o relatório de um voo
+      // é o que AQUELE piloto fez, e número maior ao lado o cliente lê como pendência dele. Quem
+      // fecha o montante do talhão é o consolidado da fazenda, somando todas as frentes.
+      const feitaVoo = parseFloat(rel.area_feita)
+      const percorridoVoo = !isNaN(feitaVoo) && feitaVoo > 0 ? feitaVoo : (parseFloat(rel.area_ha) || 0)
+      area.push(`Tot ${fmtHa(percorridoVoo)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
     }
     blocos.push(`*Áreas*\n${area.join('\n')}`)
   }
