@@ -13,6 +13,11 @@ export const NOVIDADES = [
     data: '2026-09-08',
     itens: [
       {
+        tipo: 'melhoria',
+        titulo: 'Texto do WhatsApp mostra só o que aquele piloto fez',
+        texto: 'Num talhão dividido entre duas frentes, a linha de áreas trazia o tamanho cadastrado ao lado ("Talhão 50,87 ha | Neste voo 39,17 ha") e o cliente lia o número maior como pendência daquele piloto. Agora sai só o voo: Tot 39,17 | Bord 1,37 | Aplic 37,80 — e os três fecham entre si. Quem soma o montante do talhão é o relatório consolidado da fazenda.',
+      },
+      {
         tipo: 'correcao',
         titulo: 'Talhão continuado por outro piloto vinha com a área cheia',
         texto: 'Quem pegava um talhão já iniciado herdava o escopo inteiro do primeiro piloto — um talhão de 50,87 ha com 11,7 já feitos abria de novo com 50,87. Agora o campo ÁREA já vem com o saldo (39,17 no exemplo), e a lista de talhões mostra em destaque quanto falta, não o tamanho total. O atalho "Continuar (nome do piloto)" saiu: cada frente lança o que fez, e o consolidado soma.',
