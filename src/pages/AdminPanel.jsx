@@ -405,6 +405,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzClienteFiltro, setFzClienteFiltro] = useState('')
   const [fzStatusFiltro, setFzStatusFiltro] = useState('') // '' | 'concluida' | 'parcial' | 'nao_iniciada'
   const [fzVisaoView, setFzVisaoView] = useState('tabela') // 'tabela' | 'cards' — visão das fazendas na aba Visão Geral
+  // Ordenação da lista de fazendas. Vale pros dois modos de visão: quem ordena na tabela e
+  // troca pra cards continua vendo a mesma ordem.
+  const [fzOrdem, setFzOrdem] = useState({ campo:'nome', dir:'asc' })
   const [fzHistoricoModal, setFzHistoricoModal] = useState(null) // fazenda selecionada pra ver ciclos anteriores (ou null)
   const [fzExpandido, setFzExpandido] = useState({})
   const [invMovimentos, setInvMovimentos] = useState([])
@@ -3765,6 +3768,41 @@ export default function AdminPanel({ onSwitchMode }) {
               )
             }
             const fazendasBIFiltradas = fzStatusFiltro ? fazendasBI.filter(f=>fzStatus(f)===fzStatusFiltro) : fazendasBI
+
+            // ── Ordenação ──
+            // Fazenda sem talhão tem `pct` null, e fazenda que nunca teve o ciclo zerado tem
+            // `campanha_inicio` null. Essas vão sempre pro FIM da lista, nas duas direções: em
+            // "progresso crescente" o que interessa é a fazenda com menos avanço, não um punhado
+            // de linhas sem dado empurrando as de verdade pra baixo.
+            const FZ_ORDENACOES = [
+              ['nome','asc','Fazenda (A–Z)'],
+              ['nome','desc','Fazenda (Z–A)'],
+              ['pct','asc','Progresso (menor primeiro)'],
+              ['pct','desc','Progresso (maior primeiro)'],
+              ['areaTotal','asc','Área (menor primeiro)'],
+              ['areaTotal','desc','Área (maior primeiro)'],
+              ['campanha_inicio','asc','Ciclo desde (mais antigo)'],
+              ['campanha_inicio','desc','Ciclo desde (mais recente)'],
+            ]
+            function valorOrdem(f, campo) {
+              if (campo==='nome') return (f.nome||'').toLowerCase()
+              if (campo==='campanha_inicio') return f.campanha_inicio ? new Date(f.campanha_inicio).getTime() : null
+              const v = f[campo]
+              return (v===null || v===undefined || isNaN(v)) ? null : v
+            }
+            const fazendasBIOrdenadas = [...fazendasBIFiltradas].sort((a,b)=>{
+              const va = valorOrdem(a, fzOrdem.campo), vb = valorOrdem(b, fzOrdem.campo)
+              if (va===null || vb===null) {
+                if (va===null && vb===null) return (a.nome||'').localeCompare(b.nome||'','pt-BR')
+                return va===null ? 1 : -1
+              }
+              const cmp = typeof va==='string' ? va.localeCompare(vb,'pt-BR') : va-vb
+              // Empate cai no nome, senão a lista dança sozinha a cada redesenho — tem várias
+              // fazendas em 100% e várias com a mesma área.
+              return (fzOrdem.dir==='asc' ? cmp : -cmp) || (a.nome||'').localeCompare(b.nome||'','pt-BR')
+            })
+            // Clicar no cabeçalho: a primeira vez ordena crescente, clicar de novo inverte.
+            const alternarOrdem = campo => setFzOrdem(o => o.campo===campo ? {campo, dir:o.dir==='asc'?'desc':'asc'} : {campo, dir:'asc'})
             const qtdConcluidas = fazendasBI.filter(f=>fzStatus(f)==='concluida').length
             const qtdParciais = fazendasBI.filter(f=>fzStatus(f)==='parcial').length
             const qtdNaoIniciadas = fazendasBI.filter(f=>fzStatus(f)==='nao_iniciada').length
@@ -3950,11 +3988,22 @@ export default function AdminPanel({ onSwitchMode }) {
                             onClick={()=>setFzStatusFiltro(val)}>{label}</button>
                         ))}
                       </div>
+                      <div style={{display:'flex',gap:8,alignItems:'center',flexShrink:0}}>
+                      {/* O seletor existe além dos cabeçalhos clicáveis porque no modo Cards não
+                          há cabeçalho, e no celular a tabela rola na horizontal. */}
+                      <select value={fzOrdem.campo+':'+fzOrdem.dir}
+                        onChange={e=>{const [campo,dir]=e.target.value.split(':');setFzOrdem({campo,dir})}}
+                        style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:theme.radius||8,padding:'6px 8px',fontSize:11.5,fontWeight:600,color:theme.textMuted,background:theme.card,outline:'none',cursor:'pointer',maxWidth:210}}>
+                        {FZ_ORDENACOES.map(([campo,dir,lbl])=>(
+                          <option key={campo+dir} value={campo+':'+dir}>{lbl}</option>
+                        ))}
+                      </select>
                       <div style={{display:'flex',background:theme.divider,borderRadius:theme.radius||8,padding:3,gap:2,flexShrink:0}}>
                         {[['tabela','Tabela'],['cards','Cards']].map(([v,lbl])=>(
                           <button key={v} style={{background:fzVisaoView===v?theme.card:'transparent',color:fzVisaoView===v?theme.text:theme.textMuted,border:'none',borderRadius:6,padding:'5px 12px',fontSize:11.5,fontWeight:600,cursor:'pointer',boxShadow:fzVisaoView===v?'0 1px 2px rgba(15,23,42,0.08)':'none'}}
                             onClick={()=>setFzVisaoView(v)}>{lbl}</button>
                         ))}
+                      </div>
                       </div>
                     </div>
 
@@ -3967,13 +4016,20 @@ export default function AdminPanel({ onSwitchMode }) {
                         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
                           <thead>
                             <tr style={{borderBottom:`1px solid ${theme.cardBorder2}`}}>
-                              {['Fazenda','Cliente / Produto','Status','Progresso','Área (ha)','Ciclo desde',''].map((h,i)=>(
-                                <th key={h+i} style={{textAlign:i>=3&&i<=4?'right':'left',padding:'9px 12px',fontSize:10.5,fontWeight:600,color:theme.textFaint2,letterSpacing:.4,textTransform:'uppercase',whiteSpace:'nowrap'}}>{h}</th>
+                              {[['Fazenda','nome'],['Cliente / Produto',null],['Status',null],['Progresso','pct'],['Área (ha)','areaTotal'],['Ciclo desde','campanha_inicio'],['',null]].map(([h,campo],i)=>(
+                                <th key={h+i} style={{textAlign:i>=3&&i<=4?'right':'left',padding:'9px 12px',fontSize:10.5,fontWeight:600,color:theme.textFaint2,letterSpacing:.4,textTransform:'uppercase',whiteSpace:'nowrap'}}>
+                                  {campo ? (
+                                    <button type="button" onClick={()=>alternarOrdem(campo)} title="Ordenar por esta coluna"
+                                      style={{background:'none',border:'none',padding:0,font:'inherit',letterSpacing:'inherit',textTransform:'inherit',color:fzOrdem.campo===campo?theme.text:'inherit',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:3}}>
+                                      {h}<span style={{fontSize:8,opacity:fzOrdem.campo===campo?1:.3}}>{fzOrdem.campo===campo&&fzOrdem.dir==='desc'?'▼':'▲'}</span>
+                                    </button>
+                                  ) : h}
+                                </th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
-                            {fazendasBIFiltradas.map(fz=>(
+                            {fazendasBIOrdenadas.map(fz=>(
                               <tr key={fz.id} style={{borderBottom:`1px solid ${theme.divider}`}}>
                                 <td style={{padding:'9px 12px',fontWeight:600,color:theme.text,whiteSpace:'nowrap'}}>{fz.nome}</td>
                                 <td style={{padding:'9px 12px',color:theme.textMuted,whiteSpace:'nowrap'}}>{fz.cliente}{fz.produto?` · ${fz.produto}`:''}</td>
@@ -4016,7 +4072,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     ) : (
                       <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'repeat(auto-fill,minmax(280px,1fr))',gap:12}}>
-                        {fazendasBIFiltradas.map(fz=>(
+                        {fazendasBIOrdenadas.map(fz=>(
                           <div key={fz.id} style={{background:theme.card,borderRadius:theme.radius||8,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8,gap:8}}>
                               <div style={{minWidth:0}}>

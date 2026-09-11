@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.4',
+    data: '2026-09-11',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Ordenar a lista de fazendas',
+        texto: 'Em Fazendas & Clientes → Visão Geral dá pra ordenar por fazenda, progresso, área ou data do ciclo, crescente ou decrescente. Clique no cabeçalho da coluna na tabela, ou use o seletor ao lado de Tabela/Cards — que também funciona no modo Cards e no celular, onde a tabela rola pro lado. Fazenda sem talhão cadastrado e fazenda sem ciclo iniciado ficam sempre no fim da lista, nas duas direções: ordenando por progresso crescente o que interessa é quem tem menos avanço, não um bloco de linhas sem dado na frente.',
+      },
+    ],
+  },
+  {
     versao: '4.3',
     data: '2026-09-08',
     itens: [
