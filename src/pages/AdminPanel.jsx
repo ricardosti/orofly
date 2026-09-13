@@ -13,6 +13,7 @@ import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
+import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
 import { agregarConsolidado } from '../lib/consolidado'
 
 // Campos do modal de edição que representam número. Alguns são `numeric` no banco
@@ -109,10 +110,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [avatarUrl, setAvatarUrl] = useState(null)
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
-    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data,error})=>{
-      if (error) console.error('Erro ao gerar URL do avatar:', error)
-      if (data?.signedUrl) setAvatarUrl(data.signedUrl)
-    })
+    urlAssinada(supabase, profile.avatar_url).then(url => { if (url) setAvatarUrl(url) })
   }, [profile?.avatar_url])
   const isMobile = useIsMobile()
   const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : 'relatorios')
@@ -770,6 +768,7 @@ export default function AdminPanel({ onSwitchMode }) {
     if (editFotoMapaFile) {
       const path = `${editModal.piloto_id}/${editModal.id}/mapa.jpg`
       await supabase.storage.from('relatorios').upload(path, editFotoMapaFile, { upsert: true })
+      esquecerUrl(path)
       fotoMapaUrl = path
     }
     let obsUrls = [...(editModal.obs_fotos_urls || [null, null, null])]
@@ -919,9 +918,9 @@ export default function AdminPanel({ onSwitchMode }) {
     let file = null
     if (rel.foto_mapa_url) {
       try {
-        const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(rel.foto_mapa_url, 60)
-        if (signed?.signedUrl) {
-          const res = await fetch(signed.signedUrl)
+        const signedUrl = await urlAssinada(supabase, rel.foto_mapa_url)
+        if (signedUrl) {
+          const res = await fetch(signedUrl)
           const blob = await res.blob()
           file = new File([blob], 'mapa.jpg', { type: blob.type || 'image/jpeg' })
         }
@@ -6598,10 +6597,9 @@ export default function AdminPanel({ onSwitchMode }) {
                             let src = editFotoMapa
                             if (!src && editModal.foto_mapa_url) {
                               try {
-                                const { data, error } = await supabase.storage.from('relatorios')
-                                  .createSignedUrl(editModal.foto_mapa_url, 120)
-                                if (error || !data?.signedUrl) throw error || new Error('sem URL')
-                                const resp = await fetch(data.signedUrl)
+                                const urlFoto = await urlAssinada(supabase, editModal.foto_mapa_url)
+                                if (!urlFoto) throw new Error('sem URL')
+                                const resp = await fetch(urlFoto)
                                 const blob = await resp.blob()
                                 src = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(blob) })
                               } catch (e) {
@@ -6675,9 +6673,9 @@ export default function AdminPanel({ onSwitchMode }) {
                         {editModal.kml_paths?.[i] && (
                           <button style={{ background:'#2f6fed', color:'#fff', border:'none', borderRadius:14, padding:'4px 10px', fontSize:11, cursor:'pointer' }}
                             onClick={async () => {
-                              const { data } = await supabase.storage.from('relatorios').createSignedUrl(editModal.kml_paths[i], 60)
-                              if (data?.signedUrl) {
-                                const r = await fetch(data.signedUrl); const b = await r.blob()
+                              const urlKml = await urlAssinada(supabase, editModal.kml_paths[i])
+                              if (urlKml) {
+                                const r = await fetch(urlKml); const b = await r.blob()
                                 const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nome; a.click(); URL.revokeObjectURL(a.href)
                               }
                             }}>⬇</button>
@@ -6707,6 +6705,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     for (const file of files) {
                       const path = `${editModal.piloto_id}/${editModal.id}/kml/${file.name}`
                       await supabase.storage.from('relatorios').upload(path, file, { upsert: true })
+                      esquecerUrl(path)
                       novosNomes.push(file.name)
                       novosPaths.push(path)
                     }
@@ -6734,6 +6733,7 @@ export default function AdminPanel({ onSwitchMode }) {
                       if (editFotoMapaFile) {
                         const path = `${editModal.piloto_id}/${editModal.id}/mapa.jpg`
                         await supabase.storage.from('relatorios').upload(path, editFotoMapaFile, { upsert: true })
+                        esquecerUrl(path)
                         fotoMapaUrl = path
                       }
                       let obsUrls = [...(editModal.obs_fotos_urls || [null,null,null])]
@@ -7061,9 +7061,9 @@ function TelaArquivos({ lista, loading, erro, filtroCategoria, setFiltroCategori
   async function visualizar(item) {
     setPreview({ item, url:null, carregando:true, erro:'' })
     try {
-      const { data, error } = await supabase.storage.from('relatorios').createSignedUrl(item.path, 300)
-      if (error || !data?.signedUrl) throw error || new Error('sem URL')
-      setPreview({ item, url:data.signedUrl, carregando:false, erro:'' })
+      const urlItem = await urlAssinada(supabase, item.path)
+      if (!urlItem) throw new Error('sem URL')
+      setPreview({ item, url:urlItem, carregando:false, erro:'' })
     } catch (e) {
       setPreview({ item, url:null, carregando:false, erro:'Não foi possível abrir esse arquivo agora.' })
     }
@@ -7301,9 +7301,7 @@ function LogoUploader({ path, onChange, pastaPrefixo }) {
   useEffect(() => {
     if (!path) { setPreview(null); return }
     let ativo = true
-    supabase.storage.from('relatorios').createSignedUrl(path, 3600).then(({ data }) => {
-      if (ativo && data?.signedUrl) setPreview(data.signedUrl)
-    })
+    urlAssinada(supabase, path).then(url => { if (ativo && url) setPreview(url) })
     return () => { ativo = false }
   }, [path])
   async function handleFile(e) {
@@ -7314,6 +7312,7 @@ function LogoUploader({ path, onChange, pastaPrefixo }) {
       const ext = (file.name.split('.').pop() || 'png').toLowerCase()
       const novoPath = `${pastaPrefixo}-${Date.now()}.${ext}`
       const { error } = await supabase.storage.from('relatorios').upload(novoPath, file, { upsert: true })
+      esquecerUrl(novoPath)
       if (error) throw error
       onChange(novoPath)
     } catch (e2) { window.alert('Erro ao enviar logo: ' + e2.message) } finally { setUploading(false); if (inputRef.current) inputRef.current.value = '' }
@@ -7837,9 +7836,7 @@ function FotoThumb({ supabase, path, bucket, onClick }) {
   const [url, setUrl] = useState(null)
   useEffect(() => {
     if (!path) return
-    supabase.storage.from(bucket).createSignedUrl(path, 3600).then(({ data }) => {
-      if (data?.signedUrl) setUrl(data.signedUrl)
-    })
+    urlAssinada(supabase, path, bucket).then(u => { if (u) setUrl(u) })
   }, [path, bucket, supabase])
   if (!url) return <div style={{ width:40, height:40, borderRadius:8, background:theme.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:theme.textFaint2 }}>⏳</div>
   return <img src={url} alt="foto" onClick={onClick} style={{ width:40, height:40, objectFit:'cover', borderRadius:8, display:'block', cursor:'pointer', border:`1px solid ${theme.cardBorder}` }} />
@@ -7851,9 +7848,7 @@ function FotoLightbox({ supabase, path, bucket, onClose }) {
   useEffect(() => {
     setUrl(null)
     if (!path) return
-    supabase.storage.from(bucket).createSignedUrl(path, 3600).then(({ data }) => {
-      if (data?.signedUrl) setUrl(data.signedUrl)
-    })
+    urlAssinada(supabase, path, bucket).then(u => { if (u) setUrl(u) })
   }, [path, bucket, supabase])
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose() }
@@ -7900,10 +7895,7 @@ function StoragePhoto({ supabase, path, bucket, small }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     if (!path) return
-    supabase.storage.from(bucket).createSignedUrl(path, 3600).then(({ data, error }) => {
-      if (!error && data?.signedUrl) setUrl(data.signedUrl)
-      setLoading(false)
-    })
+    urlAssinada(supabase, path, bucket).then(u => { if (u) setUrl(u); setLoading(false) })
   }, [path, bucket, supabase])
   if (loading) return <div style={{ fontSize:10, color:theme.textMuted, padding:'8px 0' }}>⏳ carregando...</div>
   if (!url) return <div style={{ fontSize:10, color:theme.dangerText, padding:'8px 0' }}>⚠️ Foto não encontrada</div>
@@ -8161,9 +8153,9 @@ function MapaTrajetosKml({ voos, supabase, height = 500 }) {
         const path = (rel.kml_paths || [])[0]
         if (!path) continue
         try {
-          const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(path, 3600)
-          if (!signed?.signedUrl) continue
-          const res = await fetch(signed.signedUrl)
+          const urlK = await urlAssinada(supabase, path)
+          if (!urlK) continue
+          const res = await fetch(urlK)
           const text = await res.text()
           const coords = parseKmlCoords(text)
           if (coords.length > 1) trajetos.push({ rel, coords })
@@ -8251,9 +8243,9 @@ function KmlViewer({ rel, supabase }) {
       const paths = rel.kml_paths || []
       const nomes = rel.kml_arquivos || []
       if (paths.length > 0) {
-        const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(paths[0], 3600)
-        if (signed?.signedUrl) {
-          const res = await fetch(signed.signedUrl)
+        const urlK0 = await urlAssinada(supabase, paths[0])
+        if (urlK0) {
+          const res = await fetch(urlK0)
           const text = await res.text()
           const coords = parseKmlCoords(text)
           const meta = parseKmlMeta(text)
@@ -8302,9 +8294,9 @@ function KmlViewer({ rel, supabase }) {
 
   async function baixarKml() {
     if (!kmlData?.path) return
-    const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(kmlData.path, 60)
-    if (signed?.signedUrl) {
-      const r = await fetch(signed.signedUrl); const b = await r.blob()
+    const urlDl = await urlAssinada(supabase, kmlData.path)
+    if (urlDl) {
+      const r = await fetch(urlDl); const b = await r.blob()
       const a = document.createElement('a'); a.href = URL.createObjectURL(b)
       a.download = kmlData.nome || 'trajeto.kml'; a.click(); URL.revokeObjectURL(a.href)
     }

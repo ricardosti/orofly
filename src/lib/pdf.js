@@ -1,5 +1,6 @@
 // v3.6 — build 2024-06-02
 import jsPDF from 'jspdf'
+import { urlAssinada } from './storageUrl'
 
 async function toBase64(blob) {
   return new Promise((resolve, reject) => {
@@ -13,9 +14,9 @@ async function toBase64(blob) {
 async function fetchImageBase64(supabase, bucket, path) {
   if (!path || !supabase) return null
   try {
-    const { data: signed, error } = await supabase.storage.from(bucket).createSignedUrl(path, 120)
-    if (error || !signed?.signedUrl) return null
-    const res = await fetch(signed.signedUrl)
+    const url = await urlAssinada(supabase, path, bucket)
+    if (!url) return null
+    const res = await fetch(url)
     if (!res.ok) return null
     return await toBase64(await res.blob())
   } catch { return null }
@@ -118,10 +119,10 @@ async function gerarMapaKML(supabase, rel) {
 
   try {
     // Pega o primeiro KML
-    const { data: signedUrl } = await supabase.storage.from('relatorios').createSignedUrl(kmlPaths[0], 300)
-    if (!signedUrl?.signedUrl) return null
+    const urlKml = await urlAssinada(supabase, kmlPaths[0])
+    if (!urlKml) return null
 
-    const kmlRes = await fetch(signedUrl.signedUrl)
+    const kmlRes = await fetch(urlKml)
     const kmlText = await kmlRes.text()
     const points = parseKMLCoords(kmlText)
     if (points.length < 2) return null
@@ -387,9 +388,9 @@ export async function coletarTrajetos(supabase, voos, kmlsFazenda = null) {
   const out = []
   for (const rel of comKml.slice(0, MAPA_MAX_TRAJETOS)) {
     try {
-      const { data: signed } = await supabase.storage.from("relatorios").createSignedUrl(rel.kml_paths[0], 300)
-      if (!signed?.signedUrl) continue
-      const pontos = parseKMLCoords(await (await fetch(signed.signedUrl)).text())
+      const url = await urlAssinada(supabase, rel.kml_paths[0])
+      if (!url) continue
+      const pontos = parseKMLCoords(await (await fetch(url)).text())
       if (pontos.length >= 2) out.push(reduzirPontos(pontos))
     } catch (e) { console.warn("KML do voo ignorado:", rel.id, e) }
   }

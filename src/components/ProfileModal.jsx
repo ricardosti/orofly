@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../lib/theme'
 import { useLanguage } from '../lib/i18n'
@@ -17,10 +18,7 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
 
   useEffect(() => {
     if (!profile?.avatar_url) return
-    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({ data, error }) => {
-      if (error) console.error('Erro ao gerar URL do avatar:', error)
-      if (data?.signedUrl) setAvatarPreview(data.signedUrl)
-    })
+    urlAssinada(supabase, profile.avatar_url).then(url => { if (url) setAvatarPreview(url) })
   }, [profile?.avatar_url])
 
   function handleAvatarFile(f) {
@@ -41,6 +39,7 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
       if (avatarFile) {
         const path = `${profile.id}/avatars/${Date.now()}.jpg`
         const { error: upErr } = await supabase.storage.from('relatorios').upload(path, avatarFile, { upsert: true })
+        esquecerUrl(path) // trocou a foto no mesmo caminho: a URL velha serviria a antiga
         if (upErr) throw upErr
         avatar_url = path
       }

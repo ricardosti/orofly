@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.5',
+    data: '2026-09-13',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'App parou de rebaixar a mesma foto várias vezes',
+        texto: 'Cada tela que mostrava uma foto pedia um endereço novo pro Supabase, e endereço novo faz o navegador baixar tudo de novo. Rolar uma lista, reabrir um relatório ou gerar o consolidado duas vezes rebaixava as mesmas imagens: 16,67 GB de tráfego num mês com 590 MB de fotos guardadas — cada arquivo desceu 28 vezes. Foi isso que estourou a cota e derrubou o app em agosto. Agora o endereço é reaproveitado e a segunda visualização não custa tráfego nenhum.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Fotos mais leves, sem perder nada no relatório',
+        texto: 'A foto agora é guardada com até 1280px e cerca de 400 KB, em vez de 1920px e 1 MB. No PDF ela sai com 7 a 13 cm de largura, o que a 200 dpi pede uns 1000px — o que foi cortado era detalhe que nunca chegava ao papel, mas pesava em toda visualização. O piloto não muda nada no que faz.',
+      },
+    ],
+  },
+  {
     versao: '4.4',
     data: '2026-09-11',
     itens: [

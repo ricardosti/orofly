@@ -10,6 +10,7 @@ import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import ImageAnnotator from '../components/ImageAnnotator'
+import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
@@ -377,10 +378,7 @@ export default function PilotApp({onSwitchMode}) {
   }, []) // eslint-disable-line
   useEffect(() => {
     if (!profile?.avatar_url) { setAvatarUrl(null); return }
-    supabase.storage.from('relatorios').createSignedUrl(profile.avatar_url, 3600).then(({data,error})=>{
-      if (error) console.error('Erro ao gerar URL do avatar:', error)
-      if (data?.signedUrl) setAvatarUrl(data.signedUrl)
-    })
+    urlAssinada(supabase, profile.avatar_url).then(url => { if (url) setAvatarUrl(url) })
   }, [profile?.avatar_url])
   const [view,setView] = useState('home')
   const isPopRef = useRef(false)
@@ -685,6 +683,7 @@ export default function PilotApp({onSwitchMode}) {
         if(incidenteFotoFiles[i]){
           const path = `${profile.id}/incidentes/${Date.now()}_${i}.jpg`
           const {error:upErr} = await supabase.storage.from('relatorios').upload(path,incidenteFotoFiles[i],{upsert:true})
+          esquecerUrl(path)
           if(!upErr) fotoUrls[i]=path
         }
       }
@@ -877,6 +876,7 @@ export default function PilotApp({onSwitchMode}) {
       if (trechoFotoMapaFile) {
         const path = `${profile.id}/${trechoModal.id}/trecho_mapa.jpg`
         await supabase.storage.from('relatorios').upload(path, trechoFotoMapaFile, { upsert:true })
+        esquecerUrl(path)
         foto_mapa_url = path
       }
 
@@ -1011,9 +1011,9 @@ export default function PilotApp({onSwitchMode}) {
     console.log('[compartilharWhatsApp] fotoMapaFile=',!!fotoMapaFile,'storageFotoMapa=',storageFotoMapa)
     if (!file && storageFotoMapa) {
       try {
-        const { data: signed } = await supabase.storage.from('relatorios').createSignedUrl(storageFotoMapa,60)
-        if (signed?.signedUrl) {
-          const res = await fetch(signed.signedUrl)
+        const signedUrl = await urlAssinada(supabase, storageFotoMapa)
+        if (signedUrl) {
+          const res = await fetch(signedUrl)
           const blob = await res.blob()
           file = new File([blob],'mapa.jpg',{type:blob.type||'image/jpeg'})
         }
@@ -1429,7 +1429,9 @@ export default function PilotApp({onSwitchMode}) {
     const urls=[]
     for(let i=0;i<obsFotoFiles.length;i++){
       const file=obsFotoFiles[i];if(!file){urls.push(null);continue}
-      const {error}=await supabase.storage.from('relatorios').upload(`${profile.id}/${rid}/obs_${i}.jpg`,file,{upsert:true})
+      const caminhoObs = `${profile.id}/${rid}/obs_${i}.jpg`
+      const {error}=await supabase.storage.from('relatorios').upload(caminhoObs,file,{upsert:true})
+      esquecerUrl(caminhoObs) // upsert no mesmo caminho: sem isso o cache serve a foto antiga
       urls.push(error?null:`${profile.id}/${rid}/obs_${i}.jpg`)
     }
     if(urls.some(Boolean)) setStorageObsFotos(prev=>urls.map((u,i)=>u||prev[i]))
@@ -1439,6 +1441,7 @@ export default function PilotApp({onSwitchMode}) {
     if(!fotoMapaFile) return null
     const path=`${profile.id}/${rid}/mapa.jpg`
     const {error}=await supabase.storage.from('relatorios').upload(path,fotoMapaFile,{upsert:true})
+    esquecerUrl(path)
     if(error) return null
     // Guarda o caminho no storage: o arquivo local (fotoMapaFile) some se o app recarregar
     // (ex: reinstalar, sair de background por muito tempo). Com o path salvo, ainda dá pra
@@ -1668,6 +1671,7 @@ export default function PilotApp({onSwitchMode}) {
       if(notaFotoFile){
         const path = `despesas/${profile.id}/${Date.now()}.jpg`
         const {error:upErr} = await supabase.storage.from('relatorios').upload(path,notaFotoFile,{upsert:true})
+        esquecerUrl(path)
         if(!upErr) foto_url = path
       }
       let relatorio_id = null
@@ -4969,9 +4973,7 @@ function StorageFotoSlot({ supabase, path, height=60 }) {
   const [url, setUrl] = useState(null)
   useEffect(() => {
     if (!path) return
-    supabase.storage.from('relatorios').createSignedUrl(path, 3600).then(({data,error}) => {
-      if (!error && data?.signedUrl) setUrl(data.signedUrl)
-    })
+    urlAssinada(supabase, path).then(u => { if (u) setUrl(u) })
   }, [path, supabase])
   if (!url) return <div style={{fontSize:10,color:theme.textMuted,padding:8}}>⏳</div>
   return <img src={url} alt="foto" style={{width:'100%',height,objectFit:'cover',borderRadius:8,display:'block'}} />

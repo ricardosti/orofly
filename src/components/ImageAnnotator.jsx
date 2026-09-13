@@ -11,14 +11,15 @@ const CORES = [
   { nome:'Branco', hex:'#ffffff' },
 ]
 
-// Comprime a imagem final em JPEG, tentando ficar abaixo de ~1MB reduzindo a qualidade em
-// passos fixos (evita loop indefinido) — o tamanho em pixels já foi limitado a 1920px no
-// lado maior na hora de montar o canvas, então essa etapa só cuida do peso do arquivo.
+// Comprime a imagem final em JPEG, tentando ficar abaixo do ALVO reduzindo a qualidade em
+// passos fixos (evita loop indefinido) — o tamanho em pixels já foi limitado na hora de montar
+// o canvas, então essa etapa só cuida do peso do arquivo.
+const ALVO_BYTES = 400 * 1024
 async function canvasParaBlobComprimido(canvas) {
   const tentativas = [0.85, 0.7, 0.55, 0.4]
   for (const q of tentativas) {
     const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', q))
-    if (blob && (blob.size <= 1024*1024 || q === tentativas[tentativas.length-1])) return blob
+    if (blob && (blob.size <= ALVO_BYTES || q === tentativas[tentativas.length-1])) return blob
   }
   return null
 }
@@ -49,7 +50,10 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
     const ctx = canvas.getContext('2d')
     const img = new Image()
     img.onload = () => {
-      const MAX_LADO = 1920
+      // 1280px no lado maior. No PDF a foto sai com 70–128mm de largura; a 200 dpi isso dá
+      // ~1000px, então 1280 ainda sobra. Os 1920 anteriores guardavam detalhe que nunca
+      // chegava ao papel e pagavam banda por ele em toda visualização.
+      const MAX_LADO = 1280
       let w = img.width, h = img.height
       if (w > MAX_LADO || h > MAX_LADO) {
         const escala = MAX_LADO / Math.max(w, h)

@@ -240,11 +240,21 @@ avulso é preciso **desinstalar antes**, porque a assinatura é diferente.
 parou de logar e a mensagem na tela dizia "E-mail ou senha incorretos", que era
 enganosa. Foi resolvido com upgrade pago de um mês.
 
-A causa: **as fotos sobem sem nenhuma compressão**, direto da câmera (3–8 MB
-cada), e são rebaixadas em resolução cheia toda vez que alguém abre um
-relatório. **Comprimir a imagem antes do upload** (redimensionar para ~1600 px,
-JPEG 80%) derruba isso umas 15x e faz caber no plano grátis com folga. *Essa
-correção ainda não foi feita — é a pendência técnica mais importante.*
+A causa tinha duas metades, e as duas foram corrigidas:
+
+1. **Fotos sem compressão** (3–8 MB direto da câmera). Resolvido quando o editor
+   de imagem entrou no fluxo do piloto: hoje toda foto passa pelo
+   `ImageAnnotator`, que limita a 1280 px no lado maior e ~400 KB. A média
+   mensal caiu de 1918 KB (agosto) para 351 KB (setembro).
+2. **A mesma foto sendo rebaixada sem parar** — a metade que ninguém tinha visto,
+   e a maior. Cada componente chamava `createSignedUrl` no próprio `useEffect`, e
+   o Supabase devolve um token novo a cada chamada: URL diferente, o navegador
+   baixa de novo. Medido em 13/09/2026: 16,67 GB de banda para 590 MB guardados —
+   cada arquivo desceu ~28 vezes. Resolvido em `src/lib/storageUrl.js`, que
+   guarda a URL por caminho.
+
+> **Ao trocar uma foto, chame `esquecerUrl(path)`** depois do upload. Os uploads
+> usam `upsert: true` no mesmo caminho, e sem isso o cache serve a imagem antiga.
 
 **RLS (segurança por linha).** A tabela `relatorios` tem políticas que limitam
 cada piloto aos próprios voos. Foi preciso adicionar uma política extra de
@@ -290,11 +300,13 @@ Vale entender antes de mexer em qualquer coisa de relatório.
 
 **Técnicas:**
 
-3. **Compressão de imagem no upload** — ver seção 8. É o que evita a cota
-   estourar de novo.
-4. **Segurança do login** — hoje é só e-mail e senha, sem confirmação de e-mail
+3. **Segurança do login** — hoje é só e-mail e senha, sem confirmação de e-mail
    nem 2FA. O passo mais barato é ativar o *rate limit* no painel do Supabase
    (Auth → Rate Limits), que é configuração e não código.
+4. **Miniaturas nas listas** — onde só se precisa de preview, ainda se baixa a
+   foto inteira. Depende de o plano ter transformação de imagem no Storage.
+5. **Faxina no histórico** — 65 arquivos acima de 2 MB, de agosto, somam 281 MB:
+   81% do peso do mês em 35% dos arquivos. Boa parte é FAZENDA TESTE.
 
 ---
 
