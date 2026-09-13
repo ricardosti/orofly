@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.6',
+    data: '2026-09-13',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Acesso aos dados operacionais agora respeita o perfil',
+        texto: 'Sete tabelas — despesas, viagens, veículos, manutenções, agendamentos, estoque e registro de localização — estavam liberadas para qualquer um que tivesse o endereço do sistema, mesmo sem entrar. Agora cada uma respeita o perfil de quem pede: o piloto enxerga o que é dele, admin e supervisor enxergam tudo, e quem não está logado não enxerga nada. Nada muda no dia a dia de quem usa o app — cada tela continua mostrando exatamente o que mostrava.',
+      },
+    ],
+  },
+  {
     versao: '4.5',
     data: '2026-09-13',
     itens: [
