@@ -262,6 +262,31 @@ leitura para todos os pilotos autenticados, senão o progresso de um talhão
 trabalhado por outro piloto ficava invisível — sem erro nenhum na tela, só
 sumia.
 
+Em **13/09/2026** o linter do Supabase acusou **7 tabelas com RLS desligado**:
+`despesas`, `gps_logins`, `movimentos_estoque`, `agendamentos`, `veiculos`,
+`viagens` e `manutencoes_veiculo`. Como a chave `anon` vai dentro do site
+publicado, qualquer um podia ler e alterar tudo nelas — inclusive os 3.315
+registros de localização dos pilotos. Corrigido com políticas que reproduzem o
+que o app já fazia.
+
+Três coisas aprendidas ali, que valem pra próxima tabela:
+
+- **`supervisor` também cai no AdminPanel** (abre na aba Agenda). Política escrita
+  só pra `admin` esconde a agenda da equipe dele. O recorte certo é
+  `role IN ('admin','supervisor')`.
+- **Revogar de `anon` não adianta**: o `EXECUTE` de uma função vem de `PUBLIC`,
+  que o anônimo herda. Tem que ser `REVOKE ... FROM PUBLIC` e depois
+  `GRANT ... TO authenticated`.
+- **Função `SECURITY DEFINER` é porta lateral em volta do RLS.** A
+  `registrar_movimento_estoque` roda como `postgres` (é assim que o piloto dá
+  baixa no estoque sem ter acesso à tabela), mas estava exposta em
+  `/rest/v1/rpc/` para o anônimo. Ligar RLS sem olhar as funções não resolve.
+
+> **Antes de ligar RLS numa tabela**, veja quem escreve nela de verdade. Vale
+> testar no SQL Editor assumindo o papel, com `set_config('role','authenticated')`
+> e `set_config('request.jwt.claims', ...)`, dentro de um bloco que termina em
+> `RAISE EXCEPTION` — assim o teste roda de verdade e desfaz tudo no fim.
+
 > **Lição que se repetiu duas vezes:** o cliente do Supabase **não lança
 > exceção** em erro de query — ele devolve `{ data: null, error }`. Código que lê
 > só o `data` transforma qualquer falha em tela parada e silenciosa. Sempre leia
@@ -301,8 +326,9 @@ Vale entender antes de mexer em qualquer coisa de relatório.
 **Técnicas:**
 
 3. **Segurança do login** — hoje é só e-mail e senha, sem confirmação de e-mail
-   nem 2FA. O passo mais barato é ativar o *rate limit* no painel do Supabase
-   (Auth → Rate Limits), que é configuração e não código.
+   nem 2FA. Dois passos baratos, os dois só configuração no painel do Supabase:
+   o *rate limit* (Auth → Rate Limits) e a proteção contra senha vazada
+   (Auth → Password, checa contra o HaveIBeenPwned), que o linter ainda acusa.
 4. **Miniaturas nas listas** — onde só se precisa de preview, ainda se baixa a
    foto inteira. Depende de o plano ter transformação de imagem no Storage.
 5. **Faxina no histórico** — 65 arquivos acima de 2 MB, de agosto, somam 281 MB:
