@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.7',
+    data: '2026-09-15',
+    itens: [
+      {
+        tipo: 'novidade',
+        titulo: 'Log de Atividades (Desenvolvedor)',
+        texto: 'Nova tela em Desenvolvedor > Log de Atividades, so para admin: mostra quem entrou no app e o que cada um usou, com filtro de periodo, por pessoa e por funcionalidade. Serve para medir o que esta sendo usado de verdade antes de decidir onde investir. O registro comecou em 15/09/2026 — datas anteriores nao tem dados.',
+      },
+    ],
+  },
+  {
     versao: '4.6',
     data: '2026-09-13',
     itens: [

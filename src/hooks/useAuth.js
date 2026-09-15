@@ -1,7 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { definirUsuario, registrar } from '../lib/atividade'
 
 const AuthContext = createContext({})
+
+// Marcado só quando o usuário digita a senha e entra. O onAuthStateChange sozinho
+// não serve pra isso: ele também dispara na renovação automática do token.
+let loginDeliberado = false
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -25,7 +30,7 @@ export function AuthProvider({ children }) {
           const cachedUser = JSON.parse(localStorage.getItem('orofly_session_cache') || 'null')
           const cachedProfile = JSON.parse(localStorage.getItem('orofly_profile_cache') || 'null')
           if (cachedUser && cachedProfile && cachedProfile.id === cachedUser.id) {
-            setUser(cachedUser); setProfile(cachedProfile); setLoading(false)
+            setUser(cachedUser); setProfile(cachedProfile); definirUsuario(cachedProfile); setLoading(false)
             return
           }
         } catch {}
@@ -45,12 +50,14 @@ export function AuthProvider({ children }) {
       const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
       if (error) throw error
       setProfile(data)
+      definirUsuario(data)
+      if (loginDeliberado) { loginDeliberado = false; registrar('login') }
       try { localStorage.setItem('orofly_profile_cache', JSON.stringify(data)) } catch {}
     } catch (e) {
       // Sem conexão: usa o último perfil salvo em cache pra não travar o app carregando pra sempre
       try {
         const cached = JSON.parse(localStorage.getItem('orofly_profile_cache') || 'null')
-        if (cached?.id === userId) setProfile(cached)
+        if (cached?.id === userId) { setProfile(cached); definirUsuario(cached) }
       } catch {}
     } finally {
       setLoading(false)
@@ -59,8 +66,18 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{ user, profile, loading,
-      signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
-      signOut: () => supabase.auth.signOut(),
+      signIn: async (email, password) => {
+        const res = await supabase.auth.signInWithPassword({ email, password })
+        // O registro em si sai do fetchProfile, que é quando o nome já está carregado.
+        if (!res.error) loginDeliberado = true
+        return res
+      },
+      signOut: async () => {
+        registrar('logout')          // antes de sair: depois do signOut o RLS já recusa
+        const res = await supabase.auth.signOut()
+        definirUsuario(null)
+        return res
+      },
       refreshProfile: () => user && fetchProfile(user.id)
     }}>
       {children}

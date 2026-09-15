@@ -287,6 +287,30 @@ Três coisas aprendidas ali, que valem pra próxima tabela:
 > e `set_config('request.jwt.claims', ...)`, dentro de um bloco que termina em
 > `RAISE EXCEPTION` — assim o teste roda de verdade e desfaz tudo no fim.
 
+**Log de atividades.** Desde **15/09/2026** a tabela `atividades` registra o que
+cada um faz no app (login, iniciou voo, lançou despesa...), e a tela fica em
+**Desenvolvedor → Log de Atividades**, só para admin. Serve pra medir o que é
+usado de verdade.
+
+O registro sai de `src/lib/atividade.js`. **Para instrumentar uma ação nova:**
+
+1. Acrescente o slug em `ACOES` naquele arquivo (rótulo, ícone e área) — é o que
+   dá nome à linha na tela; sem isso ela aparece com o slug cru.
+2. Chame `registrar('slug', 'detalhe legível', { cliente, meta })` no ponto em
+   que a ação **acontece de verdade**, não onde a tela abre.
+
+Duas regras que valem a pena respeitar:
+
+- **Registre ação deliberada, nunca navegação.** Log de cada tela aberta vira
+  ruído e ainda gasta banda, que já foi problema aqui em agosto.
+- **Não registre dentro de `saveToSupabase`.** Ele é chamado pelo autosave e pela
+  retentativa offline — o mesmo voo apareceria várias vezes. Os registros ficam
+  nos pontos onde o piloto decide algo.
+
+> O login é gravado dentro de `signIn`, e não no `onAuthStateChange`: esse último
+> também dispara quando o token se renova sozinho (~1h), o que encheria o log de
+> "entrou no app" que nunca aconteceu.
+
 > **Lição que se repetiu duas vezes:** o cliente do Supabase **não lança
 > exceção** em erro de query — ele devolve `{ data: null, error }`. Código que lê
 > só o `data` transforma qualquer falha em tela parada e silenciosa. Sempre leia

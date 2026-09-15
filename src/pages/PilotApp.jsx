@@ -11,6 +11,7 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
+import { registrar } from '../lib/atividade'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
@@ -703,6 +704,7 @@ export default function PilotApp({onSwitchMode}) {
         gps_lat, gps_lng,
       })
       if(error) throw error
+      registrar('incidente_aberto', incidenteForm.tipo)
       showToast('⚠️ Incidente registrado')
       setIncidenteForm({tipo:'',descricao:'',ordem_servico:''}); setIncidenteFotos([null,null]); setIncidenteFotoFiles([null,null]); setIncidenteCompartilharLoc(false)
       setView('home')
@@ -714,6 +716,7 @@ export default function PilotApp({onSwitchMode}) {
     try {
       const { error } = await supabase.from('agendamentos').update({status:'recusado',motivo_recusa:recusaMotivo.trim()}).eq('id',recusaModal.id)
       if(error) throw error
+      registrar('agenda_recusada', recusaModal?.fazenda || null, { cliente: recusaModal?.cliente })
       showToast('Agendamento recusado')
       setRecusaModal(null); setRecusaMotivo(''); setAgendaDetalhe(null)
       const {data}=await supabase.from('agendamentos').select('*').eq('piloto_id',profile.id).order('data_prevista',{ascending:true})
@@ -892,6 +895,7 @@ export default function PilotApp({onSwitchMode}) {
         obs: trechoForm.obs||null,
       })
       if (error) throw error
+      registrar('trecho_salvo', trechoForm.talhao)
       showToast('✅ Trecho adicionado com sucesso!')
       setTrechoModal(null); setTrechoForm(null); setTrechoFotoMapa(null); setTrechoFotoMapaFile(null)
       // Atualiza lista de compartilhados
@@ -1019,6 +1023,8 @@ export default function PilotApp({onSwitchMode}) {
         }
       } catch(e) { console.error('Erro ao buscar foto do mapa para compartilhar:',e) }
     }
+    registrar('whatsapp_enviado', [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
+      { cliente: clienteVal, meta: { com_mapa: !!file } })
     await compartilharNativo({ text:texto, file, filename:'mapa.jpg', webFallbackUrl:'https://wa.me/?text='+encodeURIComponent(texto) })
   }
 
@@ -1211,6 +1217,8 @@ export default function PilotApp({onSwitchMode}) {
     // nunca fica nulo, mesmo sem sinal, e todo salvamento seguinte sabe em qual linha gravar.
     const novoId = relId || crypto.randomUUID()
     setRelId(novoId)
+    registrar('voo_iniciado', [nf.fazenda, nf.localizacao].filter(Boolean).join(' · '),
+      { cliente: nf.cliente==='Outros'?nf.clienteOutro:nf.cliente })
     const payload={
       id:novoId,
       piloto_id:profile.id,
@@ -1383,6 +1391,8 @@ export default function PilotApp({onSwitchMode}) {
     // Só salva o voo — PDF gerado separadamente no Step 5
     const relSalvo = await saveToSupabase({status:'finalizado',dt_fim:n.iso,area_deduzida:areaTotal})
     if (relSalvo) {
+      registrar('voo_finalizado', [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
+        { cliente: clienteVal, meta: { area_ha: form.area_ha, area_liquida: areaTotal } })
       await darBaixaEstoque(relSalvo.id, deltaBaixa)
       try{localStorage.removeItem(LS_KEY)}catch{}
       setSaving(false)
@@ -1421,6 +1431,7 @@ export default function PilotApp({onSwitchMode}) {
       const [obsUrls,mapaUrl]=await Promise.all([uploadFotos(rel.id),uploadFotoMapa(rel.id)])
       if(obsUrls.some(Boolean)||mapaUrl) await supabase.from('relatorios').update({obs_fotos_urls:obsUrls,foto_mapa_url:mapaUrl}).eq('id',rel.id)
     } catch(e) { console.error(e) }
+    registrar('relatorio_gerado', [form.fazenda, form.localizacao].filter(Boolean).join(' · '), { cliente: clienteVal })
     setSaving(false)
     setModalOpen(true)
   }
@@ -1719,6 +1730,11 @@ export default function PilotApp({onSwitchMode}) {
         }
       }
 
+      // Uma nota pode gerar as duas coisas: a viagem em si e as despesas do caminho.
+      if(temViagem) registrar('viagem_registrada',
+        veiculosDB.find(v=>v.id===notaForm.veiculo_id)?.placa || null,
+        { meta: { km: (parseFloat(notaForm.km_final)||0)-(parseFloat(notaForm.km_inicial)||0) } })
+      if(temDespesa) registrar('despesa_lancada', notaForm.categoria || 'Vários itens da viagem')
       showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
       setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
       setOsModo('lista')
@@ -1739,6 +1755,8 @@ export default function PilotApp({onSwitchMode}) {
     setFotoMapa(null); setFotoMapaFile(null)
     setStorageFotoMapa(rel.foto_mapa_url||null)
     setStorageObsFotos(rel.obs_fotos_urls||[null,null,null])
+    registrar('voo_retomado', [rel.fazenda, rel.localizacao].filter(Boolean).join(' · '),
+      { cliente: rel.cliente, meta: { status: rel.status } })
     setView('form')
     setWizardStep(4)
     showToast(st==='paused_day'?'🌙 Voo retomado do dia anterior!':'✏️ Voo carregado')
@@ -4879,6 +4897,8 @@ Quando: ${tempoErroDebug.quando}`}
                   ? talhoesSelP.reduce((acc,nome)=>({...acc,[nome]:String(Math.max(0,(parseFloat(f.area_feita_por_talhao?.[nome])||0)-(parseFloat(f.area_feita_por_talhao_anterior?.[nome])||0)))}),{...f.areaAplicadaPorTalhao})
                   : f.areaAplicadaPorTalhao}))
               const relSalvo = await saveToSupabase({status:'pausado_dia',area_feita:feita,area_deduzida:feita,dt_fim:n.iso})
+              if(relSalvo) registrar('voo_parcial', [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
+                { cliente: clienteVal, meta: { area_feita: feita } })
               if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
               // O voo já está salvo no servidor — pode ser retomado depois por "Continuar voo" ou
               // "Meus Relatórios". Antes de sair, registra as condições climáticas do fim do dia.

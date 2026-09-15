@@ -11,6 +11,7 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
+import { descreverAcao } from '../lib/atividade'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
@@ -137,6 +138,16 @@ export default function AdminPanel({ onSwitchMode }) {
   const [weatherLogs, setWeatherLogs] = useState(null) // últimas chamadas (repositório de logs)
   // Dev / Benchmark — comparador ao vivo das 3 APIs de clima pra mesma coordenada.
   // Coordenada padrão é a mesma usada no teste de conexão (Ribeirão Preto), o admin pode trocar.
+  // Log de atividades. O período começa nos últimos 7 dias — é a janela que responde
+  // "o que andaram usando esta semana" sem puxar histórico demais.
+  const hojeISO = new Date().toISOString().split('T')[0]
+  const seteDiasAtras = new Date(Date.now()-6*864e5).toISOString().split('T')[0]
+  const [ativDe, setAtivDe] = useState(seteDiasAtras)
+  const [ativAte, setAtivAte] = useState(hojeISO)
+  const [ativLista, setAtivLista] = useState(null)
+  const [ativLoading, setAtivLoading] = useState(false)
+  const [ativUsuario, setAtivUsuario] = useState('')
+  const [ativAcao, setAtivAcao] = useState('')
   const [devBenchLat, setDevBenchLat] = useState('-21.1775')
   const [devBenchLng, setDevBenchLng] = useState('-47.8103')
   const [devBenchResultados, setDevBenchResultados] = useState(null)
@@ -288,6 +299,7 @@ export default function AdminPanel({ onSwitchMode }) {
     if (tab === 'custos' && custosSubTab === 'orcamento' && !calcConfigLoaded) { setCalcConfigLoaded(true); carregarCalcConfig() }
     if (tab === 'arquivos' && !arquivosLoaded) { setArquivosLoaded(true); carregarArquivos() }
     if (tab === 'dev' && weatherLogs === null) { carregarWeatherLogs() }
+    if (tab === 'atividades' && ativLista === null) { carregarAtividades() }
   }, [tab, custosSubTab]) // eslint-disable-line
   const [relatorios, setRelatorios] = useState([])
   const [pilotos, setPilotos] = useState([])
@@ -543,6 +555,27 @@ export default function AdminPanel({ onSwitchMode }) {
     } catch(e) {
       console.warn('Tabelas de inventário não encontradas. Execute o SQL no Supabase.')
     }
+  }
+
+  // Busca o log do período. O 'ate' leva T23:59:59 senão o próprio dia escolhido
+  // como fim ficaria de fora (a comparação seria contra a meia-noite dele).
+  async function carregarAtividades() {
+    setAtivLoading(true)
+    try {
+      const { data, error } = await supabase.from('atividades')
+        .select('*')
+        .gte('created_at', `${ativDe}T00:00:00`)
+        .lte('created_at', `${ativAte}T23:59:59`)
+        .order('created_at', { ascending: false })
+        .limit(2000)
+      if (error) throw error
+      setAtivLista(data || [])
+    } catch (e) {
+      // O cliente do Supabase devolve o erro em vez de lançar — sem este aviso a tela
+      // ficaria vazia sem explicação (seção 8 do CLAUDE.md).
+      showToast('Não consegui carregar o log: ' + e.message, 'error')
+      setAtivLista([])
+    } finally { setAtivLoading(false) }
   }
 
   async function salvarMovimento() {
@@ -1611,6 +1644,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ]],
           ['dev', '🛠️ Desenvolvedor', [
             ['novidades', '✨', 'Novidades', NOVIDADES[0]?.versao||''],
+            ['atividades', '📡', 'Log de Atividades', ''],
             ['dev', '🩺', 'Benchmark Clima & Logs', ''],
           ]],
         ])
@@ -6351,6 +6385,172 @@ export default function AdminPanel({ onSwitchMode }) {
               )}
             </div>
           )}
+
+          {tab === 'atividades' && (() => {
+            const lista = (ativLista||[]).filter(a =>
+              (!ativUsuario || a.user_nome === ativUsuario) &&
+              (!ativAcao || a.acao === ativAcao))
+
+            // Nomes e acoes que aparecem no periodo - alimentam os dois filtros.
+            const usuariosDoPeriodo = [...new Set((ativLista||[]).map(a=>a.user_nome).filter(Boolean))].sort()
+            const acoesDoPeriodo = [...new Set((ativLista||[]).map(a=>a.acao))].sort()
+
+            // Quantas vezes cada funcionalidade foi usada, da mais usada pra menos.
+            const contagem = {}
+            lista.forEach(a => { contagem[a.acao] = (contagem[a.acao]||0) + 1 })
+            const ranking = Object.entries(contagem).sort((x,y)=>y[1]-x[1])
+            const maisUsada = ranking[0]?.[1] || 1
+
+            // Agrupa por dia: o feed corrido de uma semana inteira vira uma parede
+            // de texto sem as quebras de data.
+            const porDia = []
+            lista.forEach(a => {
+              const dia = new Date(a.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})
+              const ultimo = porDia[porDia.length-1]
+              if (ultimo && ultimo.dia === dia) ultimo.itens.push(a)
+              else porDia.push({ dia, itens:[a] })
+            })
+
+            const atalho = (dias) => {
+              setAtivDe(new Date(Date.now()-(dias-1)*864e5).toISOString().split('T')[0])
+              setAtivAte(new Date().toISOString().split('T')[0])
+              setAtivLista(null)   // volta a null: o useEffect recarrega sozinho
+            }
+
+            const inputStyle = { border:'1px solid '+theme.cardBorder2, borderRadius:10, padding:'8px 11px', fontSize:12.5, outline:'none', background:theme.inputBg, color:theme.text }
+
+            return (
+            <div>
+              <div style={{ marginBottom:18 }}>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>📡 Log de Atividades</div>
+                <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>Quem entrou e o que usou no app, por período.</div>
+              </div>
+
+              {/* ---- Filtros ---- */}
+              <div style={{ background:theme.card, borderRadius:14, border:'1px solid '+theme.cardBorder, padding:16, marginBottom:16 }}>
+                <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+                  <span style={{ fontSize:11.5, fontWeight:700, color:theme.textFaint2 }}>DE</span>
+                  <input type="date" style={{...inputStyle, width:150}} value={ativDe} onChange={e=>setAtivDe(e.target.value)} />
+                  <span style={{ fontSize:11.5, fontWeight:700, color:theme.textFaint2 }}>ATÉ</span>
+                  <input type="date" style={{...inputStyle, width:150}} value={ativAte} onChange={e=>setAtivAte(e.target.value)} />
+                  <button onClick={carregarAtividades} disabled={ativLoading}
+                    style={{ background:'#059669', color:'#fff', border:'none', borderRadius:10, padding:'9px 16px', fontSize:12.5, fontWeight:700, cursor:'pointer', opacity:ativLoading?0.7:1 }}>
+                    {ativLoading?'Buscando...':'🔍 Buscar'}
+                  </button>
+                </div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginTop:10 }}>
+                  {[['Hoje',1],['7 dias',7],['30 dias',30],['90 dias',90]].map(([lbl,d]) => (
+                    <button key={lbl} onClick={()=>atalho(d)}
+                      style={{ background:theme.bg, color:theme.textMuted, border:'1px solid '+theme.cardBorder2, borderRadius:8, padding:'5px 11px', fontSize:11.5, fontWeight:600, cursor:'pointer' }}>{lbl}</button>
+                  ))}
+                </div>
+                {(usuariosDoPeriodo.length>0 || acoesDoPeriodo.length>0) && (
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:10, paddingTop:10, borderTop:'1px solid '+theme.cardBorder2 }}>
+                    <select style={{...inputStyle, minWidth:150}} value={ativUsuario} onChange={e=>setAtivUsuario(e.target.value)}>
+                      <option value="">👥 Todas as pessoas</option>
+                      {usuariosDoPeriodo.map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                    <select style={{...inputStyle, minWidth:180}} value={ativAcao} onChange={e=>setAtivAcao(e.target.value)}>
+                      <option value="">⚡ Todas as funcionalidades</option>
+                      {acoesDoPeriodo.map(a => <option key={a} value={a}>{descreverAcao(a).label}</option>)}
+                    </select>
+                    {(ativUsuario||ativAcao) && (
+                      <button onClick={()=>{setAtivUsuario('');setAtivAcao('')}}
+                        style={{ background:'none', color:'#EF4444', border:'none', fontSize:12, fontWeight:600, cursor:'pointer' }}>✕ limpar filtros</button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {ativLoading ? (
+                <div style={{ fontSize:13, color:theme.textFaint2, padding:20 }}>⏳ Carregando...</div>
+              ) : lista.length === 0 ? (
+                <div style={{ background:theme.card, borderRadius:14, border:'1px solid '+theme.cardBorder, padding:28, textAlign:'center' }}>
+                  <div style={{ fontSize:32, marginBottom:6 }}>🕓</div>
+                  <div style={{ fontSize:13.5, fontWeight:600, color:theme.text }}>Nenhuma atividade neste período</div>
+                  <div style={{ fontSize:12, color:theme.textFaint2, marginTop:4 }}>O registro começou em 15/09/2026 — antes disso não há dados.</div>
+                </div>
+              ) : (
+                <>
+                  {/* ---- Resumo ---- */}
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax('+(isMobile?120:150)+'px, 1fr))', gap:10, marginBottom:16 }}>
+                    {[
+                      ['Ações no período', lista.length, '⚡'],
+                      ['Pessoas ativas', new Set(lista.map(a=>a.user_nome)).size, '👥'],
+                      ['Logins', lista.filter(a=>a.acao==='login').length, '🔑'],
+                      ['Dias com uso', porDia.length, '📆'],
+                    ].map(([lbl,val,ic]) => (
+                      <div key={lbl} style={{ background:theme.card, borderRadius:12, border:'1px solid '+theme.cardBorder, padding:'13px 15px' }}>
+                        <div style={{ fontSize:11, color:theme.textFaint2, fontWeight:600 }}>{ic} {lbl}</div>
+                        <div style={{ fontSize:22, fontWeight:700, color:theme.text, fontFamily:"'Syne',sans-serif", marginTop:2 }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ---- O que foi usado ---- */}
+                  <div style={{ background:theme.card, borderRadius:14, border:'1px solid '+theme.cardBorder, padding:20, marginBottom:16 }}>
+                    <SecTitle>⚡ Funcionalidades usadas no período</SecTitle>
+                    <div style={{ display:'flex', flexDirection:'column', gap:7, marginTop:10 }}>
+                      {ranking.map(([acao,qtd]) => {
+                        const info = descreverAcao(acao)
+                        return (
+                          <div key={acao} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                            <div style={{ width:isMobile?150:230, fontSize:12.5, color:theme.text, flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {info.icon} {info.label}
+                            </div>
+                            {/* Barra proporcional à mais usada: dá a leitura relativa de
+                                uma olhada, sem precisar comparar os números. */}
+                            <div style={{ flex:1, height:8, background:theme.bg, borderRadius:4, overflow:'hidden', minWidth:30 }}>
+                              <div style={{ width:Math.max(4,(qtd/maisUsada)*100)+'%', height:'100%', background:'#059669', borderRadius:4 }} />
+                            </div>
+                            <div style={{ width:40, textAlign:'right', fontSize:12.5, fontWeight:700, color:theme.text, fontVariantNumeric:'tabular-nums' }}>{qtd}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ---- Linha do tempo ---- */}
+                  <div style={{ background:theme.card, borderRadius:14, border:'1px solid '+theme.cardBorder, padding:20 }}>
+                    <SecTitle>🕓 Linha do tempo</SecTitle>
+                    <div style={{ display:'flex', flexDirection:'column', gap:16, marginTop:10 }}>
+                      {porDia.map(({dia,itens}) => (
+                        <div key={dia}>
+                          <div style={{ fontSize:11, fontWeight:700, color:theme.textFaint2, letterSpacing:0.8, marginBottom:7 }}>
+                            {dia} · {itens.length} {itens.length===1?'ação':'ações'}
+                          </div>
+                          <div style={{ display:'flex', flexDirection:'column', gap:1, borderLeft:'2px solid '+theme.cardBorder2, paddingLeft:12 }}>
+                            {itens.map(a => {
+                              const info = descreverAcao(a.acao)
+                              const hora = new Date(a.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}).replace(':','h')
+                              return (
+                                <div key={a.id} style={{ display:'flex', alignItems:'baseline', gap:8, padding:'5px 0', flexWrap:'wrap' }}>
+                                  <span style={{ fontSize:11.5, color:theme.textFaint2, fontVariantNumeric:'tabular-nums', width:44, flexShrink:0 }}>{hora}</span>
+                                  <span style={{ fontSize:13 }}>{info.icon}</span>
+                                  <span style={{ fontSize:12.5, color:theme.text }}>
+                                    <strong style={{ fontWeight:600 }}>{a.user_nome||'—'}</strong> {info.label}
+                                  </span>
+                                  {a.detalhe && (
+                                    <span style={{ fontSize:11.5, color:theme.textFaint2 }}>· {a.detalhe}</span>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {lista.length >= 2000 && (
+                      <div style={{ fontSize:11.5, color:theme.textFaint2, marginTop:12, fontStyle:'italic' }}>
+                        Mostrando as 2.000 ações mais recentes do período — estreite as datas pra ver o resto.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            )
+          })()}
 
           {tab === 'dev' && (
             <div>
