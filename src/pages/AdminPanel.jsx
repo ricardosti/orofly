@@ -6468,7 +6468,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{ background:theme.card, borderRadius:14, border:'1px solid '+theme.cardBorder, padding:28, textAlign:'center' }}>
                   <div style={{ fontSize:32, marginBottom:6 }}>🕓</div>
                   <div style={{ fontSize:13.5, fontWeight:600, color:theme.text }}>Nenhuma atividade neste período</div>
-                  <div style={{ fontSize:12, color:theme.textFaint2, marginTop:4 }}>O registro começou em 15/09/2026 — antes disso não há dados.</div>
+                  <div style={{ fontSize:12, color:theme.textFaint2, marginTop:4 }}>O histórico vai até 23/07/2026 — experimente um período maior.</div>
                 </div>
               ) : (
                 <>
@@ -6513,6 +6513,11 @@ export default function AdminPanel({ onSwitchMode }) {
                   {/* ---- Linha do tempo ---- */}
                   <div style={{ background:theme.card, borderRadius:14, border:'1px solid '+theme.cardBorder, padding:20 }}>
                     <SecTitle>🕓 Linha do tempo</SecTitle>
+                    {lista.some(a=>a.meta?.retroativo) && (
+                      <div style={{ fontSize:11.5, color:theme.textFaint2, background:theme.bg, border:'1px solid '+theme.cardBorder2, borderRadius:8, padding:'8px 11px', marginTop:8, lineHeight:1.5 }}>
+                        ↺ As linhas marcadas como <strong>reconstruído</strong> foram deduzidas dos voos, despesas e aberturas do app já gravados — o registro direto começou em <strong>15/09/2026</strong>. Antes dessa data só existe o que dava pra reconstruir: entrada no app, início e fim de voo, despesa e incidente. Coisas como gerar relatório ou compartilhar no WhatsApp não deixavam rastro e não aparecem.
+                      </div>
+                    )}
                     <div style={{ display:'flex', flexDirection:'column', gap:16, marginTop:10 }}>
                       {porDia.map(({dia,itens}) => (
                         <div key={dia}>
@@ -6532,6 +6537,13 @@ export default function AdminPanel({ onSwitchMode }) {
                                   </span>
                                   {a.detalhe && (
                                     <span style={{ fontSize:11.5, color:theme.textFaint2 }}>· {a.detalhe}</span>
+                                  )}
+                                  {/* Linha deduzida das outras tabelas, não observada pelo app.
+                                      Sem esse selo o log misturaria as duas coisas e deixaria de
+                                      valer como registro. */}
+                                  {a.meta?.retroativo && (
+                                    <span title="Reconstruído a partir dos dados já existentes — o registro direto começou em 15/09/2026"
+                                      style={{ fontSize:9.5, fontWeight:700, letterSpacing:0.5, color:'#B07014', background:'rgba(176,112,20,0.12)', border:'1px solid rgba(176,112,20,0.3)', borderRadius:4, padding:'1px 5px' }}>↺ RECONSTRUÍDO</span>
                                   )}
                                 </div>
                               )
