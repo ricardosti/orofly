@@ -11,7 +11,7 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
-import { descreverAcao } from '../lib/atividade'
+import { descreverAcao, registrar } from '../lib/atividade'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
@@ -43,6 +43,21 @@ const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado
 // Pílulas sóbrias: fundo suave + texto na mesma família de cor (sem preenchimento sólido).
 const statusColor = (theme) => ({ rascunho:theme.textMuted, em_operacao:'#15803D', pausado:'#B45309', pausado_dia:'#B45309', finalizado:'#15803D', sos:theme.dangerText, sos_resolvido:theme.textMuted })
 const statusBg    = (theme) => ({ rascunho:theme.bg, em_operacao:'#DCFCE7', pausado:'#FEF3C7', pausado_dia:'#FEF3C7', finalizado:'#DCFCE7', sos:theme.dangerBg, sos_resolvido:theme.bg })
+// O banco guarda dt_inicio/dt_fim em UTC; o <input type="datetime-local"> fala
+// em hora local, sem fuso. Estas duas fazem a ponte — sem elas o horário
+// apareceria deslocado em 3 horas na edição e seria "corrigido" errado.
+const paraInputLocal = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16)
+}
+const doInputLocal = (v) => {
+  if (!v) return null
+  const d = new Date(v)   // string sem fuso: o JS lê como hora local, que é o que queremos
+  return isNaN(d.getTime()) ? null : d.toISOString()
+}
+
 const COND_KEYS    = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS  = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
@@ -832,6 +847,8 @@ export default function AdminPanel({ onSwitchMode }) {
     })
     const { error } = await supabase.from('relatorios').update({ ...campos, foto_mapa_url: fotoMapaUrl, obs_fotos_urls: obsUrls }).eq('id', id)
     if (error) { showToast('Erro: ' + error.message, 'error'); setSaving(false); return }
+    registrar('relatorio_editado', [campos.fazenda, campos.localizacao].filter(Boolean).join(' · '),
+      { cliente: campos.cliente, meta: { relatorio_id: id } })
     showToast('✅ Salvo!'); resetEdit(); fetchAll(); setSaving(false)
   }
 
@@ -6736,6 +6753,30 @@ export default function AdminPanel({ onSwitchMode }) {
                 <b>Área FEITA</b> é o que esse voo aplicou de fato — é ela que o relatório usa.
                 Se estiver vazia, o sistema assume a área do escopo inteira, e um talhão dividido
                 entre dois pilotos aparece contado em dobro no consolidado.
+              </div>
+              <SecTitle>DATA E HORA</SecTitle>
+              <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr':'1fr 1fr', gap:10, marginBottom:8 }}>
+                {[['Início do voo','dt_inicio'],['Fim do voo','dt_fim']].map(([l,k]) => (
+                  <div key={k}>
+                    <div style={sG.label}>{l.toUpperCase()}</div>
+                    <input type="datetime-local" style={sG.input}
+                      value={paraInputLocal(editModal[k])}
+                      onChange={e => setEditModal(m => ({ ...m, [k]: doInputLocal(e.target.value) }))} />
+                  </div>
+                ))}
+              </div>
+              {/* Fim antes do início zera o tempo de voo no relatório e no consolidado
+                  (calcTempo e minutosEntre descartam duração negativa), sem reclamar de
+                  nada na tela. Melhor avisar aqui do que deixar sair no PDF. */}
+              {editModal.dt_inicio && editModal.dt_fim && new Date(editModal.dt_fim) < new Date(editModal.dt_inicio) && (
+                <div style={{ fontSize:11.5, color:'#B45309', background:'rgba(180,83,9,.1)', border:'1px solid rgba(180,83,9,.3)', borderRadius:8, padding:'7px 10px', marginBottom:8 }}>
+                  ⚠️ O fim está antes do início — o tempo de voo vai sair zerado no relatório.
+                </div>
+              )}
+              <div style={{ fontSize:11.5, color:theme.textMuted, marginBottom:14, lineHeight:1.5 }}>
+                É a <b>data de início</b> que coloca o voo no período: ela manda no filtro de
+                datas, no consolidado da fazenda e no dashboard. A diferença entre as duas é o
+                tempo de voo.
               </div>
               <SecTitle>CONDIÇÕES</SecTitle>
               <div style={{ display:'grid', gridTemplateColumns: isMobile?'repeat(3,1fr)':'repeat(6,1fr)', gap:8, marginBottom:8 }}>

@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.8',
+    data: '2026-09-19',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Data e hora do voo agora sao editaveis',
+        texto: 'No Editar Relatorio apareceu a secao Data e Hora, com inicio e fim do voo. E a data de inicio que coloca o voo no periodo — ela manda no filtro de datas, no consolidado da fazenda e no dashboard — e a diferenca entre as duas e o tempo de voo. Se o fim ficar antes do inicio, a tela avisa antes de salvar.',
+      },
+    ],
+  },
+  {
     versao: '4.7',
     data: '2026-09-15',
     itens: [
