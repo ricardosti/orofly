@@ -12,6 +12,7 @@ import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
 import { registrar } from '../lib/atividade'
+import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
@@ -780,8 +781,10 @@ export default function PilotApp({onSwitchMode}) {
       supabase.from('piloto_fazendas').select('fazenda_id').eq('piloto_id',profile.id)
         .then(({data}) => { if(data) setPilotoFazendasIndividuais(data.map(d=>d.fazenda_id)) })
     }
+    // Reordena no cliente: o .order('nome') do Postgres e ordem de texto, entao TALHAO 10
+    // vinha antes de TALHAO 2 e " 017-01" (com espaco na frente) pulava pro topo da lista.
     supabase.from('talhoes').select('id,fazenda_id,nome,area_ha,ativo').eq('ativo',true).order('nome')
-      .then(({data}) => { if(data){ setTalhoesDB(data); saveCache('orofly_cache_talhoes',data) } })
+      .then(({data}) => { if(data){ const ord=ordenarPorNome(data); setTalhoesDB(ord); saveCache('orofly_cache_talhoes',ord) } })
     // Leve, só o necessário pra calcular quanto já foi feito em cada fazenda (de todos os pilotos,
     // não só o logado) — usado pra tirar fazenda 100% concluída da lista e mostrar o que falta.
     // Inclui 'pausado_dia' (Finalizado Parcial) também — senão um voo parcial de outro piloto
@@ -3739,7 +3742,7 @@ Quando: ${tempoErroDebug.quando}`}
                         saldos[x.nome] = +saldo.toFixed(2)
                         somaSaldo += saldo
                       })
-                      const joined = novos.join(', ')
+                      const joined = ordenarNomes(novos).join(', ')
                       setForm(f=>({...f,talhao:joined,localizacao:joined,
                         area_ha: somaSaldo>0?String(parseFloat(somaSaldo.toFixed(2))):f.area_ha,
                         area_talhao_total: somaTotal>0?+somaTotal.toFixed(2):0,
@@ -3840,7 +3843,7 @@ Quando: ${tempoErroDebug.quando}`}
                                 onKeyDown={e=>{
                                   if(e.key==='Enter'&&e.target.value.trim()){
                                     const novos=[...selecionados,e.target.value.trim()]
-                                    const joined=novos.join(', ')
+                                    const joined=ordenarNomes(novos).join(', ')
                                     setForm(f=>({...f,talhao:joined,localizacao:joined}))
                                     e.target.value=''
                                   }

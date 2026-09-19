@@ -12,6 +12,7 @@ import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
 import { descreverAcao, registrar } from '../lib/atividade'
+import { ordenarPorNome } from '../lib/ordenar'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
@@ -555,8 +556,11 @@ export default function AdminPanel({ onSwitchMode }) {
       // Fazendas e talhões (podem não existir ainda)
       const { data: fz } = await supabase.from('fazendas').select('*').order('nome')
       if (fz) setInvFazendas(fz)
+      // O .order('nome') do Postgres e ordem de texto: TALHAO 10 vem antes de TALHAO 2,
+      // e " 017-01" (com espaco na frente, existe no banco) pula pro topo. Reordena aqui.
+      // Todas as telas filtram deste array, entao ordenar na origem arruma todas.
       const { data: tl } = await supabase.from('talhoes').select('*').order('nome')
-      if (tl) setInvTalhoes(tl)
+      if (tl) setInvTalhoes(ordenarPorNome(tl))
       // Movimentos de estoque (pode não existir ainda — ver SQL de setup)
       const { data: mov } = await supabase.from('movimentos_estoque').select('*').order('created_at',{ascending:false}).limit(500)
       if (mov) setInvMovimentos(mov)
