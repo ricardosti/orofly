@@ -410,7 +410,7 @@ export default function AdminPanel({ onSwitchMode }) {
   // PDF Cliente individual): null em relatorioPeriodoTalhoesSel = todos os talhões da fazenda.
   const [relatorioPeriodoTalhoesSel, setRelatorioPeriodoTalhoesSel] = useState(null)
   const [relatorioPeriodoObs, setRelatorioPeriodoObs] = useState('')
-  const [relatorioPeriodoFotoBase64, setRelatorioPeriodoFotoBase64] = useState(null)
+  const [relatorioPeriodoFotos, setRelatorioPeriodoFotos] = useState([])
   // Talhão não iniciado é o terceiro status. Fora do relatório por padrão — o consolidado
   // responde "o que foi feito"; listar o que nunca começou é uma escolha de quem envia,
   // porque muda a leitura do documento pro cliente.
@@ -999,7 +999,7 @@ export default function AdminPanel({ onSwitchMode }) {
         kmlsFazenda: relatorioPeriodoMapaModo === 'upload' ? relatorioPeriodoKmls.map(k=>k.texto) : null,
         midiaNaPagina1: relatorioPeriodoMidiaPag1,
         observacaoAdmin: relatorioPeriodoObs,
-        fotoGeralBase64: relatorioPeriodoFotoBase64, supabase, pdfConfig,
+        fotosGerais: relatorioPeriodoFotos, supabase, pdfConfig,
       })
       const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${iniEfetivo}-a-${fimEfetivo}`
       if(tipo==='whats'){
@@ -4182,7 +4182,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                         onClick={()=>zerarProgresso(fz)}>Zerar</button>
                                     )}
                                     <button style={{background:'transparent',color:theme.primary,border:`1px solid ${theme.cardBorder2}`,borderRadius:6,padding:'4px 9px',fontSize:11,fontWeight:600,cursor:'pointer'}}
-                                      onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotoBase64(null);setRelatorioPeriodoFz(fz)}}>Relatório</button>
+                                      onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotos([]);setRelatorioPeriodoFz(fz)}}>Relatório</button>
                                   </div>
                                 </td>
                               </tr>
@@ -4241,7 +4241,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                   onClick={()=>zerarProgresso(fz)}>Zerar</button>
                               )}
                               <button style={{flex:1,background:'transparent',color:theme.primary,border:`1px solid ${theme.cardBorder2}`,borderRadius:theme.radius||8,padding:'7px 10px',fontSize:11.5,fontWeight:600,cursor:'pointer'}}
-                                onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotoBase64(null);setRelatorioPeriodoFz(fz)}}>Relatório do período</button>
+                                onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotos([]);setRelatorioPeriodoFz(fz)}}>Relatório do período</button>
                             </div>
                           </div>
                         ))}
@@ -4435,7 +4435,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         {/* Onde a foto e o mapa entram. Na página 1 eles ocupam a sobra
                             abaixo dos insumos; se não couber (fazenda com muitos talhões),
                             o gerador cai sozinho pra página separada em vez de espremer. */}
-                        {(relatorioPeriodoMapaModo!=='nenhum' || relatorioPeriodoFotoBase64) && (
+                        {(relatorioPeriodoMapaModo!=='nenhum' || relatorioPeriodoFotos.length>0) && (
                           <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
                             <div style={{fontSize:11.5,fontWeight:600,color:theme.text,marginBottom:6}}>Onde colocar a foto e o mapa</div>
                             <div style={{display:'flex',flexDirection:'column',gap:6}}>
@@ -4466,21 +4466,36 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
 
                       <div style={{marginBottom:4}}>
-                        <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>FOTO GERAL DA FAZENDA (opcional, aparece no topo da capa)</div>
-                        {relatorioPeriodoFotoBase64 ? (
-                          <div style={{position:'relative'}}>
-                            <img src={relatorioPeriodoFotoBase64} alt="foto geral" style={{width:'100%',maxHeight:140,objectFit:'cover',borderRadius:10,display:'block'}}/>
-                            <button style={{position:'absolute',top:6,right:6,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:24,height:24,cursor:'pointer'}}
-                              onClick={()=>setRelatorioPeriodoFotoBase64(null)}>✕</button>
+                        <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>
+                          FOTOS DA FAZENDA (opcional{relatorioPeriodoFotos.length>0?` — ${relatorioPeriodoFotos.length} escolhida${relatorioPeriodoFotos.length>1?'s':''}`:''})
+                        </div>
+                        {relatorioPeriodoFotos.length>0 && (
+                          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(86px, 1fr))',gap:6,marginBottom:8}}>
+                            {relatorioPeriodoFotos.map((foto,i)=>(
+                              <div key={i} style={{position:'relative'}}>
+                                <img src={foto} alt={`foto ${i+1}`} style={{width:'100%',height:66,objectFit:'cover',borderRadius:8,display:'block'}}/>
+                                <button title="Remover" style={{position:'absolute',top:3,right:3,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:20,height:20,fontSize:11,cursor:'pointer',lineHeight:1}}
+                                  onClick={()=>setRelatorioPeriodoFotos(fs=>fs.filter((_,j)=>j!==i))}>✕</button>
+                                <span style={{position:'absolute',bottom:3,left:3,background:'rgba(11,18,16,0.65)',color:'#fff',borderRadius:4,padding:'0 4px',fontSize:9,fontWeight:700}}>{i+1}</span>
+                              </div>
+                            ))}
                           </div>
-                        ) : (
-                          <button style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:10,padding:'14px',fontSize:12,cursor:'pointer'}}
-                            onClick={()=>document.getElementById('relatorio-periodo-foto-input')?.click()}>📷 Escolher foto</button>
                         )}
-                        <input id="relatorio-periodo-foto-input" type="file" accept="image/*" style={{display:'none'}}
+                        <button style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:10,padding:'14px',fontSize:12,cursor:'pointer'}}
+                          onClick={()=>document.getElementById('relatorio-periodo-foto-input')?.click()}>
+                          {relatorioPeriodoFotos.length>0?'📷 Adicionar mais fotos':'📷 Escolher fotos'}
+                        </button>
+                        {/* multiple: dá pra escolher várias de uma vez, e cada clique no botão
+                            ACRESCENTA — quem escolheu 3 e lembrou de uma quarta não perde as 3. */}
+                        <input id="relatorio-periodo-foto-input" type="file" accept="image/*" multiple style={{display:'none'}}
                           onChange={e=>{
-                            const f=e.target.files[0]; if(!f) return
-                            const r=new FileReader(); r.onload=ev=>setRelatorioPeriodoFotoBase64(ev.target.result); r.readAsDataURL(f)
+                            const arquivos=Array.from(e.target.files||[]); if(!arquivos.length) return
+                            Promise.all(arquivos.map(f=>new Promise(res=>{
+                              const r=new FileReader(); r.onload=ev=>res(ev.target.result); r.onerror=()=>res(null); r.readAsDataURL(f)
+                            }))).then(novas=>setRelatorioPeriodoFotos(fs=>[...fs,...novas.filter(Boolean)]))
+                            // Zera o input: sem isso, escolher o MESMO arquivo de novo não
+                            // dispara onChange e parece que o botão travou.
+                            e.target.value=''
                           }}/>
                       </div>
 

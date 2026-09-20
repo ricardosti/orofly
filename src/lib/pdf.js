@@ -951,7 +951,11 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // página 1 era a única em pé, e quem abria o PDF tinha que girar a tela na primeira folha
 // e desgirar na segunda.
 // `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
-export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, kmlsFazenda=null, midiaNaPagina1=false, observacaoAdmin='', fotoGeralBase64=null, supabase=null, pdfConfig=null }) {
+export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, kmlsFazenda=null, midiaNaPagina1=false, observacaoAdmin='', fotoGeralBase64=null, fotosGerais=null, supabase=null, pdfConfig=null }) {
+  // `fotosGerais` é a lista nova; `fotoGeralBase64` é a forma antiga (uma foto só) e
+  // continua funcionando. Normaliza pra uma lista e o resto do código só olha pra ela.
+  const fotos = (fotosGerais && fotosGerais.length ? fotosGerais : (fotoGeralBase64 ? [fotoGeralBase64] : [])).filter(Boolean)
+  const temFoto = fotos.length > 0
   const doc = new jsPDF({ orientation:'l', unit:'mm', format:'a4' })
   const G=pdfConfig?.corDestaque?hexToRgb(pdfConfig.corDestaque):[26,122,74], DK=[17,26,20], GR=[120,140,130], W=[255,255,255]
 
@@ -999,6 +1003,42 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     doc.setFontSize(8.2); doc.setFont('helvetica', 'bold'); doc.setTextColor(...G)
     doc.text(`${num}. ${txt}`, x + 4, y + 4.8)
     return y + 9.5
+  }
+
+  // Desenha fotos numa grade dentro da caixa (x,y,w,h) e devolve as que NÃO couberam,
+  // pra quem chamou continuar numa página nova. Cada foto entra inteira na célula
+  // (contain, sem cortar) e centralizada — foto de fazenda vem em formato imprevisível,
+  // e esticar pra preencher deformaria a imagem.
+  function desenharGradeFotos(doc, x, y, w, h, lista) {
+    if (!lista.length) return []
+    const GAP = 4
+    const ALTURA_MIN_CELULA = 26   // abaixo disso a foto fica ilegível; melhor jogar pra outra página
+    // Mais fotos, mais colunas — mas nunca tão estreitas que a foto suma. A largura manda:
+    // ao lado do mapa a caixa tem metade da folha, e ali 3 colunas dariam ~42mm por foto.
+    const maxColsPorLargura = Math.max(1, Math.floor(w / 62))
+    const cols = Math.min(lista.length === 1 ? 1 : lista.length <= 4 ? 2 : 3, maxColsPorLargura)
+    const wCel = (w - GAP * (cols - 1)) / cols
+    const linhasQueCabem = Math.max(1, Math.floor((h + GAP) / (ALTURA_MIN_CELULA + GAP)))
+    const cabemAgora = Math.min(lista.length, cols * linhasQueCabem)
+    const linhasUsadas = Math.ceil(cabemAgora / cols)
+    const hCel = Math.min((h - GAP * (linhasUsadas - 1)) / linhasUsadas, h)
+
+    lista.slice(0, cabemAgora).forEach((foto, i) => {
+      const cx = x + (i % cols) * (wCel + GAP)
+      const cy = y + Math.floor(i / cols) * (hCel + GAP)
+      try {
+        const prop = doc.getImageProperties(foto)
+        const esc = Math.min(wCel / prop.width, hCel / prop.height)
+        const fw = prop.width * esc, fh = prop.height * esc
+        doc.addImage(foto, 'JPEG', cx + (wCel - fw) / 2, cy + (hCel - fh) / 2, fw, fh)
+      } catch (e) {
+        // Uma foto ilegível não pode derrubar o relatório inteiro — marca o lugar e segue.
+        doc.setDrawColor(...GR); doc.setLineWidth(0.3); doc.rect(cx, cy, wCel, hCel)
+        doc.setFontSize(7); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
+        doc.text('Foto não pôde ser carregada.', cx + 3, cy + hCel / 2)
+      }
+    })
+    return lista.slice(cabemAgora)
   }
 
   fundoBranco()
@@ -1272,21 +1312,24 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   // página separada do que espremer. Uma fazenda com muitos talhões come essa sobra.
   const ALTURA_MINIMA_MIDIA = 38
   const espacoLivre = rodY - yFim - 6
-  const cabeNaPagina1 = midiaNaPagina1 && (fotoGeralBase64 || mapaConsolidado) && espacoLivre >= ALTURA_MINIMA_MIDIA
+  const cabeNaPagina1 = midiaNaPagina1 && (temFoto || mapaConsolidado) && espacoLivre >= ALTURA_MINIMA_MIDIA
+  // Na página 1 cabe UMA foto ao lado do mapa. Escolher "na página 1" é pedir um relatório
+  // enxuto, então as fotos extras não espremem a capa: vão pra página de fotos no fim.
+  const fotosSobrando = cabeNaPagina1 ? fotos.slice(1) : fotos
   if (cabeNaPagina1) {
     let ym = yFim + 3
-    const dois = fotoGeralBase64 && mapaConsolidado
+    const dois = temFoto && mapaConsolidado
     const wBloco = dois ? (CW - 6) / 2 : CW
     const hBloco = Math.min(espacoLivre - 9, 78)
 
-    if (fotoGeralBase64) {
+    if (temFoto) {
       doc.setFontSize(5.8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
-      doc.text('FOTO GERAL DA FAZENDA', M, ym + 3)
+      doc.text(fotos.length > 1 ? `FOTOS DA FAZENDA (1 de ${fotos.length})` : 'FOTO GERAL DA FAZENDA', M, ym + 3)
       try {
-        const prop = doc.getImageProperties(fotoGeralBase64)
+        const prop = doc.getImageProperties(fotos[0])
         const esc = Math.min(wBloco / prop.width, hBloco / prop.height)
         const w = prop.width * esc, h = prop.height * esc
-        doc.addImage(fotoGeralBase64, 'JPEG', M + (wBloco - w) / 2, ym + 5, w, h)
+        doc.addImage(fotos[0], 'JPEG', M + (wBloco - w) / 2, ym + 5, w, h)
       } catch (e) { console.warn('Foto não pôde ser desenhada na página 1:', e) }
     }
     if (mapaConsolidado) {
@@ -1320,7 +1363,10 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   // Só existe quando há o que mostrar. Sem foto e sem KML, a página não é criada — relatório
   // não ganha folha em branco por causa de uma opção que ninguém usou.
   // ═══════════════════════════════════════════════════════════════════════════════════
-  if ((fotoGeralBase64 || mapaConsolidado) && !cabeNaPagina1) {
+  // O mapa só vem pra cá se não coube na página 1. As fotos que vêm são as que sobraram
+  // (todas, quando a página 1 não foi usada; as extras, quando foi).
+  const mapaNaPaginaSeparada = mapaConsolidado && !cabeNaPagina1
+  if (fotosSobrando.length || mapaNaPaginaSeparada) {
     doc.addPage([297, 210], 'l')
     fundoBranco()
     let yg = M
@@ -1336,26 +1382,21 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     // um vira uma faixa de 70mm de altura por 277 de largura, e nem foto de fazenda nem
     // mapa de talhão têm esse formato — sobra branco dos dois lados e a imagem sai pequena.
     const alturaUtil = PH - yg - M - 14
-    const doisBlocos = fotoGeralBase64 && mapaConsolidado
+    const doisBlocos = fotosSobrando.length > 0 && mapaNaPaginaSeparada
     const wBloco = doisBlocos ? (CW - 8) / 2 : CW
     let xg = M
+    // As fotos que não couberem nesta página saem em páginas extras logo abaixo.
+    let fotosRestantes = fotosSobrando
 
-    if (fotoGeralBase64) {
-      const yFoto = tituloSecao(xg, yg, wBloco, 1, 'FOTO GERAL DA FAZENDA')
-      try {
-        const prop = doc.getImageProperties(fotoGeralBase64)
-        const escala = Math.min(wBloco / prop.width, (alturaUtil - 12) / prop.height)
-        const w = prop.width * escala, h = prop.height * escala
-        doc.addImage(fotoGeralBase64, 'JPEG', xg + (wBloco - w) / 2, yFoto, w, h)
-      } catch (e) {
-        doc.setFontSize(8); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
-        doc.text('Não foi possível carregar a foto.', xg + 2, yFoto + 5)
-      }
+    if (fotosSobrando.length) {
+      const rotulo = fotosSobrando.length > 1 ? `FOTOS DA FAZENDA (${fotosSobrando.length})` : 'FOTO GERAL DA FAZENDA'
+      const yFoto = tituloSecao(xg, yg, wBloco, 1, rotulo)
+      fotosRestantes = desenharGradeFotos(doc, xg, yFoto, wBloco, alturaUtil - 12, fotosSobrando)
       xg += wBloco + 8
     }
 
-    if (mapaConsolidado) {
-      const yMapa = tituloSecao(xg, yg, wBloco, fotoGeralBase64 ? 2 : 1, mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
+    if (mapaNaPaginaSeparada) {
+      const yMapa = tituloSecao(xg, yg, wBloco, fotosSobrando.length ? 2 : 1, mapaConsolidado.origem === 'fazenda' ? 'MAPA DA FAZENDA' : 'COBERTURA — TRAJETOS DOS VOOS NO PERÍODO')
       const hMapa = alturaUtil - 20
       desenharMapa(doc, xg, yMapa, wBloco, hMapa, mapaConsolidado, { G, GR })
       doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
@@ -1370,6 +1411,32 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
     doc.setDrawColor(...G); doc.setLineWidth(0.5); doc.line(M, PH - M - 6, PW - M, PH - M - 6)
     doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
     doc.text((EMPRESA.razao_social || EMPRESA.nome || 'OROFLY').toUpperCase(), M, PH - M - 2)
+
+    // Fotos que não couberam: cada página extra usa a largura inteira, então cabe bem mais
+    // por folha do que na primeira (onde o mapa ocupava metade).
+    let paginaExtra = 2
+    while (fotosRestantes.length) {
+      doc.addPage([297, 210], 'l')
+      fundoBranco()
+      let ye = M
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+      doc.text('FOTOS DA FAZENDA', M, ye + 6)
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+      doc.text(`${fazenda.cliente || '—'} • ${fazenda.nome || '—'} • continuação ${paginaExtra}`, PW - M, ye + 6, { align: 'right' })
+      ye += 9
+      doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, ye, PW - M, ye); ye += 6
+
+      const antes = fotosRestantes.length
+      fotosRestantes = desenharGradeFotos(doc, M, ye, CW, PH - ye - M - 10, fotosRestantes)
+      // Trava de segurança: se por algum motivo nenhuma foto coube, para em vez de gerar
+      // páginas em branco pra sempre.
+      if (fotosRestantes.length === antes) break
+
+      doc.setDrawColor(...G); doc.setLineWidth(0.5); doc.line(M, PH - M - 6, PW - M, PH - M - 6)
+      doc.setFontSize(6); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+      doc.text((EMPRESA.razao_social || EMPRESA.nome || 'OROFLY').toUpperCase(), M, PH - M - 2)
+      paginaExtra++
+    }
   }
 
   // ═══ PÁGINAS SEGUINTES — um relatório completo por voo (igual o PDF Cliente

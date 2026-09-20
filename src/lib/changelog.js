@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.0',
+    data: '2026-09-20',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Varias fotos no Relatorio do Periodo',
+        texto: 'O campo de foto da fazenda agora aceita quantas fotos voce quiser: da pra escolher varias de uma vez, e cada clique em "Adicionar mais fotos" acrescenta sem perder as que ja estavam. As miniaturas aparecem numeradas e cada uma tem o X pra remover. No PDF elas saem numa grade na pagina "Geral da Fazenda", sem legenda. Se escolher "Na pagina 1", a capa continua enxuta com uma foto so ao lado do mapa e as demais vao pra pagina de fotos. Passando de 10 fotos, o relatorio abre uma folha de continuacao.',
+      },
+    ],
+  },
+  {
     versao: '4.9',
     data: '2026-09-20',
     itens: [
