@@ -12,7 +12,7 @@ import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
 import { descreverAcao, registrar } from '../lib/atividade'
-import { ordenarPorNome } from '../lib/ordenar'
+import { ordenarPorNome, compararNomes } from '../lib/ordenar'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
@@ -351,7 +351,10 @@ export default function AdminPanel({ onSwitchMode }) {
   const [confirmDeleteDespesa, setConfirmDeleteDespesa] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
-  const [filters, setFilters] = useState({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })
+  const [filters, setFilters] = useState({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })
+  // Ordenação da lista de voos. Começa pela data decrescente — é a ordem que a lista
+  // já tinha na prática, e o voo mais recente é o que se procura na maioria das vezes.
+  const [relOrdem, setRelOrdem] = useState({ campo:'data', dir:'desc' })
   const [selectedKmlIds, setSelectedKmlIds] = useState([])
   const [newUser, setNewUser] = useState({ nome:'', email:'', senha:'', role:'piloto' })
   const [criandoUser, setCriandoUser] = useState(false)
@@ -753,11 +756,70 @@ export default function AdminPanel({ onSwitchMode }) {
     if (filters.fazenda && !r.fazenda?.toLowerCase().includes(filters.fazenda.toLowerCase())) return false
     if (filters.piloto && !r.piloto_nome?.toLowerCase().includes(filters.piloto.toLowerCase())) return false
     if (filters.drone && !r.drone?.toLowerCase().includes(filters.drone.toLowerCase())) return false
+    // Um voo pode cobrir vários talhões, gravados numa string só ("002-01, 005-01").
+    // Busca por pedaço do nome pra "002" achar todos os 002-xx.
+    if (filters.talhao && !r.localizacao?.toLowerCase().includes(filters.talhao.toLowerCase())) return false
     if (filters.status && r.status !== filters.status) return false
-    if (filters.dataIni && new Date(r.created_at) < new Date(filters.dataIni)) return false
-    if (filters.dataFim && new Date(r.created_at) > new Date(filters.dataFim + 'T23:59:59')) return false
+    // Filtra pela data do VOO (dt_inicio), não pela de criação do registro. Eram a mesma
+    // coisa até a data virar editável: hoje 25 dos 179 voos já têm as duas diferentes (até
+    // 3 dias), e é dt_inicio que manda no consolidado, no dashboard e no relatório do
+    // período. Filtrar por created_at aqui fazia a correção de data parecer não ter efeito.
+    if (filters.dataIni && new Date(r.dt_inicio || r.created_at) < new Date(filters.dataIni)) return false
+    if (filters.dataFim && new Date(r.dt_inicio || r.created_at) > new Date(filters.dataFim + 'T23:59:59')) return false
     return true
+  }).sort((a, b) => {
+    // Voo sem valor na coluna (sem tempo calculado, sem despesa, sem talhão) vai pro FIM
+    // nas duas direções — mesma regra da lista de fazendas. Ordenar por "menor tempo" e
+    // receber um bloco de trações sem dado na frente não ajuda ninguém.
+    const va = valorOrdemRel(a, relOrdem.campo), vb = valorOrdemRel(b, relOrdem.campo)
+    if (va === null || vb === null) {
+      if (va === null && vb === null) return 0
+      return va === null ? 1 : -1
+    }
+    const cmp = typeof va === 'string' ? compararNomes(va, vb) : va - vb
+    // Empate desempata pela data, senão a lista dança a cada redesenho: há muitos voos
+    // do mesmo cliente, do mesmo piloto e no mesmo status.
+    return (relOrdem.dir === 'asc' ? cmp : -cmp)
+      || (new Date(b.dt_inicio || b.created_at) - new Date(a.dt_inicio || a.created_at))
   })
+
+  // Valor de cada coluna para ordenar. Devolve null quando a linha não tem o dado.
+  function valorOrdemRel(rel, campo) {
+    switch (campo) {
+      case 'cliente':  return rel.cliente || null
+      case 'fazenda':  return rel.fazenda || null
+      case 'piloto':   return rel.piloto_nome || null
+      case 'drone':    return rel.drone || null
+      case 'status':   return STATUS_LABEL[rel.status] || rel.status || null
+      // Pelo PRIMEIRO talhão do voo, já que a coluna pode listar vários. Como os nomes
+      // saem ordenados desde a v4.9, o primeiro é o menor.
+      case 'talhao': {
+        const nomes = (rel.localizacao || '').split(',').map(s => s.trim()).filter(Boolean)
+        return nomes.length ? nomes[0] : null
+      }
+      case 'data': {
+        const d = new Date(rel.dt_inicio || rel.created_at)
+        return isNaN(d.getTime()) ? null : d.getTime()
+      }
+      case 'tempo': {
+        // calcTempo devolve texto formatado ("1h22m"), que ordenaria errado. Recalcula os
+        // minutos do mesmo jeito que ele faz, e só ordena o que ele considera tempo válido
+        // — assim a ordem bate exatamente com o que a coluna mostra.
+        if (!calcTempo(rel.dt_inicio, rel.dt_fim, rel.pausas)) return null
+        return Math.round((new Date(rel.dt_fim) - new Date(rel.dt_inicio)) / 60000)
+      }
+      case 'custo': {
+        const total = custosDoRel(rel).reduce((a, c) => a + parseFloat(c.valor || 0), 0)
+        return total > 0 ? total : null
+      }
+      default: return null
+    }
+  }
+  // Primeiro clique ordena crescente; clicar de novo inverte. Data começa decrescente,
+  // que é o que se espera de uma lista de voos.
+  const alternarOrdemRel = campo => setRelOrdem(o =>
+    o.campo === campo ? { campo, dir: o.dir === 'asc' ? 'desc' : 'asc' }
+                      : { campo, dir: campo === 'data' ? 'desc' : 'asc' })
 
   const sosAtivos = relatorios.filter(r => r.status === 'sos')
 
@@ -1847,7 +1909,7 @@ export default function AdminPanel({ onSwitchMode }) {
               )}
 
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#F8FAFC', padding:12, borderRadius:theme.radius||8, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
-                {[['Cliente','cliente'],['Fazenda','fazenda'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
+                {[['Cliente','cliente'],['Fazenda','fazenda'],['Talhão','talhao'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
                 <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
@@ -1868,7 +1930,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -1887,7 +1949,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             <span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                           </div>
                           <div style={{ fontSize:12, color:theme.textMuted }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}{rel.ordem_servico?` · OS ${rel.ordem_servico}`:''}</div>
-                          <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}</div>
+                          <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}</div>
                         </div>
                         {isSel && (
                           <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
@@ -1918,8 +1980,12 @@ export default function AdminPanel({ onSwitchMode }) {
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead>
                         <tr style={{ background:theme.bg }}>
-                          {['Cliente','Fazenda','Talhão','Piloto','Drone','Status','Data','Tempo','Custo','Ações'].map(h => (
-                            <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:600, color:theme.textFaint2, letterSpacing:0.4, textTransform:'uppercase', borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'DM Sans',sans-serif" }}>{h}</th>
+                          {[['Cliente','cliente'],['Fazenda','fazenda'],['Talhão','talhao'],['Piloto','piloto'],['Drone','drone'],['Status','status'],['Data','data'],['Tempo','tempo'],['Custo','custo'],['Ações',null]].map(([h,campo]) => (
+                            <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:600, color: campo&&relOrdem.campo===campo?'#059669':theme.textFaint2, letterSpacing:0.4, textTransform:'uppercase', borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'DM Sans',sans-serif", cursor: campo?'pointer':'default', userSelect:'none' }}
+                              onClick={campo ? () => alternarOrdemRel(campo) : undefined}>
+                              {h}
+                              {campo && <span style={{ marginLeft:4, opacity: relOrdem.campo===campo?1:0.25 }}>{relOrdem.campo===campo ? (relOrdem.dir==='asc'?'▲':'▼') : '▲'}</span>}
+                            </th>
                           ))}
                         </tr>
                       </thead>
@@ -1965,7 +2031,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={sG.td}>{rel.piloto_nome||'—'}</td>
                                 <td style={sG.td}>{rel.drone||'—'}</td>
                                 <td style={sG.td}><span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
-                                <td style={sG.td}>{new Date(rel.created_at).toLocaleDateString('pt-BR')}</td>
+                                <td style={sG.td}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}</td>
                                 <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:theme.textMuted }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
                                 <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:theme.warningText}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
                                 <td style={{ ...sG.td, whiteSpace:'nowrap', position:'relative' }}>
@@ -2958,7 +3024,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -3060,7 +3126,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                   </div>
                   {Object.values(filters).some(Boolean) && (
-                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                   )}
                 </div>
 

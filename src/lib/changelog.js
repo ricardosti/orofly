@@ -9,6 +9,27 @@
 
 export const NOVIDADES = [
   {
+    versao: '4.9',
+    data: '2026-09-20',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Ordenar e filtrar a lista de Relatorios de Voo',
+        texto: 'Clique no cabecalho de qualquer coluna (Cliente, Fazenda, Talhao, Piloto, Drone, Status, Data, Tempo ou Custo) pra ordenar; clique de novo pra inverter. Entrou tambem um filtro por Talhao ao lado dos outros — digitando "002" acha todos os 002-xx. Voo sem o dado da coluna (sem tempo calculado, sem despesa, sem talhao) fica sempre no fim da lista, nas duas direcoes: ordenando por menor tempo o que interessa e o voo mais curto, nao um bloco de linhas em branco na frente.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'A lista de voos passa a mostrar a data do voo',
+        texto: 'A coluna DATA e o filtro De/Ate usavam a data em que o registro foi criado, nao a do voo. Eram a mesma coisa ate a data virar editavel — hoje 25 dos 179 voos ja tem as duas diferentes, ate 3 dias. Agora os dois usam a data de inicio do voo, a mesma que manda no consolidado da fazenda, no dashboard e no relatorio do periodo. Corrigir a data de um voo passa a mover ele na lista tambem.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Talhoes em ordem em todas as listas',
+        texto: 'Os talhoes sao uma mistura: a maioria vem zerada a esquerda (001-01 a 037-01), mas tem TALHAO 01 a 06 e alguns com nome livre. Em ordem de texto, TALHAO 10 vinha antes de TALHAO 2, e o " 017-01" (cadastrado com um espaco na frente) pulava pro topo de toda lista. Agora a ordem e natural em todas as telas, e os talhoes de um voo saem em ordem em vez da ordem de clique.',
+      },
+    ],
+  },
+  {
     versao: '4.8',
     data: '2026-09-19',
     itens: [
