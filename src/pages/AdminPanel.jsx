@@ -552,7 +552,7 @@ export default function AdminPanel({ onSwitchMode }) {
   // do drone e com a classe do produto. Ao criar coluna nova com campo na tela, acrescente aqui.
   function initDroneForm(d={}) {
     return { nome:d.nome||'', modelo:d.modelo||'', serial:d.serial||'', fabricante:d.fabricante||'DJI', ano_aquisicao:d.ano_aquisicao||'', horas_limite:d.horas_limite||100, ativo:d.ativo!==false, obs:d.obs||'',
-      velocidade_padrao:d.velocidade_padrao||'', altura_padrao:d.altura_padrao||'', faixa_padrao:d.faixa_padrao||'', vazao_padrao:d.vazao_padrao||'' }
+      velocidade_padrao:d.velocidade_padrao||'', altura_padrao:d.altura_padrao||'', faixa_padrao:d.faixa_padrao||'', vazao_padrao:d.vazao_padrao||'', gota_padrao:d.gota_padrao||'' }
   }
   function initProdutoForm(p={}) {
     return { nome:p.nome||'', classe:p.classe||'', fabricante:p.fabricante||'', unidade:p.unidade||'L', estoque_atual:p.estoque_atual||0, estoque_minimo:p.estoque_minimo||0, validade:p.validade||'', registro_mapa:p.registro_mapa||'', ativo:p.ativo!==false, obs:p.obs||'', dose_padrao:p.dose_padrao??'', dose_auto:p.dose_auto!==false }
@@ -3746,7 +3746,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             O piloto já encontra esses valores preenchidos ao escolher este drone, e pode alterar. Em branco, vale o padrão de Configurações do Sistema.
                           </div>
                           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(110px, 1fr))',gap:10}}>
-                            {[['VELOCIDADE (km/h)','velocidade_padrao','Ex: 30'],['ALTURA (m)','altura_padrao','Ex: 3'],['FAIXA (m)','faixa_padrao','Ex: 5'],['VAZÃO (L/ha)','vazao_padrao','Ex: 10']].map(([lbl,key,ph])=>(
+                            {[['VELOCIDADE (km/h)','velocidade_padrao','Ex: 30'],['ALTURA (m)','altura_padrao','Ex: 3'],['FAIXA (m)','faixa_padrao','Ex: 5'],['VAZÃO (L/ha)','vazao_padrao','Ex: 10'],['TAMANHO DA GOTA (micras)','gota_padrao','Ex: 200']].map(([lbl,key,ph])=>(
                               <div key={key}>
                                 <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>{lbl}</div>
                                 <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
@@ -3872,14 +3872,24 @@ export default function AdminPanel({ onSwitchMode }) {
               // Bordadura conta como "feito" — é faixa de segurança deliberadamente não
               // pulverizada, não trabalho pendente (senão a fazenda nunca fecha 100%).
               const bordaduraRealizada = relatoriosFz.reduce((a,r)=>a+(parseFloat(r.bordadura)||0),0)
-              const pct = areaTotal>0 ? Math.min(100,((areaRealizada+bordaduraRealizada)/areaTotal)*100) : null
+              // Área COBERTA = aplicada + bordadura. É ela que define o avanço, e é ela que a
+              // tela mostra ao lado da barra — antes o número exibido era só a aplicada, então
+              // "342,5 / 367,7" aparecia junto de "100%" e não fechava com nada.
+              const areaCoberta = areaRealizada + bordaduraRealizada
+              // Tolerância de 0,05 ha (500 m²) pra considerar fechado. Dois motivos reais:
+              // somar valores de 2 casas em ponto flutuante erra na última casa (181,68 vira
+              // 181,67999…), e sobra de 0,01 ha não é pendência de campo — era o que deixava
+              // MONTE ALTO (100,0000%) e ALAMBARI (99,9973%) presas em "Parcial".
+              const pct = areaTotal>0
+                ? ((areaTotal - areaCoberta) <= 0.05 ? 100 : Math.min(100,(areaCoberta/areaTotal)*100))
+                : null
               const porPiloto = {}
               relatoriosFz.forEach(r=>{
                 const n = r.piloto_nome||'—'
                 porPiloto[n] = (porPiloto[n]||0) + areaLiquida(r)
               })
               const rankingPilotos = Object.entries(porPiloto).sort((a,b)=>b[1]-a[1])
-              return { ...fz, areaTotal, areaRealizada, pct, numTalhoes: talhoesFz.length, numVoos: relatoriosFz.length, rankingPilotos }
+              return { ...fz, areaTotal, areaRealizada, areaCoberta, bordaduraRealizada, pct, numTalhoes: talhoesFz.length, numVoos: relatoriosFz.length, rankingPilotos }
             })
 
             const somaTotal = fazendasBI.reduce((a,f)=>a+f.areaTotal,0)
@@ -4258,12 +4268,16 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <div style={{flex:1,background:theme.divider,borderRadius:20,height:6,overflow:'hidden',maxWidth:90}}>
                                         <div style={{width:`${fz.pct}%`,height:'100%',background:fz.pct>=100?theme.primary:theme.warningText,borderRadius:20}}/>
                                       </div>
-                                      <span style={{fontWeight:600,color:theme.text,fontSize:12,width:34,textAlign:'right'}}>{fz.pct.toFixed(0)}%</span>
+                                      <span style={{fontWeight:600,color:theme.text,fontSize:12,width:34,textAlign:'right'}}>{fz.pct>=100?100:Math.floor(fz.pct)}%</span>
                                     </div>
                                   )}
                                 </td>
                                 <td style={{padding:'9px 12px',textAlign:'right',color:theme.textMuted,whiteSpace:'nowrap'}}>
-                                  {fz.pct!==null ? `${fz.areaRealizada.toFixed(1)} / ${fz.areaTotal.toFixed(1)}` : '—'}
+                                  {fz.pct!==null ? (
+                                    <span title={fz.bordaduraRealizada>0 ? `Aplicada: ${fz.areaRealizada.toFixed(1)} ha + bordadura ${fz.bordaduraRealizada.toFixed(1)} ha` : undefined}>
+                                      {fz.areaCoberta.toFixed(1)} / {fz.areaTotal.toFixed(1)}
+                                    </span>
+                                  ) : '—'}
                                 </td>
                                 <td style={{padding:'9px 12px',color:theme.textFaint,whiteSpace:'nowrap'}}>
                                   {fz.campanha_inicio ? new Date(fz.campanha_inicio).toLocaleDateString('pt-BR') : '—'}

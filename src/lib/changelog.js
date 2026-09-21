@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.4',
+    data: '2026-09-21',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Fazenda pronta aparecia como Parcial com a barra em 100%',
+        texto: 'FAZENDA ALAMBARI e MONTE ALTO mostravam o selo Parcial com a barra cheia em 100%. Duas causas. A primeira: faltavam 0,01 ha (100 m2) na ALAMBARI e o selo exigia 100% exato, entao sobra de arredondamento segurava a fazenda em Parcial pra sempre. Agora vale uma tolerancia de 0,05 ha. A segunda: a barra e o % ja somavam a bordadura, mas os hectares ao lado mostravam so a area aplicada — por isso "342,5 / 367,7" aparecia junto de "100%" sem fechar. Agora os dois usam a mesma base (aplicada + bordadura), e passando o mouse aparece a divisao entre as duas.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Tamanho da gota tambem vem do cadastro do drone',
+        texto: 'O bloco PARAMETROS DE APLICACAO do drone ganhou TAMANHO DA GOTA (micras), junto de velocidade, altura, faixa e vazao. Ao escolher o drone, o piloto ja encontra os cinco preenchidos no Passo 3.',
+      },
+    ],
+  },
+  {
     versao: '5.3',
     data: '2026-09-21',
     itens: [

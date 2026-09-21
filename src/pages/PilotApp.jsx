@@ -758,7 +758,7 @@ export default function PilotApp({onSwitchMode}) {
     setFazendasDB(loadCache('orofly_cache_fazendas'))
     setTalhoesDB(loadCache('orofly_cache_talhoes'))
 
-    supabase.from('drones').select('nome,horas_limite,ativo,velocidade_padrao,altura_padrao,faixa_padrao,vazao_padrao').eq('ativo',true).order('nome')
+    supabase.from('drones').select('nome,horas_limite,ativo,velocidade_padrao,altura_padrao,faixa_padrao,vazao_padrao,gota_padrao').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setDronesDB(data); saveCache('orofly_cache_drones',data) } })
     // Drones em voo ativo agora (de qualquer piloto) — mostra "em uso" no seletor pra evitar
     // que dois pilotos peguem o mesmo drone sem saber.
@@ -3969,6 +3969,7 @@ Quando: ${tempoErroDebug.quando}`}
                 faixa_f:          ou(d?.faixa_padrao,      f.faixa_f),
                 vazao_i:          ou(d?.vazao_padrao,      f.vazao_i),
                 vazao_f:          ou(d?.vazao_padrao,      f.vazao_f),
+                tamanho_gota:     ou(d?.gota_padrao,       f.tamanho_gota),
               }));autoGPS()
             }}>
               <option value="">Selecione o Drone...</option>
