@@ -437,6 +437,8 @@ export default function AdminPanel({ onSwitchMode }) {
   // Ordenação da lista de fazendas. Vale pros dois modos de visão: quem ordena na tabela e
   // troca pra cards continua vendo a mesma ordem.
   const [fzOrdem, setFzOrdem] = useState({ campo:'nome', dir:'asc' })
+  // Fazendas marcadas pra exclusão em lote, por id.
+  const [fzSelecionadas, setFzSelecionadas] = useState([])
   const [fzHistoricoModal, setFzHistoricoModal] = useState(null) // fazenda selecionada pra ver ciclos anteriores (ou null)
   const [fzExpandido, setFzExpandido] = useState({})
   const [invMovimentos, setInvMovimentos] = useState([])
@@ -3723,6 +3725,25 @@ export default function AdminPanel({ onSwitchMode }) {
                               onChange={e=>setDroneForm(f=>({...f,[key]:e.target.value}))} />
                           </div>
                         ))}
+                        {/* Parametros de aplicacao — chegam preenchidos no Passo 3 do piloto
+                            quando ele escolhe este drone. Mais especifico que o padrao global
+                            de Configuracoes do Sistema, entao ganha dele. */}
+                        <div style={{gridColumn:'1/-1',borderTop:`1px solid ${theme.divider}`,paddingTop:12,marginTop:4}}>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5}}>PARÂMETROS DE APLICAÇÃO (OPCIONAL)</div>
+                          <div style={{fontSize:10,color:'#aaa',marginTop:3,marginBottom:8}}>
+                            O piloto já encontra esses valores preenchidos ao escolher este drone, e pode alterar. Em branco, vale o padrão de Configurações do Sistema.
+                          </div>
+                          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(110px, 1fr))',gap:10}}>
+                            {[['VELOCIDADE (km/h)','velocidade_padrao','Ex: 30'],['ALTURA (m)','altura_padrao','Ex: 3'],['FAIXA (m)','faixa_padrao','Ex: 5'],['VAZÃO (L/ha)','vazao_padrao','Ex: 10']].map(([lbl,key,ph])=>(
+                              <div key={key}>
+                                <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>{lbl}</div>
+                                <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                  placeholder={ph} value={droneForm[key]||''}
+                                  onChange={e=>setDroneForm(f=>({...f,[key]:e.target.value}))} />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                         <div style={{gridColumn:'1/-1'}}>
                           <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
                           <textarea style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
@@ -3926,6 +3947,38 @@ export default function AdminPanel({ onSwitchMode }) {
             const qtdConcluidas = fazendasBI.filter(f=>fzStatus(f)==='concluida').length
             const qtdParciais = fazendasBI.filter(f=>fzStatus(f)==='parcial').length
             const qtdNaoIniciadas = fazendasBI.filter(f=>fzStatus(f)==='nao_iniciada').length
+
+            // Exclusão em lote. O confirm mostra o estrago ANTES: talhão tem FK com CASCADE,
+            // então some junto e não tem volta. Os voos ficam (relatorios guarda o nome da
+            // fazenda como texto, sem FK), mas passam a apontar pra uma fazenda que não existe
+            // mais no cadastro — e aí o consolidado dela perde o catálogo de talhões, que é o
+            // denominador do progresso. Por isso o aviso é explícito.
+            async function excluirFazendasSelecionadas() {
+              const alvos = fazendasBI.filter(f=>fzSelecionadas.includes(f.id))
+              if(!alvos.length) return
+              const talhoesAfetados = invTalhoes.filter(t=>alvos.some(f=>f.id===t.fazenda_id)).length
+              const voosAfetados = relatorios.filter(r=>alvos.some(f=>f.nome===r.fazenda && f.cliente===r.cliente)).length
+              const listaNomes = alvos.slice(0,8).map(f=>`• ${f.nome}`).join('\n')
+                + (alvos.length>8 ? `\n• ...e mais ${alvos.length-8}` : '')
+              const aviso = [
+                `Excluir ${alvos.length} fazenda${alvos.length>1?'s':''}?`,
+                '',
+                listaNomes,
+                '',
+                talhoesAfetados>0 ? `⚠️ Isso apaga junto ${talhoesAfetados} talhão(ões) cadastrado(s).` : 'Nenhum talhão cadastrado será afetado.',
+                voosAfetados>0
+                  ? `⚠️ ${voosAfetados} voo(s) continuam salvos em Relatórios, mas ficam sem a fazenda no cadastro — o consolidado dessas fazendas deixa de calcular o progresso.`
+                  : 'Nenhum voo registrado nessas fazendas.',
+                '',
+                'NÃO TEM COMO DESFAZER.',
+              ].join('\n')
+              if(!window.confirm(aviso)) return
+              const { error } = await supabase.from('fazendas').delete().in('id', alvos.map(f=>f.id))
+              if(error){ showToast('Erro ao excluir: '+error.message,'error'); return }
+              showToast(`🗑️ ${alvos.length} fazenda${alvos.length>1?'s excluídas':' excluída'}`)
+              setFzSelecionadas([])
+              fetchInventario()
+            }
 
             async function zerarProgresso(fz) {
               if(!window.confirm(`Zerar o progresso de "${fz.nome}"?\n\nIsso reinicia a % de conclusão a partir de agora (o histórico de voos é mantido, só não conta mais pro cálculo). Use para uma nova aplicação/reaplicação na mesma área.`)) return
@@ -4132,6 +4185,18 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                     </div>
 
+                    {fzSelecionadas.length>0 && (
+                      <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:theme.dangerBg,border:`1px solid ${theme.dangerText}`,borderRadius:theme.radius||8,padding:'10px 14px',marginBottom:10}}>
+                        <span style={{fontSize:12.5,fontWeight:600,color:theme.dangerText}}>
+                          {fzSelecionadas.length} fazenda{fzSelecionadas.length>1?'s':''} selecionada{fzSelecionadas.length>1?'s':''}
+                        </span>
+                        <button style={{background:theme.dangerText,color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}
+                          onClick={excluirFazendasSelecionadas}>🗑️ Excluir selecionadas</button>
+                        <button style={{background:'none',border:'none',color:theme.textMuted,fontSize:12,fontWeight:600,cursor:'pointer'}}
+                          onClick={()=>setFzSelecionadas([])}>Cancelar</button>
+                      </div>
+                    )}
+
                     {fazendasBIFiltradas.length===0 ? (
                       <div style={{background:theme.card,borderRadius:theme.radius||8,border:`1px solid ${theme.cardBorder2}`,padding:40,textAlign:'center',color:theme.textMuted}}>
                         Nenhuma fazenda encontrada.
@@ -4141,6 +4206,18 @@ export default function AdminPanel({ onSwitchMode }) {
                         <table style={{width:'100%',borderCollapse:'collapse',fontSize:12.5}}>
                           <thead>
                             <tr style={{borderBottom:`1px solid ${theme.cardBorder2}`}}>
+                              {/* Marca/desmarca as fazendas VISÍVEIS — respeita o filtro de status
+                                  e a busca, senão "marcar todas" pegaria fazenda que nem está na tela. */}
+                              <th style={{padding:'9px 6px 9px 12px',width:28}}>
+                                <input type="checkbox" style={{cursor:'pointer'}}
+                                  checked={fazendasBIOrdenadas.length>0 && fazendasBIOrdenadas.every(f=>fzSelecionadas.includes(f.id))}
+                                  onChange={e=>{
+                                    const idsVisiveis = fazendasBIOrdenadas.map(f=>f.id)
+                                    setFzSelecionadas(sel => e.target.checked
+                                      ? [...new Set([...sel, ...idsVisiveis])]
+                                      : sel.filter(id=>!idsVisiveis.includes(id)))
+                                  }}/>
+                              </th>
                               {[['Fazenda','nome'],['Cliente / Produto',null],['Status',null],['Progresso','pct'],['Área (ha)','areaTotal'],['Ciclo desde','campanha_inicio'],['',null]].map(([h,campo],i)=>(
                                 <th key={h+i} style={{textAlign:i>=3&&i<=4?'right':'left',padding:'9px 12px',fontSize:10.5,fontWeight:600,color:theme.textFaint2,letterSpacing:.4,textTransform:'uppercase',whiteSpace:'nowrap'}}>
                                   {campo ? (
@@ -4155,7 +4232,11 @@ export default function AdminPanel({ onSwitchMode }) {
                           </thead>
                           <tbody>
                             {fazendasBIOrdenadas.map(fz=>(
-                              <tr key={fz.id} style={{borderBottom:`1px solid ${theme.divider}`}}>
+                              <tr key={fz.id} style={{borderBottom:`1px solid ${theme.divider}`,background:fzSelecionadas.includes(fz.id)?theme.dangerBg:'transparent'}}>
+                                <td style={{padding:'9px 6px 9px 12px'}}>
+                                  <input type="checkbox" style={{cursor:'pointer'}} checked={fzSelecionadas.includes(fz.id)}
+                                    onChange={e=>setFzSelecionadas(sel=>e.target.checked?[...sel,fz.id]:sel.filter(id=>id!==fz.id))}/>
+                                </td>
                                 <td style={{padding:'9px 12px',fontWeight:600,color:theme.text,whiteSpace:'nowrap'}}>{fz.nome}</td>
                                 <td style={{padding:'9px 12px',color:theme.textMuted,whiteSpace:'nowrap'}}>{fz.cliente}{fz.produto?` · ${fz.produto}`:''}</td>
                                 <td style={{padding:'9px 12px'}}>{fz.pct!==null && <FzBadge status={fzStatus(fz)}/>}</td>

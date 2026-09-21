@@ -757,7 +757,7 @@ export default function PilotApp({onSwitchMode}) {
     setFazendasDB(loadCache('orofly_cache_fazendas'))
     setTalhoesDB(loadCache('orofly_cache_talhoes'))
 
-    supabase.from('drones').select('nome,horas_limite,ativo').eq('ativo',true).order('nome')
+    supabase.from('drones').select('nome,horas_limite,ativo,velocidade_padrao,altura_padrao,faixa_padrao,vazao_padrao').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setDronesDB(data); saveCache('orofly_cache_drones',data) } })
     // Drones em voo ativo agora (de qualquer piloto) — mostra "em uso" no seletor pra evitar
     // que dois pilotos peguem o mesmo drone sem saber.
@@ -3944,7 +3944,23 @@ Quando: ${tempoErroDebug.quando}`}
               </button>
             </div>
 
-            <FS label="DRONE" val={form.drone} onChange={e=>{setForm(f=>({...f,drone:e.target.value}));autoGPS()}}>
+            <FS label="DRONE" val={form.drone} onChange={e=>{
+              const nomeDrone = e.target.value
+              const d = dronesDB.find(x=>x.nome===nomeDrone)
+              // Parâmetros do drone escolhido preenchem os campos do Passo 3. O drone é
+              // mais específico que o padrão global de Configurações, então ganha dele;
+              // campo em branco no cadastro do drone deixa o que já estava no formulário.
+              // Tudo continua editável — é ponto de partida, não trava.
+              const ou = (doDrone, atual) => (doDrone!=null && String(doDrone).trim()!=='') ? String(doDrone) : atual
+              setForm(f=>({...f, drone:nomeDrone,
+                velocidade_drone: ou(d?.velocidade_padrao, f.velocidade_drone),
+                altura:           ou(d?.altura_padrao,     f.altura),
+                faixa_i:          ou(d?.faixa_padrao,      f.faixa_i),
+                faixa_f:          ou(d?.faixa_padrao,      f.faixa_f),
+                vazao_i:          ou(d?.vazao_padrao,      f.vazao_i),
+                vazao_f:          ou(d?.vazao_padrao,      f.vazao_f),
+              }));autoGPS()
+            }}>
               <option value="">Selecione o Drone...</option>
               {DRONES.map(d=><option key={d} value={d}>{dronesEmUsoAgora.includes(d)&&d!==form.drone?`${d} — em uso`:d}</option>)}
             </FS>
