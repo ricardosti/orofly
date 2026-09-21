@@ -328,7 +328,12 @@ export default function AdminPanel({ onSwitchMode }) {
   const [incidenteFocoId, setIncidenteFocoId] = useState(null)
   const [novoTimeNome, setNovoTimeNome] = useState('')
   const [importarFazendasAberto, setImportarFazendasAberto] = useState(false)
-  const [kanbanAberto, setKanbanAberto] = useState(false)
+  // Atribuição em 3 colunas: piloto -> fazenda -> talhões.
+  const [pilotoTalhoes, setPilotoTalhoes] = useState([])
+  const [atrPilotoSel, setAtrPilotoSel] = useState(null)
+  const [atrFazendaSel, setAtrFazendaSel] = useState(null)
+  const [atrBusca, setAtrBusca] = useState('')
+  const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
@@ -726,7 +731,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function fetchAll() {
     setLoading(true)
-    const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }, { data: tms }, { data: fzTimes }, { data: pilFz }, { data: incs }] = await Promise.all([
+    const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }, { data: tms }, { data: fzTimes }, { data: pilFz }, { data: pilTl }, { data: incs }] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
       fetch(`${API_BASE}/api/list-users`),
       supabase.from('despesas').select('*').order('created_at', { ascending: false }),
@@ -735,6 +740,7 @@ export default function AdminPanel({ onSwitchMode }) {
       supabase.from('times').select('*').order('nome'),
       supabase.from('fazenda_times').select('*'),
       supabase.from('piloto_fazendas').select('*'),
+      supabase.from('piloto_talhoes').select('*'),
       supabase.from('incidentes').select('*').order('created_at', { ascending: false }),
     ])
     const rs = rels || []
@@ -745,6 +751,7 @@ export default function AdminPanel({ onSwitchMode }) {
     setTimes(tms || [])
     setFazendaTimes(fzTimes || [])
     setPilotoFazendas(pilFz || [])
+    setPilotoTalhoes(pilTl || [])
     setIncidentes(incs || [])
     if (usersRes.ok) { const d = await usersRes.json(); setPilotos(d.users || []) }
     const counts = {}
@@ -4893,131 +4900,221 @@ export default function AdminPanel({ onSwitchMode }) {
                 )}
 
                 {/* ── EQUIPES (times + atribuição de fazendas por time/piloto) ── */}
-                {fzTab==='equipes' && (
+                {fzTab==='equipes' && (() => {
+                  // Atribuição em 3 colunas: PILOTO -> FAZENDA -> TALHÕES.
+                  // Substituiu o Kanban e a visão por Times, que quase não eram usados
+                  // (1 time, 2 vínculos) e não chegavam no talhão.
+                  //
+                  // Dois níveis convivem:
+                  //   fazenda inteira  -> piloto_fazendas (vale pros talhões futuros também)
+                  //   talhões avulsos  -> piloto_talhoes
+                  // Uma fazenda pode ter vários pilotos, cada um com os seus talhões.
+                  const pilotosOrd = [...pilotos].sort((a,b)=>compararNomes(a.nome||a.email, b.nome||b.email))
+                  const fazendasOrd = ordenarPorNome(invFazendas)
+
+                  const temFazendaInteira = (pid, fid) => pilotoFazendas.some(pf=>pf.piloto_id===pid && pf.fazenda_id===fid)
+                  const talhoesDoPiloto = (pid, fid) => {
+                    const idsDaFazenda = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
+                    return pilotoTalhoes.filter(pt=>pt.piloto_id===pid && idsDaFazenda.includes(pt.talhao_id))
+                  }
+                  // Quantos pilotos respondem por esta fazenda, contando os dois níveis.
+                  const pilotosDaFazenda = (fid) => {
+                    const idsDaFazenda = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
+                    const porFazenda = pilotoFazendas.filter(pf=>pf.fazenda_id===fid).map(pf=>pf.piloto_id)
+                    const porTalhao = pilotoTalhoes.filter(pt=>idsDaFazenda.includes(pt.talhao_id)).map(pt=>pt.piloto_id)
+                    return [...new Set([...porFazenda, ...porTalhao])]
+                  }
+
+                  async function alternarFazendaInteira(pid, fid) {
+                    setAtrSalvando(true)
+                    try {
+                      if (temFazendaInteira(pid, fid)) {
+                        const { error } = await supabase.from('piloto_fazendas').delete().eq('piloto_id',pid).eq('fazenda_id',fid)
+                        if (error) throw error
+                        setPilotoFazendas(v=>v.filter(pf=>!(pf.piloto_id===pid && pf.fazenda_id===fid)))
+                      } else {
+                        // Fazenda inteira engloba os talhões avulsos — deixar os dois deixaria
+                        // a tela contraditória ("fazenda toda" + 3 talhões marcados).
+                        const idsDaFazenda = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
+                        if (idsDaFazenda.length) {
+                          await supabase.from('piloto_talhoes').delete().eq('piloto_id',pid).in('talhao_id',idsDaFazenda)
+                          setPilotoTalhoes(v=>v.filter(pt=>!(pt.piloto_id===pid && idsDaFazenda.includes(pt.talhao_id))))
+                        }
+                        const { data, error } = await supabase.from('piloto_fazendas').insert({piloto_id:pid, fazenda_id:fid}).select().single()
+                        if (error) throw error
+                        setPilotoFazendas(v=>[...v, data])
+                      }
+                    } catch(e) { showToast('Erro: '+e.message,'error') } finally { setAtrSalvando(false) }
+                  }
+
+                  async function alternarTalhao(pid, talhaoId, fid) {
+                    setAtrSalvando(true)
+                    try {
+                      const jaTem = pilotoTalhoes.some(pt=>pt.piloto_id===pid && pt.talhao_id===talhaoId)
+                      if (jaTem) {
+                        const { error } = await supabase.from('piloto_talhoes').delete().eq('piloto_id',pid).eq('talhao_id',talhaoId)
+                        if (error) throw error
+                        setPilotoTalhoes(v=>v.filter(pt=>!(pt.piloto_id===pid && pt.talhao_id===talhaoId)))
+                      } else {
+                        // Marcar um talhão solto tira a fazenda inteira: passa a ser atribuição parcial.
+                        if (temFazendaInteira(pid, fid)) {
+                          await supabase.from('piloto_fazendas').delete().eq('piloto_id',pid).eq('fazenda_id',fid)
+                          setPilotoFazendas(v=>v.filter(pf=>!(pf.piloto_id===pid && pf.fazenda_id===fid)))
+                        }
+                        const { data, error } = await supabase.from('piloto_talhoes').insert({piloto_id:pid, talhao_id:talhaoId}).select().single()
+                        if (error) throw error
+                        setPilotoTalhoes(v=>[...v, data])
+                      }
+                    } catch(e) { showToast('Erro: '+e.message,'error') } finally { setAtrSalvando(false) }
+                  }
+
+                  const pilotoSel = pilotosOrd.find(p=>p.id===atrPilotoSel)
+                  const fazendaSel = fazendasOrd.find(f=>f.id===atrFazendaSel)
+                  const buscaNorm = atrBusca.trim().toLowerCase()
+                  const fazendasFiltradas = buscaNorm
+                    ? fazendasOrd.filter(f=>(f.nome||'').toLowerCase().includes(buscaNorm) || (f.cliente||'').toLowerCase().includes(buscaNorm))
+                    : fazendasOrd
+                  const talhoesDaFazendaSel = fazendaSel ? ordenarPorNome(invTalhoes.filter(t=>t.fazenda_id===fazendaSel.id)) : []
+
+                  const colStyle = { background:theme.card, border:`1px solid ${theme.cardBorder2}`, borderRadius:theme.radius||8, display:'flex', flexDirection:'column', minHeight:0, overflow:'hidden' }
+                  const colHead = { padding:'10px 12px', borderBottom:`1px solid ${theme.cardBorder2}`, fontSize:10.5, fontWeight:700, letterSpacing:.5, color:theme.textFaint2, textTransform:'uppercase', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6 }
+                  const itemBase = { width:'100%', textAlign:'left', background:'none', border:'none', borderBottom:`1px solid ${theme.divider}`, padding:'9px 12px', cursor:'pointer', fontSize:12.5, color:theme.text, display:'flex', alignItems:'center', gap:8 }
+
+                  return (
                   <div>
-                    <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:10}}>🧑‍🤝‍🧑 Times</div>
-                    <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:16,marginBottom:16,display:'flex',gap:8,maxWidth:420}}>
-                      <input style={{...sG.input,flex:1}} placeholder="Nome do novo time (ex: Time Norte)" value={novoTimeNome} onChange={e=>setNovoTimeNome(e.target.value)}/>
-                      <button style={{...sG.btn,width:'auto',padding:'0 18px'}} onClick={criarTime}>+ Criar</button>
+                    <div style={{marginBottom:12}}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text}}>🧑‍🌾 Atribuição de pilotos</div>
+                      <div style={{fontSize:11.5,color:theme.textMuted,marginTop:3,lineHeight:1.5}}>
+                        Escolha o piloto, depois a fazenda, e marque a fazenda inteira ou só os talhões dele.
+                        A mesma fazenda pode ter vários pilotos, cada um com os seus talhões.
+                      </div>
                     </div>
-                    {times.length===0 ? (
-                      <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:30,textAlign:'center',color:theme.textMuted,fontSize:13,marginBottom:24}}>Nenhum time cadastrado ainda.</div>
-                    ) : (
-                      <div style={{display:'flex',flexDirection:'column',gap:12,marginBottom:24}}>
-                        {times.map(t=>{
-                          const membros = pilotos.filter(p=>p.time_id===t.id)
-                          const fazendasDoTime = fazendaTimes.filter(ft=>ft.time_id===t.id).map(ft=>ft.fazenda_id)
-                          return (
-                            <div key={t.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder2}`,padding:16}}>
-                              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
-                                <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700}}>🧑‍🤝‍🧑 {t.nome}</div>
-                                <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'4px 10px',fontSize:11,cursor:'pointer'}} onClick={()=>excluirTime(t)}>🗑️ Excluir</button>
+
+                    <div style={{display:'grid',gridTemplateColumns: isMobile?'1fr':'minmax(180px,1fr) minmax(220px,1.3fr) minmax(200px,1.2fr)',gap:10,alignItems:'stretch',height: isMobile?'auto':520}}>
+
+                      {/* ── 1. PILOTOS ── */}
+                      <div style={colStyle}>
+                        <div style={colHead}><span>1. Piloto</span><span style={{color:theme.textFaint}}>{pilotosOrd.length}</span></div>
+                        <div style={{overflowY:'auto',flex:1}}>
+                          {pilotosOrd.map(p=>{
+                            const nFaz = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
+                            const nTal = pilotoTalhoes.filter(pt=>pt.piloto_id===p.id).length
+                            const sel = atrPilotoSel===p.id
+                            return (
+                              <button key={p.id} style={{...itemBase, background: sel?theme.successBg:'none', fontWeight: sel?700:500}}
+                                onClick={()=>{setAtrPilotoSel(p.id); setAtrFazendaSel(null)}}>
+                                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.nome||p.email}</span>
+                                {(nFaz>0||nTal>0) && (
+                                  <span style={{fontSize:10,color: sel?'#059669':theme.textFaint,whiteSpace:'nowrap'}}>
+                                    {nFaz>0?`${nFaz} faz.`:''}{nFaz>0&&nTal>0?' · ':''}{nTal>0?`${nTal} talh.`:''}
+                                  </span>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* ── 2. FAZENDAS ── */}
+                      <div style={{...colStyle, opacity: atrPilotoSel?1:.5}}>
+                        <div style={colHead}>
+                          <span>2. Fazenda</span>
+                          <span style={{color:theme.textFaint}}>{fazendasFiltradas.length}</span>
+                        </div>
+                        {!atrPilotoSel ? (
+                          <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Escolha um piloto ao lado.</div>
+                        ) : (
+                          <>
+                            <div style={{padding:'8px 10px',borderBottom:`1px solid ${theme.divider}`}}>
+                              <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 9px',fontSize:12,outline:'none',boxSizing:'border-box',background:theme.inputBg,color:theme.text}}
+                                placeholder="Buscar fazenda ou cliente..." value={atrBusca} onChange={e=>setAtrBusca(e.target.value)}/>
+                            </div>
+                            <div style={{overflowY:'auto',flex:1}}>
+                              {fazendasFiltradas.map(f=>{
+                                const inteira = temFazendaInteira(atrPilotoSel, f.id)
+                                const nTal = talhoesDoPiloto(atrPilotoSel, f.id).length
+                                const outros = pilotosDaFazenda(f.id).filter(id=>id!==atrPilotoSel).length
+                                const sel = atrFazendaSel===f.id
+                                return (
+                                  <div key={f.id} style={{display:'flex',alignItems:'center',borderBottom:`1px solid ${theme.divider}`,background: sel?theme.bg:'transparent'}}>
+                                    {/* Checkbox = fazenda inteira. Clicar no nome entra nos talhões. */}
+                                    <label title="Atribuir a fazenda inteira (inclui talhões cadastrados depois)"
+                                      style={{padding:'9px 4px 9px 12px',cursor:'pointer',display:'flex',alignItems:'center'}}>
+                                      <input type="checkbox" style={{cursor:'pointer'}} checked={inteira} disabled={atrSalvando}
+                                        onChange={()=>alternarFazendaInteira(atrPilotoSel, f.id)}/>
+                                    </label>
+                                    <button style={{...itemBase, borderBottom:'none', padding:'9px 12px 9px 6px'}}
+                                      onClick={()=>setAtrFazendaSel(f.id)}>
+                                      <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight: (inteira||nTal>0)?700:500}}>
+                                        {f.nome}
+                                        <span style={{display:'block',fontSize:10,color:theme.textFaint,fontWeight:500}}>
+                                          {f.cliente}{outros>0?` · +${outros} piloto${outros>1?'s':''}`:''}
+                                        </span>
+                                      </span>
+                                      {inteira ? <span style={{fontSize:9.5,fontWeight:700,color:'#059669',background:theme.successBg,borderRadius:4,padding:'2px 5px',whiteSpace:'nowrap'}}>TODA</span>
+                                        : nTal>0 ? <span style={{fontSize:9.5,fontWeight:700,color:theme.warningText,background:theme.warningBg,borderRadius:4,padding:'2px 5px',whiteSpace:'nowrap'}}>{nTal}</span>
+                                        : null}
+                                      <span style={{color:theme.textFaint,fontSize:11}}>›</span>
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+
+                      {/* ── 3. TALHÕES ── */}
+                      <div style={{...colStyle, opacity: atrFazendaSel?1:.5}}>
+                        <div style={colHead}>
+                          <span>3. Talhões</span>
+                          {fazendaSel && <span style={{color:theme.textFaint,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:110,textTransform:'none'}}>{fazendaSel.nome}</span>}
+                        </div>
+                        {!atrFazendaSel ? (
+                          <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Escolha uma fazenda pra marcar talhões específicos.</div>
+                        ) : talhoesDaFazendaSel.length===0 ? (
+                          <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Esta fazenda não tem talhões cadastrados.</div>
+                        ) : (
+                          <>
+                            {temFazendaInteira(atrPilotoSel, atrFazendaSel) && (
+                              <div style={{padding:'9px 12px',fontSize:11,color:'#059669',background:theme.successBg,borderBottom:`1px solid ${theme.divider}`,lineHeight:1.45}}>
+                                ✓ {pilotoSel?.nome||'O piloto'} responde pela fazenda <b>inteira</b>. Marcar um talhão aqui troca pra atribuição parcial.
                               </div>
-                              <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>PILOTOS ({membros.length})</div>
-                              <div style={{fontSize:12,color:theme.textMuted,marginBottom:12}}>{membros.length?membros.map(m=>m.nome).join(', '):'Nenhum piloto nesse time ainda — atribua na lista abaixo.'}</div>
-                              <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:6}}>FAZENDAS QUE ESSE TIME PODE OPERAR</div>
-                              <ChecklistFazendasPorCliente chavePrefixo={t.id} marcadas={fazendasDoTime} onToggle={fzId=>toggleFazendaTime(fzId,t.id)} excluirTimeId={t.id}/>
-                              <div style={{fontSize:10,color:'#aaa',marginTop:8}}>Sem nenhuma fazenda marcada = time sem restrição (agendamento e app do piloto mostram tudo, a menos que o piloto tenha permissão individual — ver abaixo).</div>
+                            )}
+                            <div style={{overflowY:'auto',flex:1}}>
+                              {talhoesDaFazendaSel.map(t=>{
+                                const meu = pilotoTalhoes.some(pt=>pt.piloto_id===atrPilotoSel && pt.talhao_id===t.id)
+                                // Outros pilotos no MESMO talhão: é fato comum aqui (dois pilotos
+                                // dividem talhão grande), então mostra em vez de esconder.
+                                const outrosNoTalhao = pilotoTalhoes.filter(pt=>pt.talhao_id===t.id && pt.piloto_id!==atrPilotoSel)
+                                  .map(pt=>pilotos.find(p=>p.id===pt.piloto_id)?.nome).filter(Boolean)
+                                return (
+                                  <label key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',borderBottom:`1px solid ${theme.divider}`,cursor:'pointer',fontSize:12.5,color:theme.text}}>
+                                    <input type="checkbox" style={{cursor:'pointer'}} checked={meu} disabled={atrSalvando}
+                                      onChange={()=>alternarTalhao(atrPilotoSel, t.id, atrFazendaSel)}/>
+                                    <span style={{flex:1,fontFamily:'ui-monospace,monospace',fontSize:12}}>
+                                      {t.nome}
+                                      {outrosNoTalhao.length>0 && (
+                                        <span style={{display:'block',fontFamily:'inherit',fontSize:9.5,color:theme.textFaint}}>também: {outrosNoTalhao.join(', ')}</span>
+                                      )}
+                                    </span>
+                                    <span style={{fontSize:10.5,color:theme.textFaint,whiteSpace:'nowrap'}}>{t.area_ha?`${parseFloat(t.area_ha).toFixed(1)} ha`:'—'}</span>
+                                  </label>
+                                )
+                              })}
                             </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:10,marginBottom:4}}>
-                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text}}>📍 Atribuição por piloto</div>
-                      <button type="button" onClick={()=>setKanbanAberto(true)}
-                        style={{background:theme.card,color:'#059669',border:'1px solid #059669',borderRadius:16,padding:'6px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}>
-                        🗂️ Atribuir por Kanban
-                      </button>
-                    </div>
-                    <p style={{fontSize:12,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>Time de cada piloto e permissão individual de fazendas (tem prioridade sobre o time — ver aviso acima). Conta, senha e status ficam em Configurações → Usuários.</p>
-                    <div style={{overflowX:'auto'}}>
-                      <table style={{width:'100%',borderCollapse:'collapse',background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,overflow:'hidden'}}>
-                        <thead><tr style={{background:theme.bg}}>{['Piloto','Time','Fazendas individuais'].map(h=><th key={h} style={{padding:'12px 16px',textAlign:'left',fontSize:11,fontWeight:700,color:theme.textMuted,borderBottom:`1px solid ${theme.cardBorder2}`,fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
-                        <tbody>
-                          {pilotos.map((p,i)=>(
-                            <tr key={p.id} style={{background:i%2===0?theme.card:'#f7fbf8',opacity:p.ativo?1:.5}}>
-                              <td style={{...sG.td,padding:'12px 16px',fontWeight:600,color:theme.text}}>{p.nome}</td>
-                              <td style={{...sG.td,padding:'12px 16px'}}>
-                                <select value={p.time_id||''} onChange={e=>setUserTime(p,e.target.value||null)}
-                                  style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:20,padding:'4px 11px',fontSize:11,fontWeight:600,cursor:'pointer',appearance:'none',WebkitAppearance:'none'}}>
-                                  <option value="">— Sem time —</option>
-                                  {times.map(t=><option key={t.id} value={t.id}>{t.nome}</option>)}
-                                </select>
-                              </td>
-                              <td style={{...sG.td,padding:'12px 16px'}}>
-                                {(()=>{ const n = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
-                                  return (
-                                    <button title="Fazendas individuais" style={{background:n>0?theme.successBg:theme.bg,color:n>0?'#059669':theme.textMuted,border:'none',borderRadius:12,padding:'5px 10px',fontSize:11,cursor:'pointer',whiteSpace:'nowrap'}}
-                                      onClick={()=>{setPilotoFazendasModal(p); setPilotoFazendasAba('individual')}}>📍{n>0?` ${n} liberada(s)`:' Nenhuma (segue o time)'}</button>
-                                  )
-                                })()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* MODAL CLIENTE */}
-                {clienteModal && (
-                  <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-                    <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:400,padding:24}} onClick={e=>e.stopPropagation()}>
-                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
-                        {clienteModal==='novo'?'🏢 Novo Cliente':'✏️ Editar Cliente'}
-                      </div>
-                      <div style={{display:'flex',flexDirection:'column',gap:12}}>
-                        <div>
-                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>NOME DO CLIENTE</div>
-                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
-                            placeholder="Ex: Raizen - Bonfim" value={clienteForm.nome||''}
-                            onChange={e=>setClienteForm(f=>({...f,nome:e.target.value}))} />
-                        </div>
-                        <div>
-                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
-                          <textarea style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
-                            value={clienteForm.obs||''} onChange={e=>setClienteForm(f=>({...f,obs:e.target.value}))} />
-                        </div>
-                        <div>
-                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:6}}>PREÇO POR TIPO DE SERVIÇO (R$/ha)</div>
-                          <div style={{display:'flex',gap:8}}>
-                            <div style={{flex:1}}>
-                              <div style={{fontSize:10,color:theme.textFaint2,marginBottom:3}}>Catação</div>
-                              <input type="number" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
-                                placeholder="0,00" value={clienteForm.preco_catacao} onChange={e=>setClienteForm(f=>({...f,preco_catacao:e.target.value}))} />
-                            </div>
-                            <div style={{flex:1}}>
-                              <div style={{fontSize:10,color:theme.textFaint2,marginBottom:3}}>Área Total</div>
-                              <input type="number" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
-                                placeholder="0,00" value={clienteForm.preco_area_total} onChange={e=>setClienteForm(f=>({...f,preco_area_total:e.target.value}))} />
-                            </div>
-                          </div>
-                          <div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>Usado pra calcular a receita quando o piloto marca o tipo de serviço no voo.</div>
-                        </div>
-                        <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
-                          <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#059669':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
-                            <div style={{width:14,height:14,borderRadius:7,background:theme.card,position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>
-                          </div>
-                          <span style={{fontSize:13,color:theme.text}}>Cliente ativo</span>
-                        </div>
-                      </div>
-                      <div style={{display:'flex',gap:8,marginTop:20}}>
-                        <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
-                          onClick={()=>setClienteModal(null)}>Cancelar</button>
-                        <button style={{flex:2,background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
-                          disabled={invSaving} onClick={salvarCliente}>{invSaving?'Salvando...':'💾 Salvar'}</button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
+                  )
+                })()}
                 )}
               </div>
             )
           })()}
 
-          {kanbanAberto && <AtribuirAreasKanbanModal onClose={()=>setKanbanAberto(false)}/>}
 
           {importarFazendasAberto && (
             <ImportarFazendasModal

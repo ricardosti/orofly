@@ -9,6 +9,27 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.2',
+    data: '2026-09-21',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Atribuicao de pilotos em 3 colunas, ate o talhao',
+        texto: 'Fazendas & Clientes > Equipes virou uma tela de tres colunas: escolhe o piloto, depois a fazenda, e marca a fazenda inteira ou so os talhoes dele. A mesma fazenda pode ter varios pilotos, cada um com os seus talhoes — a coluna do meio mostra quantos outros pilotos respondem por ela, e a dos talhoes mostra quem mais divide o mesmo talhao. Marcar a fazenda inteira vale tambem pros talhoes cadastrados depois. O Kanban e a visao por Times sairam.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Parametros padrao por drone',
+        texto: 'No cadastro do drone (Inventario) entrou o bloco PARAMETROS DE APLICACAO: velocidade, altura, faixa e vazao. Ao escolher o drone, o piloto ja encontra os quatro preenchidos no Passo 3, e pode alterar. Em branco, continua valendo o padrao geral de Configuracoes do Sistema — o do drone e mais especifico e ganha dele.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Excluir fazendas em lote',
+        texto: 'Na Visao Geral de Fazendas apareceu uma caixinha por linha e o botao Excluir selecionadas. O "marcar todas" respeita o filtro e a busca ativos. Antes de apagar, a confirmacao mostra quantos talhoes vao junto (eles somem com a fazenda) e quantos voos ficam sem cadastro — os voos continuam em Relatorios, mas o consolidado daquela fazenda deixa de calcular progresso.',
+      },
+    ],
+  },
+  {
     versao: '5.1',
     data: '2026-09-21',
     itens: [

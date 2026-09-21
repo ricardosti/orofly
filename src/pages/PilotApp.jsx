@@ -488,8 +488,9 @@ export default function PilotApp({onSwitchMode}) {
     setAvulsoAtual({ nome: file.name, blob: file, salvarOffline: avulsoSalvarOffline })
     setMapaViewerOpen(true)
   }
-  const [fazendaTimes, setFazendaTimes] = useState([])
   const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState([])
+  // Talhões atribuídos individualmente a este piloto (atribuição parcial de fazenda).
+  const [pilotoTalhoesIds, setPilotoTalhoesIds] = useState([])
   const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
   const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState([])
   const [talhoesDB, setTalhoesDB] = useState([])
@@ -773,13 +774,14 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada em
     // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.
-    supabase.from('fazenda_times').select('fazenda_id,time_id')
-      .then(({data}) => { if(data) setFazendaTimes(data) })
     // Permissão individual — se o admin marcou fazendas específicas pra esse piloto (Usuários >
     // 📍), ela vale por cima da permissão do time.
     if(profile?.id){
       supabase.from('piloto_fazendas').select('fazenda_id').eq('piloto_id',profile.id)
         .then(({data}) => { if(data) setPilotoFazendasIndividuais(data.map(d=>d.fazenda_id)) })
+      // Atribuição parcial: o piloto responde só por alguns talhões da fazenda.
+      supabase.from('piloto_talhoes').select('talhao_id').eq('piloto_id',profile.id)
+        .then(({data}) => { if(data) setPilotoTalhoesIds(data.map(d=>d.talhao_id)) })
     }
     // Reordena no cliente: o .order('nome') do Postgres e ordem de texto, entao TALHAO 10
     // vinha antes de TALHAO 2 e " 017-01" (com espaco na frente) pulava pro topo da lista.
@@ -3693,10 +3695,14 @@ Quando: ${tempoErroDebug.quando}`}
                 return talhoesDaFazenda.every(t=>progressoTalhao(fz,t,talhoesDaFazenda)?.concluido ?? false)
               }
               // Permissão de fazenda — individual (Usuários > 📍) tem prioridade sobre o time: se
-              // o admin marcou fazendas específicas pra esse piloto, só essas aparecem, ignorando
-              // o time. Sem individual, vale a permissão do time. Sem nenhuma restrição, mostra tudo.
-              const fazendasPermitidasTime = profile?.time_id ? fazendaTimes.filter(ft=>ft.time_id===profile.time_id).map(ft=>ft.fazenda_id) : []
-              const permitidas = pilotoFazendasIndividuais.length>0 ? pilotoFazendasIndividuais : fazendasPermitidasTime
+              // O piloto vê as fazendas atribuídas a ele (inteiras ou por talhão). Sem nenhuma
+              // atribuição, vê todas — piloto novo não fica com a tela vazia sem entender.
+              // Talhão atribuído também dá acesso à fazenda: sem isso o piloto com atribuição
+              // parcial não enxergaria a fazenda pra chegar no talhão que é dele.
+              const fazendasPorTalhao = [...new Set(
+                talhoesDB.filter(t=>pilotoTalhoesIds.includes(t.id)).map(t=>t.fazenda_id)
+              )]
+              const permitidas = [...new Set([...pilotoFazendasIndividuais, ...fazendasPorTalhao])]
               const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente
                 && (norm(fz.nome)===norm(form.fazenda) || !fazendaCompleta(fz))
                 && (permitidas.length===0 || permitidas.includes(fz.id)))
@@ -3733,7 +3739,11 @@ Quando: ${tempoErroDebug.quando}`}
                   )}
                   {/* TALHÕES — lista multi-seleção; soma as áreas dos selecionados */}
                   {(()=>{
-                    const talhoesFaz = fazendaSel ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel.id) : []
+                    // Com atribuição parcial nesta fazenda, o piloto só vê os talhões dele.
+                    // Sem nenhum talhão atribuído aqui, vê todos (fazenda inteira ou sem restrição).
+                    const todosTalhoesFaz = fazendaSel ? talhoesDB.filter(t=>t.fazenda_id===fazendaSel.id) : []
+                    const meusNestaFazenda = todosTalhoesFaz.filter(t=>pilotoTalhoesIds.includes(t.id))
+                    const talhoesFaz = meusNestaFazenda.length>0 ? meusNestaFazenda : todosTalhoesFaz
                     const temTalhoes = talhoesFaz.length>0
                     const selecionados = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
                     // ÁREA (HA) recebe o SALDO do talhão (o que ainda falta aplicar), não o tamanho
