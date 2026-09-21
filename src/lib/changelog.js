@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.1',
+    data: '2026-09-21',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Produtos padrao por fazenda',
+        texto: 'No cadastro da fazenda (Fazendas & Clientes) entrou o bloco PRODUTOS PADRAO: escolha os produtos que aquela fazenda usa e a dose de cada um. Ao selecionar a fazenda, o piloto ja encontra tudo preenchido no Passo 2 — e pode trocar, ajustar a dose ou remover normalmente, e so um ponto de partida. A dose vem sozinha do cadastro do produto quando voce escolhe, mas da pra ajustar ali: e a dose daquela fazenda, que nem sempre e a mesma do inventario. Fazenda sem produtos padrao continua como antes, com o campo em branco.',
+      },
+    ],
+  },
+  {
     versao: '5.0',
     data: '2026-09-20',
     itens: [

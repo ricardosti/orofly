@@ -398,7 +398,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invClientes, setInvClientes] = useState([])
   const [invFazendas, setInvFazendas] = useState([])
   const [invTalhoes, setInvTalhoes] = useState([])
-  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
+  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
   const [fzMapaFile, setFzMapaFile] = useState(null)
   const [fzMapaExistente, setFzMapaExistente] = useState(null) // mapa_pdf_path da fazenda em edição
   const [fzMapaUploading, setFzMapaUploading] = useState(false)
@@ -3980,7 +3980,12 @@ export default function AdminPanel({ onSwitchMode }) {
                   const r = await geocodificarCep(fzForm.cep)
                   if(r){ lat = r.lat; lng = r.lng }
                 }
+                // Linha sem produto escolhido não vai pro banco — senão o piloto abriria o
+                // Passo 2 com um campo de produto em branco já criado, pior que não ter nada.
+                const prodsPadrao = (fzForm.produtos_padrao||[]).filter(p=>p?.nome?.trim())
+                  .map(p=>({nome:p.nome.trim(), dose:String(p.dose??'').trim()}))
                 const payload = {cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,
+                  produtos_padrao: prodsPadrao.length ? prodsPadrao : null,
                   cep:fzForm.cep||null,lat:lat?parseFloat(lat):null,lng:lng?parseFloat(lng):null,id_fazenda:fzForm.id_fazenda||null,
                   mapa_lat_min:fzForm.mapa_lat_min?parseFloat(fzForm.mapa_lat_min):null,
                   mapa_lat_max:fzForm.mapa_lat_max?parseFloat(fzForm.mapa_lat_max):null,
@@ -4005,7 +4010,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   if(pathErr) throw pathErr
                 }
                 showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
-                setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
+                setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
                 setFzEditId(null); setFzMapaFile(null); setFzMapaExistente(null); setFzModal(false); fetchInventario()
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false); setFzMapaUploading(false) }
             }
@@ -4030,7 +4035,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         📤 Importar planilha
                       </button>
                       <button style={{background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
+                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
                         + Nova Fazenda
                       </button>
                     </div>
@@ -4583,7 +4588,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                     <button style={{background:theme.bg,color:'#059669',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={(e)=>{
                                         e.stopPropagation()
-                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',
+                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',produtos_padrao:fz.produtos_padrao||[],cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',
                                           mapa_lat_min:fz.mapa_lat_min??'',mapa_lat_max:fz.mapa_lat_max??'',mapa_lng_min:fz.mapa_lng_min??'',mapa_lng_max:fz.mapa_lng_max??''})
                                         setFzEditId(fz.id); setFzMapaFile(null); setFzMapaExistente(fz.mapa_pdf_path||null); setFzModal(true)
                                       }}>✏️</button>
@@ -4687,6 +4692,37 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <option value="">Selecione...</option>
                                 {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
                               </select>
+                            </div>
+                            {/* Produtos padrão da fazenda — chegam preenchidos no Passo 2 do
+                                piloto. É só um ponto de partida: ele troca ou remove no campo. */}
+                            <div style={{borderTop:`1px solid ${theme.divider}`,paddingTop:12}}>
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>PRODUTOS PADRÃO (OPCIONAL)</div>
+                              <div style={{fontSize:10,color:'#aaa',marginBottom:8}}>O piloto já encontra esses produtos preenchidos ao escolher esta fazenda, e pode trocar.</div>
+                              {(fzForm.produtos_padrao||[]).map((linha,i)=>(
+                                <div key={i} style={{display:'grid',gridTemplateColumns:'1fr 90px auto',gap:6,marginBottom:6,alignItems:'center'}}>
+                                  <select style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                    value={linha.nome||''}
+                                    onChange={e=>{
+                                      const nome = e.target.value
+                                      // Puxa a dose padrão do inventário na hora que escolhe — mesma
+                                      // regra do app do piloto (dose_auto liga/desliga por produto).
+                                      const pd = invProdutos.find(x=>x.nome===nome)
+                                      const doseAuto = (pd?.dose_auto!==false && pd?.dose_padrao!=null) ? String(pd.dose_padrao) : (linha.dose||'')
+                                      setFzForm(f=>({...f,produtos_padrao:f.produtos_padrao.map((l,j)=>j===i?{nome,dose:doseAuto}:l)}))
+                                    }}>
+                                    <option value="">Selecione o produto...</option>
+                                    {invProdutos.filter(p=>p.ativo!==false).map(p=><option key={p.id} value={p.nome}>{p.nome}</option>)}
+                                  </select>
+                                  <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                    placeholder="Dose" value={linha.dose||''}
+                                    onChange={e=>setFzForm(f=>({...f,produtos_padrao:f.produtos_padrao.map((l,j)=>j===i?{...l,dose:e.target.value}:l)}))}/>
+                                  <button title="Remover" style={{background:'none',border:'none',color:theme.dangerText,fontSize:20,cursor:'pointer',padding:'0 4px',lineHeight:1}}
+                                    onClick={()=>setFzForm(f=>({...f,produtos_padrao:f.produtos_padrao.filter((_,j)=>j!==i)}))}>×</button>
+                                </div>
+                              ))}
+                              <button style={{background:theme.successBg,color:'#059669',border:'none',borderRadius:8,padding:'7px 12px',fontSize:11.5,fontWeight:600,cursor:'pointer'}}
+                                onClick={()=>setFzForm(f=>({...f,produtos_padrao:[...(f.produtos_padrao||[]),{nome:'',dose:''}]}))}>+ Adicionar produto</button>
+                              <div style={{fontSize:10,color:'#aaa',marginTop:6}}>A dose vem do cadastro do produto ao escolher, e dá pra ajustar aqui — é a dose desta fazenda.</div>
                             </div>
                             <div style={{borderTop:`1px solid ${theme.divider}`,paddingTop:12}}>
                               <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>CEP (OPCIONAL)</div>

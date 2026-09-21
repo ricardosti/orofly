@@ -769,7 +769,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada em
     // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.
@@ -3639,7 +3639,7 @@ Quando: ${tempoErroDebug.quando}`}
             </FS>
 
             <FS label="CLIENTE" val={form.cliente} onChange={e=>{
-              setForm(f=>({...f,cliente:e.target.value,fazenda:'',produto:'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
+              setForm(f=>({...f,cliente:e.target.value,fazenda:'',produto:'',produtos:[''],talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
             }}>
               <option value="">Selecione o Cliente...</option>
               {CLIENTES.map(c=><option key={c}>{c}</option>)}
@@ -3711,7 +3711,16 @@ Quando: ${tempoErroDebug.quando}`}
                       <FS label="FAZENDA" val={selectVal} onChange={e=>{
                         const v=e.target.value==='Outros'?'':e.target.value
                         const fzEscolhida = fazendasCliente.find(fz=>norm(fz.nome)===norm(v))
-                        setForm(f=>({...f,fazenda:v,produto:fzEscolhida?.produto||'',talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
+                        // Produtos padrão da fazenda já vêm preenchidos — mesmo formato
+                        // "NOME - DOSE" que o select de produto monta. É ponto de partida:
+                        // o piloto troca, ajusta a dose ou remove no Passo 2.
+                        // Fazenda sem padrão volta pro campo vazio em vez de manter o
+                        // produto da fazenda anterior, que seria simplesmente errado.
+                        const padrao = (fzEscolhida?.produtos_padrao||[]).filter(p=>p?.nome)
+                        const produtosPadrao = padrao.length
+                          ? padrao.map(p=>p.nome + (p.dose ? ` - ${p.dose}` : ''))
+                          : ['']
+                        setForm(f=>({...f,fazenda:v,produto:fzEscolhida?.produto||'',produtos:produtosPadrao,talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
                       }}>
                         <option value="">Selecione a Fazenda...</option>
                         {fazendasCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
