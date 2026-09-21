@@ -546,11 +546,16 @@ export default function AdminPanel({ onSwitchMode }) {
     showToast('🗑️ Cliente removido'); fetchInventario()
   }
 
+  // ATENÇÃO: estas duas funções são uma LISTA BRANCA — campo que não estiver aqui é
+  // descartado ao abrir o formulário. O dado até salva (o payload usa {...form}), mas some
+  // da tela ao reabrir, e aí parece que não salvou. Foi o que aconteceu com os parâmetros
+  // do drone e com a classe do produto. Ao criar coluna nova com campo na tela, acrescente aqui.
   function initDroneForm(d={}) {
-    return { nome:d.nome||'', modelo:d.modelo||'', serial:d.serial||'', fabricante:d.fabricante||'DJI', ano_aquisicao:d.ano_aquisicao||'', horas_limite:d.horas_limite||100, ativo:d.ativo!==false, obs:d.obs||'' }
+    return { nome:d.nome||'', modelo:d.modelo||'', serial:d.serial||'', fabricante:d.fabricante||'DJI', ano_aquisicao:d.ano_aquisicao||'', horas_limite:d.horas_limite||100, ativo:d.ativo!==false, obs:d.obs||'',
+      velocidade_padrao:d.velocidade_padrao||'', altura_padrao:d.altura_padrao||'', faixa_padrao:d.faixa_padrao||'', vazao_padrao:d.vazao_padrao||'' }
   }
   function initProdutoForm(p={}) {
-    return { nome:p.nome||'', fabricante:p.fabricante||'', unidade:p.unidade||'L', estoque_atual:p.estoque_atual||0, estoque_minimo:p.estoque_minimo||0, validade:p.validade||'', registro_mapa:p.registro_mapa||'', ativo:p.ativo!==false, obs:p.obs||'', dose_padrao:p.dose_padrao??'', dose_auto:p.dose_auto!==false }
+    return { nome:p.nome||'', classe:p.classe||'', fabricante:p.fabricante||'', unidade:p.unidade||'L', estoque_atual:p.estoque_atual||0, estoque_minimo:p.estoque_minimo||0, validade:p.validade||'', registro_mapa:p.registro_mapa||'', ativo:p.ativo!==false, obs:p.obs||'', dose_padrao:p.dose_padrao??'', dose_auto:p.dose_auto!==false }
   }
 
   async function fetchInventario() {

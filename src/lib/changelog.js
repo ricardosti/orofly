@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.3',
+    data: '2026-09-21',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Campos do drone e do produto sumiam ao reabrir o cadastro',
+        texto: 'Os parametros do drone (velocidade, altura, faixa, vazao) e a FUNCAO/CLASSE do produto salvavam no banco, mas voltavam em branco ao reabrir o cadastro — parecia que nao tinham sido salvos. O formulario montava uma lista fixa de campos e descartava esses. Agora eles aparecem preenchidos. Quem ja tinha cadastrado os parametros nao perdeu nada: o dado estava la o tempo todo.',
+      },
+    ],
+  },
+  {
     versao: '5.2',
     data: '2026-09-21',
     itens: [
