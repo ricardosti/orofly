@@ -18,6 +18,16 @@ export const NOVIDADES = [
         texto: 'A tela ganhou os tres passos no topo (Piloto, Fazenda, Talhoes) mostrando onde voce esta, busca nas tres colunas, avatar com as iniciais de cada piloto, e cadeado nas etapas ainda bloqueadas. A coluna da fazenda mostra a area total e quantos outros pilotos respondem por ela; a dos talhoes tem o rodape com "X de Y selecionados" e a area somada. Embaixo, um resumo do que esta atribuido. O "Fazenda inteira" saiu da coluna do meio e virou a primeira linha da coluna de talhoes, que e onde a decisao acontece.',
       },
       {
+        tipo: 'novo',
+        titulo: 'Filtrar fazendas por situacao na atribuicao',
+        texto: 'A coluna da fazenda ganhou tres filtros: Todas, Deste piloto (pra revisar o que alguem ja tem sem rolar 60 fazendas) e Sem piloto, que mostra no proprio botao quantas ficaram de fora — a pergunta que ninguem conseguia responder olhando a lista inteira.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Marcar talhoes em lote e ver o que ja foi aplicado',
+        texto: 'Cada talhao agora mostra se ja esta FEITO ou PARCIAL no ciclo atual, usando a mesma conta do relatorio do cliente (inclusive o rateio de voo que cobriu varios talhoes). E dao pra marcar em lote: Marcar todos, Limpar, e So pendentes — que marca de uma vez apenas os talhoes que ainda faltam aplicar, que e o caso normal de atribuicao. Com a busca ativa, os botoes agem so nos talhoes visiveis.',
+      },
+      {
         tipo: 'melhoria',
         titulo: 'Tudo salva sozinho, sem botao de confirmar',
         texto: 'Cada caixinha marcada grava na hora, e o rodape mostra "Salvo automaticamente". Nao existe botao de confirmar de proposito: numa tela de marcar caixinha, o que se perde por esquecer de confirmar custa mais do que a confirmacao protege.',

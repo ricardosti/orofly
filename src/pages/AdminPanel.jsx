@@ -335,6 +335,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [atrBusca, setAtrBusca] = useState('')
   const [atrBuscaPiloto, setAtrBuscaPiloto] = useState('')
   const [atrBuscaTalhao, setAtrBuscaTalhao] = useState('')
+  const [atrFiltroFaz, setAtrFiltroFaz] = useState('todas') // todas | deste | sem
   const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
@@ -4950,6 +4951,60 @@ export default function AdminPanel({ onSwitchMode }) {
                   }
                   const areaDaFazenda = (fid) => invTalhoes.filter(t=>t.fazenda_id===fid).reduce((a,t)=>a+(parseFloat(t.area_ha)||0),0)
 
+                  // Situação de campo de cada talhão da fazenda escolhida. Reusa o
+                  // agregarConsolidado em vez de somar aqui: é ele que faz o rateio de um voo
+                  // que cobriu vários talhões, e refazer essa conta na mão daria número
+                  // diferente do que o relatório do cliente mostra.
+                  // Serve pra não mandar piloto pra talhão que já está fechado.
+                  const statusTalhoes = (() => {
+                    if (!atrFazendaSel) return {}
+                    const fz = invFazendas.find(f=>f.id===atrFazendaSel)
+                    if (!fz) return {}
+                    const catalogo = invTalhoes.filter(t=>t.fazenda_id===fz.id).map(t=>({nome:t.nome, area_ha:t.area_ha}))
+                    const voosFz = relatorios.filter(r=>
+                      r.fazenda===fz.nome && r.cliente===fz.cliente &&
+                      ['finalizado','pausado_dia'].includes(r.status) &&
+                      (!fz.campanha_inicio || new Date(r.created_at) >= new Date(fz.campanha_inicio))
+                    )
+                    try {
+                      const cons = agregarConsolidado({
+                        voos: voosFz, talhoesCatalogo: catalogo,
+                        areaTotalCadastrada: catalogo.reduce((a,t)=>a+(parseFloat(t.area_ha)||0),0),
+                      })
+                      return Object.fromEntries((cons.talhoes||[]).map(t=>[t.nome, t.status]))
+                    } catch(e) { console.warn('status por talhão não calculado:', e); return {} }
+                  })()
+                  const SELO_TALHAO = {
+                    FINALIZADO: { txt:'feito',   cor:'#059669' },
+                    PARCIAL:    { txt:'parcial', cor:'#B45309' },
+                  }
+
+                  // Marca ou limpa de uma vez os talhões visíveis (respeita a busca da coluna).
+                  async function marcarTalhoesEmLote(marcar, lista) {
+                    if (!atrPilotoSel || !atrFazendaSel || !lista.length) return
+                    setAtrSalvando(true)
+                    try {
+                      if (marcar) {
+                        // Marcar em lote desliga "fazenda inteira": vira atribuição parcial.
+                        if (temFazendaInteira(atrPilotoSel, atrFazendaSel)) {
+                          await supabase.from('piloto_fazendas').delete().eq('piloto_id',atrPilotoSel).eq('fazenda_id',atrFazendaSel)
+                          setPilotoFazendas(v=>v.filter(pf=>!(pf.piloto_id===atrPilotoSel && pf.fazenda_id===atrFazendaSel)))
+                        }
+                        const jaTem = pilotoTalhoes.filter(pt=>pt.piloto_id===atrPilotoSel).map(pt=>pt.talhao_id)
+                        const novos = lista.filter(t=>!jaTem.includes(t.id)).map(t=>({piloto_id:atrPilotoSel, talhao_id:t.id}))
+                        if (!novos.length) return
+                        const { data, error } = await supabase.from('piloto_talhoes').insert(novos).select()
+                        if (error) throw error
+                        setPilotoTalhoes(v=>[...v, ...(data||[])])
+                      } else {
+                        const ids = lista.map(t=>t.id)
+                        const { error } = await supabase.from('piloto_talhoes').delete().eq('piloto_id',atrPilotoSel).in('talhao_id',ids)
+                        if (error) throw error
+                        setPilotoTalhoes(v=>v.filter(pt=>!(pt.piloto_id===atrPilotoSel && ids.includes(pt.talhao_id))))
+                      }
+                    } catch(e) { showToast('Erro: '+e.message,'error') } finally { setAtrSalvando(false) }
+                  }
+
                   // Cor do avatar derivada do nome: o mesmo piloto tem sempre a mesma cor,
                   // o que ajuda a reconhecer a linha sem ler.
                   const CORES_AVATAR = ['#0F766E','#1D4ED8','#B45309','#9333EA','#BE123C','#047857','#4338CA','#A16207']
@@ -5002,9 +5057,18 @@ export default function AdminPanel({ onSwitchMode }) {
                   const fPil = nb(atrBuscaPiloto), fFaz = nb(atrBusca), fTal = nb(atrBuscaTalhao)
 
                   const pilotosFiltrados = fPil ? pilotosOrd.filter(p=>nb(p.nome||p.email).includes(fPil)) : pilotosOrd
-                  const fazendasFiltradas = fFaz
+                  // Busca + filtro de situação. "Só deste piloto" serve pra revisar o que
+                  // alguém já tem sem rolar 60 fazendas; "sem piloto" acha o que ficou de fora,
+                  // que é a pergunta que ninguém consegue responder olhando a lista inteira.
+                  const fazendasBusca = fFaz
                     ? fazendasOrd.filter(f=>nb(f.nome).includes(fFaz) || nb(f.cliente).includes(fFaz))
                     : fazendasOrd
+                  const fazendasFiltradas = fazendasBusca.filter(f=>{
+                    if (atrFiltroFaz==='deste') return atrPilotoSel && (temFazendaInteira(atrPilotoSel,f.id) || talhoesDoPiloto(atrPilotoSel,f.id).length>0)
+                    if (atrFiltroFaz==='sem')   return pilotosDaFazenda(f.id).length===0
+                    return true
+                  })
+                  const qtdSemPiloto = fazendasBusca.filter(f=>pilotosDaFazenda(f.id).length===0).length
                   const talhoesFaz = fazendaSel ? ordenarPorNome(invTalhoes.filter(t=>t.fazenda_id===fazendaSel.id)) : []
                   const talhoesFiltrados = fTal ? talhoesFaz.filter(t=>nb(t.nome).includes(fTal)) : talhoesFaz
 
@@ -5094,6 +5158,16 @@ export default function AdminPanel({ onSwitchMode }) {
                           <>
                             <div style={{padding:'9px 11px',borderBottom:`1px solid ${theme.divider}`}}>
                               <input style={buscaInput} placeholder="Buscar fazenda ou cliente..." value={atrBusca} onChange={e=>setAtrBusca(e.target.value)}/>
+                              <div style={{display:'flex',gap:4,marginTop:7}}>
+                                {[['todas','Todas',null],['deste','Deste piloto',null],['sem','Sem piloto',qtdSemPiloto]].map(([v,lbl,cnt])=>(
+                                  <button key={v} onClick={()=>setAtrFiltroFaz(v)}
+                                    style={{flex:1,background: atrFiltroFaz===v?'#059669':theme.bg, color: atrFiltroFaz===v?'#fff':theme.textMuted,
+                                      border:`1px solid ${atrFiltroFaz===v?'#059669':theme.cardBorder2}`, borderRadius:7, padding:'4px 5px',
+                                      fontSize:10.5, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'}}>
+                                    {lbl}{cnt>0 && atrFiltroFaz!==v ? ` (${cnt})` : ''}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                             <div style={{overflowY:'auto',flex:1}}>
                               {fazendasFiltradas.length===0 && <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Nenhuma fazenda encontrada.</div>}
@@ -5154,6 +5228,30 @@ export default function AdminPanel({ onSwitchMode }) {
                               <>
                                 <div style={{padding:'9px 11px',borderBottom:`1px solid ${theme.divider}`}}>
                                   <input style={buscaInput} placeholder="Buscar talhão..." value={atrBuscaTalhao} onChange={e=>setAtrBuscaTalhao(e.target.value)}/>
+                                  {!inteiraAtual && talhoesFiltrados.length>0 && (
+                                    <div style={{display:'flex',gap:6,marginTop:7,alignItems:'center'}}>
+                                      {/* Agem sobre os talhões VISÍVEIS: com a busca ativa, "marcar
+                                          todos" pegaria talhão fora da tela e seria surpresa. */}
+                                      <button disabled={atrSalvando} onClick={()=>marcarTalhoesEmLote(true, talhoesFiltrados)}
+                                        style={{flex:1,background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'4px 8px',fontSize:10.5,fontWeight:600,cursor:'pointer'}}>
+                                        ✓ Marcar {fTal?'os visíveis':'todos'}
+                                      </button>
+                                      <button disabled={atrSalvando} onClick={()=>marcarTalhoesEmLote(false, talhoesFiltrados)}
+                                        style={{flex:1,background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'4px 8px',fontSize:10.5,fontWeight:600,cursor:'pointer'}}>
+                                        Limpar
+                                      </button>
+                                      {/* Pendentes = o que ainda falta aplicar. É o caso normal de
+                                          atribuição: mandar o piloto pro que sobrou, não pro que
+                                          já está fechado. */}
+                                      {talhoesFiltrados.some(t=>statusTalhoes[t.nome]==='PENDENTE') && (
+                                        <button disabled={atrSalvando} title="Marca só os talhões que ainda não foram aplicados"
+                                          onClick={()=>marcarTalhoesEmLote(true, talhoesFiltrados.filter(t=>statusTalhoes[t.nome]==='PENDENTE'))}
+                                          style={{flex:1,background:theme.successBg,color:'#059669',border:'1px solid #059669',borderRadius:7,padding:'4px 8px',fontSize:10.5,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                                          Só pendentes
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                                 <div style={{overflowY:'auto',flex:1}}>
                                   {talhoesFiltrados.length===0 && <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Nenhum talhão com esse nome.</div>}
@@ -5172,6 +5270,13 @@ export default function AdminPanel({ onSwitchMode }) {
                                             <span style={{display:'block',fontSize:9.5,color:theme.textFaint}}>também: {outrosNoTalhao.join(', ')}</span>
                                           )}
                                         </span>
+                                        {SELO_TALHAO[statusTalhoes[t.nome]] && (
+                                          <span title={statusTalhoes[t.nome]==='FINALIZADO'?'Talhão já aplicado no ciclo atual':'Talhão com aplicação parcial'}
+                                            style={{fontSize:9,fontWeight:800,letterSpacing:.3,textTransform:'uppercase',color:SELO_TALHAO[statusTalhoes[t.nome]].cor,
+                                              border:`1px solid ${SELO_TALHAO[statusTalhoes[t.nome]].cor}`,borderRadius:5,padding:'1px 5px',whiteSpace:'nowrap'}}>
+                                            {SELO_TALHAO[statusTalhoes[t.nome]].txt}
+                                          </span>
+                                        )}
                                         <span style={{fontSize:11,color:theme.textFaint,whiteSpace:'nowrap'}}>{t.area_ha?`${parseFloat(t.area_ha).toFixed(1)} ha`:'—'}</span>
                                       </label>
                                     )
