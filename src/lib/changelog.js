@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.5',
+    data: '2026-09-22',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Atribuicao de pilotos com cara nova',
+        texto: 'A tela ganhou os tres passos no topo (Piloto, Fazenda, Talhoes) mostrando onde voce esta, busca nas tres colunas, avatar com as iniciais de cada piloto, e cadeado nas etapas ainda bloqueadas. A coluna da fazenda mostra a area total e quantos outros pilotos respondem por ela; a dos talhoes tem o rodape com "X de Y selecionados" e a area somada. Embaixo, um resumo do que esta atribuido. O "Fazenda inteira" saiu da coluna do meio e virou a primeira linha da coluna de talhoes, que e onde a decisao acontece.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Tudo salva sozinho, sem botao de confirmar',
+        texto: 'Cada caixinha marcada grava na hora, e o rodape mostra "Salvo automaticamente". Nao existe botao de confirmar de proposito: numa tela de marcar caixinha, o que se perde por esquecer de confirmar custa mais do que a confirmacao protege.',
+      },
+    ],
+  },
+  {
     versao: '5.4',
     data: '2026-09-21',
     itens: [

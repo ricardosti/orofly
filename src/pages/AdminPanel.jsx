@@ -333,6 +333,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [atrPilotoSel, setAtrPilotoSel] = useState(null)
   const [atrFazendaSel, setAtrFazendaSel] = useState(null)
   const [atrBusca, setAtrBusca] = useState('')
+  const [atrBuscaPiloto, setAtrBuscaPiloto] = useState('')
+  const [atrBuscaTalhao, setAtrBuscaTalhao] = useState('')
   const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
@@ -4920,29 +4922,39 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* ── EQUIPES (times + atribuição de fazendas por time/piloto) ── */}
                 {fzTab==='equipes' && (() => {
-                  // Atribuição em 3 colunas: PILOTO -> FAZENDA -> TALHÕES.
-                  // Substituiu o Kanban e a visão por Times, que quase não eram usados
-                  // (1 time, 2 vínculos) e não chegavam no talhão.
+                  // Atribuição em 3 etapas: PILOTO -> FAZENDA -> TALHÕES.
                   //
                   // Dois níveis convivem:
-                  //   fazenda inteira  -> piloto_fazendas (vale pros talhões futuros também)
-                  //   talhões avulsos  -> piloto_talhoes
-                  // Uma fazenda pode ter vários pilotos, cada um com os seus talhões.
+                  //   piloto_fazendas = responde pela fazenda INTEIRA (inclui talhão futuro)
+                  //   piloto_talhoes  = responde só por alguns talhões dela
+                  // Os dois se excluem na mesma fazenda, senão a tela ficaria contraditória
+                  // ("fazenda toda" + 3 talhões marcados).
+                  //
+                  // Cada clique grava na hora. Não existe botão de salvar de propósito: numa
+                  // tela de marcar caixinha, o que se perde por esquecer de confirmar custa
+                  // mais do que a confirmação protege.
                   const pilotosOrd = [...pilotos].sort((a,b)=>compararNomes(a.nome||a.email, b.nome||b.email))
                   const fazendasOrd = ordenarPorNome(invFazendas)
 
                   const temFazendaInteira = (pid, fid) => pilotoFazendas.some(pf=>pf.piloto_id===pid && pf.fazenda_id===fid)
                   const talhoesDoPiloto = (pid, fid) => {
-                    const idsDaFazenda = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
-                    return pilotoTalhoes.filter(pt=>pt.piloto_id===pid && idsDaFazenda.includes(pt.talhao_id))
+                    const ids = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
+                    return pilotoTalhoes.filter(pt=>pt.piloto_id===pid && ids.includes(pt.talhao_id))
                   }
-                  // Quantos pilotos respondem por esta fazenda, contando os dois níveis.
                   const pilotosDaFazenda = (fid) => {
-                    const idsDaFazenda = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
-                    const porFazenda = pilotoFazendas.filter(pf=>pf.fazenda_id===fid).map(pf=>pf.piloto_id)
-                    const porTalhao = pilotoTalhoes.filter(pt=>idsDaFazenda.includes(pt.talhao_id)).map(pt=>pt.piloto_id)
-                    return [...new Set([...porFazenda, ...porTalhao])]
+                    const ids = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
+                    return [...new Set([
+                      ...pilotoFazendas.filter(pf=>pf.fazenda_id===fid).map(pf=>pf.piloto_id),
+                      ...pilotoTalhoes.filter(pt=>ids.includes(pt.talhao_id)).map(pt=>pt.piloto_id),
+                    ])]
                   }
+                  const areaDaFazenda = (fid) => invTalhoes.filter(t=>t.fazenda_id===fid).reduce((a,t)=>a+(parseFloat(t.area_ha)||0),0)
+
+                  // Cor do avatar derivada do nome: o mesmo piloto tem sempre a mesma cor,
+                  // o que ajuda a reconhecer a linha sem ler.
+                  const CORES_AVATAR = ['#0F766E','#1D4ED8','#B45309','#9333EA','#BE123C','#047857','#4338CA','#A16207']
+                  const corDoNome = n => CORES_AVATAR[[...(n||'?')].reduce((a,c)=>a+c.charCodeAt(0),0) % CORES_AVATAR.length]
+                  const iniciais = n => (n||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase()
 
                   async function alternarFazendaInteira(pid, fid) {
                     setAtrSalvando(true)
@@ -4952,12 +4964,10 @@ export default function AdminPanel({ onSwitchMode }) {
                         if (error) throw error
                         setPilotoFazendas(v=>v.filter(pf=>!(pf.piloto_id===pid && pf.fazenda_id===fid)))
                       } else {
-                        // Fazenda inteira engloba os talhões avulsos — deixar os dois deixaria
-                        // a tela contraditória ("fazenda toda" + 3 talhões marcados).
-                        const idsDaFazenda = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
-                        if (idsDaFazenda.length) {
-                          await supabase.from('piloto_talhoes').delete().eq('piloto_id',pid).in('talhao_id',idsDaFazenda)
-                          setPilotoTalhoes(v=>v.filter(pt=>!(pt.piloto_id===pid && idsDaFazenda.includes(pt.talhao_id))))
+                        const ids = invTalhoes.filter(t=>t.fazenda_id===fid).map(t=>t.id)
+                        if (ids.length) {
+                          await supabase.from('piloto_talhoes').delete().eq('piloto_id',pid).in('talhao_id',ids)
+                          setPilotoTalhoes(v=>v.filter(pt=>!(pt.piloto_id===pid && ids.includes(pt.talhao_id))))
                         }
                         const { data, error } = await supabase.from('piloto_fazendas').insert({piloto_id:pid, fazenda_id:fid}).select().single()
                         if (error) throw error
@@ -4975,7 +4985,6 @@ export default function AdminPanel({ onSwitchMode }) {
                         if (error) throw error
                         setPilotoTalhoes(v=>v.filter(pt=>!(pt.piloto_id===pid && pt.talhao_id===talhaoId)))
                       } else {
-                        // Marcar um talhão solto tira a fazenda inteira: passa a ser atribuição parcial.
                         if (temFazendaInteira(pid, fid)) {
                           await supabase.from('piloto_fazendas').delete().eq('piloto_id',pid).eq('fazenda_id',fid)
                           setPilotoFazendas(v=>v.filter(pf=>!(pf.piloto_id===pid && pf.fazenda_id===fid)))
@@ -4989,93 +4998,127 @@ export default function AdminPanel({ onSwitchMode }) {
 
                   const pilotoSel = pilotosOrd.find(p=>p.id===atrPilotoSel)
                   const fazendaSel = fazendasOrd.find(f=>f.id===atrFazendaSel)
-                  const buscaNorm = atrBusca.trim().toLowerCase()
-                  const fazendasFiltradas = buscaNorm
-                    ? fazendasOrd.filter(f=>(f.nome||'').toLowerCase().includes(buscaNorm) || (f.cliente||'').toLowerCase().includes(buscaNorm))
-                    : fazendasOrd
-                  const talhoesDaFazendaSel = fazendaSel ? ordenarPorNome(invTalhoes.filter(t=>t.fazenda_id===fazendaSel.id)) : []
+                  const nb = t => (t||'').trim().toLowerCase()
+                  const fPil = nb(atrBuscaPiloto), fFaz = nb(atrBusca), fTal = nb(atrBuscaTalhao)
 
-                  const colStyle = { background:theme.card, border:`1px solid ${theme.cardBorder2}`, borderRadius:theme.radius||8, display:'flex', flexDirection:'column', minHeight:0, overflow:'hidden' }
-                  const colHead = { padding:'10px 12px', borderBottom:`1px solid ${theme.cardBorder2}`, fontSize:10.5, fontWeight:700, letterSpacing:.5, color:theme.textFaint2, textTransform:'uppercase', display:'flex', alignItems:'center', justifyContent:'space-between', gap:6 }
-                  const itemBase = { width:'100%', textAlign:'left', background:'none', border:'none', borderBottom:`1px solid ${theme.divider}`, padding:'9px 12px', cursor:'pointer', fontSize:12.5, color:theme.text, display:'flex', alignItems:'center', gap:8 }
+                  const pilotosFiltrados = fPil ? pilotosOrd.filter(p=>nb(p.nome||p.email).includes(fPil)) : pilotosOrd
+                  const fazendasFiltradas = fFaz
+                    ? fazendasOrd.filter(f=>nb(f.nome).includes(fFaz) || nb(f.cliente).includes(fFaz))
+                    : fazendasOrd
+                  const talhoesFaz = fazendaSel ? ordenarPorNome(invTalhoes.filter(t=>t.fazenda_id===fazendaSel.id)) : []
+                  const talhoesFiltrados = fTal ? talhoesFaz.filter(t=>nb(t.nome).includes(fTal)) : talhoesFaz
+
+                  const inteiraAtual = (atrPilotoSel && atrFazendaSel) ? temFazendaInteira(atrPilotoSel, atrFazendaSel) : false
+                  const marcadosAtual = (atrPilotoSel && atrFazendaSel) ? talhoesDoPiloto(atrPilotoSel, atrFazendaSel).map(pt=>pt.talhao_id) : []
+                  const areaMarcada = talhoesFaz.filter(t=>marcadosAtual.includes(t.id)).reduce((a,t)=>a+(parseFloat(t.area_ha)||0),0)
+                  const etapa = !atrPilotoSel ? 1 : !atrFazendaSel ? 2 : 3
+
+                  const card = { background:theme.card, border:`1px solid ${theme.cardBorder2}`, borderRadius:14, display:'flex', flexDirection:'column', minHeight:0, overflow:'hidden' }
+                  const cardHead = { padding:'13px 14px', borderBottom:`1px solid ${theme.divider}`, display:'flex', alignItems:'center', gap:9 }
+                  const iconBox = ativo => ({ width:26, height:26, borderRadius:8, background: ativo?'#059669':theme.divider, color: ativo?'#fff':theme.textFaint, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, flexShrink:0 })
+                  const buscaInput = { width:'100%', border:`1px solid ${theme.cardBorder2}`, borderRadius:9, padding:'7px 10px', fontSize:12, outline:'none', boxSizing:'border-box', background:theme.inputBg, color:theme.text }
 
                   return (
                   <div>
-                    <div style={{marginBottom:12}}>
-                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text}}>🧑‍🌾 Atribuição de pilotos</div>
-                      <div style={{fontSize:11.5,color:theme.textMuted,marginTop:3,lineHeight:1.5}}>
-                        Escolha o piloto, depois a fazenda, e marque a fazenda inteira ou só os talhões dele.
-                        A mesma fazenda pode ter vários pilotos, cada um com os seus talhões.
+                    {/* ── Cabeçalho + passos ── */}
+                    <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16,flexWrap:'wrap',marginBottom:14}}>
+                      <div>
+                        <div style={{fontFamily:"'Syne',sans-serif",fontSize:19,fontWeight:700,color:theme.text}}>Atribuição de pilotos</div>
+                        <div style={{fontSize:12,color:theme.textMuted,marginTop:3,maxWidth:560,lineHeight:1.5}}>
+                          Selecione o piloto, a fazenda, e marque a fazenda inteira ou os talhões desejados.
+                          A mesma fazenda pode ter vários pilotos, cada um com os seus talhões.
+                        </div>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
+                        {[[1,'Piloto'],[2,'Fazenda'],[3,'Talhões']].map(([n,lbl],i)=>(
+                          <React.Fragment key={n}>
+                            {i>0 && <div style={{width:26,height:1.5,background: etapa>=n?'#059669':theme.divider}}/>}
+                            <div style={{display:'flex',alignItems:'center',gap:6}}>
+                              <div style={{width:22,height:22,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,
+                                background: etapa>=n?'#059669':theme.divider, color: etapa>=n?'#fff':theme.textFaint}}>{n}</div>
+                              <span style={{fontSize:12,fontWeight:600,color: etapa>=n?theme.text:theme.textFaint}}>{lbl}</span>
+                            </div>
+                          </React.Fragment>
+                        ))}
                       </div>
                     </div>
 
-                    <div style={{display:'grid',gridTemplateColumns: isMobile?'1fr':'minmax(180px,1fr) minmax(220px,1.3fr) minmax(200px,1.2fr)',gap:10,alignItems:'stretch',height: isMobile?'auto':520}}>
+                    <div style={{display:'grid',gridTemplateColumns: isMobile?'1fr':'minmax(230px,1fr) minmax(250px,1.15fr) minmax(250px,1.35fr)',gap:12,alignItems:'stretch',height: isMobile?'auto':560}}>
 
-                      {/* ── 1. PILOTOS ── */}
-                      <div style={colStyle}>
-                        <div style={colHead}><span>1. Piloto</span><span style={{color:theme.textFaint}}>{pilotosOrd.length}</span></div>
+                      {/* ══ 1. PILOTO ══ */}
+                      <div style={card}>
+                        <div style={cardHead}>
+                          <div style={iconBox(true)}>🧑‍🌾</div>
+                          <span style={{fontSize:13,fontWeight:700,color:theme.text,flex:1}}>1. Escolha o piloto</span>
+                        </div>
+                        <div style={{padding:'9px 11px',borderBottom:`1px solid ${theme.divider}`}}>
+                          <input style={buscaInput} placeholder="Buscar piloto..." value={atrBuscaPiloto} onChange={e=>setAtrBuscaPiloto(e.target.value)}/>
+                        </div>
                         <div style={{overflowY:'auto',flex:1}}>
-                          {pilotosOrd.map(p=>{
+                          {pilotosFiltrados.length===0 && <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Ninguém com esse nome.</div>}
+                          {pilotosFiltrados.map(p=>{
                             const nFaz = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).length
                             const nTal = pilotoTalhoes.filter(pt=>pt.piloto_id===p.id).length
                             const sel = atrPilotoSel===p.id
+                            const nome = p.nome||p.email
+                            const resumo = nFaz===0 && nTal===0 ? 'Sem atribuição'
+                              : [nFaz>0?`${nFaz} fazenda${nFaz>1?'s':''}`:null, nTal>0?`${nTal} ${nTal>1?'talhões':'talhão'}`:null].filter(Boolean).join(' · ')
                             return (
-                              <button key={p.id} style={{...itemBase, background: sel?theme.successBg:'none', fontWeight: sel?700:500}}
-                                onClick={()=>{setAtrPilotoSel(p.id); setAtrFazendaSel(null)}}>
-                                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.nome||p.email}</span>
-                                {(nFaz>0||nTal>0) && (
-                                  <span style={{fontSize:10,color: sel?'#059669':theme.textFaint,whiteSpace:'nowrap'}}>
-                                    {nFaz>0?`${nFaz} faz.`:''}{nFaz>0&&nTal>0?' · ':''}{nTal>0?`${nTal} talh.`:''}
-                                  </span>
-                                )}
+                              <button key={p.id} onClick={()=>{setAtrPilotoSel(p.id); setAtrFazendaSel(null); setAtrBuscaTalhao('')}}
+                                style={{width:'100%',textAlign:'left',background: sel?theme.successBg:'none',border:'none',borderBottom:`1px solid ${theme.divider}`,
+                                  padding:'10px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                                <div style={{width:31,height:31,borderRadius:'50%',background:corDoNome(nome),color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,flexShrink:0}}>
+                                  {iniciais(nome)}
+                                </div>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12.5,fontWeight: sel?700:600,color:theme.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nome}</div>
+                                  <div style={{fontSize:10.5,color: (nFaz||nTal)?'#059669':theme.textFaint,marginTop:1}}>{resumo}</div>
+                                </div>
+                                {sel && <span style={{color:'#059669',fontSize:14,fontWeight:700}}>✓</span>}
                               </button>
                             )
                           })}
                         </div>
                       </div>
 
-                      {/* ── 2. FAZENDAS ── */}
-                      <div style={{...colStyle, opacity: atrPilotoSel?1:.5}}>
-                        <div style={colHead}>
-                          <span>2. Fazenda</span>
-                          <span style={{color:theme.textFaint}}>{fazendasFiltradas.length}</span>
+                      {/* ══ 2. FAZENDA ══ */}
+                      <div style={{...card, opacity: atrPilotoSel?1:.55}}>
+                        <div style={cardHead}>
+                          <div style={iconBox(!!atrPilotoSel)}>🌾</div>
+                          <span style={{fontSize:13,fontWeight:700,color:theme.text,flex:1}}>2. Escolha a fazenda</span>
+                          {!atrPilotoSel && <span title="Escolha um piloto primeiro" style={{fontSize:13,color:theme.textFaint}}>🔒</span>}
                         </div>
                         {!atrPilotoSel ? (
-                          <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Escolha um piloto ao lado.</div>
+                          <div style={{padding:'20px 16px',fontSize:12,color:theme.textFaint,lineHeight:1.5}}>Escolha um piloto na primeira coluna.</div>
                         ) : (
                           <>
-                            <div style={{padding:'8px 10px',borderBottom:`1px solid ${theme.divider}`}}>
-                              <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'6px 9px',fontSize:12,outline:'none',boxSizing:'border-box',background:theme.inputBg,color:theme.text}}
-                                placeholder="Buscar fazenda ou cliente..." value={atrBusca} onChange={e=>setAtrBusca(e.target.value)}/>
+                            <div style={{padding:'9px 11px',borderBottom:`1px solid ${theme.divider}`}}>
+                              <input style={buscaInput} placeholder="Buscar fazenda ou cliente..." value={atrBusca} onChange={e=>setAtrBusca(e.target.value)}/>
                             </div>
                             <div style={{overflowY:'auto',flex:1}}>
+                              {fazendasFiltradas.length===0 && <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Nenhuma fazenda encontrada.</div>}
                               {fazendasFiltradas.map(f=>{
                                 const inteira = temFazendaInteira(atrPilotoSel, f.id)
                                 const nTal = talhoesDoPiloto(atrPilotoSel, f.id).length
                                 const outros = pilotosDaFazenda(f.id).filter(id=>id!==atrPilotoSel).length
                                 const sel = atrFazendaSel===f.id
+                                const area = areaDaFazenda(f.id)
                                 return (
-                                  <div key={f.id} style={{display:'flex',alignItems:'center',borderBottom:`1px solid ${theme.divider}`,background: sel?theme.bg:'transparent'}}>
-                                    {/* Checkbox = fazenda inteira. Clicar no nome entra nos talhões. */}
-                                    <label title="Atribuir a fazenda inteira (inclui talhões cadastrados depois)"
-                                      style={{padding:'9px 4px 9px 12px',cursor:'pointer',display:'flex',alignItems:'center'}}>
-                                      <input type="checkbox" style={{cursor:'pointer'}} checked={inteira} disabled={atrSalvando}
-                                        onChange={()=>alternarFazendaInteira(atrPilotoSel, f.id)}/>
-                                    </label>
-                                    <button style={{...itemBase, borderBottom:'none', padding:'9px 12px 9px 6px'}}
-                                      onClick={()=>setAtrFazendaSel(f.id)}>
-                                      <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight: (inteira||nTal>0)?700:500}}>
-                                        {f.nome}
-                                        <span style={{display:'block',fontSize:10,color:theme.textFaint,fontWeight:500}}>
-                                          {f.cliente}{outros>0?` · +${outros} piloto${outros>1?'s':''}`:''}
-                                        </span>
-                                      </span>
-                                      {inteira ? <span style={{fontSize:9.5,fontWeight:700,color:'#059669',background:theme.successBg,borderRadius:4,padding:'2px 5px',whiteSpace:'nowrap'}}>TODA</span>
-                                        : nTal>0 ? <span style={{fontSize:9.5,fontWeight:700,color:theme.warningText,background:theme.warningBg,borderRadius:4,padding:'2px 5px',whiteSpace:'nowrap'}}>{nTal}</span>
-                                        : null}
-                                      <span style={{color:theme.textFaint,fontSize:11}}>›</span>
-                                    </button>
-                                  </div>
+                                  <button key={f.id} onClick={()=>{setAtrFazendaSel(f.id); setAtrBuscaTalhao('')}}
+                                    style={{width:'100%',textAlign:'left',background: sel?theme.bg:'none',border:'none',borderBottom:`1px solid ${theme.divider}`,
+                                      padding:'10px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
+                                    <div style={{width:28,height:28,borderRadius:8,background: (inteira||nTal>0)?theme.successBg:theme.divider,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0}}>🏡</div>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <div style={{fontSize:12.5,fontWeight: (inteira||nTal>0)?700:600,color:theme.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.nome}</div>
+                                      <div style={{fontSize:10.5,color:theme.textFaint,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                                        {f.cliente}{area>0?` · ${area.toFixed(1)} ha`:''}{outros>0?` · +${outros} piloto${outros>1?'s':''}`:''}
+                                      </div>
+                                    </div>
+                                    {inteira ? <span style={{fontSize:9,fontWeight:800,color:'#fff',background:'#059669',borderRadius:5,padding:'2px 6px',whiteSpace:'nowrap'}}>TODA</span>
+                                      : nTal>0 ? <span style={{fontSize:9,fontWeight:800,color:theme.warningText,background:theme.warningBg,borderRadius:5,padding:'2px 6px',whiteSpace:'nowrap'}}>{nTal}</span>
+                                      : null}
+                                    <span style={{color:theme.textFaint,fontSize:13}}>›</span>
+                                  </button>
                                 )
                               })}
                             </div>
@@ -5083,46 +5126,101 @@ export default function AdminPanel({ onSwitchMode }) {
                         )}
                       </div>
 
-                      {/* ── 3. TALHÕES ── */}
-                      <div style={{...colStyle, opacity: atrFazendaSel?1:.5}}>
-                        <div style={colHead}>
-                          <span>3. Talhões</span>
-                          {fazendaSel && <span style={{color:theme.textFaint,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:110,textTransform:'none'}}>{fazendaSel.nome}</span>}
+                      {/* ══ 3. TALHÕES ══ */}
+                      <div style={{...card, opacity: atrFazendaSel?1:.55}}>
+                        <div style={cardHead}>
+                          <div style={iconBox(!!atrFazendaSel)}>🗺️</div>
+                          <span style={{fontSize:13,fontWeight:700,color:theme.text,flex:1}}>3. Marque os talhões</span>
+                          {!atrFazendaSel && <span title="Escolha uma fazenda primeiro" style={{fontSize:13,color:theme.textFaint}}>🔒</span>}
                         </div>
                         {!atrFazendaSel ? (
-                          <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Escolha uma fazenda pra marcar talhões específicos.</div>
-                        ) : talhoesDaFazendaSel.length===0 ? (
-                          <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Esta fazenda não tem talhões cadastrados.</div>
+                          <div style={{padding:'20px 16px',fontSize:12,color:theme.textFaint,lineHeight:1.5}}>Escolha uma fazenda na coluna do meio.</div>
                         ) : (
                           <>
-                            {temFazendaInteira(atrPilotoSel, atrFazendaSel) && (
-                              <div style={{padding:'9px 12px',fontSize:11,color:'#059669',background:theme.successBg,borderBottom:`1px solid ${theme.divider}`,lineHeight:1.45}}>
-                                ✓ {pilotoSel?.nome||'O piloto'} responde pela fazenda <b>inteira</b>. Marcar um talhão aqui troca pra atribuição parcial.
+                            {/* Fazenda inteira fica aqui, e não na coluna 2, porque é uma
+                                alternativa a marcar talhão — as duas decisões no mesmo lugar. */}
+                            <label style={{display:'flex',alignItems:'center',gap:9,padding:'10px 12px',borderBottom:`1px solid ${theme.divider}`,cursor:'pointer',
+                              background: inteiraAtual?theme.successBg:'transparent'}}>
+                              <input type="checkbox" style={{cursor:'pointer',width:15,height:15}} checked={inteiraAtual} disabled={atrSalvando}
+                                onChange={()=>alternarFazendaInteira(atrPilotoSel, atrFazendaSel)}/>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:12,fontWeight:700,color: inteiraAtual?'#059669':theme.text}}>Fazenda inteira</div>
+                                <div style={{fontSize:10,color:theme.textFaint,marginTop:1}}>Inclui os talhões cadastrados depois</div>
                               </div>
+                            </label>
+                            {talhoesFaz.length===0 ? (
+                              <div style={{padding:'20px 16px',fontSize:12,color:theme.textFaint}}>Esta fazenda não tem talhões cadastrados.</div>
+                            ) : (
+                              <>
+                                <div style={{padding:'9px 11px',borderBottom:`1px solid ${theme.divider}`}}>
+                                  <input style={buscaInput} placeholder="Buscar talhão..." value={atrBuscaTalhao} onChange={e=>setAtrBuscaTalhao(e.target.value)}/>
+                                </div>
+                                <div style={{overflowY:'auto',flex:1}}>
+                                  {talhoesFiltrados.length===0 && <div style={{padding:16,fontSize:12,color:theme.textFaint}}>Nenhum talhão com esse nome.</div>}
+                                  {talhoesFiltrados.map(t=>{
+                                    const meu = marcadosAtual.includes(t.id)
+                                    const outrosNoTalhao = pilotoTalhoes.filter(pt=>pt.talhao_id===t.id && pt.piloto_id!==atrPilotoSel)
+                                      .map(pt=>pilotos.find(p=>p.id===pt.piloto_id)?.nome).filter(Boolean)
+                                    return (
+                                      <label key={t.id} style={{display:'flex',alignItems:'center',gap:9,padding:'9px 12px',borderBottom:`1px solid ${theme.divider}`,
+                                        cursor: inteiraAtual?'default':'pointer', background: meu?theme.successBg:'transparent', opacity: inteiraAtual?.5:1}}>
+                                        <input type="checkbox" style={{cursor:'pointer',width:15,height:15}} checked={meu||inteiraAtual} disabled={atrSalvando||inteiraAtual}
+                                          onChange={()=>alternarTalhao(atrPilotoSel, t.id, atrFazendaSel)}/>
+                                        <span style={{flex:1,minWidth:0}}>
+                                          <span style={{fontFamily:'ui-monospace,monospace',fontSize:12,fontWeight: meu?700:500,color:theme.text}}>{t.nome}</span>
+                                          {outrosNoTalhao.length>0 && (
+                                            <span style={{display:'block',fontSize:9.5,color:theme.textFaint}}>também: {outrosNoTalhao.join(', ')}</span>
+                                          )}
+                                        </span>
+                                        <span style={{fontSize:11,color:theme.textFaint,whiteSpace:'nowrap'}}>{t.area_ha?`${parseFloat(t.area_ha).toFixed(1)} ha`:'—'}</span>
+                                      </label>
+                                    )
+                                  })}
+                                </div>
+                                {/* Rodapé de seleção */}
+                                <div style={{padding:'10px 12px',borderTop:`1px solid ${theme.cardBorder2}`,background:theme.bg,display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+                                  <span style={{fontSize:11.5,fontWeight:600,color: inteiraAtual?'#059669':theme.textMuted}}>
+                                    {inteiraAtual ? `Fazenda inteira · ${talhoesFaz.length} talhões` : `${marcadosAtual.length} de ${talhoesFaz.length} selecionados`}
+                                  </span>
+                                  <span style={{fontSize:11.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap'}}>
+                                    {(inteiraAtual ? areaDaFazenda(atrFazendaSel) : areaMarcada).toFixed(1)} ha
+                                  </span>
+                                </div>
+                              </>
                             )}
-                            <div style={{overflowY:'auto',flex:1}}>
-                              {talhoesDaFazendaSel.map(t=>{
-                                const meu = pilotoTalhoes.some(pt=>pt.piloto_id===atrPilotoSel && pt.talhao_id===t.id)
-                                // Outros pilotos no MESMO talhão: é fato comum aqui (dois pilotos
-                                // dividem talhão grande), então mostra em vez de esconder.
-                                const outrosNoTalhao = pilotoTalhoes.filter(pt=>pt.talhao_id===t.id && pt.piloto_id!==atrPilotoSel)
-                                  .map(pt=>pilotos.find(p=>p.id===pt.piloto_id)?.nome).filter(Boolean)
-                                return (
-                                  <label key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',borderBottom:`1px solid ${theme.divider}`,cursor:'pointer',fontSize:12.5,color:theme.text}}>
-                                    <input type="checkbox" style={{cursor:'pointer'}} checked={meu} disabled={atrSalvando}
-                                      onChange={()=>alternarTalhao(atrPilotoSel, t.id, atrFazendaSel)}/>
-                                    <span style={{flex:1,fontFamily:'ui-monospace,monospace',fontSize:12}}>
-                                      {t.nome}
-                                      {outrosNoTalhao.length>0 && (
-                                        <span style={{display:'block',fontFamily:'inherit',fontSize:9.5,color:theme.textFaint}}>também: {outrosNoTalhao.join(', ')}</span>
-                                      )}
-                                    </span>
-                                    <span style={{fontSize:10.5,color:theme.textFaint,whiteSpace:'nowrap'}}>{t.area_ha?`${parseFloat(t.area_ha).toFixed(1)} ha`:'—'}</span>
-                                  </label>
-                                )
-                              })}
-                            </div>
                           </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ── Resumo ── */}
+                    <div style={{marginTop:12,background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:14,padding:'12px 16px',
+                      display:'flex',alignItems:'center',gap:18,flexWrap:'wrap'}}>
+                      <span style={{fontSize:12,fontWeight:700,color:theme.text,display:'flex',alignItems:'center',gap:7}}>
+                        <span style={{fontSize:14}}>📋</span> Resumo
+                      </span>
+                      {[
+                        ['Piloto', pilotoSel ? (pilotoSel.nome||pilotoSel.email) : '—'],
+                        ['Fazenda', fazendaSel ? fazendaSel.nome : '—'],
+                        ['Atribuído', !atrFazendaSel ? '—' : inteiraAtual ? `Fazenda inteira · ${areaDaFazenda(atrFazendaSel).toFixed(1)} ha`
+                          : marcadosAtual.length>0 ? `${marcadosAtual.length} ${marcadosAtual.length>1?'talhões':'talhão'} · ${areaMarcada.toFixed(1)} ha` : 'Nada marcado'],
+                      ].map(([lbl,val])=>(
+                        <div key={lbl} style={{minWidth:0}}>
+                          <div style={{fontSize:9.5,fontWeight:700,color:theme.textFaint,letterSpacing:.5,textTransform:'uppercase'}}>{lbl}</div>
+                          <div style={{fontSize:12.5,fontWeight:600,color:theme.text,marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:220}}>{val}</div>
+                        </div>
+                      ))}
+                      <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
+                        {/* Não existe "confirmar": cada clique já gravou. O aviso deixa isso explícito
+                            pra ninguém sair da tela achando que perdeu o que marcou. */}
+                        <span style={{fontSize:11,color: atrSalvando?theme.warningText:'#059669',fontWeight:600,whiteSpace:'nowrap'}}>
+                          {atrSalvando ? '⏳ Salvando...' : '✓ Salvo automaticamente'}
+                        </span>
+                        {atrPilotoSel && (
+                          <button onClick={()=>{setAtrPilotoSel(null);setAtrFazendaSel(null);setAtrBusca('');setAtrBuscaPiloto('');setAtrBuscaTalhao('')}}
+                            style={{background:'#059669',color:'#fff',border:'none',borderRadius:10,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                            Atribuir a outro piloto
+                          </button>
                         )}
                       </div>
                     </div>
