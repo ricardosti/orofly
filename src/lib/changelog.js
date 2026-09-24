@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.7',
+    data: '2026-09-23',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'As fotos do Relatorio do Periodo agora ficam guardadas',
+        texto: 'Antes as fotos so existiam enquanto o modal estava aberto: fechou, perdeu, e pra reemitir o relatorio era preciso escolher tudo de novo. Agora cada foto e salva assim que voce escolhe, fica vinculada aquela fazenda e volta sozinha na proxima emissao. O X remove de vez. As fotos sao reduzidas antes de subir — uma foto de celular de 4 MB vira cerca de 260 KB, sem perda visivel no PDF, que era o cuidado que faltava pra nao repetir o estouro de banda de agosto.',
+      },
+    ],
+  },
+  {
     versao: '5.6',
     data: '2026-09-23',
     itens: [

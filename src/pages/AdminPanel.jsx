@@ -13,6 +13,7 @@ import RegionTreeSelect from '../components/RegionTreeSelect'
 import { APP_VERSION } from '../lib/version'
 import { descreverAcao, registrar } from '../lib/atividade'
 import { ordenarPorNome, compararNomes } from '../lib/ordenar'
+import { comprimirImagem, urlParaDataUrl } from '../lib/imagem'
 import { NOVIDADES } from '../lib/changelog'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
@@ -419,7 +420,10 @@ export default function AdminPanel({ onSwitchMode }) {
   // PDF Cliente individual): null em relatorioPeriodoTalhoesSel = todos os talhões da fazenda.
   const [relatorioPeriodoTalhoesSel, setRelatorioPeriodoTalhoesSel] = useState(null)
   const [relatorioPeriodoObs, setRelatorioPeriodoObs] = useState('')
+  // Cada item é { path, dataUrl }. `path` é onde a foto está no Storage (o que fica
+  // guardado na fazenda); `dataUrl` é a miniatura da tela e o que o jsPDF consome.
   const [relatorioPeriodoFotos, setRelatorioPeriodoFotos] = useState([])
+  const [relatorioPeriodoFotosCarregando, setRelatorioPeriodoFotosCarregando] = useState(false)
   // Talhão não iniciado é o terceiro status. Fora do relatório por padrão — o consolidado
   // responde "o que foi feito"; listar o que nunca começou é uma escolha de quem envia,
   // porque muda a leitura do documento pro cliente.
@@ -597,6 +601,67 @@ export default function AdminPanel({ onSwitchMode }) {
 
   // Busca o log do período. O 'ate' leva T23:59:59 senão o próprio dia escolhido
   // como fim ficaria de fora (a comparação seria contra a meia-noite dele).
+  // Traz as fotos já guardadas na fazenda pra o modal do Relatório do Período. Sem isso
+  // o Pastor precisava escolher tudo de novo a cada emissão.
+  async function carregarFotosPeriodo(fz) {
+    const caminhos = fz?.fotos_periodo || []
+    if (!caminhos.length) { setRelatorioPeriodoFotos([]); return }
+    setRelatorioPeriodoFotosCarregando(true)
+    try {
+      const itens = await Promise.all(caminhos.map(async path => {
+        const url = await urlAssinada(supabase, path)
+        return url ? { path, dataUrl: null, url } : null
+      }))
+      setRelatorioPeriodoFotos(itens.filter(Boolean))
+    } catch (e) {
+      showToast('Não consegui carregar as fotos salvas: '+e.message, 'error')
+    } finally { setRelatorioPeriodoFotosCarregando(false) }
+  }
+
+  // Sobe a foto e já grava o caminho na fazenda. Salva na hora, e não no "Baixar PDF",
+  // porque o Pastor fecha o modal e volta depois — o que não foi gravado some.
+  async function adicionarFotosPeriodo(arquivos, fz) {
+    if (!fz?.id || !arquivos.length) return
+    setRelatorioPeriodoFotosCarregando(true)
+    try {
+      const novos = []
+      for (const arquivo of arquivos) {
+        const comp = await comprimirImagem(arquivo)
+        if (!comp) continue
+        const path = `fazendas/${fz.id}/periodo/${Date.now()}_${Math.random().toString(36).slice(2,7)}.jpg`
+        const corpo = comp.blob || arquivo
+        const { error } = await supabase.storage.from('relatorios').upload(path, corpo, { upsert: true, contentType: 'image/jpeg' })
+        if (error) { showToast('Erro ao subir foto: '+error.message, 'error'); continue }
+        novos.push({ path, dataUrl: comp.dataUrl })
+      }
+      if (!novos.length) return
+      const atualizadas = [...relatorioPeriodoFotos, ...novos]
+      setRelatorioPeriodoFotos(atualizadas)
+      const { error } = await supabase.from('fazendas')
+        .update({ fotos_periodo: atualizadas.map(f=>f.path) }).eq('id', fz.id)
+      if (error) { showToast('Foto subiu mas não vinculou à fazenda: '+error.message, 'error'); return }
+      // Mantém invFazendas em dia: sem isso, reabrir o modal na mesma sessão traria a
+      // lista antiga e as fotos novas sumiriam da tela.
+      setInvFazendas(v=>v.map(x=>x.id===fz.id?{...x, fotos_periodo: atualizadas.map(f=>f.path)}:x))
+    } finally { setRelatorioPeriodoFotosCarregando(false) }
+  }
+
+  async function removerFotoPeriodo(indice, fz) {
+    const alvo = relatorioPeriodoFotos[indice]
+    if (!alvo || !fz?.id) return
+    const restantes = relatorioPeriodoFotos.filter((_,i)=>i!==indice)
+    setRelatorioPeriodoFotos(restantes)
+    try {
+      const { error } = await supabase.from('fazendas')
+        .update({ fotos_periodo: restantes.length ? restantes.map(f=>f.path) : null }).eq('id', fz.id)
+      if (error) throw error
+      setInvFazendas(v=>v.map(x=>x.id===fz.id?{...x, fotos_periodo: restantes.length?restantes.map(f=>f.path):null}:x))
+      // Só apaga do Storage depois que o vínculo saiu do banco — na ordem inversa, uma
+      // falha no update deixaria a fazenda apontando pra arquivo que não existe mais.
+      if (alvo.path) { await supabase.storage.from('relatorios').remove([alvo.path]); esquecerUrl(alvo.path) }
+    } catch(e) { showToast('Erro ao remover: '+e.message, 'error'); carregarFotosPeriodo(fz) }
+  }
+
   async function carregarAtividades() {
     setAtivLoading(true)
     try {
@@ -1010,6 +1075,12 @@ export default function AdminPanel({ onSwitchMode }) {
         voos: voosPeriodo, talhoesCatalogo, talhoesSelecionados: talhoesSel,
         areaTotalCadastrada: fz.areaTotal, produtosCatalogo: invProdutos,
       })
+      // O jsPDF só aceita dataURL. Foto recém-escolhida já tem uma; foto que veio salva
+      // da fazenda precisa ser baixada do Storage agora. Uma que falhe é descartada em
+      // vez de derrubar a emissão inteira.
+      const fotosParaPdf = (await Promise.all(
+        relatorioPeriodoFotos.map(f => f.dataUrl || urlParaDataUrl(f.url))
+      )).filter(Boolean)
       const doc = await gerarPDFFazendaPeriodo({
         fazenda: fz, voos: voosPeriodo, cons,
         incluirPendentes: relatorioPeriodoIncluirPendentes,
@@ -1017,7 +1088,7 @@ export default function AdminPanel({ onSwitchMode }) {
         kmlsFazenda: relatorioPeriodoMapaModo === 'upload' ? relatorioPeriodoKmls.map(k=>k.texto) : null,
         midiaNaPagina1: relatorioPeriodoMidiaPag1,
         observacaoAdmin: relatorioPeriodoObs,
-        fotosGerais: relatorioPeriodoFotos, supabase, pdfConfig,
+        fotosGerais: fotosParaPdf, supabase, pdfConfig,
       })
       const nomeBase = `${fz.nome?.replace(/\s+/g,'-').toLowerCase()}-${iniEfetivo}-a-${fimEfetivo}`
       if(tipo==='whats'){
@@ -4298,7 +4369,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                         onClick={()=>zerarProgresso(fz)}>Zerar</button>
                                     )}
                                     <button style={{background:'transparent',color:theme.primary,border:`1px solid ${theme.cardBorder2}`,borderRadius:6,padding:'4px 9px',fontSize:11,fontWeight:600,cursor:'pointer'}}
-                                      onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotos([]);setRelatorioPeriodoFz(fz)}}>Relatório</button>
+                                      onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotos([]);carregarFotosPeriodo(fz);setRelatorioPeriodoFz(fz)}}>Relatório</button>
                                   </div>
                                 </td>
                               </tr>
@@ -4357,7 +4428,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                   onClick={()=>zerarProgresso(fz)}>Zerar</button>
                               )}
                               <button style={{flex:1,background:'transparent',color:theme.primary,border:`1px solid ${theme.cardBorder2}`,borderRadius:theme.radius||8,padding:'7px 10px',fontSize:11.5,fontWeight:600,cursor:'pointer'}}
-                                onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotos([]);setRelatorioPeriodoFz(fz)}}>Relatório do período</button>
+                                onClick={()=>{setRelatorioPeriodoForm({dataIni:'',dataFim:''});setRelatorioPeriodoTalhoesSel(null);setRelatorioPeriodoObs('');setRelatorioPeriodoFotos([]);carregarFotosPeriodo(fz);setRelatorioPeriodoFz(fz)}}>Relatório do período</button>
                             </div>
                           </div>
                         ))}
@@ -4583,32 +4654,36 @@ export default function AdminPanel({ onSwitchMode }) {
 
                       <div style={{marginBottom:4}}>
                         <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>
-                          FOTOS DA FAZENDA (opcional{relatorioPeriodoFotos.length>0?` — ${relatorioPeriodoFotos.length} escolhida${relatorioPeriodoFotos.length>1?'s':''}`:''})
+                          FOTOS DA FAZENDA (opcional{relatorioPeriodoFotos.length>0?` — ${relatorioPeriodoFotos.length} salva${relatorioPeriodoFotos.length>1?'s':''}`:''})
+                        </div>
+                        <div style={{fontSize:10,color:'#aaa',marginBottom:6}}>
+                          {relatorioPeriodoFotosCarregando ? '⏳ Enviando...' : 'Ficam guardadas nesta fazenda e voltam sozinhas na próxima emissão.'}
                         </div>
                         {relatorioPeriodoFotos.length>0 && (
                           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(86px, 1fr))',gap:6,marginBottom:8}}>
                             {relatorioPeriodoFotos.map((foto,i)=>(
-                              <div key={i} style={{position:'relative'}}>
-                                <img src={foto} alt={`foto ${i+1}`} style={{width:'100%',height:66,objectFit:'cover',borderRadius:8,display:'block'}}/>
+                              <div key={foto.path||i} style={{position:'relative'}}>
+                                <img src={foto.dataUrl||foto.url} alt={`foto ${i+1}`} style={{width:'100%',height:66,objectFit:'cover',borderRadius:8,display:'block'}}/>
                                 <button title="Remover" style={{position:'absolute',top:3,right:3,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:20,height:20,fontSize:11,cursor:'pointer',lineHeight:1}}
-                                  onClick={()=>setRelatorioPeriodoFotos(fs=>fs.filter((_,j)=>j!==i))}>✕</button>
+                                  onClick={()=>removerFotoPeriodo(i, relatorioPeriodoFz)}>✕</button>
                                 <span style={{position:'absolute',bottom:3,left:3,background:'rgba(11,18,16,0.65)',color:'#fff',borderRadius:4,padding:'0 4px',fontSize:9,fontWeight:700}}>{i+1}</span>
                               </div>
                             ))}
                           </div>
                         )}
-                        <button style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:10,padding:'14px',fontSize:12,cursor:'pointer'}}
+                        {/* Travado durante o envio: dois cliques sobrepostos montariam a lista
+                            nova a partir de uma cópia velha e uma das fotos se perderia. */}
+                        <button disabled={relatorioPeriodoFotosCarregando}
+                          style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:10,padding:'14px',fontSize:12,cursor:relatorioPeriodoFotosCarregando?'wait':'pointer',opacity:relatorioPeriodoFotosCarregando?0.6:1}}
                           onClick={()=>document.getElementById('relatorio-periodo-foto-input')?.click()}>
-                          {relatorioPeriodoFotos.length>0?'📷 Adicionar mais fotos':'📷 Escolher fotos'}
+                          {relatorioPeriodoFotosCarregando?'⏳ Enviando...':relatorioPeriodoFotos.length>0?'📷 Adicionar mais fotos':'📷 Escolher fotos'}
                         </button>
                         {/* multiple: dá pra escolher várias de uma vez, e cada clique no botão
                             ACRESCENTA — quem escolheu 3 e lembrou de uma quarta não perde as 3. */}
                         <input id="relatorio-periodo-foto-input" type="file" accept="image/*" multiple style={{display:'none'}}
                           onChange={e=>{
                             const arquivos=Array.from(e.target.files||[]); if(!arquivos.length) return
-                            Promise.all(arquivos.map(f=>new Promise(res=>{
-                              const r=new FileReader(); r.onload=ev=>res(ev.target.result); r.onerror=()=>res(null); r.readAsDataURL(f)
-                            }))).then(novas=>setRelatorioPeriodoFotos(fs=>[...fs,...novas.filter(Boolean)]))
+                            adicionarFotosPeriodo(arquivos, relatorioPeriodoFz)
                             // Zera o input: sem isso, escolher o MESMO arquivo de novo não
                             // dispara onChange e parece que o botão travou.
                             e.target.value=''
