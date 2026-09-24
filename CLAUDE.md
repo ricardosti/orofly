@@ -4,9 +4,10 @@ Guia de operação do projeto. Escrito em **29/08/2026** na máquina antiga, ant
 migração para o Dell, e corrigido com o que a montagem do Dell revelou: o
 `JAVA_HOME` da seção 5 e a tabela de versões da seção 6 mudaram.
 
-Em **30/08/2026** ganhou as instruções de Ubuntu, para o Asus virar a segunda
-máquina de trabalho — e com elas a regra do `git pull` na seção 5, que passou a
-ser obrigatória.
+Entre **30/08** e **23/09/2026** o projeto rodou em duas máquinas (o Dell e um
+Asus com Ubuntu). O Asus saiu de cena, então as instruções de Ubuntu e o aviso
+sobre conflito entre máquinas foram removidos — se um dia voltar a ser duas, o
+histórico está no Git.
 
 Fica no repositório de propósito — assim sobrevive à próxima troca de máquina, e
 chega junto no `git clone`.
@@ -89,14 +90,13 @@ só, apontando para o SDK do Android:
 sdk.dir=C:/Users/ricar/AppData/Local/Android/Sdk
 ```
 
-No Ubuntu o caminho costuma ser `/home/<user>/Android/Sdk`. Barras normais funcionam
-nos dois sistemas — não precisa escapar nada.
+Barras normais funcionam — não precisa escapar nada.
 
 **O que instalar:** Node.js (aqui roda o v24), Git, Claude Code e — apenas se
 for gerar APK — o Android Studio mais o **JDK 21** (ver seção 5: o JDK que vem
 dentro do Android Studio não serve mais).
 
-O Claude Code instala pelo npm, igual nos dois sistemas:
+O Claude Code instala pelo npm:
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -106,30 +106,9 @@ npm install -g @anthropic-ai/claude-code
 nada fica preso na máquina antiga. O Claude Code usa a conta Anthropic — não é
 licença por máquina.
 
-### No Ubuntu (o Asus)
-
-Node pelo repositório da NodeSource, porque o `apt` padrão traz uma versão velha:
-
-```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - && sudo apt install -y nodejs git
-```
-
-JDK 21 pelo Temurin (só se for gerar APK/AAB):
-
-```bash
-sudo apt install -y wget apt-transport-https && wget -qO- https://packages.adoptium.net/artifactory/api/gpg/key/public | sudo tee /etc/apt/trusted.gpg.d/adoptium.asc && echo "deb https://packages.adoptium.net/artifactory/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/adoptium.list && sudo apt update && sudo apt install -y temurin-21-jdk
-```
-
-O caminho do `JAVA_HOME` muda entre distros — em vez de decorar, descubra:
-
-```bash
-readlink -f $(which javac) | sed 's|/bin/javac||'
-```
-
 > **A primeira vez que o `git push` rodar numa máquina nova, ele vai pedir
-> autenticação do GitHub.** No Windows abre uma janela do Credential Manager; no
-> Linux o mais simples é instalar o `gh` (`sudo apt install gh`) e rodar
-> `gh auth login`, que configura o Git junto. Depois disso fica guardado.
+> autenticação do GitHub.** No Windows abre uma janela do Credential Manager.
+> Depois disso fica guardado.
 
 ---
 
@@ -138,7 +117,7 @@ readlink -f $(which javac) | sed 's|/bin/javac||'
 Esta é a sequência usada em toda alteração, na ordem:
 
 ```bash
-# 0. SEMPRE começar por aqui — ver o aviso das duas máquinas abaixo
+# 0. sincroniza (rápido, e evita surpresa se algo foi alterado pelo painel do GitHub)
 git pull
 
 # 1. compilar e conferir que não quebrou nada
@@ -149,14 +128,6 @@ git add -A
 git commit -m "descrição da mudança"
 git push
 ```
-
-> **Duas máquinas, um repositório.** Desde 30/08/2026 o projeto roda no Dell e no
-> Asus (Ubuntu). O código mora no GitHub, então as duas veem tudo — mas se você
-> editar o mesmo arquivo nos dois sem sincronizar, o segundo `git push` é
-> recusado e vira conflito à toa. **O `git pull` do passo 0 não é opcional.**
->
-> Se o push for recusado mesmo assim, é porque a outra máquina subiu algo no meio
-> do caminho: `git pull --rebase` e depois `git push` resolve na maioria dos casos.
 
 Se a alteração também precisa ir para o Android:
 
@@ -172,14 +143,13 @@ JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot" ./gradlew 
 JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot" ./gradlew bundleRelease
 ```
 
-Esse `JAVA_HOME` é o do **Dell (Windows)**. No Ubuntu o caminho é outro — descubra
-com o `readlink` da seção 4 e troque; o resto do comando é idêntico.
+Esse `JAVA_HOME` é o do Dell. Se o Temurin for atualizado, o número da pasta muda
+e o comando quebra — confira o caminho real em `C:\Program Files\Eclipse Adoptium`.
 
 > **Não use o `jbr` do Android Studio.** Funcionava na versão antiga, mas o Android
 > Studio Quail 3 (2026.1.3) traz **JBR 25**, e o AGP 8.13 + Gradle 8.14.3 deste
 > projeto não aceitam: quebra com `Unsupported class file major version 69`
 > (69 = Java 25). Use o Temurin 21 — se esse erro aparecer, é JDK novo demais.
-> Vale nos dois sistemas.
 
 **Onde os arquivos aparecem:**
 
