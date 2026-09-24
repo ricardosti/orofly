@@ -336,6 +336,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [atrBuscaPiloto, setAtrBuscaPiloto] = useState('')
   const [atrBuscaTalhao, setAtrBuscaTalhao] = useState('')
   const [atrFiltroFaz, setAtrFiltroFaz] = useState('todas') // todas | deste | sem
+  const [atrFiltroTal, setAtrFiltroTal] = useState('todos') // todos | pendentes | feitos
   const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
@@ -5070,7 +5071,15 @@ export default function AdminPanel({ onSwitchMode }) {
                   })
                   const qtdSemPiloto = fazendasBusca.filter(f=>pilotosDaFazenda(f.id).length===0).length
                   const talhoesFaz = fazendaSel ? ordenarPorNome(invTalhoes.filter(t=>t.fazenda_id===fazendaSel.id)) : []
-                  const talhoesFiltrados = fTal ? talhoesFaz.filter(t=>nb(t.nome).includes(fTal)) : talhoesFaz
+                  const talhoesBusca = fTal ? talhoesFaz.filter(t=>nb(t.nome).includes(fTal)) : talhoesFaz
+                  // Filtro por situação de campo. "Pendentes" é a lista que interessa na hora
+                  // de distribuir serviço; "Feitos" serve pra conferir o que já saiu.
+                  const talhoesFiltrados = talhoesBusca.filter(t=>{
+                    const st = statusTalhoes[t.nome]
+                    if (atrFiltroTal==='pendentes') return st!=='FINALIZADO'
+                    if (atrFiltroTal==='feitos')    return st==='FINALIZADO'
+                    return true
+                  })
 
                   const inteiraAtual = (atrPilotoSel && atrFazendaSel) ? temFazendaInteira(atrPilotoSel, atrFazendaSel) : false
                   const marcadosAtual = (atrPilotoSel && atrFazendaSel) ? talhoesDoPiloto(atrPilotoSel, atrFazendaSel).map(pt=>pt.talhao_id) : []
@@ -5227,6 +5236,18 @@ export default function AdminPanel({ onSwitchMode }) {
                             ) : (
                               <>
                                 <div style={{padding:'9px 11px',borderBottom:`1px solid ${theme.divider}`}}>
+                                  <div style={{display:'flex',gap:4,marginBottom:7}}>
+                                    {[['todos','Todos',talhoesFaz.length],
+                                      ['pendentes','Pendentes',talhoesFaz.filter(t=>statusTalhoes[t.nome]!=='FINALIZADO').length],
+                                      ['feitos','Feitos',talhoesFaz.filter(t=>statusTalhoes[t.nome]==='FINALIZADO').length]].map(([v,lbl,n])=>(
+                                      <button key={v} onClick={()=>setAtrFiltroTal(v)}
+                                        style={{flex:1,background: atrFiltroTal===v?'#059669':theme.bg, color: atrFiltroTal===v?'#fff':theme.textMuted,
+                                          border:`1px solid ${atrFiltroTal===v?'#059669':theme.cardBorder2}`, borderRadius:7, padding:'4px 5px',
+                                          fontSize:10.5, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'}}>
+                                        {lbl} ({n})
+                                      </button>
+                                    ))}
+                                  </div>
                                   <input style={buscaInput} placeholder="Buscar talhão..." value={atrBuscaTalhao} onChange={e=>setAtrBuscaTalhao(e.target.value)}/>
                                   {!inteiraAtual && talhoesFiltrados.length>0 && (
                                     <div style={{display:'flex',gap:6,marginTop:7,alignItems:'center'}}>

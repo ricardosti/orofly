@@ -488,9 +488,19 @@ export default function PilotApp({onSwitchMode}) {
     setAvulsoAtual({ nome: file.name, blob: file, salvarOffline: avulsoSalvarOffline })
     setMapaViewerOpen(true)
   }
-  const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState([])
-  // Talhões atribuídos individualmente a este piloto (atribuição parcial de fazenda).
-  const [pilotoTalhoesIds, setPilotoTalhoesIds] = useState([])
+  // Permissões do piloto (fazendas inteiras + talhões avulsos).
+  //
+  // Guardadas em cache próprio porque a lista VAZIA significa "sem restrição, vê tudo" —
+  // então, enquanto a consulta não voltava, o piloto via TODAS as fazendas por um instante,
+  // ou pra sempre se estivesse sem sinal. Foi o que aconteceu em 23/09/2026: um piloto com
+  // 4 talhões atribuídos enxergou a lista inteira. `permissoesConhecidas` separa
+  // "ainda não sei" de "sei que não tem restrição".
+  const permCacheInicial = (() => {
+    try { return JSON.parse(localStorage.getItem('orofly_cache_permissoes') || 'null') } catch { return null }
+  })()
+  const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState(permCacheInicial?.fazendas || [])
+  const [pilotoTalhoesIds, setPilotoTalhoesIds] = useState(permCacheInicial?.talhoes || [])
+  const [permissoesConhecidas, setPermissoesConhecidas] = useState(!!permCacheInicial)
   const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
   const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState([])
   const [talhoesDB, setTalhoesDB] = useState([])
@@ -777,11 +787,24 @@ export default function PilotApp({onSwitchMode}) {
     // Permissão individual — se o admin marcou fazendas específicas pra esse piloto (Usuários >
     // 📍), ela vale por cima da permissão do time.
     if(profile?.id){
-      supabase.from('piloto_fazendas').select('fazenda_id').eq('piloto_id',profile.id)
-        .then(({data}) => { if(data) setPilotoFazendasIndividuais(data.map(d=>d.fazenda_id)) })
-      // Atribuição parcial: o piloto responde só por alguns talhões da fazenda.
-      supabase.from('piloto_talhoes').select('talhao_id').eq('piloto_id',profile.id)
-        .then(({data}) => { if(data) setPilotoTalhoesIds(data.map(d=>d.talhao_id)) })
+      // As duas juntas: só dá pra afirmar "este piloto não tem restrição" depois que as
+      // DUAS responderam. Separadas, a primeira a chegar já liberava a tela inteira.
+      Promise.all([
+        supabase.from('piloto_fazendas').select('fazenda_id').eq('piloto_id',profile.id),
+        supabase.from('piloto_talhoes').select('talhao_id').eq('piloto_id',profile.id),
+      ]).then(([rFaz, rTal]) => {
+        // Erro de rede não pode virar "sem restrição": mantém o que já estava em cache.
+        if (rFaz.error || rTal.error) {
+          console.warn('Permissões não carregaram:', rFaz.error?.message || rTal.error?.message)
+          return
+        }
+        const fazendas = (rFaz.data||[]).map(d=>d.fazenda_id)
+        const talhoes  = (rTal.data||[]).map(d=>d.talhao_id)
+        setPilotoFazendasIndividuais(fazendas)
+        setPilotoTalhoesIds(talhoes)
+        setPermissoesConhecidas(true)
+        try { localStorage.setItem('orofly_cache_permissoes', JSON.stringify({fazendas, talhoes})) } catch {}
+      })
     }
     // Reordena no cliente: o .order('nome') do Postgres e ordem de texto, entao TALHAO 10
     // vinha antes de TALHAO 2 e " 017-01" (com espaco na frente) pulava pro topo da lista.
@@ -3703,10 +3726,19 @@ Quando: ${tempoErroDebug.quando}`}
                 talhoesDB.filter(t=>pilotoTalhoesIds.includes(t.id)).map(t=>t.fazenda_id)
               )]
               const permitidas = [...new Set([...pilotoFazendasIndividuais, ...fazendasPorTalhao])]
+              // Só libera a lista inteira quando as permissões já chegaram E estão vazias.
+              // Antes disso, "vazio" pode ser só a consulta em andamento.
+              const semRestricao = permissoesConhecidas && permitidas.length===0
               const fazendasCliente = fazendasDB.filter(fz=>fz.cliente===form.cliente
                 && (norm(fz.nome)===norm(form.fazenda) || !fazendaCompleta(fz))
-                && (permitidas.length===0 || permitidas.includes(fz.id)))
+                && (semRestricao || permitidas.includes(fz.id)))
               const temCadastro = fazendasCliente.length>0
+              // O piloto TEM fazenda atribuída, mas nenhuma apareceu na lista local. Quase
+              // sempre é cache velho: a fazenda foi cadastrada depois da última vez que o app
+              // abriu com sinal. Sem este aviso, a tela só trocava o seletor por um campo de
+              // texto em branco e o piloto concluía que não tinha serviço nenhum.
+              const fazendasAtribuidasSumidas = permitidas.length>0
+                && !fazendasDB.some(fz=>permitidas.includes(fz.id))
               // Comparação tolerante a maiúsculas/espaços — cadastro pode ter "Fazenda X " vs "FAZENDA X"
               const fazendaSel = fazendasCliente.find(fz=>norm(fz.nome)===norm(form.fazenda))
               const selectVal = fazendaSel ? fazendaSel.nome : (form.fazenda ? 'Outros' : '')
@@ -3735,7 +3767,24 @@ Quando: ${tempoErroDebug.quando}`}
                       {(selectVal==='Outros')&&<FI label="NOME DA FAZENDA" ph="Digite o nome..." val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>}
                     </>
                   ) : (
-                    <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
+                    <>
+                      {fazendasAtribuidasSumidas && (
+                        <div style={{...sw.fw,background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:10,padding:'11px 13px',marginBottom:10}}>
+                          <div style={{fontSize:12.5,fontWeight:700,color:theme.warningText2||theme.warningText,marginBottom:3}}>
+                            ⚠️ Suas fazendas não carregaram
+                          </div>
+                          <div style={{fontSize:11.5,color:theme.warningText2||theme.warningText,lineHeight:1.5,marginBottom:9}}>
+                            Você tem fazenda atribuída, mas ela ainda não chegou neste aparelho.
+                            Costuma ser cadastro novo com o app aberto sem sinal.
+                          </div>
+                          <button onClick={()=>window.location.reload()}
+                            style={{background:theme.warningText2||'#b45309',color:'#fff',border:'none',borderRadius:9,padding:'8px 14px',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+                            🔄 Atualizar agora
+                          </button>
+                        </div>
+                      )}
+                      <FI label="FAZENDA" ph="Nome da Fazenda" val={form.fazenda} onChange={e=>{setForm(f=>({...f,fazenda:e.target.value}));autoGPS()}}/>
+                    </>
                   )}
                   {/* TALHÕES — lista multi-seleção; soma as áreas dos selecionados */}
                   {(()=>{

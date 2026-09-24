@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.6',
+    data: '2026-09-23',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Lista de fazendas errada no app do piloto',
+        texto: 'Dois pilotos viram listas erradas: um enxergou TODAS as fazendas mesmo com 4 talhoes atribuidos, e outro nao viu NENHUMA. Eram dois lados do mesmo problema — o app decidia a permissao antes dos dados chegarem. Lista de atribuicao vazia significa "sem restricao, ve tudo", entao enquanto a consulta nao voltava (ou o piloto estava sem sinal) o app liberava tudo. E quem tinha fazenda cadastrada ha poucos dias nao a via, porque o aparelho ainda tinha a lista antiga guardada. Agora a permissao tem memoria propria no aparelho, e o app so libera a lista inteira quando confirma que o piloto realmente nao tem restricao. Quando a fazenda atribuida nao chega no aparelho, aparece um aviso com botao de atualizar, em vez de a tela ficar em branco sem explicacao.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Filtro de situacao dos talhoes na atribuicao',
+        texto: 'Na coluna de talhoes entrou o filtro Todos / Pendentes / Feitos, com a contagem em cada botao. Pendentes e a lista que interessa na hora de distribuir servico; Feitos serve pra conferir o que ja saiu.',
+      },
+    ],
+  },
+  {
     versao: '5.5',
     data: '2026-09-22',
     itens: [
