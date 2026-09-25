@@ -24,6 +24,16 @@ export const NOVIDADES = [
       },
       {
         tipo: 'correcao',
+        titulo: 'GPS deslocado ao reaproveitar um mapa ja usado',
+        texto: 'Quando o mapa da fazenda era trocado por um novo, o celular continuava desenhando o mapa ANTIGO — e a bolinha do GPS saia fora do lugar. Subir o mapa na hora funcionava porque ali o arquivo novo estava em memoria. A causa: o arquivo no servidor tem caminho fixo e o mapa guardado no aparelho era identificado so pela fazenda, entao trocar o mapa nao invalidava nada. Agora cada envio gera uma versao e o aparelho busca o arquivo certo. Os mapas ja guardados vao ser baixados de novo na primeira abertura, o que ja corrige quem esta com mapa errado hoje.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Apagar o mapa do aparelho',
+        texto: 'No menu do mapa entrou "Apagar mapa do aparelho", pra liberar espaco no celular depois que o servico acaba. O mapa continua guardado no sistema e e baixado de novo na proxima vez que abrir. Trocar o mapa tambem passa a limpar sozinho as versoes antigas, que antes ficavam ocupando espaco pra sempre.',
+      },
+      {
+        tipo: 'correcao',
         titulo: 'Coordenada da mira e centro do mapa errados no mapa da fazenda',
         texto: 'No mapa vindo do cadastro da fazenda, a leitura de coordenada da mira saia corrompida e o centro do mapa dava resultado invalido. Os limites do mapa vem do banco como texto, e em JavaScript somar texto com numero junta os dois em vez de somar — "-22,80481" + 0,007 virava "-22,804810,007". O mapa carregado direto do aparelho nunca teve isso, porque ali os numeros vem do proprio arquivo.',
       },

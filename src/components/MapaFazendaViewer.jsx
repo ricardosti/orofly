@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Capacitor } from '@capacitor/core'
 import { Geolocation } from '@capacitor/geolocation'
-import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
+import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, apagarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 import { comprimentoMetros, areaHectares, perimetroMetros } from '../lib/medicao'
 import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
@@ -114,7 +114,9 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       setBoundsOverride(null)
       setViewportOverride(null)
       setTamCanvas({ width: 0, height: 0 })
-      const updateFazenda = { mapa_pdf_path: path, mapa_lat_min: null, mapa_lat_max: null, mapa_lng_min: null, mapa_lng_max: null, mapa_vp_x: 0, mapa_vp_y: 0, mapa_vp_w: 1, mapa_vp_h: 1 }
+      // Versão nova a cada envio: é ela que faz o cache do aparelho parar de valer.
+      const versaoNova = new Date().toISOString()
+      const updateFazenda = { mapa_pdf_path: path, mapa_versao: versaoNova, mapa_lat_min: null, mapa_lat_max: null, mapa_lng_min: null, mapa_lng_max: null, mapa_vp_x: 0, mapa_vp_y: 0, mapa_vp_w: 1, mapa_vp_h: 1 }
       if (geo.encontrado) {
         updateFazenda.mapa_lat_min = geo.bounds.latMin
         updateFazenda.mapa_lat_max = geo.bounds.latMax
@@ -136,7 +138,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       // true (troca de tela do "sem mapa" pro visualizador), então o ref ainda está null
       // nesse instante. Guarda no cache e deixa o useEffect de carregamento (que já roda
       // assim que mapaPdfPath muda) cuidar de renderizar, igual quando abre um mapa existente.
-      await salvarMapaCache(fazenda.id, blob)
+      await salvarMapaCache(fazenda.id, blob, versaoNova)
       setPathOverride(path)
       log('concluído — abrindo o mapa...')
     } catch (e2) {
@@ -289,7 +291,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     let cancelado = false
     ;(async () => {
       let mostrouCache = false
-      const cache = await lerMapaCache(fazenda.id)
+      const cache = await lerMapaCache(fazenda.id, fazenda.mapa_versao)
       log(`cache local: ${cache ? 'encontrado' : 'não tem'}`)
       if (cache && !cancelado) {
         try {
@@ -313,7 +315,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
           setTamCanvas({ width, height })
           log(`renderizado do servidor ✅ (${width}x${height})`)
         }
-        salvarMapaCache(fazenda.id, data)
+        salvarMapaCache(fazenda.id, data, fazenda.mapa_versao)
       } catch (e) {
         console.error('[MapaFazendaViewer] erro ao baixar/renderizar:', e)
         log(`erro ao baixar/renderizar: ${e?.message||e}`)
@@ -878,6 +880,16 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
             </>
           )}
           <button onClick={()=>{ iniciarCalibracao(); setMenuAberto(false) }} style={itemMenuStyle}>🎯 {bounds ? 'Recalibrar mapa' : 'Calibrar mapa'}</button>
+          {/* Libera espaço no celular depois que o serviço acabou. O mapa continua no
+              servidor: da próxima vez que abrir, baixa de novo. */}
+          {!modoAvulso && fazenda?.id && (
+            <button onClick={async()=>{
+              setMenuAberto(false)
+              if (!window.confirm('Apagar este mapa do aparelho? Ele continua guardado no sistema e será baixado de novo na próxima vez que você abrir — só não fica mais ocupando espaço no celular.')) return
+              const n = await apagarMapaCache(fazenda.id)
+              log(n ? `mapa apagado do aparelho (${n} arquivo${n>1?'s':''}) ✅` : 'não havia mapa guardado neste aparelho')
+            }} style={itemMenuStyle}>🗑️ Apagar mapa do aparelho</button>
+          )}
           <button disabled={enviando} onClick={()=>{ fileInputRef.current?.click(); setMenuAberto(false) }} style={itemMenuStyle}>🔄 {enviando ? 'Enviando...' : 'Trocar mapa (PDF)'}</button>
           {destino && (
             <a href={`https://maps.google.com/?q=${destino.lat},${destino.lng}`} target="_blank" rel="noreferrer" onClick={()=>setMenuAberto(false)} style={itemMenuStyle}>🗺️ Abrir no Maps</a>

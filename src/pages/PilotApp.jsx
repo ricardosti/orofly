@@ -784,7 +784,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_versao,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada em
     // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.

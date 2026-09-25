@@ -250,22 +250,51 @@ export function blobParaBase64(blob) {
 // Cache local do PDF do mapa (pasta Data do app, via @capacitor/filesystem) — depois da
 // primeira vez que o mapa foi baixado com internet, ele abre de novo em campo mesmo sem
 // sinal. Só existe no app nativo (Android/iOS); no navegador comum não faz nada.
-export async function lerMapaCache(fazendaId) {
+// A chave do cache leva a VERSÃO do mapa, não só o id da fazenda.
+//
+// Sem isso acontecia o bug de campo: o caminho no servidor é fixo
+// (mapas/<id>/mapa.pdf), então trocar o mapa sobrescrevia o arquivo mas a chave do
+// cache continuava a mesma. O aparelho seguia desenhando o PDF ANTIGO com os limites
+// NOVOS vindos do banco, e a bolinha do GPS saía deslocada. Subir o mapa na hora
+// funcionava porque ali o arquivo novo estava em memória, sem passar pelo cache.
+function chaveCache(fazendaId, versao) {
+  const v = versao ? String(versao).replace(/[^0-9]/g, '').slice(0, 14) : 'v0'
+  return `mapas-cache/${fazendaId}_${v}.pdf`
+}
+
+export async function lerMapaCache(fazendaId, versao) {
   if (!Capacitor.isNativePlatform()) return null
   try {
     const { Filesystem, Directory } = await import('@capacitor/filesystem')
-    const res = await Filesystem.readFile({ path: `mapas-cache/${fazendaId}.pdf`, directory: Directory.Data })
+    const res = await Filesystem.readFile({ path: chaveCache(fazendaId, versao), directory: Directory.Data })
     return base64ParaArrayBuffer(res.data)
   } catch { return null }
 }
 
-export async function salvarMapaCache(fazendaId, blobOuArrayBuffer) {
+/** Apaga do aparelho todos os mapas em cache desta fazenda (qualquer versão). */
+export async function apagarMapaCache(fazendaId) {
+  if (!Capacitor.isNativePlatform()) return 0
+  try {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem')
+    const { files } = await Filesystem.readdir({ path: 'mapas-cache', directory: Directory.Data })
+    const alvos = (files || []).map(f => f.name || f).filter(n => String(n).startsWith(`${fazendaId}_`) || String(n) === `${fazendaId}.pdf`)
+    for (const nome of alvos) {
+      await Filesystem.deleteFile({ path: `mapas-cache/${nome}`, directory: Directory.Data }).catch(() => {})
+    }
+    return alvos.length
+  } catch { return 0 }
+}
+
+export async function salvarMapaCache(fazendaId, blobOuArrayBuffer, versao) {
   if (!Capacitor.isNativePlatform()) return
   try {
     const { Filesystem, Directory } = await import('@capacitor/filesystem')
     const blob = blobOuArrayBuffer instanceof Blob ? blobOuArrayBuffer : new Blob([blobOuArrayBuffer])
     const base64 = await blobParaBase64(blob)
     await Filesystem.mkdir({ path: 'mapas-cache', directory: Directory.Data, recursive: true }).catch(() => {})
-    await Filesystem.writeFile({ path: `mapas-cache/${fazendaId}.pdf`, data: base64, directory: Directory.Data })
+    // Limpa as versões anteriores desta fazenda antes de gravar a nova — senão cada
+    // troca de mapa deixaria mais um PDF ocupando o celular do piloto pra sempre.
+    await apagarMapaCache(fazendaId)
+    await Filesystem.writeFile({ path: chaveCache(fazendaId, versao), data: base64, directory: Directory.Data })
   } catch (e) { console.error('Erro ao salvar mapa em cache local:', e) }
 }
