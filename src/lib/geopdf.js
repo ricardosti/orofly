@@ -72,8 +72,22 @@ export function distanciaKm(lat1, lng1, lat2, lng2) {
 // lado), mas os 4 cantos cadastrados correspondem só à área do mapa. Sem isso, o pin
 // cai deslocado pra dentro da tabela. Default = imagem inteira é o mapa (calibração manual
 // já corrige isso sozinha, sem precisar de viewport).
+// Os bounds podem chegar como TEXTO: as colunas mapa_lat_min/max e mapa_lng_min/max sao
+// `numeric` no Postgres, e numeric pode ser serializado como string no JSON da API. Com
+// string, `-` converte sozinho (a conta sai certa) mas `+` CONCATENA — "-21.17" + 0.003
+// vira "-21.170.003". Normalizar na entrada mata a classe inteira do problema em vez de
+// caçar operador por operador.
+function numerarBounds(b) {
+  if (!b) return null
+  return { latMin: Number(b.latMin), latMax: Number(b.latMax), lngMin: Number(b.lngMin), lngMax: Number(b.lngMax) }
+}
+
 export function latLngParaPixel(lat, lng, bounds, imgWidth, imgHeight, viewport) {
-  const { latMin, latMax, lngMin, lngMax } = bounds
+  const b = numerarBounds(bounds)
+  if (!b) return null
+  const { latMin, latMax, lngMin, lngMax } = b
+  lat = Number(lat); lng = Number(lng)
+  if ([latMin, latMax, lngMin, lngMax, lat, lng].some(n => !Number.isFinite(n))) return null
   if (latMax === latMin || lngMax === lngMin) return null
   const u = (lng - lngMin) / (lngMax - lngMin)
   const v = (lat - latMin) / (latMax - latMin)
@@ -200,7 +214,10 @@ export async function extrairGeoPdf(pdfData) {
 // a coordenada real que fica embaixo dele. Usado pela mira central: conforme o piloto
 // arrasta o mapa, dá pra saber a coordenada exata que ficou parada no meio da tela.
 export function pixelParaLatLng(x, y, bounds, imgWidth, imgHeight, viewport) {
-  const { latMin, latMax, lngMin, lngMax } = bounds
+  const b = numerarBounds(bounds)
+  if (!b) return null
+  const { latMin, latMax, lngMin, lngMax } = b
+  if ([latMin, latMax, lngMin, lngMax].some(n => !Number.isFinite(n))) return null
   if (!imgWidth || !imgHeight) return null
   const vp = viewport || { x: 0, y: 0, w: 1, h: 1 }
   if (!vp.w || !vp.h) return null

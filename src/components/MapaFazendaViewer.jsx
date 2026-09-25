@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { Geolocation } from '@capacitor/geolocation'
 import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
+import { comprimentoMetros, areaHectares, perimetroMetros } from '../lib/medicao'
 import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
 import { detectarCantosPorOcr } from '../lib/ocrCoordenadas'
 
@@ -33,6 +34,11 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   const [pathOverride, setPathOverride] = useState(null)
   // Mesma ideia do pathOverride, mas pros 4 cantos — depois de calibrar, mostra a posição
   // na hora sem esperar reabrir a tela.
+  // Medição: null = desligada; 'linha' mede distância; 'area' mede hectares.
+  // Os pontos guardam lat/lng (e não pixel) pra continuarem certos depois de
+  // girar, dar zoom ou recalibrar o mapa.
+  const [medindo, setMedindo] = useState(null)
+  const [pontosMedida, setPontosMedida] = useState([])
   const [boundsOverride, setBoundsOverride] = useState(null)
   // Mesma ideia, mas pra área útil do mapa dentro da folha renderizada (viewport) — nos
   // GeoPDFs reais dos clientes, o mapa ocupa só ~72% da largura da página (o resto é a
@@ -189,7 +195,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     : (fazenda?.lat && fazenda?.lng)
       ? { lat: fazenda.lat, lng: fazenda.lng }
       : temBounds
-        ? { lat: (fazenda.mapa_lat_min + fazenda.mapa_lat_max) / 2, lng: (fazenda.mapa_lng_min + fazenda.mapa_lng_max) / 2 }
+        ? { lat: (Number(fazenda.mapa_lat_min) + Number(fazenda.mapa_lat_max)) / 2, lng: (Number(fazenda.mapa_lng_min) + Number(fazenda.mapa_lng_max)) / 2 }
         : null
 
   // Modo avulso: carrega o PDF/imagem (do picker ou do armazenamento offline) uma vez ao
@@ -367,12 +373,12 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
             if (err) { aoErrar(err); return }
             if (!p) return
             setGpsErro(null)
-            setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy })
+            setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, altitude: p.coords.altitude })
           })
           watchId = id
         } else if (navigator.geolocation) {
           watchId = navigator.geolocation.watchPosition(
-            p => { setGpsErro(null); setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }) },
+            p => { setGpsErro(null); setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, altitude: p.coords.altitude }) },
             aoErrar,
             opts
           )
@@ -788,6 +794,24 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   const coordMira = pontoMira && bounds ? pixelParaLatLng(pontoMira.x, pontoMira.y, bounds, tamCanvas.width, tamCanvas.height, viewport) : null
   const distMiraGps = coordMira && pos ? distanciaKm(coordMira.lat, coordMira.lng, pos.lat, pos.lng) : null
 
+  // Pontos da medição convertidos pra pixel do canvas — refeito a cada render porque
+  // depende do bounds/viewport vigentes.
+  const pixelsMedida = medindo && bounds && tamCanvas.width
+    ? pontosMedida.map(p => latLngParaPixel(p.lat, p.lng, bounds, tamCanvas.width, tamCanvas.height, viewport)).filter(Boolean)
+    : []
+  const medidaDistancia = medindo === 'linha' ? comprimentoMetros(pontosMedida) : 0
+  const medidaArea = medindo === 'area' ? areaHectares(pontosMedida) : 0
+  const medidaPerimetro = medindo === 'area' ? perimetroMetros(pontosMedida) : 0
+
+  function addPontoMedida() {
+    if (!coordMira) return
+    setPontosMedida(v => [...v, { lat: coordMira.lat, lng: coordMira.lng }])
+  }
+  function desfazerPontoMedida() { setPontosMedida(v => v.slice(0, -1)) }
+  function sairDaMedicao() { setMedindo(null); setPontosMedida([]) }
+  const fmtDist = m => m >= 1000 ? (m/1000).toFixed(2) + ' km' : Math.round(m) + ' m'
+
+
   async function compartilharPontoMira() {
     if (!coordMira) return
     const lat = coordMira.lat.toFixed(6), lng = coordMira.lng.toFixed(6)
@@ -845,6 +869,14 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       {menuAberto && <div onClick={()=>setMenuAberto(false)} style={{ position:'absolute', inset:0, zIndex:20 }}/>}
       {menuAberto && (
         <div style={{ position:'absolute', top:'calc(env(safe-area-inset-top,0px) + 54px)', right:12, zIndex:21, background:'#fff', borderRadius:14, boxShadow:'0 10px 30px rgba(0,0,0,.4)', overflow:'hidden', minWidth:210 }}>
+          {/* Medição só faz sentido com o mapa calibrado — sem bounds não há como
+              converter pixel em coordenada, e a conta sairia inventada. */}
+          {bounds && (
+            <>
+              <button onClick={()=>{ setMedindo('area'); setPontosMedida([]); setMenuAberto(false) }} style={itemMenuStyle}>📐 Medir área (hectares)</button>
+              <button onClick={()=>{ setMedindo('linha'); setPontosMedida([]); setMenuAberto(false) }} style={itemMenuStyle}>📏 Medir distância</button>
+            </>
+          )}
           <button onClick={()=>{ iniciarCalibracao(); setMenuAberto(false) }} style={itemMenuStyle}>🎯 {bounds ? 'Recalibrar mapa' : 'Calibrar mapa'}</button>
           <button disabled={enviando} onClick={()=>{ fileInputRef.current?.click(); setMenuAberto(false) }} style={itemMenuStyle}>🔄 {enviando ? 'Enviando...' : 'Trocar mapa (PDF)'}</button>
           {destino && (
@@ -923,6 +955,34 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                   }}/>
                 </>
               )}
+              {/* Medição — desenhada dentro do container transformado, então acompanha
+                  pan, zoom e rotação sem conta nenhuma extra. O traço é dividido pela
+                  escala pra ficar com a mesma grossura na tela em qualquer zoom. */}
+              {medindo && pixelsMedida.length > 0 && tamCanvas.width > 0 && (
+                <>
+                  <svg viewBox={`0 0 ${tamCanvas.width} ${tamCanvas.height}`} preserveAspectRatio="none"
+                    style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', overflow:'visible' }}>
+                    {medindo === 'area' && pixelsMedida.length >= 3 && (
+                      <polygon points={pixelsMedida.map(p=>`${p.x},${p.y}`).join(' ')}
+                        fill="rgba(255,176,32,.22)" stroke="none"/>
+                    )}
+                    <polyline
+                      points={[...pixelsMedida, ...(medindo==='area' && pixelsMedida.length>=3 ? [pixelsMedida[0]] : [])].map(p=>`${p.x},${p.y}`).join(' ')}
+                      fill="none" stroke="#ffb020" strokeWidth={3/(escalaBase()*zoom)}
+                      strokeLinecap="round" strokeLinejoin="round"
+                      strokeDasharray={medindo==='area' && pixelsMedida.length<3 ? `${6/(escalaBase()*zoom)} ${5/(escalaBase()*zoom)}` : undefined}/>
+                  </svg>
+                  {pixelsMedida.map((p,i) => (
+                    <div key={i} style={{
+                      position:'absolute', left:`${(p.x/tamCanvas.width)*100}%`, top:`${(p.y/tamCanvas.height)*100}%`,
+                      transform:`translate(-50%,-50%) scale(${1/(escalaBase()*zoom)})`,
+                      width:18, height:18, borderRadius:'50%', background:'#ffb020', border:'2px solid #fff',
+                      display:'flex', alignItems:'center', justifyContent:'center', color:'#0b1210', fontSize:10, fontWeight:800,
+                      boxShadow:'0 2px 6px rgba(0,0,0,.4)', pointerEvents:'none',
+                    }}>{i+1}</div>
+                  ))}
+                </>
+              )}
               {calibrando && tamCanvas.width > 0 && [...pontosCalib, ...(pendente ? [pendente] : [])].map((p,i) => (
                 <div key={i} style={{
                   position:'absolute', left:`${(p.px/tamCanvas.width)*100}%`, top:`${(p.py/tamCanvas.height)*100}%`,
@@ -983,7 +1043,44 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
           {/* Banner flutuante do rodapé — coordenada da MIRA central (não do GPS), atualiza
               em tempo real conforme arrasta o mapa, com a distância até você e um botão de
               compartilhar esse ponto exato. */}
-          {!calibrando && !calibrandoImagem && (
+          {/* Barra da MEDIÇÃO — ocupa o lugar da barra de coordenada enquanto mede, pra
+              não empilhar dois painéis em cima do mapa num celular. */}
+          {medindo && !calibrando && !calibrandoImagem && (
+            <div style={{ position:'absolute', left:12, right:12, zIndex:16, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
+              background:'rgba(11,18,16,.9)', color:'#fff', borderRadius:14, padding:'11px 12px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:9 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:10.5, color:'#ffb020', fontWeight:700, letterSpacing:.4 }}>
+                    {medindo==='area' ? '📐 MEDINDO ÁREA' : '📏 MEDINDO DISTÂNCIA'} · {pontosMedida.length} {pontosMedida.length===1?'ponto':'pontos'}
+                  </div>
+                  <div style={{ fontSize:17, fontWeight:800, marginTop:2 }}>
+                    {medindo==='area'
+                      ? (pontosMedida.length>=3 ? `${medidaArea.toFixed(2)} ha` : '—')
+                      : (pontosMedida.length>=2 ? fmtDist(medidaDistancia) : '—')}
+                  </div>
+                  <div style={{ fontSize:10.5, color:'#9fc2af', marginTop:1 }}>
+                    {medindo==='area'
+                      ? (pontosMedida.length>=3 ? `perímetro ${fmtDist(medidaPerimetro)}` : 'marque pelo menos 3 pontos')
+                      : (pontosMedida.length>=2 ? `${pontosMedida.length-1} ${pontosMedida.length-1===1?'trecho':'trechos'}` : 'marque pelo menos 2 pontos')}
+                  </div>
+                </div>
+                <button onClick={sairDaMedicao} title="Sair da medição"
+                  style={{ width:34, height:34, borderRadius:'50%', background:'rgba(255,255,255,.15)', border:'none', color:'#fff', fontSize:15, cursor:'pointer', flexShrink:0 }}>✕</button>
+              </div>
+              <div style={{ display:'flex', gap:7 }}>
+                <button onClick={addPontoMedida} disabled={!coordMira}
+                  style={{ flex:2, background:'#ffb020', color:'#0b1210', border:'none', borderRadius:11, padding:'11px', fontSize:13, fontWeight:800, cursor:'pointer', opacity: coordMira?1:.4 }}>
+                  ＋ Marcar ponto na mira
+                </button>
+                <button onClick={desfazerPontoMedida} disabled={!pontosMedida.length}
+                  style={{ flex:1, background:'rgba(255,255,255,.15)', color:'#fff', border:'none', borderRadius:11, padding:'11px', fontSize:12.5, fontWeight:700, cursor:'pointer', opacity: pontosMedida.length?1:.4 }}>
+                  ↩ Desfazer
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!medindo && !calibrando && !calibrandoImagem && (
             <div style={{ position:'absolute', left:12, right:12, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
               background:'rgba(11,18,16,.82)', color:'#fff', borderRadius:14, padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ flex:1, minWidth:0 }}>
@@ -995,7 +1092,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                       🎯 {formatarCoord(coordMira.lat, coordMira.lng)}
                     </div>
                     <div style={{ fontSize:10.5, color: gpsErro && !pos ? '#ffb0a0' : '#9fc2af', marginTop:2 }}>
-                      {pos ? `a ${distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você`
+                      {pos ? `a ${distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você${
+                        // Altitude do GPS do celular erra bem mais que a posição no plano
+                        // (dezenas de metros). Vai como referência, com o "~" lembrando disso.
+                        Number.isFinite(pos.altitude) ? ` · ~${Math.round(pos.altitude)} m de altitude` : ''}`
                         : gpsErro ? `⚠️ sem sinal de GPS (${gpsErro}) — verifique se o GPS do celular está ligado`
                         : 'buscando seu GPS...'}
                     </div>

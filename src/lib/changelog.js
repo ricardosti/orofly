@@ -9,6 +9,27 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.9',
+    data: '2026-09-25',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Medir area e distancia no mapa',
+        texto: 'No menu do mapa entraram "Medir area (hectares)" e "Medir distancia". Funciona pela mira do centro: arraste o mapa ate o canto que quer marcar e toque em "Marcar ponto na mira" — no celular, mirar e mais preciso que acertar o dedo na tela. A area aparece em hectares com o perimetro, e a distancia em metros ou km, atualizando a cada ponto. Tem Desfazer, e o desenho acompanha zoom e rotacao. So aparece com o mapa calibrado, porque sem calibracao a conta seria inventada.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Altitude do GPS no mapa',
+        texto: 'A altitude aparece junto da distancia ate a mira. Vem com "~" de proposito: a altitude do GPS de celular erra dezenas de metros, bem mais que a posicao no plano, entao serve de referencia e nao para decisao.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Coordenada da mira e centro do mapa errados no mapa da fazenda',
+        texto: 'No mapa vindo do cadastro da fazenda, a leitura de coordenada da mira saia corrompida e o centro do mapa dava resultado invalido. Os limites do mapa vem do banco como texto, e em JavaScript somar texto com numero junta os dois em vez de somar — "-22,80481" + 0,007 virava "-22,804810,007". O mapa carregado direto do aparelho nunca teve isso, porque ali os numeros vem do proprio arquivo.',
+      },
+    ],
+  },
+  {
     versao: '5.8',
     data: '2026-09-25',
     itens: [
