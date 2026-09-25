@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '5.8',
+    data: '2026-09-25',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Finalizado Parcial: da pra ver o saldo e fechar o talhao',
+        texto: 'Ao retomar um voo parcial, o campo se chamava AREA FEITA ATE AGORA e o piloto entendia que era o total do talhao. So que ele so aceita o saldo daquele voo — quem digitava 100 num talhao de 100 via o numero virar 65 sem nenhuma explicacao. Agora o campo se chama AREA FEITA NESTE VOO, aparece em cima quanto o talhao tem, quanto ja foi aplicado antes e qual o saldo, e embaixo a soma acumulada com um visto verde quando o talhao fecha. Se o numero digitado passar do saldo, a tela diz que cortou e por que. E entrou o botao "Fiz o talhao todo", que preenche o saldo inteiro de uma vez.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Pincel da marcacao de foto mais grosso',
+        texto: 'O traco fino saia com 0,3 mm no PDF impresso, quase invisivel. Agora sao tres espessuras (Fino, Medio e Grosso), o padrao e o Medio, e a espessura acompanha o tamanho da foto — antes o mesmo traco ficava fino numa foto grande e grosso numa pequena.',
+      },
+    ],
+  },
+  {
     versao: '5.7',
     data: '2026-09-23',
     itens: [

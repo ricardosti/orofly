@@ -34,7 +34,11 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   const cropDragRef = useRef(null)
   const [modo, setModo] = useState('desenho') // 'desenho' | 'corte'
   const [cor, setCor] = useState(CORES[0].hex)
-  const [espessura, setEspessura] = useState('fino')
+  const [espessura, setEspessura] = useState('medio')
+  // Fracao do maior lado da imagem, nao pixel fixo: a foto pode chegar com 1280 px
+  // ou com 700, e o traco de 4 px que era discreto numa ficava grosso na outra.
+  // Assim a marcacao sai com a mesma espessura relativa sempre.
+  const FATOR_ESPESSURA = { fino: 0.006, medio: 0.012, grosso: 0.020 }
   const [desenhando, setDesenhando] = useState(false)
   const [historico, setHistorico] = useState([])
   const [pronto, setPronto] = useState(false)
@@ -113,7 +117,8 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
     const ultimo = ultimoPontoRef.current
     if (!ultimo) return
     ctx.strokeStyle = cor
-    ctx.lineWidth = espessura==='grosso' ? 10 : 4
+    // Minimo de 3 px pra nunca sumir numa imagem pequena.
+    ctx.lineWidth = Math.max(3, Math.round(Math.max(canvas.width, canvas.height) * (FATOR_ESPESSURA[espessura] ?? FATOR_ESPESSURA.medio)))
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.beginPath()
@@ -295,7 +300,7 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
                   style={{ width:30, height:30, borderRadius:'50%', background:c.hex, border: cor===c.hex ? '3px solid #00A86B' : '2px solid rgba(255,255,255,.4)', cursor:'pointer' }}/>
               ))}
               <div style={{ width:1, height:24, background:'rgba(255,255,255,.2)', margin:'0 6px' }}/>
-              {[['fino','Fino'],['grosso','Grosso']].map(([v,label]) => (
+              {[['fino','Fino'],['medio','Médio'],['grosso','Grosso']].map(([v,label]) => (
                 <button key={v} onClick={()=>setEspessura(v)} style={{ background: espessura===v?'#00A86B':'rgba(255,255,255,.15)', color:'#fff', border:'none', borderRadius:14, padding:'6px 12px', fontSize:11.5, fontWeight:600, cursor:'pointer' }}>{label}</button>
               ))}
             </div>

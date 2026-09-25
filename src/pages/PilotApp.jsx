@@ -522,6 +522,10 @@ export default function PilotApp({onSwitchMode}) {
   const [sosConfirm,setSosConfirm] = useState(false)
   const [modalOpen,setModalOpen] = useState(false)
   const [parcialModalOpen,setParcialModalOpen] = useState(false)
+  // Guarda o valor que o piloto tentou digitar quando passa do saldo. Antes o número
+  // era cortado em silêncio: ele escrevia 100 (o talhão inteiro), virava 65 (o saldo)
+  // e nada explicava. Agora a tela conta o que aconteceu.
+  const [avisoCorteArea,setAvisoCorteArea] = useState(null)
   // Escolha ao apertar "Finalizar": fechar tudo (finalizado) ou registrar como Finalizado
   // Parcial — antes eram 2 botões separados (um deles enorme, sempre visível); agora os dois
   // caminhos partem do mesmo botão "Finalizar", perguntando na hora.
@@ -4952,9 +4956,53 @@ Quando: ${tempoErroDebug.quando}`}
                 })}
               </div>
             ) : (
-              <FI label="ÁREA FEITA ATÉ AGORA (HA)" ph="Ex: 32" val={form.area_feita} type="number"
-                min={0} max={(parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):undefined}
-                onChange={e=>setForm(f=>({...f,area_feita:limitarArea(e.target.value, (parseFloat(f.area_ha)||0)>0?parseFloat(f.area_ha):null)}))}/>
+              <>
+                {/* Retomada de parcial: o piloto precisa ver os três números juntos, senão
+                    não tem como saber se o que ele digita é o do dia ou o total do talhão. */}
+                {(()=>{
+                  const anterior = parseFloat(form.area_feita_anterior)||0
+                  if (anterior <= 0.05) return null
+                  const saldoVoo = parseFloat(form.area_ha)||0
+                  const agora = parseFloat(form.area_feita)||0
+                  const acumulado = +(anterior+agora).toFixed(2)
+                  const totalTalhao = (parseFloat(form.area_talhao_total)||0) || +(anterior+saldoVoo).toFixed(2)
+                  const fecha = Math.abs(totalTalhao-acumulado) <= 0.05
+                  return (
+                    <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2||theme.divider}`,borderRadius:10,padding:'10px 12px',marginBottom:10,fontSize:11.5,lineHeight:1.6,color:theme.textMuted}}>
+                      <div>Talhão tem <strong style={{color:theme.text}}>{totalTalhao.toFixed(1)} ha</strong> · já aplicados antes <strong style={{color:theme.text}}>{anterior.toFixed(1)} ha</strong> · <strong style={{color:theme.text}}>saldo {saldoVoo.toFixed(1)} ha</strong></div>
+                      <div style={{marginTop:3}}>
+                        Somando o que você digitar: <strong style={{color: fecha?'#00A86B':theme.text}}>{acumulado.toFixed(1)} de {totalTalhao.toFixed(1)} ha</strong>
+                        {fecha && <span style={{color:'#00A86B',fontWeight:700}}> · talhão fecha ✓</span>}
+                      </div>
+                    </div>
+                  )
+                })()}
+                <FI label="ÁREA FEITA NESTE VOO (HA)" ph="Ex: 32" val={form.area_feita} type="number"
+                  min={0} max={(parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):undefined}
+                  onChange={e=>{
+                    const teto = (parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):null
+                    const digitado = parseFloat(e.target.value)
+                    // Só avisa quando o corte realmente aconteceu, e some assim que o valor voltar
+                    // pra dentro do saldo.
+                    setAvisoCorteArea(teto!=null && !isNaN(digitado) && digitado>teto ? {digitado, teto} : null)
+                    setForm(f=>({...f,area_feita:limitarArea(e.target.value, teto)}))
+                  }}/>
+                {avisoCorteArea && (
+                  <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:12,fontSize:11.5,lineHeight:1.5,color:theme.warningText2||theme.warningText}}>
+                    Este voo só pode registrar até <strong>{avisoCorteArea.teto.toFixed(1)} ha</strong>, que é o saldo do talhão — por isso o {avisoCorteArea.digitado} virou {avisoCorteArea.teto.toFixed(1)}.
+                    {(parseFloat(form.area_feita_anterior)||0) > 0.05 && ' O que foi aplicado antes já está contado e não precisa ser digitado de novo.'}
+                  </div>
+                )}
+                {/* Atalho do "fiz o talhão inteiro": preenche o saldo cheio, que é o caso mais
+                    comum de quem volta pra fechar o que faltava. */}
+                {(parseFloat(form.area_ha)||0) > 0 && Math.abs((parseFloat(form.area_feita)||0)-(parseFloat(form.area_ha)||0)) > 0.05 && (
+                  <button type="button"
+                    onClick={()=>{ setAvisoCorteArea(null); setForm(f=>({...f,area_feita:String(+(parseFloat(f.area_ha)||0).toFixed(2))})) }}
+                    style={{background:theme.successBg,color:'#00A86B',border:'1px solid #00A86B',borderRadius:10,padding:'9px 12px',fontSize:12,fontWeight:700,cursor:'pointer',marginTop:-6,marginBottom:12,width:'100%'}}>
+                    ✓ Fiz o talhão todo — preencher os {(parseFloat(form.area_ha)||0).toFixed(1)} ha do saldo
+                  </button>
+                )}
+              </>
             )}
 
             {total>0&&(
