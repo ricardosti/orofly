@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.0',
+    data: '2026-09-27',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Fazenda mostrava porcentagem menor que a do relatorio',
+        texto: 'A GLEBA B aparecia com 73% na lista de Fazendas e 99,99% no relatorio da mesma fazenda. O relatorio estava certo: a lista ignorava os voos em Finalizado Parcial, e havia um voo assim com 52,74 ha aplicados. Voo parcial aplicou area de verdade — o piloto voou, o produto saiu, so nao terminou o talhao naquele dia. Agora ele conta em todo lugar que mede area, progresso ou horas: lista de fazendas, dashboard, area do periodo e horas por drone. So nao conta na notificacao de "finalizou um voo", que e evento e nao medida. Alguns numeros do dashboard vao SUBIR por isso — estavam menores que a realidade.',
+      },
+    ],
+  },
+  {
     versao: '5.9',
     data: '2026-09-25',
     itens: [

@@ -27,6 +27,18 @@ import { agregarConsolidado } from '../lib/consolidado'
 // escondia hectare trabalhado e fazia o avanço da fazenda parecer menor do que é.
 const STATUS_NO_CONSOLIDADO = ['finalizado', 'pausado_dia']
 
+// Voo em Finalizado Parcial JÁ APLICOU área — o piloto voou, o produto saiu, só não
+// terminou o talhão naquele dia. Então em toda conta de ÁREA APLICADA, PROGRESSO ou
+// HORAS ele precisa entrar, senão o número sai menor que a realidade.
+//
+// Foi exatamente o que aconteceu em 26/09/2026: a GLEBA B mostrava 73% na lista de
+// fazendas e 99,99% no relatório. A diferença eram 52,74 ha de um único voo parcial que
+// a lista ignorava e o relatório contava. O relatório estava certo.
+//
+// A exceção é notificação ("fulano finalizou um voo"), que é EVENTO e não medida — ali
+// parcial não conta mesmo.
+const STATUS_COM_AREA_APLICADA = ['finalizado', 'pausado_dia']
+
 const CAMPOS_NUMERICOS_EDICAO = [
   'area_ha', 'area_feita', 'bordadura', 'area_deduzida', 'area_nao_aplicada',
   'vazao_i', 'vazao_f', 'altura', 'velocidade_drone', 'faixa_aplicacao',
@@ -1451,7 +1463,7 @@ export default function AdminPanel({ onSwitchMode }) {
   function progressoFazenda(fz) {
     const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
     const areaTotal = talhoesFz.reduce((a,t)=>a+parseFloat(t.area_ha||0),0)
-    const relatoriosFz = relatorios.filter(r=>r.fazenda===fz.nome && r.cliente===fz.cliente && r.status==='finalizado')
+    const relatoriosFz = relatorios.filter(r=>r.fazenda===fz.nome && r.cliente===fz.cliente && STATUS_COM_AREA_APLICADA.includes(r.status))
     const areaRealizada = relatoriosFz.reduce((a,r)=>a+areaLiquida(r),0)
     const bordaduraRealizada = relatoriosFz.reduce((a,r)=>a+(parseFloat(r.bordadura)||0),0)
     const pct = areaTotal>0 ? Math.min(100,((areaRealizada+bordaduraRealizada)/areaTotal)*100) : null
@@ -2230,7 +2242,7 @@ export default function AdminPanel({ onSwitchMode }) {
               if(dashProdutos.length && !(r.produtos||[]).some(p=>dashProdutos.includes(p.split(' - ')[0]))) return false
               return true
             })
-            const relTodos = relatorios.filter(r => r.status==='finalizado')
+            const relTodos = relatorios.filter(r => STATUS_COM_AREA_APLICADA.includes(r.status))
 
             // ── Cálculos base ──
             const totalArea = rel.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
@@ -2894,7 +2906,7 @@ export default function AdminPanel({ onSwitchMode }) {
               ini.setMonth(0,1); ini.setHours(0,0,0,0); return {ini,fim:new Date()}
             }
             const {ini:pIni, fim:pFim} = periodoRange()
-            const relPeriodo = relatorios.filter(r=>r.status==='finalizado'&&r.dt_inicio&&new Date(r.dt_inicio)>=pIni&&new Date(r.dt_inicio)<=pFim)
+            const relPeriodo = relatorios.filter(r=>STATUS_COM_AREA_APLICADA.includes(r.status)&&r.dt_inicio&&new Date(r.dt_inicio)>=pIni&&new Date(r.dt_inicio)<=pFim)
             const areaTotalSust = relPeriodo.reduce((a,r)=>a+parseFloat(r.area_ha||0),0)
 
             const combustivelAviacao = areaTotalSust*sustAviacaoLha
@@ -3262,7 +3274,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
             // Calcula horas voadas por drone (cruzando com relatórios)
             const horasDrone = {}
-            relatorios.filter(r=>r.status==='finalizado'&&r.dt_inicio&&r.dt_fim).forEach(r=>{
+            relatorios.filter(r=>STATUS_COM_AREA_APLICADA.includes(r.status)&&r.dt_inicio&&r.dt_fim).forEach(r=>{
               const key = r.drone?.trim().toLowerCase()
               if (!key) return
               const mins = Math.max(0,Math.round((new Date(r.dt_fim)-new Date(r.dt_inicio))/60000))
@@ -3940,7 +3952,7 @@ export default function AdminPanel({ onSwitchMode }) {
               const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
               const areaTotal = talhoesFz.reduce((a,t)=>a+parseFloat(t.area_ha||0),0)
               const relatoriosFz = relatorios.filter(r=>
-                r.fazenda===fz.nome && r.cliente===fz.cliente && r.status==='finalizado' &&
+                r.fazenda===fz.nome && r.cliente===fz.cliente && STATUS_COM_AREA_APLICADA.includes(r.status) &&
                 (!fz.campanha_inicio || new Date(r.created_at) >= new Date(fz.campanha_inicio))
               )
               const areaRealizada = relatoriosFz.reduce((a,r)=>a+areaLiquida(r),0)
