@@ -961,8 +961,8 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // `linhas` chega pronto do painel: [{ modalidade, fazenda, cliente, talhoes,
 // talhoesTocados, area, realizado, emAberto, pct, status }]
 export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig = null }) {
-  await carregarEmpresaConfig(pdfConfig)
-  const { jsPDF } = await import('jspdf')
+  // EMPRESA e jsPDF vêm do módulo, igual nos outros geradores — quem carrega a
+  // configuração da empresa é o setEmpresaConfig, chamado lá no painel.
   const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: [297, 210] })
   const PW = 297, PH = 210, M = 10, CW = PW - M * 2
   // Mesmas cores dos outros relatórios (elas são locais de cada gerador, não globais).
@@ -970,7 +970,15 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
   const DK = [17,26,20], GR = [120,140,130]
   const fundoBranco = () => { doc.setFillColor(255,255,255); doc.rect(0,0,PW,PH,'F') }
   const nHa = v => (v||0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 })
-  const fmtD = d => d ? String(d).split('-').reverse().join('/') : '—'
+  const fmtD = d => d ? String(d).split('-').reverse().join('/') : '-'
+  // A fonte padrão do jsPDF (helvetica) não tem travessão, aspas curvas nem reticências:
+  // o caractere some sem erro nenhum. "CAMBUÍ II – ANGATUBA" saía "CAMBUÍ II  ANGATUBA".
+  // Troca pelos equivalentes que a fonte tem.
+  const txt = v => String(v ?? '')
+    .replace(/[–—]/g, '-')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/…/g, '...')
 
   fundoBranco()
   let y = M
@@ -981,7 +989,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
   doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(...DK)
   doc.text('SEQUÊNCIA DE OPERAÇÃO', PW - M, y + 8, { align:'right' })
   doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...GR)
-  doc.text(`Período: ${fmtD(periodo.de)} a ${fmtD(periodo.ate)}`, PW - M, y + 13.5, { align:'right' })
+  doc.text(txt(`Período: ${fmtD(periodo.de)} a ${fmtD(periodo.ate)}`), PW - M, y + 13.5, { align:'right' })
   doc.setFontSize(6.5); doc.setTextColor(...G)
   doc.text('T E C N O L O G I A   A G R Í C O L A   A E R O A P L I C A D A', PW - M, y + 18.5, { align:'right' })
   y += 23
@@ -1053,7 +1061,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
     doc.setFillColor(240,248,243); doc.rect(M, y, CW, 5.8, 'F')
     doc.setFillColor(...G); doc.rect(M, y, 1.4, 5.8, 'F')
     doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(...G)
-    doc.text(String(mod).toUpperCase(), M+4, y+4)
+    doc.text(txt(mod).toUpperCase(), M+4, y+4)
     y += 5.8
 
     doGrupo.forEach((l,i)=>{
@@ -1075,7 +1083,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
         if (ci===4 && l.realizado>0) { doc.setFont('helvetica','bold'); doc.setTextColor(...G) }
         else if (ci===7) { doc.setFontSize(5.6); doc.setTextColor(...GR) }
         else { doc.setFont('helvetica','normal'); doc.setTextColor(...DK); doc.setFontSize(6.4) }
-        doc.text(truncFit(doc, String(valores[ci]), c[1]-4), x, y+3.7, { align: c[2]==='r'?'right':'left' })
+        doc.text(truncFit(doc, txt(valores[ci]), c[1]-4), x, y+3.7, { align: c[2]==='r'?'right':'left' })
       })
       y += 5.4
     })
@@ -1085,7 +1093,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
       realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0)}), {talhoes:0,area:0,realizado:0,emAberto:0})
     doc.setFillColor(235,243,238); doc.rect(M, y, CW, 5.6, 'F')
     doc.setFontSize(6.4); doc.setFont('helvetica','bold'); doc.setTextColor(...G)
-    doc.text(`TOTAL ${String(mod).toUpperCase()}`, xDe(0)+2, y+3.8)
+    doc.text(`TOTAL ${txt(mod).toUpperCase()}`, xDe(0)+2, y+3.8)
     const totais = [null,null,String(g.talhoes),nHa(g.area),nHa(g.realizado),nHa(g.emAberto),
       `${g.area>0?Math.floor(Math.min(100,(g.realizado/g.area)*100)):0}%`,null]
     COLS.forEach((c,ci)=>{
