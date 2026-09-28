@@ -1052,7 +1052,8 @@ export default function AdminPanel({ onSwitchMode }) {
   }
 
   async function gerarRelatorioPeriodo(fz, dataIni, dataFim, tipo) {
-    if(!dataIni || !dataFim){ showToast('Escolha o período (data inicial e final)','error'); return }
+    // Data em branco = sem limite daquele lado. Deixar as duas vazias puxa o histórico
+    // inteiro da fazenda, que é o caso de "quero tudo o que já foi feito aqui".
     setRelatorioPeriodoLoading(tipo)
     try {
       const talhoesFzAtual = invTalhoes.filter(t=>t.fazenda_id===fz.id)
@@ -1061,7 +1062,9 @@ export default function AdminPanel({ onSwitchMode }) {
       const voosPeriodo = relatorios.filter(r=>{
         if(r.cliente!==fz.cliente || r.fazenda!==fz.nome || !STATUS_NO_CONSOLIDADO.includes(r.status)) return false
         const dRef = (r.dt_inicio || r.created_at || '').slice(0,10)
-        if(!(dRef && dRef>=dataIni && dRef<=dataFim)) return false
+        if(!dRef) return false
+        if(dataIni && dRef < dataIni) return false
+        if(dataFim && dRef > dataFim) return false
         const talhoesDoVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
         return talhoesDoVoo.length===0 || talhoesDoVoo.some(n=>talhoesSel.includes(n))
       })
@@ -1072,8 +1075,9 @@ export default function AdminPanel({ onSwitchMode }) {
         .map(r => (r.dt_inicio || r.created_at || '').slice(0,10))
         .filter(Boolean)
         .sort()
-      const iniEfetivo = datasVoos[0] || dataIni
-      const fimEfetivo = datasVoos[datasVoos.length-1] || dataFim
+      const hojeISO = new Date().toISOString().slice(0,10)
+      const iniEfetivo = datasVoos[0] || dataIni || hojeISO
+      const fimEfetivo = datasVoos[datasVoos.length-1] || dataFim || hojeISO
 
       let pdfConfig
       try {
@@ -4519,6 +4523,13 @@ export default function AdminPanel({ onSwitchMode }) {
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
+                        {/* Deixar as duas datas em branco puxa o histórico inteiro — dizer
+                            isso na tela evita que alguém ache que o campo é obrigatório. */}
+                        {!relatorioPeriodoForm.dataIni && !relatorioPeriodoForm.dataFim && (
+                          <div style={{width:'100%',fontSize:11,color:'#059669',fontWeight:600,marginBottom:2}}>
+                            ✓ Sem data preenchida: entra <strong>todo o histórico</strong> desta fazenda
+                          </div>
+                        )}
                         {[['7',7],['30',30],['Mês atual','mes'],['Todo o período','tudo']].map(([lbl,val])=>(
                           <button key={lbl} style={{background: val==='tudo'?theme.successBg:theme.bg, color: val==='tudo'?'#059669':theme.textMuted, border:'none', borderRadius:14, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer'}}
                             onClick={()=>{

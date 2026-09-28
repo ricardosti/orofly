@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.2',
+    data: '2026-09-27',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Data em branco no Relatorio do Periodo = todo o historico',
+        texto: 'Antes, gerar sem preencher as datas dava o aviso "Escolha o periodo" e nao saia nada. Agora campo em branco quer dizer sem limite: deixando os dois vazios entra todo o historico da fazenda, e a tela avisa isso em verde. Da pra preencher so um lado tambem — so o DE traz dali em diante, so o ATE traz tudo ate aquela data.',
+      },
+    ],
+  },
+  {
     versao: '6.1',
     data: '2026-09-27',
     itens: [
