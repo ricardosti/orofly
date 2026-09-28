@@ -65,7 +65,9 @@ const CircularGauge = ({pct=0, size=42, color, track='#f7ddb0'}) => {
 const CLIENTES_DEFAULT = ['Raizen - Bonfim','Raizen - Santa Cândida','Raizen - Paraíso','Raizen - Zanin','Raizen - Serra','BrasilAgro','Bracell','Tereos - Vertente','Tereos - São José','Outros']
 const DRONES_DEFAULT = ['DJI T70','DJI T50','DJI T25','DJI T25P','DJI T20P','DJI T100','DJI T55','Outros']
 const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
-const CULTURAS = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
+// Só o fallback: a lista de verdade vem da tabela `culturas`, administrada em
+// Inventário > Culturas. Isto serve pra primeira abertura sem sinal, antes de existir cache.
+const CULTURAS_PADRAO = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
 const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
 const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
 const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
@@ -500,6 +502,8 @@ export default function PilotApp({onSwitchMode}) {
   })()
   const [pilotoFazendasIndividuais, setPilotoFazendasIndividuais] = useState(permCacheInicial?.fazendas || [])
   const [pilotoTalhoesIds, setPilotoTalhoesIds] = useState(permCacheInicial?.talhoes || [])
+  // Culturas vêm do cadastro (Inventário > Culturas). Cache local pra funcionar sem sinal.
+  const [culturasDB, setCulturasDB] = useState(() => loadCache('orofly_cache_culturas'))
   const [permissoesConhecidas, setPermissoesConhecidas] = useState(!!permCacheInicial)
   const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
   const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState([])
@@ -782,6 +786,8 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data) setVoosFrotaDrone(data) })
     supabase.from('produtos').select('nome,unidade,dose_padrao,dose_auto,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
+    supabase.from('culturas').select('nome,ordem,ativo').eq('ativo',true).order('ordem').order('nome')
+      .then(({data}) => { if(data?.length){ setCulturasDB(data); saveCache('orofly_cache_culturas',data) } })
     supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
     supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_versao,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max').eq('ativo',true).order('nome')
@@ -3664,7 +3670,7 @@ Quando: ${tempoErroDebug.quando}`}
 
             <FS label="CULTURA" val={form.cultura} onChange={e=>{setForm(f=>({...f,cultura:e.target.value}));autoGPS()}}>
               <option value="">Selecione a Cultura...</option>
-              {CULTURAS.map(c=><option key={c}>{c}</option>)}
+              {(culturasDB.length ? culturasDB.map(c=>c.nome) : CULTURAS_PADRAO).map(c=><option key={c}>{c}</option>)}
             </FS>
 
             <FS label="CLIENTE" val={form.cliente} onChange={e=>{

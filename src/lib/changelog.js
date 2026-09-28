@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.3',
+    data: '2026-09-27',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Menu Sequencia',
+        texto: 'Nova tela em Voos & Operacoes > Sequencia, pra montar a rodada de trabalho. Escolha o periodo (ultimo dia, 7 dias, 15 dias ou personalizado), marque as fazendas que entram e acompanhe, por modalidade, quantos talhoes, quanta area, quanto ja saiu e quanto falta — com o percentual de cada fazenda, o total de cada modalidade e o geral. Cada fazenda mostra o status: Executando quando teve voo no periodo, Sequencia quando foi escolhida e ainda nao comecou, Concluida quando fechou. A contagem de talhoes mostra o total e, em verde, quantos foram trabalhados no periodo.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Cadastro de culturas',
+        texto: 'Entrou a aba Culturas no Inventario. Antes a lista era fixa no codigo e, pior, eram DUAS listas diferentes: o app do piloto tinha 14 culturas e a calculadora do painel tinha 8. Agora e um cadastro so, usado pelos dois. Da pra incluir, renomear, desativar e definir a ordem em que aparecem pro piloto. As 14 que ja existiam foram carregadas na mesma ordem de antes.',
+      },
+    ],
+  },
+  {
     versao: '6.2',
     data: '2026-09-27',
     itens: [

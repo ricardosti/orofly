@@ -350,6 +350,13 @@ export default function AdminPanel({ onSwitchMode }) {
   const [atrBuscaTalhao, setAtrBuscaTalhao] = useState('')
   const [atrFiltroFaz, setAtrFiltroFaz] = useState('todas') // todas | deste | sem
   const [atrFiltroTal, setAtrFiltroTal] = useState('todos') // todos | pendentes | feitos
+  // Sequência: período + fazendas escolhidas pra compor a rodada.
+  const [seqPeriodo, setSeqPeriodo] = useState('7')   // 1 | 7 | 15 | custom
+  const [seqDe, setSeqDe] = useState('')
+  const [seqAte, setSeqAte] = useState('')
+  const [seqSelecionadas, setSeqSelecionadas] = useState([])
+  const [seqBusca, setSeqBusca] = useState('')
+  const [seqSoSelecionadas, setSeqSoSelecionadas] = useState(false)
   const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
@@ -529,6 +536,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const [movSaving, setMovSaving] = useState(false)
   const [movFiltros, setMovFiltros] = useState({produto:'',fazenda:'',tipo:'',dataIni:'',dataFim:''})
   const [invTab, setInvTab] = useState('drones')
+  const [invCulturas, setInvCulturas] = useState([])
+  const [culturaModal, setCulturaModal] = useState(null)   // 'novo' | registro
+  const [culturaForm, setCulturaForm] = useState({ nome:'', ativo:true, ordem:0 })
   const [fzTab, setFzTab] = useState('visao')
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
@@ -594,6 +604,8 @@ export default function AdminPanel({ onSwitchMode }) {
       // O .order('nome') do Postgres e ordem de texto: TALHAO 10 vem antes de TALHAO 2,
       // e " 017-01" (com espaco na frente, existe no banco) pula pro topo. Reordena aqui.
       // Todas as telas filtram deste array, entao ordenar na origem arruma todas.
+      const { data: cult } = await supabase.from('culturas').select('*').order('ordem').order('nome')
+      if (cult) setInvCulturas(cult)
       const { data: tl } = await supabase.from('talhoes').select('*').order('nome')
       if (tl) setInvTalhoes(ordenarPorNome(tl))
       // Movimentos de estoque (pode não existir ainda — ver SQL de setup)
@@ -711,6 +723,36 @@ export default function AdminPanel({ onSwitchMode }) {
       fetchInventario()
     } catch(e) { showToast('Erro: '+e.message, 'error') }
     setMovSaving(false)
+  }
+
+  async function salvarCultura() {
+    const nome = (culturaForm.nome||'').trim()
+    if (!nome) { showToast('Digite o nome da cultura','error'); return }
+    setInvSaving(true)
+    try {
+      const payload = { nome, ativo: culturaForm.ativo !== false, ordem: parseInt(culturaForm.ordem)||0 }
+      if (culturaModal === 'novo') {
+        const { error } = await supabase.from('culturas').insert(payload)
+        // 23505 = nome repetido (tem UNIQUE). Mensagem clara em vez do erro cru do banco.
+        if (error) throw new Error(error.code === '23505' ? `"${nome}" já está cadastrada.` : error.message)
+        showToast('✅ Cultura cadastrada!')
+      } else {
+        const { error } = await supabase.from('culturas').update(payload).eq('id', culturaModal.id)
+        if (error) throw new Error(error.code === '23505' ? `"${nome}" já está cadastrada.` : error.message)
+        showToast('✅ Cultura atualizada!')
+      }
+      setCulturaModal(null); fetchInventario()
+    } catch(e) { showToast('Erro: '+e.message,'error') }
+    setInvSaving(false)
+  }
+
+  async function excluirCultura(c) {
+    // Voos antigos guardam o NOME da cultura como texto, então apagar não estraga
+    // histórico nenhum — só tira da lista de escolha.
+    if (!window.confirm(`Excluir a cultura "${c.nome}"? Os voos já registrados com ela continuam como estão.`)) return
+    const { error } = await supabase.from('culturas').delete().eq('id', c.id)
+    if (error) { showToast('Erro: '+error.message,'error'); return }
+    showToast('🗑️ Cultura excluída'); fetchInventario()
   }
 
   async function salvarDrone() {
@@ -1815,6 +1857,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['voos', '🚁 Voos & Operações', [
             ['buscaOS', '🔍', 'Ordens de Serviço', ''],
             ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
+            ['sequencia', '🎯', 'Sequência', ''],
           ]],
           ['gestao', '🗂️ Gestão', [
             ['fazendas', '🌾', 'Fazendas & Clientes', invFazendas.length],
@@ -3297,17 +3340,18 @@ export default function AdminPanel({ onSwitchMode }) {
                   {['drones','produtos'].includes(invTab) && (
                     <button style={{background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>{
-                        if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')}
+                        if(invTab==='culturas'){setCulturaForm({nome:'',ativo:true,ordem:(invCulturas.length+1)});setCulturaModal('novo')}
+                        else if(invTab==='drones'){setDroneForm(initDroneForm());setDroneModal('novo')}
                         else{setProdutoForm(initProdutoForm());setProdutoModal('novo')}
                       }}>
-                      + {invTab==='drones'?'Novo Drone':'Novo Produto'}
+                      + {invTab==='drones'?'Novo Drone':invTab==='culturas'?'Nova Cultura':'Novo Produto'}
                     </button>
                   )}
                 </div>
 
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['veiculos','🚗 Veículos'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
+                  {[['drones','🚁 Drones'],['produtos','🧪 Produtos'],['culturas','🌱 Culturas'],['veiculos','🚗 Veículos'],['movimentos','📊 Movimentos']].map(([id,lbl])=>(
                     <button key={id} style={{background:invTab===id?'#059669':theme.bg,color:invTab===id?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                       onClick={()=>setInvTab(id)}>{lbl}</button>
                   ))}
@@ -3708,6 +3752,47 @@ export default function AdminPanel({ onSwitchMode }) {
                 })()}
 
                 {/* ── DRONES ── */}
+                {invTab==='culturas' && (
+                  <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder2}`,overflow:'hidden'}}>
+                    <div style={{padding:'12px 14px',borderBottom:`1px solid ${theme.cardBorder2}`,fontSize:11.5,color:theme.textMuted,lineHeight:1.5}}>
+                      Lista que o piloto vê ao escolher a cultura do voo. A <b>ordem</b> define a posição
+                      na lista dele — deixe as mais usadas com número menor. Desativar tira da escolha
+                      sem apagar nada.
+                    </div>
+                    {invCulturas.length===0 ? (
+                      <div style={{padding:34,textAlign:'center',color:theme.textMuted,fontSize:13}}>Nenhuma cultura cadastrada.</div>
+                    ) : (
+                      <div style={{overflowX:'auto'}}>
+                        <table style={{width:'100%',borderCollapse:'collapse',minWidth:420}}>
+                          <thead><tr style={{background:theme.bg}}>
+                            {['Ordem','Cultura','Status',''].map((h,i)=>(
+                              <th key={h+i} style={{padding:'10px 12px',textAlign:i===0?'right':'left',fontSize:10.5,fontWeight:700,color:theme.textFaint2,letterSpacing:.4,textTransform:'uppercase',borderBottom:`1px solid ${theme.cardBorder2}`,whiteSpace:'nowrap'}}>{h}</th>
+                            ))}
+                          </tr></thead>
+                          <tbody>
+                            {invCulturas.map(c=>(
+                              <tr key={c.id} style={{borderBottom:`1px solid ${theme.divider}`,opacity:c.ativo?1:.55}}>
+                                <td style={{padding:'9px 12px',textAlign:'right',fontVariantNumeric:'tabular-nums',color:theme.textMuted,fontSize:12.5}}>{c.ordem}</td>
+                                <td style={{padding:'9px 12px',fontWeight:600,color:theme.text,fontSize:13}}>{c.nome}</td>
+                                <td style={{padding:'9px 12px'}}>
+                                  <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,
+                                    background:c.ativo?theme.successBg:theme.divider, color:c.ativo?'#059669':theme.textMuted}}>
+                                    {c.ativo?'Ativa':'Inativa'}
+                                  </span>
+                                </td>
+                                <td style={{padding:'9px 12px',textAlign:'right',whiteSpace:'nowrap'}}>
+                                  <button style={sG.actBtn('#2f6fed')} onClick={()=>{setCulturaForm({nome:c.nome,ativo:c.ativo!==false,ordem:c.ordem}); setCulturaModal(c)}}>✏️ Editar</button>
+                                  <button style={{...sG.actBtn(theme.dangerText),marginLeft:6}} onClick={()=>excluirCultura(c)}>🗑️</button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {invTab==='drones' && (
                   <div>
                     {invDrones.length===0 ? (
@@ -3813,6 +3898,42 @@ export default function AdminPanel({ onSwitchMode }) {
                 )}
 
                 {/* MODAL DRONE */}
+                {culturaModal && (
+                  <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}
+                    onClick={()=>!invSaving && setCulturaModal(null)}>
+                    <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:400,padding:22}} onClick={e=>e.stopPropagation()}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
+                        {culturaModal==='novo'?'🌱 Nova Cultura':'✏️ Editar Cultura'}
+                      </div>
+                      <div style={{marginBottom:12}}>
+                        <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>NOME DA CULTURA</div>
+                        <input autoFocus style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'9px 11px',fontSize:13,outline:'none',boxSizing:'border-box',background:theme.inputBg,color:theme.text}}
+                          placeholder="Ex: Eucalipto" value={culturaForm.nome}
+                          onChange={e=>setCulturaForm(f=>({...f,nome:e.target.value}))}
+                          onKeyDown={e=>{ if(e.key==='Enter') salvarCultura() }}/>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>ORDEM NA LISTA</div>
+                        <input type="number" style={{width:110,border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'9px 11px',fontSize:13,outline:'none',background:theme.inputBg,color:theme.text}}
+                          value={culturaForm.ordem} onChange={e=>setCulturaForm(f=>({...f,ordem:e.target.value}))}/>
+                        <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Número menor aparece primeiro pro piloto.</div>
+                      </div>
+                      <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer',marginBottom:18}} onClick={()=>setCulturaForm(f=>({...f,ativo:!f.ativo}))}>
+                        <div style={{width:36,height:20,borderRadius:10,background:culturaForm.ativo?'#059669':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
+                          <div style={{position:'absolute',top:2,left:culturaForm.ativo?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'all .2s'}}/>
+                        </div>
+                        <span style={{fontSize:13,color:theme.text}}>{culturaForm.ativo?'Ativa — aparece pro piloto':'Inativa — some da lista'}</span>
+                      </div>
+                      <div style={{display:'flex',gap:8}}>
+                        <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
+                          onClick={()=>setCulturaModal(null)} disabled={invSaving}>Cancelar</button>
+                        <button style={{flex:2,background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
+                          disabled={invSaving} onClick={salvarCultura}>{invSaving?'Salvando...':'💾 Salvar'}</button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {droneModal && (
                   <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
                     <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',padding:24}} onClick={e=>e.stopPropagation()}>
@@ -7051,6 +7172,239 @@ export default function AdminPanel({ onSwitchMode }) {
             </div>
           )}
 
+          {tab === 'sequencia' && (() => {
+            // SEQUÊNCIA — a rodada de trabalho: escolhe as fazendas que entram, define o
+            // período e acompanha quanto já saiu de cada uma.
+            //
+            // "Modalidade" vem de fazendas.produto (Herbicida/Inseticida/Fungicida), que é o
+            // campo que o cadastro já usa pra isso. Não existe coluna de região no banco,
+            // então o agrupamento secundário é por cliente.
+            const hojeISO = new Date().toISOString().slice(0,10)
+            const diasAtras = n => new Date(Date.now() - (n-1)*864e5).toISOString().slice(0,10)
+            const periodo = seqPeriodo === 'custom'
+              ? { de: seqDe, ate: seqAte }
+              : { de: diasAtras(parseInt(seqPeriodo,10)), ate: hojeISO }
+
+            // Voos do período, uma vez só — as linhas todas leem daqui.
+            const voosPeriodo = relatorios.filter(r => {
+              if (!STATUS_COM_AREA_APLICADA.includes(r.status)) return false
+              if (r.teste) return false
+              const d = (r.dt_inicio || r.created_at || '').slice(0,10)
+              if (!d) return false
+              if (periodo.de && d < periodo.de) return false
+              if (periodo.ate && d > periodo.ate) return false
+              return true
+            })
+
+            const linhas = ordenarPorNome(invFazendas).map(fz => {
+              const talhoesFz = invTalhoes.filter(t => t.fazenda_id === fz.id)
+              const area = talhoesFz.reduce((a,t) => a + (parseFloat(t.area_ha)||0), 0)
+              const voosFz = voosPeriodo.filter(r => r.fazenda === fz.nome && r.cliente === fz.cliente)
+              const realizado = voosFz.reduce((a,r) => a + areaLiquida(r), 0)
+              const bordadura = voosFz.reduce((a,r) => a + (parseFloat(r.bordadura)||0), 0)
+              const coberto = realizado + bordadura
+              // Talhões efetivamente tocados no período (um voo pode cobrir vários).
+              const talhoesTocados = new Set()
+              voosFz.forEach(r => (r.localizacao||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(n => talhoesTocados.add(n)))
+              const emAberto = Math.max(0, +(area - coberto).toFixed(2))
+              // Mesma tolerância de 0,05 ha da lista de fazendas: sobra de arredondamento
+              // não é pendência de campo.
+              const pct = area > 0 ? ((area - coberto) <= 0.05 ? 100 : Math.min(100, (coberto/area)*100)) : null
+              const selecionada = seqSelecionadas.includes(fz.id)
+              const status = pct === 100 ? 'concluida' : voosFz.length > 0 ? 'executando' : selecionada ? 'sequencia' : 'parada'
+              return { fz, modalidade: fz.produto || 'Sem modalidade', area, realizado, bordadura, coberto, emAberto, pct,
+                       talhoes: talhoesFz.length, talhoesTocados: talhoesTocados.size, voos: voosFz.length, selecionada, status }
+            })
+
+            const nb = t => (t||'').trim().toLowerCase()
+            const buscaSeq = nb(seqBusca)
+            const visiveis = linhas.filter(l =>
+              (!seqSoSelecionadas || l.selecionada) &&
+              (!buscaSeq || nb(l.fz.nome).includes(buscaSeq) || nb(l.fz.cliente).includes(buscaSeq) || nb(l.modalidade).includes(buscaSeq)))
+
+            // Os totais consideram o que está SELECIONADO — é a rodada que interessa. Sem
+            // nada marcado, mostra o total do que está na tela, pra a barra não ficar zerada.
+            const base = seqSelecionadas.length ? linhas.filter(l => l.selecionada) : visiveis
+            const tot = base.reduce((a,l) => ({
+              area: a.area + l.area, realizado: a.realizado + l.realizado, coberto: a.coberto + l.coberto,
+              emAberto: a.emAberto + l.emAberto, talhoes: a.talhoes + l.talhoes, talhoesTocados: a.talhoesTocados + l.talhoesTocados,
+              voos: a.voos + l.voos,
+            }), { area:0, realizado:0, coberto:0, emAberto:0, talhoes:0, talhoesTocados:0, voos:0 })
+            const pctTot = tot.area > 0 ? Math.min(100, (tot.coberto/tot.area)*100) : 0
+
+            // Agrupa por modalidade, na ordem da planilha do Pastor.
+            const grupos = [...new Set(visiveis.map(l => l.modalidade))].sort((a,b)=>compararNomes(a,b))
+
+            const SELO = {
+              executando: { txt:'Executando', cor:'#1D4ED8', bg:'rgba(29,78,216,.1)' },
+              sequencia:  { txt:'Sequência',  cor:'#B45309', bg:'rgba(180,83,9,.12)' },
+              concluida:  { txt:'Concluída',  cor:'#059669', bg:theme.successBg },
+              parada:     { txt:'—',          cor:theme.textFaint, bg:'transparent' },
+            }
+            const nHa = v => v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 })
+            const th = { padding:'9px 10px', textAlign:'left', fontSize:10, fontWeight:700, color:theme.textFaint2, letterSpacing:.4, textTransform:'uppercase', whiteSpace:'nowrap', borderBottom:`1px solid ${theme.cardBorder2}` }
+            const td = { padding:'9px 10px', fontSize:12.5, color:theme.text, borderBottom:`1px solid ${theme.divider}`, whiteSpace:'nowrap' }
+            const tdNum = { ...td, textAlign:'right', fontVariantNumeric:'tabular-nums' }
+
+            function alternarFazenda(id) {
+              setSeqSelecionadas(v => v.includes(id) ? v.filter(x=>x!==id) : [...v, id])
+            }
+
+            return (
+            <div>
+              <div style={{marginBottom:16}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:theme.text}}>🎯 Sequência</div>
+                <div style={{fontSize:12,color:theme.textMuted,marginTop:3,lineHeight:1.5,maxWidth:620}}>
+                  Monte a rodada: escolha as fazendas que entram e veja, no período, quanto já saiu
+                  e quanto falta em cada uma.
+                </div>
+              </div>
+
+              {/* ── Período ── */}
+              <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:14,padding:14,marginBottom:12}}>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                  {[['1','Último dia'],['7','Últimos 7 dias'],['15','Últimos 15 dias'],['custom','Personalizado']].map(([v,lbl])=>(
+                    <button key={v} onClick={()=>setSeqPeriodo(v)}
+                      style={{background: seqPeriodo===v?'#059669':theme.bg, color: seqPeriodo===v?'#fff':theme.textMuted,
+                        border:`1px solid ${seqPeriodo===v?'#059669':theme.cardBorder2}`, borderRadius:10, padding:'7px 14px',
+                        fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'}}>{lbl}</button>
+                  ))}
+                  {seqPeriodo==='custom' && (
+                    <>
+                      <input type="date" value={seqDe} onChange={e=>setSeqDe(e.target.value)}
+                        style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'6px 10px',fontSize:12,background:theme.inputBg,color:theme.text,outline:'none'}}/>
+                      <span style={{fontSize:11,color:theme.textMuted}}>até</span>
+                      <input type="date" value={seqAte} onChange={e=>setSeqAte(e.target.value)}
+                        style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'6px 10px',fontSize:12,background:theme.inputBg,color:theme.text}}/>
+                    </>
+                  )}
+                  <span style={{marginLeft:'auto',fontSize:11,color:theme.textFaint,whiteSpace:'nowrap'}}>
+                    {periodo.de && periodo.ate
+                      ? `${periodo.de.split('-').reverse().join('/')} a ${periodo.ate.split('-').reverse().join('/')}`
+                      : 'informe as datas'}
+                  </span>
+                </div>
+              </div>
+
+              {/* ── Resumo ── */}
+              <div style={{display:'grid',gridTemplateColumns:`repeat(auto-fit, minmax(${isMobile?140:158}px, 1fr))`,gap:10,marginBottom:12}}>
+                {[
+                  ['🌾 Fazendas', seqSelecionadas.length ? `${seqSelecionadas.length}` : `${visiveis.length}`, seqSelecionadas.length ? 'na sequência' : 'na tela'],
+                  ['🗺️ Talhões', `${tot.talhoes}`, `${tot.talhoesTocados} trabalhados`],
+                  ['📐 Área', `${nHa(tot.area)}`, 'hectares'],
+                  ['✅ Realizado', `${nHa(tot.coberto)}`, `${tot.voos} ${tot.voos===1?'voo':'voos'}`],
+                  ['⏳ Em aberto', `${nHa(tot.emAberto)}`, 'hectares'],
+                ].map(([lbl,val,sub])=>(
+                  <div key={lbl} style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:12,padding:'12px 14px'}}>
+                    <div style={{fontSize:10.5,color:theme.textFaint2,fontWeight:600}}>{lbl}</div>
+                    <div style={{fontSize:20,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif",marginTop:2,fontVariantNumeric:'tabular-nums'}}>{val}</div>
+                    <div style={{fontSize:10,color:theme.textFaint,marginTop:1}}>{sub}</div>
+                  </div>
+                ))}
+                <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:12,padding:'12px 14px'}}>
+                  <div style={{fontSize:10.5,color:theme.textFaint2,fontWeight:600}}>📊 Avanço</div>
+                  <div style={{fontSize:20,fontWeight:700,color:'#059669',fontFamily:"'Syne',sans-serif",marginTop:2}}>{Math.floor(pctTot)}%</div>
+                  <div style={{height:5,background:theme.divider,borderRadius:20,overflow:'hidden',marginTop:5}}>
+                    <div style={{height:'100%',width:`${pctTot}%`,background:'#059669',borderRadius:20}}/>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Busca e filtros ── */}
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
+                <input placeholder="Buscar fazenda, cliente ou modalidade..." value={seqBusca} onChange={e=>setSeqBusca(e.target.value)}
+                  style={{flex:1,minWidth:200,border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'8px 11px',fontSize:12.5,background:theme.inputBg,color:theme.text,outline:'none'}}/>
+                <button onClick={()=>setSeqSoSelecionadas(v=>!v)}
+                  style={{background: seqSoSelecionadas?'#059669':theme.bg, color: seqSoSelecionadas?'#fff':theme.textMuted,
+                    border:`1px solid ${seqSoSelecionadas?'#059669':theme.cardBorder2}`, borderRadius:10, padding:'8px 13px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'}}>
+                  ✓ Só as escolhidas ({seqSelecionadas.length})
+                </button>
+                {seqSelecionadas.length>0 && (
+                  <button onClick={()=>setSeqSelecionadas([])}
+                    style={{background:'none',border:'none',color:'#EF4444',fontSize:12,fontWeight:600,cursor:'pointer'}}>✕ limpar</button>
+                )}
+              </div>
+
+              {/* ── Tabela por modalidade ── */}
+              {visiveis.length===0 ? (
+                <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:14,padding:34,textAlign:'center',color:theme.textMuted,fontSize:13}}>
+                  Nenhuma fazenda encontrada.
+                </div>
+              ) : grupos.map(mod => {
+                const doGrupo = visiveis.filter(l => l.modalidade === mod)
+                const g = doGrupo.reduce((a,l)=>({area:a.area+l.area, coberto:a.coberto+l.coberto, emAberto:a.emAberto+l.emAberto, talhoes:a.talhoes+l.talhoes}),{area:0,coberto:0,emAberto:0,talhoes:0})
+                const todasMarcadas = doGrupo.every(l=>l.selecionada)
+                return (
+                  <div key={mod} style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:14,overflow:'hidden',marginBottom:12}}>
+                    <div style={{padding:'10px 12px',background:theme.bg,borderBottom:`1px solid ${theme.cardBorder2}`,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+                      <input type="checkbox" style={{cursor:'pointer'}} checked={todasMarcadas}
+                        title={todasMarcadas?'Tirar todas da sequência':'Colocar todas na sequência'}
+                        onChange={e=>{
+                          const ids = doGrupo.map(l=>l.fz.id)
+                          setSeqSelecionadas(v => e.target.checked ? [...new Set([...v,...ids])] : v.filter(x=>!ids.includes(x)))
+                        }}/>
+                      <span style={{fontSize:13,fontWeight:700,color:theme.text}}>{mod}</span>
+                      <span style={{fontSize:11,color:theme.textFaint}}>{doGrupo.length} {doGrupo.length===1?'fazenda':'fazendas'} · {g.talhoes} {g.talhoes===1?'talhão':'talhões'}</span>
+                      <span style={{marginLeft:'auto',fontSize:11.5,color:theme.textMuted,fontVariantNumeric:'tabular-nums'}}>
+                        {nHa(g.coberto)} de {nHa(g.area)} ha · <strong style={{color:'#059669'}}>{g.area>0?Math.floor(Math.min(100,(g.coberto/g.area)*100)):0}%</strong>
+                      </span>
+                    </div>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',minWidth:760}}>
+                        <thead><tr style={{background:theme.bg}}>
+                          <th style={{...th,width:30}}></th>
+                          <th style={th}>Fazenda</th>
+                          <th style={th}>Cliente</th>
+                          <th style={{...th,textAlign:'right'}}>Talhões</th>
+                          <th style={{...th,textAlign:'right'}}>Área (ha)</th>
+                          <th style={{...th,textAlign:'right'}}>Realizado</th>
+                          <th style={{...th,textAlign:'right'}}>Em aberto</th>
+                          <th style={{...th,textAlign:'right'}}>%</th>
+                          <th style={th}>Status</th>
+                        </tr></thead>
+                        <tbody>
+                          {doGrupo.map(l => (
+                            <tr key={l.fz.id} style={{background: l.selecionada?theme.successBg:'transparent'}}>
+                              <td style={{...td,padding:'9px 6px 9px 10px'}}>
+                                <input type="checkbox" style={{cursor:'pointer'}} checked={l.selecionada} onChange={()=>alternarFazenda(l.fz.id)}/>
+                              </td>
+                              <td style={{...td,fontWeight:600}}>{l.fz.nome}</td>
+                              <td style={{...td,color:theme.textMuted}}>{l.fz.cliente}</td>
+                              <td style={tdNum}>
+                                {l.talhoes}
+                                {l.talhoesTocados>0 && <span style={{color:'#059669',fontSize:10.5}}> ({l.talhoesTocados})</span>}
+                              </td>
+                              <td style={tdNum}>{nHa(l.area)}</td>
+                              <td style={{...tdNum,fontWeight:600,color: l.coberto>0?'#059669':theme.textFaint}}>{l.coberto>0?nHa(l.coberto):'—'}</td>
+                              <td style={{...tdNum,color: l.emAberto>0?theme.text:theme.textFaint}}>{l.emAberto>0?nHa(l.emAberto):'—'}</td>
+                              <td style={{...tdNum,fontWeight:700}}>{l.pct==null?'—':`${Math.floor(l.pct)}%`}</td>
+                              <td style={td}>
+                                <span style={{fontSize:10,fontWeight:700,color:SELO[l.status].cor,background:SELO[l.status].bg,borderRadius:5,padding:'2px 7px',whiteSpace:'nowrap'}}>
+                                  {SELO[l.status].txt}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                          <tr style={{background:theme.bg}}>
+                            <td style={{...td,borderBottom:'none'}}></td>
+                            <td style={{...td,borderBottom:'none',fontWeight:700}} colSpan={2}>Total {mod}</td>
+                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{g.talhoes}</td>
+                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{nHa(g.area)}</td>
+                            <td style={{...tdNum,borderBottom:'none',fontWeight:700,color:'#059669'}}>{nHa(g.coberto)}</td>
+                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{nHa(g.emAberto)}</td>
+                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{g.area>0?Math.floor(Math.min(100,(g.coberto/g.area)*100)):0}%</td>
+                            <td style={{...td,borderBottom:'none'}}></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            )
+          })()}
+
           {tab === 'atividades' && (() => {
             const lista = (ativLista||[]).filter(a =>
               (!ativUsuario || a.user_nome === ativUsuario) &&
@@ -8564,7 +8918,7 @@ function CalculadoraOrcamento({ calc, setCalc, isMobile, config }) {
             <div><label style={labelSt}>CLIENTE</label><input style={inputSt} value={calc.cliente} onChange={set('cliente')} placeholder="Nome do cliente" /></div>
             <div><label style={labelSt}>CULTURA</label>
               <select style={inputSt} value={calc.cultura} onChange={set('cultura')}>
-                {['Soja', 'Milho', 'Algodão', 'Cana-de-açúcar', 'Café', 'Feijão', 'Trigo', 'Outro'].map(o => <option key={o}>{o}</option>)}
+                {(invCulturas.filter(c=>c.ativo!==false).map(c=>c.nome)).map(o => <option key={o}>{o}</option>)}
               </select>
             </div>
             <div><label style={labelSt}>ÁREA TOTAL (HECTARES)</label><input type="number" style={inputSt} value={calc.areaTotal} onChange={set('areaTotal')} placeholder="0" /></div>
