@@ -256,6 +256,74 @@ function limitarArea(v, max) {
   if (max != null && n > max) return String(+max.toFixed(2))
   return v
 }
+// Barra de três faixas do talhão: PULVERIZADO + BORDADURA + FALTA = área total.
+//
+// Existe por causa de uma confusão real de campo: o piloto não sabia se a bordadura
+// contava como entregue. Conta. Ela é a faixa de segurança que ele deliberadamente
+// não pulveriza, mas o talhão está resolvido ali — só não recebeu produto. O que
+// sobra pra outro dia é a terceira faixa.
+//
+// A regra que a barra desenha é a mesma do areaLiquida(): `area_feita` é o
+// PERCORRIDO, com a bordadura dentro dele.
+function BarraTalhao({ total, percorrido, bordadura, theme, compacta }) {
+  const t = Math.max(0, parseFloat(total) || 0)
+  const perc = Math.max(0, Math.min(t || Infinity, parseFloat(percorrido) || 0))
+  const bord = Math.max(0, Math.min(perc, parseFloat(bordadura) || 0))
+  const pulv = Math.max(0, +(perc - bord).toFixed(2))
+  const falta = t > 0 ? Math.max(0, +(t - perc).toFixed(2)) : 0
+  const pctDe = v => t > 0 ? (v / t) * 100 : 0
+  const fechou = t > 0 && falta <= 0.05
+  const alt = compacta ? 10 : 18
+  const nHa = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const faixas = [
+    { k:'pulv',  v:pulv,  cor:'#00A86B', rotulo:'Pulverizado', desc:'recebeu produto' },
+    { k:'bord',  v:bord,  cor:'#F0A72A', rotulo:'Bordadura',   desc:'faixa de segurança — conta como feito' },
+    { k:'falta', v:falta, cor:theme.divider, rotulo:'Falta',   desc:'fica pra outro voo' },
+  ]
+  return (
+    <div>
+      <div style={{display:'flex',height:alt,borderRadius:alt/2,overflow:'hidden',background:theme.divider,border:`1px solid ${theme.cardBorder2||theme.divider}`}}>
+        {faixas.map(f => f.v > 0 && (
+          <div key={f.k} title={`${f.rotulo}: ${nHa(f.v)} ha`}
+            style={{width:`${pctDe(f.v)}%`, background: f.k==='falta'
+              // Listrado na faixa que falta: diferencia do "vazio" mesmo em tela pequena
+              // e no sol, onde cinza chapado some.
+              ? `repeating-linear-gradient(45deg, ${theme.divider}, ${theme.divider} 4px, ${theme.bg} 4px, ${theme.bg} 8px)`
+              : f.cor,
+              transition:'width .25s ease'}}/>
+        ))}
+      </div>
+      {!compacta && (
+        <div style={{display:'flex',flexWrap:'wrap',gap:'6px 14px',marginTop:8}}>
+          {faixas.filter(f=>f.v>0).map(f => (
+            <div key={f.k} style={{display:'flex',alignItems:'flex-start',gap:6,minWidth:0}}>
+              <div style={{width:11,height:11,borderRadius:3,flexShrink:0,marginTop:2,
+                background: f.k==='falta' ? theme.divider : f.cor,
+                border: f.k==='falta' ? `1px dashed ${theme.textFaint}` : 'none'}}/>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:11.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap'}}>
+                  {f.rotulo} · {nHa(f.v)} ha
+                </div>
+                <div style={{fontSize:10,color:theme.textFaint2,lineHeight:1.3}}>{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!compacta && t > 0 && (
+        <div style={{marginTop:9,padding:'8px 11px',borderRadius:10,fontSize:12,lineHeight:1.5,
+          background: fechou ? theme.successBg : theme.warningBg,
+          color: fechou ? '#00A86B' : (theme.warningText2||theme.warningText), fontWeight:600}}>
+          {fechou
+            ? `✓ Talhão fechado — ${nHa(perc)} de ${nHa(t)} ha entregues`
+            : `⏳ Faltam ${nHa(falta)} ha — outro voo termina esse talhão`}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FS({label,val,onChange,children}) {
   const { theme } = useTheme()
   return (
@@ -526,6 +594,10 @@ export default function PilotApp({onSwitchMode}) {
   const [sosConfirm,setSosConfirm] = useState(false)
   const [modalOpen,setModalOpen] = useState(false)
   const [parcialModalOpen,setParcialModalOpen] = useState(false)
+  // Um botão só de Finalizar. Lá dentro o piloto diz se fechou o talhão ou não —
+  // antes eram dois botões e "Finalizado Parcial" ficava escondido num menu ⋮.
+  // Marcado por padrão porque fechar o talhão é o caso comum.
+  const [fezTudo,setFezTudo] = useState(true)
   // Guarda o valor que o piloto tentou digitar quando passa do saldo. Antes o número
   // era cortado em silêncio: ele escrevia 100 (o talhão inteiro), virava 65 (o saldo)
   // e nada explicava. Agora a tela conta o que aconteceu.
@@ -4347,31 +4419,16 @@ Quando: ${tempoErroDebug.quando}`}
                   <button style={{flex:1,background:theme.dangerBg,border:'none',borderRadius:16,padding:'10px 4px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
                     disabled={opState!=='running'&&opState!=='paused'}
                     onClick={()=>{
-                      const n=nowParts()
-                      setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
-                      opFinalizar()
-                      setWizardStep(3)
-                      showToast('🌤️ Preencha as condições climáticas do FIM da operação')
+                      // Pré-preenche o percorrido com o escopo do voo: quem fechou o talhão
+                      // (a maioria) só confere e confirma, sem digitar nada.
+                      setFezTudo(true)
+                      setForm(f=>({...f, area_feita: f.area_feita || String(parseFloat(f.area_ha)||'')}))
+                      setParcialModalOpen(true)
                     }}>
                     <span style={{fontSize:11,fontWeight:700,color:theme.dangerText}}>Finalizar</span>
                   </button>
-                  <button style={{width:24,background:theme.dangerBg,border:'none',borderRadius:16,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',opacity:(opState==='running'||opState==='paused')?1:.4}}
-                    disabled={opState!=='running'&&opState!=='paused'}
-                    onClick={e=>{e.stopPropagation();setFinalizarEscolhaOpen(v=>!v)}}>
-                    <span style={{fontSize:15,color:theme.dangerText,fontWeight:700,lineHeight:1}}>⋮</span>
-                  </button>
-                  {finalizarEscolhaOpen&&(
-                    <>
-                      <div style={{position:'fixed',inset:0,zIndex:98}} onClick={()=>setFinalizarEscolhaOpen(false)}/>
-                      <div style={{position:'absolute',top:'calc(100% + 6px)',right:0,zIndex:99,background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,.15)',minWidth:200,overflow:'hidden'}}>
-                        <button style={{display:'block',width:'100%',textAlign:'left',padding:'11px 14px',background:'transparent',border:'none',cursor:'pointer',fontFamily:"'Poppins',sans-serif"}}
-                          onClick={()=>{ setFinalizarEscolhaOpen(false); setParcialModalOpen(true) }}>
-                          <div style={{fontSize:13,fontWeight:600,color:theme.text}}>Finalizado parcial</div>
-                          <div style={{fontSize:11,color:theme.textMuted,marginTop:1}}>Continua depois de onde parou</div>
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  {/* O menu ⋮ com "Finalizado parcial" saiu: agora é um botão só, e a
+                      escolha de ter fechado ou não o talhão acontece dentro dele. */}
                 </div>
               </div>
             )}
@@ -4925,8 +4982,28 @@ Quando: ${tempoErroDebug.quando}`}
         return (
         <div style={s.modalOverlay} onClick={()=>setParcialModalOpen(false)}>
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
-            <div style={s.modalTitle}>🌙 Finalizado Parcial <button style={s.modalClose} onClick={()=>setParcialModalOpen(false)}>✕</button></div>
-            <p style={{fontSize:13,color:theme.textMuted,marginBottom:14,lineHeight:1.5}}>Registra quanto já foi aplicado. Amanhã é só retomar e continuar de onde parou.</p>
+            <div style={s.modalTitle}>🏁 Finalizar voo <button style={s.modalClose} onClick={()=>setParcialModalOpen(false)}>✕</button></div>
+
+            {/* A PERGUNTA. Tudo o que aparece abaixo depende dela, então ela vem primeiro,
+                grande e sozinha — o piloto responde uma coisa só e a tela se ajusta. */}
+            <div onClick={()=>setFezTudo(v=>!v)}
+              style={{display:'flex',alignItems:'flex-start',gap:11,padding:'14px 14px',borderRadius:14,cursor:'pointer',marginBottom:14,
+                background: fezTudo?theme.successBg:theme.warningBg,
+                border:`2px solid ${fezTudo?'#00A86B':(theme.warningText||'#c98a1c')}`}}>
+              <div style={{width:26,height:26,borderRadius:8,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
+                background: fezTudo?'#00A86B':'transparent', border:`2px solid ${fezTudo?'#00A86B':(theme.warningText||'#c98a1c')}`,
+                color:'#fff',fontSize:15,fontWeight:800,lineHeight:1}}>{fezTudo?'✓':''}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:15,fontWeight:800,color: fezTudo?'#00A86B':(theme.warningText2||theme.warningText)}}>
+                  Fiz o talhão todo
+                </div>
+                <div style={{fontSize:12,color:theme.textMuted,marginTop:3,lineHeight:1.5}}>
+                  {fezTudo
+                    ? 'O talhão fica fechado. Só informe quanto ficou de bordadura.'
+                    : 'Desmarcado: informe quanto você percorreu hoje. O resto fica pra outro voo.'}
+                </div>
+              </div>
+            </div>
 
             {multiTalhaoP ? (
               <div style={{marginBottom:4}}>
@@ -4963,90 +5040,102 @@ Quando: ${tempoErroDebug.quando}`}
               </div>
             ) : (
               <>
-                {/* Retomada de parcial: o piloto precisa ver os três números juntos, senão
-                    não tem como saber se o que ele digita é o do dia ou o total do talhão. */}
-                {(()=>{
-                  const anterior = parseFloat(form.area_feita_anterior)||0
-                  if (anterior <= 0.05) return null
-                  const saldoVoo = parseFloat(form.area_ha)||0
-                  const agora = parseFloat(form.area_feita)||0
-                  const acumulado = +(anterior+agora).toFixed(2)
-                  const totalTalhao = (parseFloat(form.area_talhao_total)||0) || +(anterior+saldoVoo).toFixed(2)
-                  const fecha = Math.abs(totalTalhao-acumulado) <= 0.05
-                  return (
-                    <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2||theme.divider}`,borderRadius:10,padding:'10px 12px',marginBottom:10,fontSize:11.5,lineHeight:1.6,color:theme.textMuted}}>
-                      <div>Talhão tem <strong style={{color:theme.text}}>{totalTalhao.toFixed(1)} ha</strong> · já aplicados antes <strong style={{color:theme.text}}>{anterior.toFixed(1)} ha</strong> · <strong style={{color:theme.text}}>saldo {saldoVoo.toFixed(1)} ha</strong></div>
-                      <div style={{marginTop:3}}>
-                        Somando o que você digitar: <strong style={{color: fecha?'#00A86B':theme.text}}>{acumulado.toFixed(1)} de {totalTalhao.toFixed(1)} ha</strong>
-                        {fecha && <span style={{color:'#00A86B',fontWeight:700}}> · talhão fecha ✓</span>}
-                      </div>
-                    </div>
-                  )
-                })()}
-                <FI label="ÁREA FEITA NESTE VOO (HA)" ph="Ex: 32" val={form.area_feita} type="number"
-                  min={0} max={(parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):undefined}
-                  onChange={e=>{
-                    const teto = (parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):null
-                    const digitado = parseFloat(e.target.value)
-                    // Só avisa quando o corte realmente aconteceu, e some assim que o valor voltar
-                    // pra dentro do saldo.
-                    setAvisoCorteArea(teto!=null && !isNaN(digitado) && digitado>teto ? {digitado, teto} : null)
-                    setForm(f=>({...f,area_feita:limitarArea(e.target.value, teto)}))
-                  }}/>
-                {avisoCorteArea && (
+                {/* Um campo só quando fechou o talhão (a bordadura), dois quando não
+                    fechou. O que muda é a PERGUNTA, não o formulário inteiro — assim o
+                    piloto não sente que mudou de tela. */}
+                {!fezTudo && (
+                  <FI label="QUANTO VOCÊ PERCORREU HOJE (HA)" ph="Ex: 6.20" val={form.area_feita} type="number"
+                    min={0} max={(parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):undefined}
+                    onChange={e=>{
+                      const teto = (parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):null
+                      const digitado = parseFloat(e.target.value)
+                      setAvisoCorteArea(teto!=null && !isNaN(digitado) && digitado>teto ? {digitado, teto} : null)
+                      setForm(f=>({...f,area_feita:limitarArea(e.target.value, teto)}))
+                    }}/>
+                )}
+                {avisoCorteArea && !fezTudo && (
                   <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:12,fontSize:11.5,lineHeight:1.5,color:theme.warningText2||theme.warningText}}>
-                    Este voo só pode registrar até <strong>{avisoCorteArea.teto.toFixed(1)} ha</strong>, que é o saldo do talhão — por isso o {avisoCorteArea.digitado} virou {avisoCorteArea.teto.toFixed(1)}.
-                    {(parseFloat(form.area_feita_anterior)||0) > 0.05 && ' O que foi aplicado antes já está contado e não precisa ser digitado de novo.'}
+                    Este voo só pode registrar até <strong>{avisoCorteArea.teto.toFixed(1)} ha</strong>, que é o que falta no talhão.
+                    {(parseFloat(form.area_feita_anterior)||0) > 0.05 && ' O que foi aplicado antes já está contado.'}
                   </div>
                 )}
-                {/* Atalho do "fiz o talhão inteiro": preenche o saldo cheio, que é o caso mais
-                    comum de quem volta pra fechar o que faltava. */}
-                {(parseFloat(form.area_ha)||0) > 0 && Math.abs((parseFloat(form.area_feita)||0)-(parseFloat(form.area_ha)||0)) > 0.05 && (
-                  <button type="button"
-                    onClick={()=>{ setAvisoCorteArea(null); setForm(f=>({...f,area_feita:String(+(parseFloat(f.area_ha)||0).toFixed(2))})) }}
-                    style={{background:theme.successBg,color:'#00A86B',border:'1px solid #00A86B',borderRadius:10,padding:'9px 12px',fontSize:12,fontWeight:700,cursor:'pointer',marginTop:-6,marginBottom:12,width:'100%'}}>
-                    ✓ Fiz o talhão todo — preencher os {(parseFloat(form.area_ha)||0).toFixed(1)} ha do saldo
-                  </button>
-                )}
+
+                <FI label="DESSE TOTAL, QUANTO FOI BORDADURA (HA)" ph="Ex: 1.28" val={form.bordadura} type="number"
+                  min={0} max={(parseFloat(form.area_feita)||0)>0?parseFloat(form.area_feita):undefined}
+                  onChange={e=>setForm(f=>({...f,bordadura:limitarArea(e.target.value,(parseFloat(f.area_feita)||0)>0?parseFloat(f.area_feita):null)}))}/>
+                <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:14,lineHeight:1.5}}>
+                  Faixa de segurança que você <b>não pulverizou</b> de propósito. Ela já está dentro
+                  do que você percorreu — e <b>conta como talhão entregue</b>, só não recebeu produto.
+                </div>
               </>
             )}
 
-            {total>0&&(
-              <div style={{marginTop:2,marginBottom:18}}>
-                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:theme.textMuted,marginBottom:6}}>
-                  <span>{multiTalhaoP?'Total da operação: ':''}{feita.toFixed(1)} de {total.toFixed(1)} ha</span>
-                  <span style={{fontWeight:700,color:'#00A86B'}}>{pct}%</span>
+            {/* O DESENHO. É ele que resolve a dúvida do "a bordadura conta?" — em vez de
+                explicar em texto, mostra as três faixas somando o talhão inteiro. */}
+            {(()=>{
+              const anterior = parseFloat(form.area_feita_anterior)||0
+              const saldo = parseFloat(form.area_ha)||0
+              const totalTalhao = (parseFloat(form.area_talhao_total)||0) || +(anterior+saldo).toFixed(2)
+              const percorridoHoje = fezTudo ? saldo : (parseFloat(form.area_feita)||0)
+              const bordTotal = (parseFloat(form.bordadura)||0) + (parseFloat(form.bordadura_anterior)||0)
+              if (totalTalhao<=0) return null
+              return (
+                <div style={{background:theme.bg,borderRadius:14,padding:'13px 14px',marginBottom:16}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:9,gap:8}}>
+                    <span style={{fontSize:11,fontWeight:700,color:theme.textFaint2,letterSpacing:.4}}>
+                      {multiTalhaoP ? 'TOTAL DA OPERAÇÃO' : `TALHÃO ${form.talhao||''}`.trim()}
+                    </span>
+                    <span style={{fontSize:11.5,color:theme.textMuted,fontVariantNumeric:'tabular-nums'}}>
+                      {totalTalhao.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} ha
+                    </span>
+                  </div>
+                  <BarraTalhao theme={theme} total={totalTalhao}
+                    percorrido={anterior + percorridoHoje} bordadura={bordTotal}/>
+                  {anterior > 0.05 && (
+                    <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:8,lineHeight:1.4}}>
+                      Inclui {anterior.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} ha
+                      já aplicados em voos anteriores deste talhão.
+                    </div>
+                  )}
                 </div>
-                <div style={{height:10,background:theme.divider,borderRadius:20,overflow:'hidden'}}>
-                  <div style={{height:'100%',width:`${pct}%`,background:'#00A86B',borderRadius:20,transition:'width .3s'}}/>
-                </div>
-              </div>
-            )}
-            <button style={{...s.shareBtn,background:'#1a1a2e'}} onClick={async()=>{
+              )
+            })()}
+
+            {/* UM botão só. O que ele faz depende do checkbox lá em cima: fechou o
+                talhão vira voo finalizado, não fechou vira parcial pra retomar depois.
+                Antes isso eram dois botões, e o parcial ficava escondido num menu. */}
+            <button style={{...s.shareBtn, background: fezTudo ? '#00A86B' : '#1a1a2e'}} onClick={async()=>{
+              // Fechou o talhão: o percorrido é o escopo inteiro do voo, sem o piloto
+              // precisar digitar de novo o número que ele já informou no Passo 1.
+              const percorrido = fezTudo ? (parseFloat(form.area_ha)||0) : feita
               setParcialModalOpen(false)
-              setOpState('paused_day')
+              setOpState(fezTudo ? 'finished' : 'paused_day')
               // Desconta do estoque só o incremento desde a última baixa (parcial ou início) —
               // ex: já tinha baixado 20ha, agora tá em 32ha → desconta só os 12ha novos.
               const jaDeduzido = parseFloat(form.area_deduzida)||0
-              const deltaBaixa = Math.max(0, feita-jaDeduzido)
+              const deltaBaixa = Math.max(0, percorrido-jaDeduzido)
               const n=nowParts()
               // Pré-preenche o Passo 5 com o que já foi digitado aqui (a diferença entre o que já
               // tinha antes desta sessão e o total agora) — assim o piloto não responde a mesma
               // pergunta duas vezes; ele só precisa ajustar se a leitura real da DJI for diferente.
-              setForm(f=>({...f,area_feita:String(feita),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm,
-                area_total_aplicada: multiTalhaoP ? f.area_total_aplicada : String(Math.max(0,feita-(parseFloat(f.area_feita_anterior)||0))),
+              setForm(f=>({...f,area_feita:String(percorrido),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm,
+                area_total_aplicada: multiTalhaoP ? f.area_total_aplicada : String(Math.max(0,percorrido-(parseFloat(f.area_feita_anterior)||0))),
                 areaAplicadaPorTalhao: multiTalhaoP
                   ? talhoesSelP.reduce((acc,nome)=>({...acc,[nome]:String(Math.max(0,(parseFloat(f.area_feita_por_talhao?.[nome])||0)-(parseFloat(f.area_feita_por_talhao_anterior?.[nome])||0)))}),{...f.areaAplicadaPorTalhao})
                   : f.areaAplicadaPorTalhao}))
-              const relSalvo = await saveToSupabase({status:'pausado_dia',area_feita:feita,area_deduzida:feita,dt_fim:n.iso})
-              if(relSalvo) registrar('voo_parcial', [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
-                { cliente: clienteVal, meta: { area_feita: feita } })
+              const novoStatus = fezTudo ? 'finalizado' : 'pausado_dia'
+              const relSalvo = await saveToSupabase({status:novoStatus,area_feita:percorrido,area_deduzida:percorrido,dt_fim:n.iso})
+              if(relSalvo) registrar(fezTudo?'voo_finalizado':'voo_parcial',
+                [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
+                { cliente: clienteVal, meta: { area_feita: percorrido, fechou_talhao: fezTudo } })
               if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
-              // O voo já está salvo no servidor — pode ser retomado depois por "Continuar voo" ou
-              // "Meus Relatórios". Antes de sair, registra as condições climáticas do fim do dia.
+              // O voo já está salvo no servidor. Antes de sair, registra as condições
+              // climáticas do fim — vale pros dois casos.
               setWizardStep(3)
-              showToast('🌙 Finalizado Parcial salvo! Preencha as condições climáticas do fim do dia')
-            }}>🌙 Confirmar Finalizado Parcial</button>
+              showToast(fezTudo
+                ? '✅ Talhão fechado! Preencha as condições climáticas do fim'
+                : '🌙 Voo salvo! Preencha as condições climáticas do fim')
+            }}>{fezTudo ? '✅ Confirmar — talhão fechado' : '🌙 Confirmar — volto pra terminar'}</button>
           </div>
         </div>
         )

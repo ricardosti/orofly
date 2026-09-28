@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.4',
+    data: '2026-09-27',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Finalizar voo: um botao so, e agora com desenho',
+        texto: 'Acabou a escolha entre "Finalizar" e "Finalizado Parcial" — o parcial ainda ficava escondido num menu de tres pontinhos. Agora e um botao so. Ao finalizar, a primeira coisa que aparece e a pergunta "Fiz o talhao todo", ja marcada. Marcada: voce so informa a bordadura e o talhao fecha. Desmarcada: informa quanto percorreu hoje, e o resto fica pra outro voo.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Desenho do talhao na hora de finalizar',
+        texto: 'Entrou uma barra com tres faixas que sempre somam o talhao inteiro: verde e o que foi PULVERIZADO, amarelo e a BORDADURA e listrado e o que FALTA. Ela responde a duvida que mais confundia: a bordadura conta como talhao entregue, so nao recebeu produto. Antes isso era texto; agora da pra ver. A barra muda enquanto voce digita, entao erro de preenchimento aparece na hora — se o desenho nao fechar o talhao, tem numero errado.',
+      },
+    ],
+  },
+  {
     versao: '6.3',
     data: '2026-09-27',
     itens: [
