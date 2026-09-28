@@ -272,6 +272,10 @@ function BarraTalhao({ total, percorrido, bordadura, theme, compacta }) {
   const pulv = Math.max(0, +(perc - bord).toFixed(2))
   const falta = t > 0 ? Math.max(0, +(t - perc).toFixed(2)) : 0
   const pctDe = v => t > 0 ? (v / t) * 100 : 0
+  // Uma faixa pequena de verdade (0,20 ha num talhão de 50) arredonda pra "0%" e parece
+  // defeito ao lado do "0,20 ha" — "<1%" diz a mesma coisa sem parecer erro de conta.
+  const pctTxt = v => { const p = pctDe(v); return p > 0 && p < 1 ? '<1%' : `${Math.round(p)}%` }
+  const entregue = +(pulv + bord).toFixed(2)
   const fechou = t > 0 && falta <= 0.05
   const alt = compacta ? 10 : 18
   const nHa = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -285,13 +289,21 @@ function BarraTalhao({ total, percorrido, bordadura, theme, compacta }) {
     <div>
       <div style={{display:'flex',height:alt,borderRadius:alt/2,overflow:'hidden',background:theme.divider,border:`1px solid ${theme.cardBorder2||theme.divider}`}}>
         {faixas.map(f => f.v > 0 && (
-          <div key={f.k} title={`${f.rotulo}: ${nHa(f.v)} ha`}
-            style={{width:`${pctDe(f.v)}%`, background: f.k==='falta'
+          <div key={f.k} title={`${f.rotulo}: ${nHa(f.v)} ha (${pctTxt(f.v)})`}
+            style={{width:`${pctDe(f.v)}%`, display:'flex', alignItems:'center', justifyContent:'center',
+              background: f.k==='falta'
               // Listrado na faixa que falta: diferencia do "vazio" mesmo em tela pequena
               // e no sol, onde cinza chapado some.
               ? `repeating-linear-gradient(45deg, ${theme.divider}, ${theme.divider} 4px, ${theme.bg} 4px, ${theme.bg} 8px)`
               : f.cor,
-              transition:'width .25s ease'}}/>
+              transition:'width .25s ease'}}>
+            {/* Percentual dentro da própria faixa. Abaixo de ~13% da largura o número
+                não cabe e sai cortado — nesse caso ele fica só na legenda. */}
+            {!compacta && pctDe(f.v) >= 13 && (
+              <span style={{fontSize:9.5,fontWeight:800,whiteSpace:'nowrap',
+                color: f.k==='falta' ? theme.textFaint2 : '#fff'}}>{pctTxt(f.v)}</span>
+            )}
+          </div>
         ))}
       </div>
       {!compacta && (
@@ -303,7 +315,7 @@ function BarraTalhao({ total, percorrido, bordadura, theme, compacta }) {
                 border: f.k==='falta' ? `1px dashed ${theme.textFaint}` : 'none'}}/>
               <div style={{minWidth:0}}>
                 <div style={{fontSize:11.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap'}}>
-                  {f.rotulo} · {nHa(f.v)} ha
+                  {f.rotulo} · {nHa(f.v)} ha · {pctTxt(f.v)}
                 </div>
                 <div style={{fontSize:10,color:theme.textFaint2,lineHeight:1.3}}>{f.desc}</div>
               </div>
@@ -316,8 +328,8 @@ function BarraTalhao({ total, percorrido, bordadura, theme, compacta }) {
           background: fechou ? theme.successBg : theme.warningBg,
           color: fechou ? '#00A86B' : (theme.warningText2||theme.warningText), fontWeight:600}}>
           {fechou
-            ? `✓ Talhão fechado — ${nHa(perc)} de ${nHa(t)} ha entregues`
-            : `⏳ Faltam ${nHa(falta)} ha — outro voo termina esse talhão`}
+            ? `✓ Talhão fechado — ${nHa(perc)} de ${nHa(t)} ha entregues (100%)`
+            : `⏳ Entregue ${nHa(entregue)} de ${nHa(t)} ha (${pctTxt(entregue)}) · faltam ${nHa(falta)} ha pra outro voo`}
         </div>
       )}
     </div>
@@ -598,6 +610,10 @@ export default function PilotApp({onSwitchMode}) {
   // antes eram dois botões e "Finalizado Parcial" ficava escondido num menu ⋮.
   // Marcado por padrão porque fechar o talhão é o caso comum.
   const [fezTudo,setFezTudo] = useState(true)
+  // O que o piloto pulverizou hoje, guardado como texto cru. Não dá pra derivar de
+  // `area_feita - bordadura` na hora de exibir: o valor derivado come o ponto enquanto
+  // ele digita "2.5" (vira 2, e o ponto nunca entra).
+  const [pulvHoje,setPulvHoje] = useState('')
   // Guarda o valor que o piloto tentou digitar quando passa do saldo. Antes o número
   // era cortado em silêncio: ele escrevia 100 (o talhão inteiro), virava 65 (o saldo)
   // e nada explicava. Agora a tela conta o que aconteceu.
@@ -4422,6 +4438,7 @@ Quando: ${tempoErroDebug.quando}`}
                       // Pré-preenche o percorrido com o escopo do voo: quem fechou o talhão
                       // (a maioria) só confere e confirma, sem digitar nada.
                       setFezTudo(true)
+                      setPulvHoje('')
                       setForm(f=>({...f, area_feita: f.area_feita || String(parseFloat(f.area_ha)||'')}))
                       setParcialModalOpen(true)
                     }}>
@@ -4536,7 +4553,12 @@ Quando: ${tempoErroDebug.quando}`}
                 )}
                 <div style={{display:'flex',gap:8,justifyContent:'center'}}>
                   <button style={{background:'transparent',color:'#fff',border:'1px solid rgba(255,255,255,.3)',borderRadius:18,padding:'10px 16px',fontWeight:600,fontSize:13,cursor:'pointer'}}
-                    onClick={()=>setParcialModalOpen(true)}>✏️ Editar progresso</button>
+                    onClick={()=>{
+                      setFezTudo(false)
+                      const jaPulv = +(areaFeitaAtual(form)-bordaduraAtual(form)).toFixed(2)
+                      setPulvHoje(jaPulv>0?String(jaPulv):'')
+                      setParcialModalOpen(true)
+                    }}>✏️ Editar progresso</button>
                   <button style={{background:'#ffb020',color:theme.text,border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
                     onClick={async()=>{
                       setOpState('running');setTimerSecs(0)
@@ -4719,10 +4741,35 @@ Quando: ${tempoErroDebug.quando}`}
                   {/* No Finalizado Parcial a área já foi digitada no modal — reabrir como campo
                       editável aqui confundia o piloto (parecia que precisava responder de novo). */}
                   {ehParcial ? (
-                    <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
-                      <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:3}}>ÁREA APLICADA HOJE</div>
-                      <div style={{fontSize:19,fontWeight:700,color:theme.text}}>{areaAplicadaN.toFixed(1)} ha</div>
-                    </div>
+                    (()=>{
+                      // Repete o que o piloto acabou de confirmar no modal, aberto nas duas
+                      // parcelas. Antes era um número só ("ÁREA APLICADA HOJE: 3,0 ha") e ele
+                      // não sabia se a bordadura estava dentro dele ou não.
+                      const bordN = bordaduraAtual(form)
+                      const pulvN = Math.max(0, +(areaAplicadaN-bordN).toFixed(2))
+                      const n1 = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+                      return (
+                      <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'12px 14px',marginBottom:14}}>
+                        <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:7}}>O QUE VOCÊ REGISTROU HOJE</div>
+                        <div style={{display:'flex',gap:18,flexWrap:'wrap'}}>
+                          <div>
+                            <div style={{fontSize:19,fontWeight:700,color:'#00A86B'}}>{n1(pulvN)} ha</div>
+                            <div style={{fontSize:10.5,color:theme.textFaint2}}>pulverizado</div>
+                          </div>
+                          {bordN>0 && (
+                            <div>
+                              <div style={{fontSize:19,fontWeight:700,color:'#F0A72A'}}>{n1(bordN)} ha</div>
+                              <div style={{fontSize:10.5,color:theme.textFaint2}}>bordadura</div>
+                            </div>
+                          )}
+                          <div style={{borderLeft:bordN>0?`1px solid ${theme.divider}`:'none',paddingLeft:bordN>0?18:0}}>
+                            <div style={{fontSize:19,fontWeight:700,color:theme.text}}>{n1(areaAplicadaN)} ha</div>
+                            <div style={{fontSize:10.5,color:theme.textFaint2}}>entregue do talhão</div>
+                          </div>
+                        </div>
+                      </div>
+                      )
+                    })()
                   ) : (
                     <FI label={`ÁREA APLICADA HOJE (Ha)${restanteUnica>0?` — máx. ${restanteUnica.toFixed(1)}`:''}`} ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
                       min={0} max={restanteUnica>0?restanteUnica:undefined}
@@ -5038,37 +5085,64 @@ Quando: ${tempoErroDebug.quando}`}
                   )
                 })}
               </div>
-            ) : (
+            ) : (()=>{
+              // Tetos cruzados: o saldo do talhão se reparte entre o que foi pulverizado e
+              // a bordadura, então cada campo é limitado pelo que o outro já ocupou.
+              const saldoT = parseFloat(form.area_ha)||0
+              const bordHoje = parseFloat(form.bordadura)||0
+              const pulvN = parseFloat(pulvHoje)||0
+              const tetoPulv = saldoT>0 ? Math.max(0, +(saldoT-bordHoje).toFixed(2)) : null
+              const tetoBord = saldoT>0 ? Math.max(0, +(saldoT-(fezTudo?0:pulvN)).toFixed(2)) : null
+              const nHa2 = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+              return (
               <>
                 {/* Um campo só quando fechou o talhão (a bordadura), dois quando não
                     fechou. O que muda é a PERGUNTA, não o formulário inteiro — assim o
-                    piloto não sente que mudou de tela. */}
+                    piloto não sente que mudou de tela.
+                    O primeiro campo pergunta o PULVERIZADO, não o percorrido: é o número
+                    que o controle da DJI mostra, e era daí que vinha a confusão — ele
+                    digitava o pulverizado num campo que descontava a bordadura de dentro. */}
                 {!fezTudo && (
-                  <FI label="QUANTO VOCÊ PERCORREU HOJE (HA)" ph="Ex: 6.20" val={form.area_feita} type="number"
-                    min={0} max={(parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):undefined}
+                  <FI label="QUANTO VOCÊ PULVERIZOU HOJE (HA)" ph="Ex: 6.20 — o número do controle da DJI"
+                    val={pulvHoje} type="number" min={0} max={tetoPulv>0?tetoPulv:undefined}
                     onChange={e=>{
-                      const teto = (parseFloat(form.area_ha)||0)>0?parseFloat(form.area_ha):null
                       const digitado = parseFloat(e.target.value)
-                      setAvisoCorteArea(teto!=null && !isNaN(digitado) && digitado>teto ? {digitado, teto} : null)
-                      setForm(f=>({...f,area_feita:limitarArea(e.target.value, teto)}))
+                      setAvisoCorteArea(tetoPulv!=null && !isNaN(digitado) && digitado>tetoPulv ? {digitado, teto:tetoPulv} : null)
+                      const v = limitarArea(e.target.value, tetoPulv)
+                      setPulvHoje(v)
+                      // `area_feita` segue sendo o PERCORRIDO (bordadura dentro), que é o que
+                      // o banco e os relatórios esperam — aqui ela é montada somando os dois.
+                      setForm(f=>({...f, area_feita:String(+((parseFloat(v)||0)+(parseFloat(f.bordadura)||0)).toFixed(2))}))
                     }}/>
                 )}
                 {avisoCorteArea && !fezTudo && (
                   <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:12,fontSize:11.5,lineHeight:1.5,color:theme.warningText2||theme.warningText}}>
-                    Este voo só pode registrar até <strong>{avisoCorteArea.teto.toFixed(1)} ha</strong>, que é o que falta no talhão.
+                    Este voo só pode registrar até <strong>{avisoCorteArea.teto.toFixed(1)} ha</strong> — é o que falta no talhão
+                    {bordHoje>0.005 ? `, já descontando ${bordHoje.toFixed(1)} ha de bordadura` : ''}.
                     {(parseFloat(form.area_feita_anterior)||0) > 0.05 && ' O que foi aplicado antes já está contado.'}
                   </div>
                 )}
 
-                <FI label="DESSE TOTAL, QUANTO FOI BORDADURA (HA)" ph="Ex: 1.28" val={form.bordadura} type="number"
-                  min={0} max={(parseFloat(form.area_feita)||0)>0?parseFloat(form.area_feita):undefined}
-                  onChange={e=>setForm(f=>({...f,bordadura:limitarArea(e.target.value,(parseFloat(f.area_feita)||0)>0?parseFloat(f.area_feita):null)}))}/>
+                <FI label={fezTudo ? 'DESSE TOTAL, QUANTO FOI BORDADURA (HA)' : 'E QUANTO FOI DE BORDADURA (HA)'}
+                  ph="Ex: 1.28" val={form.bordadura} type="number"
+                  min={0} max={tetoBord>0?tetoBord:undefined}
+                  onChange={e=>{
+                    const v = limitarArea(e.target.value, tetoBord)
+                    setForm(f=>({...f, bordadura:v,
+                      area_feita: fezTudo ? f.area_feita
+                        : String(+((parseFloat(pulvHoje)||0)+(parseFloat(v)||0)).toFixed(2))}))
+                  }}/>
                 <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:14,lineHeight:1.5}}>
-                  Faixa de segurança que você <b>não pulverizou</b> de propósito. Ela já está dentro
-                  do que você percorreu — e <b>conta como talhão entregue</b>, só não recebeu produto.
+                  Faixa de segurança que você <b>não pulverizou</b> de propósito — ela{' '}
+                  <b>conta como talhão entregue</b>, só não recebeu produto.{' '}
+                  {fezTudo
+                    ? <>Como você fechou o talhão, ela sai <b>de dentro</b> da área dele.</>
+                    : <>Aqui ela <b>soma</b> ao que você pulverizou: o talhão recebeu{' '}
+                        <b>{nHa2(pulvN+bordHoje)} ha</b> hoje.</>}
                 </div>
               </>
-            )}
+              )
+            })()}
 
             {/* O DESENHO. É ele que resolve a dúvida do "a bordadura conta?" — em vez de
                 explicar em texto, mostra as três faixas somando o talhão inteiro. */}
@@ -5076,8 +5150,11 @@ Quando: ${tempoErroDebug.quando}`}
               const anterior = parseFloat(form.area_feita_anterior)||0
               const saldo = parseFloat(form.area_ha)||0
               const totalTalhao = (parseFloat(form.area_talhao_total)||0) || +(anterior+saldo).toFixed(2)
-              const percorridoHoje = fezTudo ? saldo : (parseFloat(form.area_feita)||0)
-              const bordTotal = (parseFloat(form.bordadura)||0) + (parseFloat(form.bordadura_anterior)||0)
+              // No parcial o percorrido é o pulverizado MAIS a bordadura — ela soma, não sai
+              // de dentro. Quem fechou o talhão percorreu o saldo inteiro.
+              const bordHoje = parseFloat(form.bordadura)||0
+              const percorridoHoje = fezTudo ? saldo : Math.min(saldo, +((parseFloat(pulvHoje)||0)+bordHoje).toFixed(2))
+              const bordTotal = bordHoje + (parseFloat(form.bordadura_anterior)||0)
               if (totalTalhao<=0) return null
               return (
                 <div style={{background:theme.bg,borderRadius:14,padding:'13px 14px',marginBottom:16}}>
@@ -5091,6 +5168,13 @@ Quando: ${tempoErroDebug.quando}`}
                   </div>
                   <BarraTalhao theme={theme} total={totalTalhao}
                     percorrido={anterior + percorridoHoje} bordadura={bordTotal}/>
+                  {!fezTudo && percorridoHoje>0 && (totalTalhao-(anterior+percorridoHoje))<=0.05 && (
+                    <div style={{fontSize:11.5,lineHeight:1.45,marginTop:9,padding:'9px 11px',borderRadius:10,
+                      background:theme.successBg,color:'#00A86B',fontWeight:600}}>
+                      Pelos números não sobrou nada do talhão. Se foi isso mesmo, marque
+                      <b> "Fiz o talhão todo"</b> lá em cima — senão ele continua aparecendo em aberto.
+                    </div>
+                  )}
                   {anterior > 0.05 && (
                     <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:8,lineHeight:1.4}}>
                       Inclui {anterior.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} ha
@@ -5107,7 +5191,13 @@ Quando: ${tempoErroDebug.quando}`}
             <button style={{...s.shareBtn, background: fezTudo ? '#00A86B' : '#1a1a2e'}} onClick={async()=>{
               // Fechou o talhão: o percorrido é o escopo inteiro do voo, sem o piloto
               // precisar digitar de novo o número que ele já informou no Passo 1.
-              const percorrido = fezTudo ? (parseFloat(form.area_ha)||0) : feita
+              // Não fechou: é o que ele pulverizou MAIS a bordadura — as duas faixas juntas
+              // são o pedaço do talhão que ficou resolvido hoje.
+              const saldoT = parseFloat(form.area_ha)||0
+              const bordHojeC = multiTalhaoP ? 0 : (parseFloat(form.bordadura)||0)
+              const percorrido = fezTudo ? saldoT
+                : multiTalhaoP ? feita
+                : Math.min(saldoT, +((parseFloat(pulvHoje)||0)+bordHojeC).toFixed(2))
               setParcialModalOpen(false)
               setOpState(fezTudo ? 'finished' : 'paused_day')
               // Desconta do estoque só o incremento desde a última baixa (parcial ou início) —
@@ -5120,9 +5210,13 @@ Quando: ${tempoErroDebug.quando}`}
               // pergunta duas vezes; ele só precisa ajustar se a leitura real da DJI for diferente.
               setForm(f=>({...f,area_feita:String(percorrido),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm,
                 area_total_aplicada: multiTalhaoP ? f.area_total_aplicada : String(Math.max(0,percorrido-(parseFloat(f.area_feita_anterior)||0))),
+                // A bordadura também desce pro Passo 5, já com o motivo escolhido: ele acabou
+                // de digitar esse número aqui, não faz sentido a tela seguinte pedir de novo.
+                area_nao_aplicada: (!multiTalhaoP && bordHojeC>0) ? String(bordHojeC) : f.area_nao_aplicada,
                 areaAplicadaPorTalhao: multiTalhaoP
                   ? talhoesSelP.reduce((acc,nome)=>({...acc,[nome]:String(Math.max(0,(parseFloat(f.area_feita_por_talhao?.[nome])||0)-(parseFloat(f.area_feita_por_talhao_anterior?.[nome])||0)))}),{...f.areaAplicadaPorTalhao})
                   : f.areaAplicadaPorTalhao}))
+              if (!multiTalhaoP && bordHojeC>0) setMotivoNaoAplicada('Bordadura')
               const novoStatus = fezTudo ? 'finalizado' : 'pausado_dia'
               const relSalvo = await saveToSupabase({status:novoStatus,area_feita:percorrido,area_deduzida:percorrido,dt_fim:n.iso})
               if(relSalvo) registrar(fezTudo?'voo_finalizado':'voo_parcial',
