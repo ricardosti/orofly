@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.5',
+    data: '2026-09-27',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Exportar a Sequencia em PDF e WhatsApp',
+        texto: 'A tela Sequencia ganhou os dois botoes. O PDF sai no formato da planilha que a operacao ja usava: uma faixa por modalidade, cada fazenda numa linha com talhoes, area, realizado, em aberto e percentual, fechamento de cada grupo e total geral no rodape. O WhatsApp manda o mesmo conteudo em texto, com uma barra de avanco e um icone por fazenda (concluida, executando ou na fila), e leva o PDF anexado junto. Os dois exportam exatamente o que esta na tela — se voce escolheu fazendas, vao so elas.',
+      },
+    ],
+  },
+  {
     versao: '6.4',
     data: '2026-09-27',
     itens: [

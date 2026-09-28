@@ -951,6 +951,166 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 // página 1 era a única em pé, e quem abria o PDF tinha que girar a tela na primeira folha
 // e desgirar na segunda.
 // `cons` vem pronto do agregador em src/lib/consolidado.js — este gerador não calcula área.
+// ─────────────────────────────────────────────────────────────────────────────
+// RELATÓRIO DE SEQUÊNCIA — a rodada de trabalho, agrupada por modalidade.
+//
+// Formato copiado da planilha que a operação já usava: uma faixa por modalidade,
+// cada fazenda numa linha, e o fechamento do grupo embaixo. Mantive as colunas na
+// ordem dela (Área, Realizado, Em Aberto) pra quem vinha do Excel não se perder.
+//
+// `linhas` chega pronto do painel: [{ modalidade, fazenda, cliente, talhoes,
+// talhoesTocados, area, realizado, emAberto, pct, status }]
+export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig = null }) {
+  await carregarEmpresaConfig(pdfConfig)
+  const { jsPDF } = await import('jspdf')
+  const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: [297, 210] })
+  const PW = 297, PH = 210, M = 10, CW = PW - M * 2
+  // Mesmas cores dos outros relatórios (elas são locais de cada gerador, não globais).
+  const G = pdfConfig?.corDestaque ? hexToRgb(pdfConfig.corDestaque) : [26,122,74]
+  const DK = [17,26,20], GR = [120,140,130]
+  const fundoBranco = () => { doc.setFillColor(255,255,255); doc.rect(0,0,PW,PH,'F') }
+  const nHa = v => (v||0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 })
+  const fmtD = d => d ? String(d).split('-').reverse().join('/') : '—'
+
+  fundoBranco()
+  let y = M
+
+  try { doc.addImage(LOGO_B64, 'PNG', M, y, 38, 21) } catch (e) {
+    doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(...G); doc.text('OROFLY', M, y + 13)
+  }
+  doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(...DK)
+  doc.text('SEQUÊNCIA DE OPERAÇÃO', PW - M, y + 8, { align:'right' })
+  doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...GR)
+  doc.text(`Período: ${fmtD(periodo.de)} a ${fmtD(periodo.ate)}`, PW - M, y + 13.5, { align:'right' })
+  doc.setFontSize(6.5); doc.setTextColor(...G)
+  doc.text('T E C N O L O G I A   A G R Í C O L A   A E R O A P L I C A D A', PW - M, y + 18.5, { align:'right' })
+  y += 23
+  doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, y, PW - M, y); y += 7
+
+  // Totais gerais no topo: é o número que a chefia olha primeiro.
+  const geral = linhas.reduce((a,l)=>({
+    talhoes:a.talhoes+(l.talhoes||0), tocados:a.tocados+(l.talhoesTocados||0),
+    area:a.area+(l.area||0), realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0),
+  }), { talhoes:0, tocados:0, area:0, realizado:0, emAberto:0 })
+  const pctGeral = geral.area > 0 ? Math.min(100,(geral.realizado/geral.area)*100) : 0
+
+  const cards = [
+    ['FAZENDAS', String(linhas.length), 'na sequência'],
+    ['TALHÕES', String(geral.talhoes), `${geral.tocados} trabalhados`],
+    ['ÁREA TOTAL', nHa(geral.area), 'hectares'],
+    ['REALIZADO', nHa(geral.realizado), 'hectares'],
+    ['EM ABERTO', nHa(geral.emAberto), 'hectares'],
+    ['AVANÇO', `${Math.floor(pctGeral)}%`, 'do período'],
+  ]
+  const wc = (CW - 5*4) / 6
+  cards.forEach(([lbl,val,sub],i)=>{
+    const x = M + i*(wc+4)
+    doc.setFillColor(247,250,248); doc.rect(x, y, wc, 20, 'F')
+    doc.setFillColor(...G); doc.rect(x, y, wc, 0.9, 'F')
+    doc.setFontSize(5.6); doc.setFont('helvetica','bold'); doc.setTextColor(...GR); doc.text(lbl, x+3, y+5)
+    doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(...G); doc.text(val, x+3, y+12.5)
+    doc.setFontSize(5.4); doc.setFont('helvetica','normal'); doc.setTextColor(...GR); doc.text(sub, x+3, y+17)
+  })
+  y += 26
+
+  // Larguras: fazenda e cliente ficam com o espaço que sobra, os números com o que precisam.
+  const COLS = [
+    ['FAZENDA',    CW*0.24, 'l'],
+    ['CLIENTE',    CW*0.14, 'l'],
+    ['TALHÕES',    CW*0.10, 'r'],
+    ['ÁREA (HA)',  CW*0.13, 'r'],
+    ['REALIZADO',  CW*0.13, 'r'],
+    ['EM ABERTO',  CW*0.13, 'r'],
+    ['%',          CW*0.06, 'r'],
+    ['STATUS',     CW*0.07, 'l'],
+  ]
+  const xDe = i => M + COLS.slice(0,i).reduce((a,c)=>a+c[1],0)
+
+  const cabecalhoTabela = () => {
+    doc.setFillColor(...G); doc.rect(M, y, CW, 6.5, 'F')
+    doc.setFontSize(6.2); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255)
+    COLS.forEach((c,i)=>{
+      const x = c[2]==='r' ? xDe(i)+c[1]-2 : xDe(i)+2
+      doc.text(c[0], x, y+4.4, { align: c[2]==='r'?'right':'left' })
+    })
+    y += 6.5
+  }
+
+  const quebraSePreciso = (alturaNecessaria) => {
+    if (y + alturaNecessaria <= PH - M - 10) return
+    doc.addPage([297,210],'l'); fundoBranco(); y = M
+    cabecalhoTabela()
+  }
+
+  cabecalhoTabela()
+  const modalidades = [...new Set(linhas.map(l=>l.modalidade))].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'))
+
+  modalidades.forEach(mod => {
+    const doGrupo = linhas.filter(l => l.modalidade === mod)
+    quebraSePreciso(12 + doGrupo.length*5.4)
+
+    // Faixa da modalidade
+    doc.setFillColor(240,248,243); doc.rect(M, y, CW, 5.8, 'F')
+    doc.setFillColor(...G); doc.rect(M, y, 1.4, 5.8, 'F')
+    doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(...G)
+    doc.text(String(mod).toUpperCase(), M+4, y+4)
+    y += 5.8
+
+    doGrupo.forEach((l,i)=>{
+      quebraSePreciso(6)
+      if (i % 2 === 1) { doc.setFillColor(250,252,251); doc.rect(M, y, CW, 5.4, 'F') }
+      doc.setFontSize(6.4); doc.setFont('helvetica','normal'); doc.setTextColor(...DK)
+      const valores = [
+        l.fazenda || '—',
+        l.cliente || '—',
+        `${l.talhoes||0}${l.talhoesTocados ? ` (${l.talhoesTocados})` : ''}`,
+        nHa(l.area),
+        l.realizado > 0 ? nHa(l.realizado) : '—',
+        l.emAberto > 0 ? nHa(l.emAberto) : '—',
+        l.pct == null ? '—' : `${Math.floor(l.pct)}%`,
+        l.status || '',
+      ]
+      COLS.forEach((c,ci)=>{
+        const x = c[2]==='r' ? xDe(ci)+c[1]-2 : xDe(ci)+2
+        if (ci===4 && l.realizado>0) { doc.setFont('helvetica','bold'); doc.setTextColor(...G) }
+        else if (ci===7) { doc.setFontSize(5.6); doc.setTextColor(...GR) }
+        else { doc.setFont('helvetica','normal'); doc.setTextColor(...DK); doc.setFontSize(6.4) }
+        doc.text(truncFit(doc, String(valores[ci]), c[1]-4), x, y+3.7, { align: c[2]==='r'?'right':'left' })
+      })
+      y += 5.4
+    })
+
+    // Fechamento do grupo
+    const g = doGrupo.reduce((a,l)=>({talhoes:a.talhoes+(l.talhoes||0), area:a.area+(l.area||0),
+      realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0)}), {talhoes:0,area:0,realizado:0,emAberto:0})
+    doc.setFillColor(235,243,238); doc.rect(M, y, CW, 5.6, 'F')
+    doc.setFontSize(6.4); doc.setFont('helvetica','bold'); doc.setTextColor(...G)
+    doc.text(`TOTAL ${String(mod).toUpperCase()}`, xDe(0)+2, y+3.8)
+    const totais = [null,null,String(g.talhoes),nHa(g.area),nHa(g.realizado),nHa(g.emAberto),
+      `${g.area>0?Math.floor(Math.min(100,(g.realizado/g.area)*100)):0}%`,null]
+    COLS.forEach((c,ci)=>{
+      if (totais[ci]==null) return
+      doc.text(totais[ci], xDe(ci)+c[1]-2, y+3.8, { align:'right' })
+    })
+    y += 5.6 + 3
+  })
+
+  // Total geral
+  quebraSePreciso(8)
+  doc.setFillColor(...G); doc.rect(M, y, CW, 6.4, 'F')
+  doc.setFontSize(6.8); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255)
+  doc.text('TOTAL GERAL', xDe(0)+2, y+4.3)
+  const tg = [null,null,String(geral.talhoes),nHa(geral.area),nHa(geral.realizado),nHa(geral.emAberto),`${Math.floor(pctGeral)}%`,null]
+  COLS.forEach((c,ci)=>{ if (tg[ci]!=null) doc.text(tg[ci], xDe(ci)+c[1]-2, y+4.3, { align:'right' }) })
+  y += 6.4
+
+  doc.setDrawColor(...G); doc.setLineWidth(0.5); doc.line(M, PH-M-6, PW-M, PH-M-6)
+  doc.setFontSize(6); doc.setFont('helvetica','normal'); doc.setTextColor(...GR)
+  doc.text((EMPRESA.razao_social || EMPRESA.nome || 'OROFLY').toUpperCase(), M, PH-M-2)
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')}`, PW-M, PH-M-2, { align:'right' })
+  return doc
+}
+
 export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPendentes=false, incluirMapa=false, kmlsFazenda=null, midiaNaPagina1=false, observacaoAdmin='', fotoGeralBase64=null, fotosGerais=null, supabase=null, pdfConfig=null }) {
   // `fotosGerais` é a lista nova; `fotoGeralBase64` é a forma antiga (uma foto só) e
   // continua funcionando. Normaliza pra uma lista e o resto do código só olha pra ela.

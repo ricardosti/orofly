@@ -3,7 +3,7 @@ import { useAdminTheme as useTheme } from '../lib/theme'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFCliente, gerarWordCliente, gerarPDFFazendaPeriodo, gerarPDFAgenda, areaLiquida, setEmpresaConfig } from '../lib/pdf'
+import { gerarPDFCliente, gerarWordCliente, gerarPDFFazendaPeriodo, gerarPDFAgenda, gerarPDFSequencia, areaLiquida, setEmpresaConfig } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { pedirPermissaoNotificacaoLocal, notificarLocal } from '../lib/localNotify'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
@@ -357,6 +357,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [seqSelecionadas, setSeqSelecionadas] = useState([])
   const [seqBusca, setSeqBusca] = useState('')
   const [seqSoSelecionadas, setSeqSoSelecionadas] = useState(false)
+  const [seqExportando, setSeqExportando] = useState(null)   // 'pdf' | 'whats'
   const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
@@ -684,6 +685,71 @@ export default function AdminPanel({ onSwitchMode }) {
       // falha no update deixaria a fazenda apontando pra arquivo que não existe mais.
       if (alvo.path) { await supabase.storage.from('relatorios').remove([alvo.path]); esquecerUrl(alvo.path) }
     } catch(e) { showToast('Erro ao remover: '+e.message, 'error'); carregarFotosPeriodo(fz) }
+  }
+
+  // Texto do WhatsApp da Sequência. Agrupado por modalidade igual ao PDF e à planilha,
+  // pra quem recebe pelo zap ver na mesma ordem de quem abriu o arquivo.
+  function buildTxtSequencia(linhas, periodo) {
+    const nHa = v => (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+    const fmtD = d => d ? String(d).split('-').reverse().join('/') : '—'
+    const g = linhas.reduce((a,l)=>({talhoes:a.talhoes+(l.talhoes||0), tocados:a.tocados+(l.talhoesTocados||0),
+      area:a.area+(l.area||0), realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0)}),
+      {talhoes:0,tocados:0,area:0,realizado:0,emAberto:0})
+    const pct = g.area>0 ? Math.floor(Math.min(100,(g.realizado/g.area)*100)) : 0
+
+    let t = `🎯 *SEQUÊNCIA DE OPERAÇÃO*\n`
+    t += `📅 ${fmtD(periodo.de)} a ${fmtD(periodo.ate)}\n\n`
+    t += `*Avanço:* ${nHa(g.realizado)} de ${nHa(g.area)} ha — ${pct}%\n`
+    // Barra em texto: no WhatsApp não tem gráfico, e 10 blocos dão a noção na hora.
+    t += `${'▓'.repeat(Math.round(pct/10))}${'░'.repeat(10-Math.round(pct/10))}\n`
+    t += `*Talhões:* ${g.talhoes} (${g.tocados} trabalhados)\n`
+    t += `*Em aberto:* ${nHa(g.emAberto)} ha\n`
+
+    const mods = [...new Set(linhas.map(l=>l.modalidade))].sort((a,b)=>compararNomes(a,b))
+    mods.forEach(mod=>{
+      const doG = linhas.filter(l=>l.modalidade===mod)
+      const gg = doG.reduce((a,l)=>({talhoes:a.talhoes+(l.talhoes||0), area:a.area+(l.area||0),
+        realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0)}),{talhoes:0,area:0,realizado:0,emAberto:0})
+      t += `\n*${String(mod).toUpperCase()}* — ${doG.length} ${doG.length===1?'fazenda':'fazendas'} · ${gg.talhoes} ${gg.talhoes===1?'talhão':'talhões'}\n`
+      doG.forEach(l=>{
+        const marca = l.status==='Concluída' ? '✅' : l.status==='Executando' ? '🔄' : '⬜'
+        t += `${marca} ${l.fazenda} — ${nHa(l.area)} ha`
+        if (l.realizado>0) t += ` · feito ${nHa(l.realizado)} (${Math.floor(l.pct||0)}%)`
+        if (l.emAberto>0.05) t += ` · falta ${nHa(l.emAberto)}`
+        t += `\n`
+      })
+      t += `_Subtotal: ${nHa(gg.realizado)} de ${nHa(gg.area)} ha_\n`
+    })
+    t += `\n_${new Date().toLocaleDateString('pt-BR')} · Orofly_`
+    return t
+  }
+
+  async function exportarSequencia(tipo, linhasTela, periodo) {
+    if (!linhasTela.length) return
+    setSeqExportando(tipo)
+    try {
+      // O PDF recebe os campos já calculados na tela — não refaz conta nenhuma, então
+      // arquivo e tela não têm como divergir.
+      const linhas = linhasTela.map(l => ({
+        modalidade: l.modalidade, fazenda: l.fz.nome, cliente: l.fz.cliente,
+        talhoes: l.talhoes, talhoesTocados: l.talhoesTocados,
+        area: l.area, realizado: l.coberto, emAberto: l.emAberto, pct: l.pct,
+        status: l.status==='concluida'?'Concluída':l.status==='executando'?'Executando':l.status==='sequencia'?'Sequência':'—',
+      }))
+      const nomeArq = `sequencia-${periodo.de||'inicio'}-a-${periodo.ate||'hoje'}.pdf`
+      if (tipo === 'whats') {
+        const texto = buildTxtSequencia(linhas, periodo)
+        const doc = await gerarPDFSequencia({ linhas, periodo })
+        const file = new File([doc.output('blob')], nomeArq, { type:'application/pdf' })
+        await compartilharNativo({ text: texto, file, filename: nomeArq,
+          webFallbackUrl: 'https://wa.me/?text=' + encodeURIComponent(texto) })
+      } else {
+        const doc = await gerarPDFSequencia({ linhas, periodo })
+        await salvarOuCompartilharPdf(doc, nomeArq)
+        showToast('✅ PDF gerado!')
+      }
+    } catch(e) { console.error(e); showToast('Erro ao gerar: '+e.message,'error') }
+    finally { setSeqExportando(null) }
   }
 
   async function carregarAtividades() {
@@ -7323,6 +7389,24 @@ export default function AdminPanel({ onSwitchMode }) {
                   <button onClick={()=>setSeqSelecionadas([])}
                     style={{background:'none',border:'none',color:'#EF4444',fontSize:12,fontWeight:600,cursor:'pointer'}}>✕ limpar</button>
                 )}
+              </div>
+
+              {/* Exporta o que está NA TELA (base), que é o mesmo conjunto dos totais —
+                  assim o relatório nunca diverge do que o gestor está vendo. */}
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+                <button disabled={!!seqExportando || base.length===0}
+                  onClick={()=>exportarSequencia('pdf', base, periodo)}
+                  style={{background:theme.bg,color:theme.text,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'9px 16px',fontSize:12.5,fontWeight:600,cursor:'pointer',opacity:(seqExportando||!base.length)?.5:1}}>
+                  {seqExportando==='pdf'?'Gerando...':'📄 Baixar PDF'}
+                </button>
+                <button disabled={!!seqExportando || base.length===0}
+                  onClick={()=>exportarSequencia('whats', base, periodo)}
+                  style={{background:'#25D366',color:'#fff',border:'none',borderRadius:12,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer',opacity:(seqExportando||!base.length)?.5:1}}>
+                  {seqExportando==='whats'?'Gerando...':'📲 WhatsApp'}
+                </button>
+                <span style={{alignSelf:'center',fontSize:11,color:theme.textFaint}}>
+                  {seqSelecionadas.length ? `${base.length} fazenda${base.length>1?'s':''} escolhida${base.length>1?'s':''}` : `${base.length} fazenda${base.length>1?'s':''} na tela`}
+                </span>
               </div>
 
               {/* ── Tabela por modalidade ── */}
