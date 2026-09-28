@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.1',
+    data: '2026-09-27',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Atalho "Todo o periodo" no Relatorio do Periodo',
+        texto: 'Entrou o botao "Todo o periodo" junto de Ultimos 7d, 30d e Mes atual. Ele comeca no primeiro voo daquela fazenda, entao pega tudo sem voce precisar saber a data e digitar na mao. Faz diferenca em fazenda que ficou parada um tempo: a ESTIVA, por exemplo, tem 12 voos e nenhum deles cai dentro dos ultimos 30 dias.',
+      },
+    ],
+  },
+  {
     versao: '6.0',
     data: '2026-09-27',
     itens: [

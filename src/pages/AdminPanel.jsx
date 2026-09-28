@@ -4519,18 +4519,26 @@ export default function AdminPanel({ onSwitchMode }) {
                         </div>
                       </div>
                       <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
-                        {[['7',7],['30',30],['Mês atual','mes']].map(([lbl,val])=>(
-                          <button key={lbl} style={{background:theme.bg,color:theme.textMuted,border:'none',borderRadius:14,padding:'5px 12px',fontSize:11,fontWeight:600,cursor:'pointer'}}
+                        {[['7',7],['30',30],['Mês atual','mes'],['Todo o período','tudo']].map(([lbl,val])=>(
+                          <button key={lbl} style={{background: val==='tudo'?theme.successBg:theme.bg, color: val==='tudo'?'#059669':theme.textMuted, border:'none', borderRadius:14, padding:'5px 12px', fontSize:11, fontWeight:600, cursor:'pointer'}}
                             onClick={()=>{
                               const hoje=new Date()
-                              if(val==='mes'){
+                              if(val==='tudo'){
+                                // Começa no PRIMEIRO voo desta fazenda, e não numa data antiga
+                                // fixa: assim o campo mostra uma data que quer dizer alguma
+                                // coisa, e o filtro pega tudo do mesmo jeito.
+                                const datas = relatorios
+                                  .filter(r=>r.cliente===relatorioPeriodoFz?.cliente && r.fazenda===relatorioPeriodoFz?.nome)
+                                  .map(r=>(r.dt_inicio||r.created_at||'').slice(0,10)).filter(Boolean).sort()
+                                setRelatorioPeriodoForm({dataIni: datas[0] || '2020-01-01', dataFim: hoje.toISOString().slice(0,10)})
+                              } else if(val==='mes'){
                                 const ini=new Date(hoje.getFullYear(),hoje.getMonth(),1)
                                 setRelatorioPeriodoForm({dataIni:ini.toISOString().slice(0,10),dataFim:hoje.toISOString().slice(0,10)})
                               } else {
                                 const ini=new Date(hoje); ini.setDate(ini.getDate()-val)
                                 setRelatorioPeriodoForm({dataIni:ini.toISOString().slice(0,10),dataFim:hoje.toISOString().slice(0,10)})
                               }
-                            }}>{val==='mes'?lbl:`Últimos ${lbl}d`}</button>
+                            }}>{val==='mes'||val==='tudo'?lbl:`Últimos ${lbl}d`}</button>
                         ))}
                       </div>
 
