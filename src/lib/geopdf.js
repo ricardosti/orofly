@@ -12,12 +12,15 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = `${process.env.PUBLIC_URL || ''}/pdf.wo
 
 // Renderiza a primeira página do PDF (Blob/ArrayBuffer) num canvas já existente.
 // Retorna { width, height } em pixels do canvas.
-export async function renderPdfPageToCanvas(pdfData, canvas, maxWidth = 1000) {
+export async function renderPdfPageToCanvas(pdfData, canvas, maxLado = 1000) {
   const buf = pdfData instanceof Blob ? await pdfData.arrayBuffer() : pdfData
   const doc = await pdfjsLib.getDocument({ data: buf }).promise
   const page = await doc.getPage(1)
   const viewportBase = page.getViewport({ scale: 1 })
-  const scale = maxWidth / viewportBase.width
+  // O teto vale pro LADO MAIOR, não só pra largura: com teto de largura, uma folha em
+  // RETRATO gerava um canvas altíssimo, e Android recusa canvas acima de ~4096 px em
+  // qualquer dimensão — o canvas volta em branco, sem lançar erro nenhum.
+  const scale = maxLado / Math.max(viewportBase.width, viewportBase.height)
   const viewport = page.getViewport({ scale })
   canvas.width = viewport.width
   canvas.height = viewport.height
@@ -35,7 +38,7 @@ export function ehImagem(nomeArquivo) {
 // Renderiza uma imagem (foto/print de mapa impresso, sem georreferenciamento embutido) num
 // canvas já existente — equivalente ao renderPdfPageToCanvas, mas pra JPG/PNG. A calibração
 // desses mapas é sempre manual (2 cantos digitados), nunca automática.
-export async function renderImagemParaCanvas(blob, canvas, maxWidth = 1600) {
+export async function renderImagemParaCanvas(blob, canvas, maxLado = 1600) {
   const url = URL.createObjectURL(blob)
   try {
     const img = await new Promise((resolve, reject) => {
@@ -44,7 +47,9 @@ export async function renderImagemParaCanvas(blob, canvas, maxWidth = 1600) {
       el.onerror = () => reject(new Error('não consegui ler essa imagem (arquivo corrompido ou formato não suportado)'))
       el.src = url
     })
-    const scale = Math.min(1, maxWidth / img.naturalWidth) || 1
+    // Mesmo teto por lado maior do renderPdfPageToCanvas. O Math.min(1,…) evita ampliar
+    // um print pequeno, que só deixaria a imagem borrada e pesada.
+    const scale = Math.min(1, maxLado / Math.max(img.naturalWidth, img.naturalHeight)) || 1
     const width = Math.round(img.naturalWidth * scale), height = Math.round(img.naturalHeight * scale)
     canvas.width = width
     canvas.height = height

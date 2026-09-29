@@ -9,6 +9,69 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.8',
+    data: '2026-09-28',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Desenhar no mapa',
+        texto: 'O mapa ganhou lapis. Abra o menu de tres pontinhos e escolha "Desenhar no mapa" pra riscar em cima da folha: contornar um obstaculo, marcar onde parou, circular a area que ficou pra tras. Um dedo risca e dois dedos continuam movendo e girando o mapa; no PC tem o botao "Mover" pra arrastar. Os riscos ficam colados no mapa, entao acompanham zoom, arraste e rotacao, e ficam guardados NO APARELHO junto com aquele mapa — nao vao pro servidor, nao gastam internet e continuam la quando voce abrir de novo. Tem Desfazer e Limpar.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Pincel de qualquer grossura e qualquer cor',
+        texto: 'No mapa e tambem no editor de foto, a grossura do traco virou uma barra que vai de fino a bem grosso, com uma bolinha mostrando o tamanho real antes de riscar. As 4 cores fixas viraram 5 atalhos (vermelho, amarelo, verde, branco e preto) mais uma barra em degrade pra escolher qualquer cor do arco-iris.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Zoom do mapa com bem mais detalhe',
+        texto: 'O mapa passou a ser aberto em resolucao quase o dobro da anterior (de 2200 para 4000 pixels no lado maior), entao da pra aproximar muito mais e ainda ler o numero do talhao. Como o mapa fica guardado no aparelho e e usado offline, isso nao gasta internet nenhuma. Em aparelho que nao aguentar a resolucao maxima, o app reduz sozinho em vez de abrir o mapa em branco.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Altitude em destaque no mapa',
+        texto: 'A altitude ja existia, mas ficava no fim de uma linha cinza e ninguem achava. Agora aparece como uma etiqueta propria na barra de baixo. O "~" lembra que o GPS do celular erra bem mais na altura do que na posicao — a diferenca pode passar de dezenas de metros.',
+      },
+    ],
+  },
+  {
+    versao: '6.7',
+    data: '2026-09-28',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Quem continua um talhao parcial agora ve 100%',
+        texto: 'Num talhao de 100 ha com 30 ja feitos por outro voo, o piloto fechava os 70 que faltavam e a barra ainda dizia "Falta 30,00" — o talhao estava fechado e o desenho insistia que nao. A barra media contra o talhao inteiro; agora a referencia e o SALDO que voce pegou, entao fechar o que faltava da 100%. O tamanho real do talhao e o quanto ja foi feito antes aparecem como legenda embaixo da barra.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Os percentuais das faixas agora somam 100',
+        texto: 'Num talhao de 100 ha com 96,5 pulverizados e 3,5 de bordadura, a barra mostrava 97% + 4% = 101% — os dois valores terminavam em ",5" e arredondavam pra cima juntos. Agora a sobra do arredondamento e distribuida pra fechar 100 certinho.',
+      },
+    ],
+  },
+  {
+    versao: '6.6',
+    data: '2026-09-27',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'No parcial, a bordadura SOMA ao que voce pulverizou',
+        texto: 'O campo perguntava "quanto voce percorreu hoje" e descontava a bordadura de dentro desse numero. So que o piloto le o numero do controle da DJI, que e o PULVERIZADO: quem digitava 2 e 1 esperava 3 ha entregues e via 1. Agora a pergunta e "quanto voce pulverizou hoje" e a bordadura soma — pulverizado + bordadura e o pedaco do talhao resolvido hoje. Quem marca "Fiz o talhao todo" segue como antes, com a bordadura saindo de dentro da area do talhao.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'A barra do talhao mostra hectare e percentual',
+        texto: 'Cada faixa passou a mostrar o percentual dentro da propria cor e, na legenda, o hectare junto com o percentual. No rodape entrou o total entregue — o numero que o piloto procurava e nao existia em lugar nenhum da tela. Faixa pequena demais pra arredondar mostra "<1%" em vez de "0%", que parecia erro de conta.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Exportar a Sequencia voltou a funcionar',
+        texto: 'Os botoes de PDF e WhatsApp da tela Sequencia davam erro e nao geravam nada. Junto, nomes com travessao (como "CAMBUI II - ANGATUBA") saiam sem o traco no PDF, porque a fonte padrao nao tem esse caractere.',
+      },
+    ],
+  },
+  {
     versao: '6.5',
     data: '2026-09-27',
     itens: [

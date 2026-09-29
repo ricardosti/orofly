@@ -1,15 +1,10 @@
 import { useRef, useEffect, useState } from 'react'
+import { hslParaHex, matizDaCor, CORES_ATALHO, GRADIENTE_MATIZ } from '../lib/cores'
 
 // Editor de foto — modal fullscreen com canvas HTML5, com dois modos: marcação (lápis, pra
 // circular/riscar algo direto na imagem) e corte (recorte livre arrastando os cantos). Usado
 // antes de aceitar qualquer foto no fluxo do piloto (Observação e Evidência Climática do Passo
 // 5, Foto do Mapa de Pós Aplicação, Incidentes, Notas/Despesas), pra não precisar de outro app.
-const CORES = [
-  { nome:'Vermelho', hex:'#e5484d' },
-  { nome:'Amarelo', hex:'#f2c94c' },
-  { nome:'Verde', hex:'#00A86B' },
-  { nome:'Branco', hex:'#ffffff' },
-]
 
 // Comprime a imagem final em JPEG, tentando ficar abaixo do ALVO reduzindo a qualidade em
 // passos fixos (evita loop indefinido) — o tamanho em pixels já foi limitado na hora de montar
@@ -33,12 +28,14 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   const ultimoPontoRef = useRef(null)
   const cropDragRef = useRef(null)
   const [modo, setModo] = useState('desenho') // 'desenho' | 'corte'
-  const [cor, setCor] = useState(CORES[0].hex)
-  const [espessura, setEspessura] = useState('medio')
+  const [cor, setCor] = useState(CORES_ATALHO[0])
+  // Espessura contínua (1–24), em passos de 0,1% do maior lado da foto. Eram 3 degraus
+  // fixos (Fino/Médio/Grosso) e o Pastor pediu pra poder aumentar e reduzir à vontade.
+  const [espessura, setEspessura] = useState(12)
   // Fracao do maior lado da imagem, nao pixel fixo: a foto pode chegar com 1280 px
   // ou com 700, e o traco de 4 px que era discreto numa ficava grosso na outra.
   // Assim a marcacao sai com a mesma espessura relativa sempre.
-  const FATOR_ESPESSURA = { fino: 0.006, medio: 0.012, grosso: 0.020 }
+  const fatorEspessura = espessura * 0.001
   const [desenhando, setDesenhando] = useState(false)
   const [historico, setHistorico] = useState([])
   const [pronto, setPronto] = useState(false)
@@ -118,7 +115,7 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
     if (!ultimo) return
     ctx.strokeStyle = cor
     // Minimo de 3 px pra nunca sumir numa imagem pequena.
-    ctx.lineWidth = Math.max(3, Math.round(Math.max(canvas.width, canvas.height) * (FATOR_ESPESSURA[espessura] ?? FATOR_ESPESSURA.medio)))
+    ctx.lineWidth = Math.max(2, Math.round(Math.max(canvas.width, canvas.height) * fatorEspessura))
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.beginPath()
@@ -294,15 +291,27 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
 
         {modo==='desenho' ? (
           <>
-            <div style={{ display:'flex', alignItems:'center', gap:10, justifyContent:'center', flexWrap:'wrap' }}>
-              {CORES.map(c => (
-                <button key={c.hex} onClick={()=>setCor(c.hex)} title={c.nome}
-                  style={{ width:30, height:30, borderRadius:'50%', background:c.hex, border: cor===c.hex ? '3px solid #00A86B' : '2px solid rgba(255,255,255,.4)', cursor:'pointer' }}/>
+            <div style={{ display:'flex', alignItems:'center', gap:7 }}>
+              {CORES_ATALHO.map(c => (
+                <button key={c} onClick={()=>setCor(c)} title={c}
+                  style={{ width:26, height:26, borderRadius:'50%', background:c, flexShrink:0, cursor:'pointer',
+                    border: cor===c ? '3px solid #00A86B' : '2px solid rgba(255,255,255,.4)' }}/>
               ))}
-              <div style={{ width:1, height:24, background:'rgba(255,255,255,.2)', margin:'0 6px' }}/>
-              {[['fino','Fino'],['medio','Médio'],['grosso','Grosso']].map(([v,label]) => (
-                <button key={v} onClick={()=>setEspessura(v)} style={{ background: espessura===v?'#00A86B':'rgba(255,255,255,.15)', color:'#fff', border:'none', borderRadius:14, padding:'6px 12px', fontSize:11.5, fontWeight:600, cursor:'pointer' }}>{label}</button>
-              ))}
+              {/* O gradiente é o próprio controle: arrastar nele escolhe o matiz. */}
+              <input type="range" min={0} max={359} value={matizDaCor(cor)}
+                onChange={e=>setCor(hslParaHex(Number(e.target.value)))}
+                style={{ flex:1, minWidth:0, height:26, margin:0, cursor:'pointer', appearance:'none', WebkitAppearance:'none',
+                  borderRadius:13, border:'2px solid rgba(255,255,255,.4)', background:GRADIENTE_MATIZ }}/>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <div style={{ width:Math.max(2,espessura), height:Math.max(2,espessura), borderRadius:'50%', background:cor,
+                  border: cor==='#ffffff' ? '1px solid rgba(0,0,0,.3)' : 'none' }}/>
+              </div>
+              <input type="range" min={1} max={24} value={espessura}
+                onChange={e=>setEspessura(Number(e.target.value))}
+                style={{ flex:1, accentColor:'#00A86B', cursor:'pointer' }}/>
+              <span style={{ fontSize:11, color:'rgba(255,255,255,.65)', width:34, textAlign:'right', flexShrink:0 }}>{espessura}</span>
             </div>
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={desfazer} disabled={historico.length===0} style={{ flex:1, background:'rgba(255,255,255,.15)', color:'#fff', border:'none', borderRadius:12, padding:'11px', fontSize:13, fontWeight:600, cursor:historico.length?'pointer':'default', opacity:historico.length?1:.4 }}>↩️ Desfazer</button>

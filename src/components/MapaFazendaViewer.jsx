@@ -4,13 +4,24 @@ import { Geolocation } from '@capacitor/geolocation'
 import { renderPdfPageToCanvas, renderImagemParaCanvas, ehImagem, latLngParaPixel, pixelParaLatLng, distanciaKm, lerMapaCache, salvarMapaCache, apagarMapaCache, extrairGeoPdf } from '../lib/geopdf'
 import { compartilharNativo } from '../lib/nativeShare'
 import { comprimentoMetros, areaHectares, perimetroMetros } from '../lib/medicao'
+import { hslParaHex, matizDaCor, CORES_ATALHO, GRADIENTE_MATIZ } from '../lib/cores'
 import { salvarMapaAvulso, lerMapaAvulso, lerMetaMapaAvulso, salvarMetaMapaAvulso } from '../lib/mapasAvulsos'
 import { detectarCantosPorOcr } from '../lib/ocrCoordenadas'
 
 // Resolução de renderização do PDF — alta o bastante pra ficar nítido até no zoom máximo
 // (6x) num celular comum, sem precisar re-renderizar a cada nível de zoom (o PDF é vetorial,
 // então renderiza uma vez nessa largura e o CSS cuida do resto).
-const RENDER_LARGURA_HD = 2200
+// Resolução (LADO MAIOR, em pixel) em que o PDF/imagem do mapa é rasterizado. O mapa fica
+// guardado no aparelho e é lido offline, então resolução aqui não custa banda nenhuma —
+// custa memória: o canvas ocupa largura × altura × 4 bytes.
+//
+// O teto de 4000 não é sobre memória, é sobre o limite de dimensão do canvas: muito Android
+// recusa acima de 4096 px em qualquer lado e devolve um canvas em BRANCO, sem erro. A 4000,
+// uma folha A3 dá ~4000×2830 = 45 MB, que passa folgado e já permite o "super zoom" que o
+// Pastor pediu pra ler o número do talhão. Era 2200 fixo, e o zoom esbarrava antes disso.
+// Se mesmo assim o aparelho não der conta, cai pro degrau seguinte sozinho (renderComFallback).
+const RENDER_DEGRAUS = [4000, 3200, 2200, 1400]
+
 
 // Mapa georreferenciado (estilo Avenza) — renderiza um PDF e sobrepõe a posição de GPS ao
 // vivo do usuário, convertida via os 4 cantos (lat/lng) cadastrados/detectados. Funciona em
@@ -44,6 +55,20 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   // GeoPDFs reais dos clientes, o mapa ocupa só ~72% da largura da página (o resto é a
   // tabela técnica ao lado), então a posição do GPS precisa considerar só essa fração.
   const [viewportOverride, setViewportOverride] = useState(null)
+  // Desenho à mão livre por cima do mapa (estilo Avenza). Cada traço guarda os pontos em
+  // PIXEL DO CANVAS, não em lat/lng como a medição: o piloto risca em cima da folha
+  // (contorna um obstáculo, marca onde parou) e o risco tem que ficar colado ali mesmo que
+  // o mapa não esteja calibrado — mapa sem GPS também precisa aceitar marcação.
+  const [desenhoAtivo, setDesenhoAtivo] = useState(false)
+  const [tracos, setTracos] = useState([])        // [{ pts:[{x,y}], cor, larg }]
+  const [tracoAtual, setTracoAtual] = useState(null)
+  const [corTraco, setCorTraco] = useState('#e5484d')
+  // Espessura em PIXEL DE TELA. Na hora de gravar o traço ela é dividida pela escala, pra
+  // sair com a grossura que o piloto está vendo e depois acompanhar o zoom do mapa.
+  const [espessuraTela, setEspessuraTela] = useState(5)
+  // No celular, dois dedos movem o mapa enquanto um dedo risca. No PC não existe "dois
+  // dedos": sem este alternador, ligar o desenho tirava o arraste do mapa por completo.
+  const [ferramentaMao, setFerramentaMao] = useState(false)
   // Log visível na própria tela — pra diagnosticar em campo sem precisar de cabo USB/
   // debug remoto. Cada linha tem hora + mensagem; fica num painel copiável no rodapé.
   const [logs, setLogs] = useState([])
@@ -60,6 +85,30 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   const [nomeAvulsoOverride, setNomeAvulsoOverride] = useState(null)
   const nomeArquivoAvulso = nomeAvulsoOverride || avulso?.nome || 'mapa'
   const modoImagem = modoAvulso && ehImagem(nomeArquivoAvulso)
+
+  // Os traços ficam no aparelho, junto do mapa. É marcação de campo do piloto ("desviei
+  // aqui", "parei nesta linha"), não dado da operação: não vai pro Supabase, não aparece
+  // pra mais ninguém e não gasta banda — que já foi problema aqui. Mapa avulso que nunca
+  // foi salvo offline não tem id, então ali o desenho vale só pela sessão.
+  const chaveTracos = fazenda?.id ? `mapa-tracos-fz-${fazenda.id}`
+    : avulsoId ? `mapa-tracos-av-${avulsoId}` : null
+  useEffect(() => {
+    if (!chaveTracos) return
+    try {
+      const bruto = localStorage.getItem(chaveTracos)
+      setTracos(bruto ? JSON.parse(bruto) : [])
+    } catch { setTracos([]) }
+  }, [chaveTracos])
+  // Grava junto com o setState em vez de num useEffect separado: com effect, o primeiro
+  // render salvava a lista vazia por cima da guardada e apagava o desenho de quem só abriu
+  // o mapa pra olhar.
+  function aplicarTracos(mudanca) {
+    setTracos(ts => {
+      const novos = typeof mudanca === 'function' ? mudanca(ts) : mudanca
+      if (chaveTracos) { try { localStorage.setItem(chaveTracos, JSON.stringify(novos)) } catch { /* cota cheia: o desenho vale pela sessão */ } }
+      return novos
+    })
+  }
 
   const mapaPdfPath = pathOverride || fazenda?.mapa_pdf_path
   const temMapa = modoAvulso ? !!avulsoBlob : !!mapaPdfPath
@@ -255,6 +304,24 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     return () => { cancelado = true }
   }, [modoAvulso]) // eslint-disable-line
 
+  // Rasteriza na maior resolução que o aparelho aguentar, descendo de degrau quando não dá.
+  // Canvas grande demais não falha de um jeito só: uns aparelhos lançam exceção, outros
+  // devolvem um canvas em branco de tamanho zero — por isso checa o retorno, não só o catch.
+  async function renderComFallback(render, dados, canvas) {
+    let ultimoErro = null
+    for (const largura of RENDER_DEGRAUS) {
+      try {
+        const r = await render(dados, canvas, largura)
+        if (r?.width > 0 && r?.height > 0) {
+          if (largura !== RENDER_DEGRAUS[0]) log(`resolução reduzida pra ${largura}px — o aparelho não deu conta da máxima`)
+          return r
+        }
+        ultimoErro = new Error('o canvas voltou vazio')
+      } catch (e) { ultimoErro = e }
+    }
+    throw ultimoErro || new Error('não consegui renderizar em nenhuma resolução')
+  }
+
   // Renderiza o PDF/imagem avulso no canvas sempre que os bytes mudam (abertura inicial ou
   // troca de arquivo) — separado do fluxo de download/cache do modo fazenda, porque aqui os
   // bytes já estão em memória (não precisa baixar nada).
@@ -265,9 +332,8 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       setCarregando(true)
       try {
         if (!canvasRef.current) throw new Error('canvas ainda não montado (bug de timing — não deveria acontecer)')
-        const { width, height } = modoImagem
-          ? await renderImagemParaCanvas(avulsoBlob, canvasRef.current, RENDER_LARGURA_HD)
-          : await renderPdfPageToCanvas(avulsoBlob, canvasRef.current, RENDER_LARGURA_HD)
+        const { width, height } = await renderComFallback(
+          modoImagem ? renderImagemParaCanvas : renderPdfPageToCanvas, avulsoBlob, canvasRef.current)
         if (!cancelado) { setTamCanvas({ width, height }); log(`renderizado ✅ (${width}x${height})`) }
       } catch (e) {
         if (!cancelado) { log(`erro ao renderizar: ${e?.message||e}`); setErro('Não consegui renderizar esse arquivo.') }
@@ -296,7 +362,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       if (cache && !cancelado) {
         try {
           if (!canvasRef.current) throw new Error('canvas ainda não montado (bug de timing — não deveria acontecer)')
-          const { width, height } = await renderPdfPageToCanvas(cache, canvasRef.current, RENDER_LARGURA_HD)
+          const { width, height } = await renderComFallback(renderPdfPageToCanvas, cache, canvasRef.current)
           console.log('[MapaFazendaViewer] dimensões renderizadas (cache):', { width, height })
           if (!cancelado) { setTamCanvas({ width, height }); setCarregando(false); mostrouCache = true; log(`renderizado do cache ✅ (${width}x${height})`) }
         } catch (eCache) { log(`falhou renderizar cache: ${eCache?.message||eCache}`) }
@@ -309,7 +375,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
         log(`baixado (${(data.size/1024).toFixed(0)}KB)`)
         if (!mostrouCache) {
           if (!canvasRef.current) throw new Error('canvas ainda não montado (bug de timing — não deveria acontecer)')
-          const { width, height } = await renderPdfPageToCanvas(data, canvasRef.current, RENDER_LARGURA_HD)
+          const { width, height } = await renderComFallback(renderPdfPageToCanvas, data, canvasRef.current)
           console.log('[MapaFazendaViewer] dimensões renderizadas (servidor):', { width, height })
           if (cancelado) return
           setTamCanvas({ width, height })
@@ -460,14 +526,28 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
   function onMapaTouchStart(e) {
     if (calibrando) return
     if (e.touches.length === 2) {
+      // Dois dedos continuam navegando mesmo desenhando (é o que o Avenza faz): se o
+      // segundo dedo encostou no meio de um traço, aborta o traço em vez de deixar um
+      // risco torto atravessando o mapa.
+      if (tracoAtual) setTracoAtual(null)
       gestoRef.current = { modo: 'pinch', dist0: distEntreToques(e.touches), ang0: anguloEntreToques(e.touches), zoom0: zoom, rot0: rotacao, panX0: pan.x, panY0: pan.y }
     } else if (e.touches.length === 1) {
+      if (desenhoAtivo && !ferramentaMao) {
+        gestoRef.current = { modo: 'desenho' }
+        comecarTraco(e.touches[0].clientX, e.touches[0].clientY)
+        return
+      }
       gestoRef.current = { modo: 'pan', x0: e.touches[0].clientX, y0: e.touches[0].clientY, panX0: pan.x, panY0: pan.y }
     }
   }
   function onMapaTouchMove(e) {
     if (calibrando) return
     const g = gestoRef.current
+    if (g.modo === 'desenho' && e.touches.length === 1) {
+      e.preventDefault()
+      seguirTraco(e.touches[0].clientX, e.touches[0].clientY)
+      return
+    }
     if (g.modo === 'pinch' && e.touches.length === 2) {
       e.preventDefault()
       const novoZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, g.zoom0 * (distEntreToques(e.touches) / g.dist0)))
@@ -486,24 +566,40 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
       setPan(limitarPan(zoom, { x: g.panX0 + dx, y: g.panY0 + dy }))
     }
   }
-  function onMapaTouchEnd() { gestoRef.current = { modo: null } }
+  function onMapaTouchEnd() {
+    if (gestoRef.current.modo === 'desenho') fecharTraco()
+    gestoRef.current = { modo: null }
+  }
 
   // Arrastar com o mouse (desktop/PC) — antes só existia pan por toque, então no navegador
   // dava pra dar zoom com a roda mas não pra mover o mapa e ver o resto das coordenadas.
   function onMapaMouseDown(e) {
     if (calibrando) return
+    if (desenhoAtivo && !ferramentaMao) {
+      gestoRef.current = { modo: 'desenho' }
+      comecarTraco(e.clientX, e.clientY)
+      return
+    }
     gestoRef.current = { modo: 'pan', x0: e.clientX, y0: e.clientY, panX0: pan.x, panY0: pan.y }
   }
   function onMapaMouseMove(e) {
     if (calibrando) return
     const g = gestoRef.current
+    if (g.modo === 'desenho') {
+      if (e.buttons !== 1) { fecharTraco(); gestoRef.current = { modo: null }; return }
+      seguirTraco(e.clientX, e.clientY)
+      return
+    }
     if (g.modo !== 'pan') return
     if (e.buttons !== 1) { gestoRef.current = { modo: null }; return } // botão soltou fora do elemento
     const dx = e.clientX - g.x0, dy = e.clientY - g.y0
     setSeguindoGps(false)
     setPan(limitarPan(zoom, { x: g.panX0 + dx, y: g.panY0 + dy }))
   }
-  function onMapaMouseUp() { gestoRef.current = { modo: null } }
+  function onMapaMouseUp() {
+    if (gestoRef.current.modo === 'desenho') fecharTraco()
+    gestoRef.current = { modo: null }
+  }
 
   // FAB "minha localização" — centraliza a câmera no pin do GPS e trava ali (segue
   // automaticamente conforme a posição atualiza), até o usuário arrastar/pinçar manualmente.
@@ -792,6 +888,52 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
     const dy = (-vx * Math.sin(rad) + vy * Math.cos(rad)) / s
     return { x: tamCanvas.width / 2 + dx, y: tamCanvas.height / 2 + dy }
   }
+  // Generalização do pontoSobMira pra um ponto QUALQUER da tela — é a mesma inversa da
+  // transform do container, só que partindo do dedo em vez do centro da tela. É o que
+  // permite desenhar já rotacionado ou com o mapa arrastado e o traço cair no lugar certo.
+  function telaParaCanvas(clientX, clientY) {
+    const box = mapBoxRef.current
+    if (!box || !tamCanvas.width || !tamCanvas.height) return null
+    const s = escalaBase() * zoom
+    if (!s) return null
+    const r = box.getBoundingClientRect()
+    const rad = rotacao * Math.PI / 180
+    const vx = (clientX - r.left) - r.width / 2 - pan.x
+    const vy = (clientY - r.top) - r.height / 2 - pan.y
+    const dx = (vx * Math.cos(rad) + vy * Math.sin(rad)) / s
+    const dy = (-vx * Math.sin(rad) + vy * Math.cos(rad)) / s
+    return { x: tamCanvas.width / 2 + dx, y: tamCanvas.height / 2 + dy }
+  }
+  function comecarTraco(clientX, clientY) {
+    const p = telaParaCanvas(clientX, clientY)
+    if (!p) return
+    // A grossura vira unidade de canvas aqui, uma vez só: assim o traço nasce com a
+    // espessura que ele vê e depois cresce/encolhe junto com o mapa, como tinta na folha.
+    const larg = espessuraTela / (escalaBase() * zoom)
+    setTracoAtual({ pts: [p], cor: corTraco, larg })
+  }
+  function seguirTraco(clientX, clientY) {
+    const p = telaParaCanvas(clientX, clientY)
+    if (!p) return
+    setTracoAtual(t => {
+      if (!t) return t
+      // Descarta micro-movimento: sem isso um toque parado vira centenas de pontos
+      // iguais e o SVG fica pesado à toa.
+      const ult = t.pts[t.pts.length - 1]
+      const minimo = 1.5 / (escalaBase() * zoom)
+      if (Math.hypot(p.x - ult.x, p.y - ult.y) < minimo) return t
+      return { ...t, pts: [...t.pts, p] }
+    })
+  }
+  function fecharTraco() {
+    setTracoAtual(t => {
+      // Um toque sem arrastar vira um ponto só: duplica pra virar um pingo visível,
+      // senão o polyline de 1 ponto não desenha nada e o piloto acha que falhou.
+      if (t && t.pts.length === 1) aplicarTracos(ts => [...ts, { ...t, pts: [t.pts[0], { x: t.pts[0].x + 0.01, y: t.pts[0].y }] }])
+      else if (t && t.pts.length > 1) aplicarTracos(ts => [...ts, t])
+      return null
+    })
+  }
   const pontoMira = temMapa && !carregando && !calibrando ? pontoSobMira() : null
   const coordMira = pontoMira && bounds ? pixelParaLatLng(pontoMira.x, pontoMira.y, bounds, tamCanvas.width, tamCanvas.height, viewport) : null
   const distMiraGps = coordMira && pos ? distanciaKm(coordMira.lat, coordMira.lng, pos.lat, pos.lng) : null
@@ -875,6 +1017,7 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
               converter pixel em coordenada, e a conta sairia inventada. */}
           {bounds && (
             <>
+              <button onClick={()=>{ setDesenhoAtivo(true); setMedindo(null); setMenuAberto(false) }} style={itemMenuStyle}>✏️ Desenhar no mapa</button>
               <button onClick={()=>{ setMedindo('area'); setPontosMedida([]); setMenuAberto(false) }} style={itemMenuStyle}>📐 Medir área (hectares)</button>
               <button onClick={()=>{ setMedindo('linha'); setPontosMedida([]); setMenuAberto(false) }} style={itemMenuStyle}>📏 Medir distância</button>
             </>
@@ -933,10 +1076,10 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
               backgroundColor:'#1c2321',
               backgroundImage:'linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px)',
               backgroundSize:'26px 26px', touchAction:'none',
-              cursor: calibrando ? 'crosshair' : 'grab', userSelect:'none' }}
+              cursor: (calibrando || desenhoAtivo && !ferramentaMao) ? 'crosshair' : 'grab', userSelect:'none' }}
             onTouchStart={onMapaTouchStart} onTouchMove={onMapaTouchMove} onTouchEnd={onMapaTouchEnd}
             onMouseDown={onMapaMouseDown} onMouseMove={onMapaMouseMove} onMouseUp={onMapaMouseUp} onMouseLeave={onMapaMouseUp}
-            onDoubleClick={resetZoom} onClick={onMapaClickCalibrar}>
+            onDoubleClick={desenhoAtivo && !ferramentaMao ? undefined : resetZoom} onClick={onMapaClickCalibrar}>
             {carregando && <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'#9fc2af' }}>Abrindo mapa...</div>}
             {/* O canvas precisa ficar sempre montado (mesmo com tamCanvas ainda 0/0) — é nele
                 que o useEffect de carregamento renderiza o PDF via canvasRef.current; se isso
@@ -950,6 +1093,19 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
               transition: transicaoSuave ? 'transform .35s ease' : 'none',
               display: carregando ? 'none' : 'block' }}>
               <canvas ref={canvasRef} style={{ width:'100%', height:'100%', display:'block', boxShadow:'0 4px 30px rgba(0,0,0,.5)' }} />
+              {/* Desenho à mão livre — dentro do container transformado, igual à medição,
+                  então acompanha pan/zoom/rotação sem conta nenhuma. Fica logo acima do
+                  canvas e abaixo do pin do GPS: o risco não pode tapar onde você está. */}
+              {(tracos.length > 0 || tracoAtual) && tamCanvas.width > 0 && (
+                <svg viewBox={`0 0 ${tamCanvas.width} ${tamCanvas.height}`} preserveAspectRatio="none"
+                  style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none', overflow:'visible' }}>
+                  {[...tracos, ...(tracoAtual ? [tracoAtual] : [])].map((t, i) => (
+                    <polyline key={i} points={t.pts.map(p=>`${p.x},${p.y}`).join(' ')}
+                      fill="none" stroke={t.cor} strokeWidth={t.larg}
+                      strokeLinecap="round" strokeLinejoin="round"/>
+                  ))}
+                </svg>
+              )}
               {pinPx && !calibrando && tamCanvas.width > 0 && (
                 <>
                   {precisaoPctX != null && (
@@ -1092,7 +1248,76 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
             </div>
           )}
 
-          {!medindo && !calibrando && !calibrandoImagem && (
+          {/* Barra do DESENHO — mesma vaga da barra de coordenada, pra não empilhar dois
+              painéis sobre o mapa num celular. */}
+          {desenhoAtivo && !medindo && !calibrando && !calibrandoImagem && (
+            <div style={{ position:'absolute', left:12, right:12, zIndex:16, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
+              background:'rgba(11,18,16,.92)', color:'#fff', borderRadius:14, padding:'11px 12px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:10.5, color:'#ffb020', fontWeight:700, letterSpacing:.4 }}>
+                    ✏️ DESENHANDO · {tracos.length} {tracos.length===1?'traço':'traços'}
+                  </div>
+                  <div style={{ fontSize:10.5, color:'#9fc2af', marginTop:2 }}>
+                    {ferramentaMao ? 'Arraste pra mover o mapa' : 'Risque com um dedo · dois dedos movem e giram o mapa'}
+                  </div>
+                </div>
+                <button onClick={()=>setDesenhoAtivo(false)} title="Sair do desenho"
+                  style={{ width:34, height:34, borderRadius:'50%', background:'rgba(255,255,255,.15)', border:'none', color:'#fff', fontSize:15, cursor:'pointer', flexShrink:0 }}>✕</button>
+              </div>
+
+              {/* Cor: atalhos pras 4 de sempre + o arco-íris pra qualquer outra. O gradiente
+                  é o próprio controle — arrastar nele escolhe o matiz. */}
+              <div style={{ display:'flex', gap:7, marginBottom:9 }}>
+                {[[false,'✏️ Riscar'],[true,'🖐️ Mover']].map(([mao,label]) => (
+                  <button key={label} onClick={()=>setFerramentaMao(mao)}
+                    style={{ flex:1, background: ferramentaMao===mao ? '#ffb020' : 'rgba(255,255,255,.15)',
+                      color: ferramentaMao===mao ? '#0b1210' : '#fff', border:'none', borderRadius:11,
+                      padding:'9px', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>{label}</button>
+                ))}
+              </div>
+
+              <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:9, opacity: ferramentaMao?.45:1 }}>
+                {CORES_ATALHO.map(c => (
+                  <button key={c} onClick={()=>setCorTraco(c)} title={c}
+                    style={{ width:26, height:26, borderRadius:'50%', background:c, flexShrink:0, cursor:'pointer',
+                      border: corTraco===c ? '3px solid #ffb020' : '2px solid rgba(255,255,255,.35)' }}/>
+                ))}
+                <div style={{ flex:1, minWidth:0, position:'relative', height:26 }}>
+                  <input type="range" min={0} max={359} value={matizDaCor(corTraco)}
+                    onChange={e=>setCorTraco(hslParaHex(Number(e.target.value)))}
+                    style={{ width:'100%', height:26, margin:0, cursor:'pointer', appearance:'none', WebkitAppearance:'none',
+                      borderRadius:13, border:'2px solid rgba(255,255,255,.35)',
+                      background:GRADIENTE_MATIZ }}/>
+                </div>
+              </div>
+
+              {/* Espessura: o círculo à esquerda mostra o tamanho real do traço. */}
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, opacity: ferramentaMao?.45:1 }}>
+                <div style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <div style={{ width:espessuraTela, height:espessuraTela, borderRadius:'50%', background:corTraco,
+                    border: corTraco==='#ffffff' ? '1px solid rgba(0,0,0,.3)' : 'none' }}/>
+                </div>
+                <input type="range" min={1} max={24} value={espessuraTela}
+                  onChange={e=>setEspessuraTela(Number(e.target.value))}
+                  style={{ flex:1, accentColor:'#ffb020', cursor:'pointer' }}/>
+                <span style={{ fontSize:11, color:'#9fc2af', width:34, textAlign:'right', flexShrink:0 }}>{espessuraTela} px</span>
+              </div>
+
+              <div style={{ display:'flex', gap:7 }}>
+                <button onClick={()=>aplicarTracos(ts=>ts.slice(0,-1))} disabled={!tracos.length}
+                  style={{ flex:1, background:'rgba(255,255,255,.15)', color:'#fff', border:'none', borderRadius:11, padding:'11px', fontSize:12.5, fontWeight:700, cursor:'pointer', opacity: tracos.length?1:.4 }}>
+                  ↩ Desfazer
+                </button>
+                <button onClick={()=>{ if(tracos.length && window.confirm('Apagar todos os traços deste mapa?')) aplicarTracos([]) }} disabled={!tracos.length}
+                  style={{ flex:1, background:'rgba(255,255,255,.15)', color:'#fff', border:'none', borderRadius:11, padding:'11px', fontSize:12.5, fontWeight:700, cursor:'pointer', opacity: tracos.length?1:.4 }}>
+                  🧹 Limpar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!medindo && !desenhoAtivo && !calibrando && !calibrandoImagem && (
             <div style={{ position:'absolute', left:12, right:12, zIndex:15, bottom:'calc(env(safe-area-inset-bottom,0px) + 16px)',
               background:'rgba(11,18,16,.82)', color:'#fff', borderRadius:14, padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ flex:1, minWidth:0 }}>
@@ -1103,12 +1328,21 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                     <div style={{ fontFamily:'ui-monospace,monospace', fontSize:11.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
                       🎯 {formatarCoord(coordMira.lat, coordMira.lng)}
                     </div>
-                    <div style={{ fontSize:10.5, color: gpsErro && !pos ? '#ffb0a0' : '#9fc2af', marginTop:2 }}>
-                      {pos ? `a ${distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você${
-                        // Altitude do GPS do celular erra bem mais que a posição no plano
-                        // (dezenas de metros). Vai como referência, com o "~" lembrando disso.
-                        Number.isFinite(pos.altitude) ? ` · ~${Math.round(pos.altitude)} m de altitude` : ''}`
-                        : gpsErro ? `⚠️ sem sinal de GPS (${gpsErro}) — verifique se o GPS do celular está ligado`
+                    <div style={{ fontSize:10.5, color: gpsErro && !pos ? '#ffb0a0' : '#9fc2af', marginTop:2, display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
+                      {pos ? (
+                        <>
+                          <span>a {distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você</span>
+                          {/* A altitude estava no fim desta linha, em cinza, e ninguém achava.
+                              Agora é uma etiqueta própria. O "~" lembra que o GPS do celular
+                              erra bem mais na altura que no plano — dezenas de metros. */}
+                          {Number.isFinite(pos.altitude) && (
+                            <span style={{ background:'rgba(255,176,32,.18)', color:'#ffcf8a', borderRadius:7,
+                              padding:'2px 7px', fontWeight:700, fontSize:11, whiteSpace:'nowrap' }}>
+                              ⛰️ ~{Math.round(pos.altitude)} m
+                            </span>
+                          )}
+                        </>
+                      ) : gpsErro ? `⚠️ sem sinal de GPS (${gpsErro}) — verifique se o GPS do celular está ligado`
                         : 'buscando seu GPS...'}
                     </div>
                   </>
