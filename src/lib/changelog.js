@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '6.9',
+    data: '2026-09-28',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Voltar pra terminar um voo parcial agora mostra o que falta',
+        texto: 'Quem parava um talhao de 100 ha com 70 feitos e voltava depois pra terminar via a barra dizendo "faltam 100" — como se nada tivesse sido feito. Agora os campos perguntam o de HOJE e a barra mede o que RESTA do voo: volta marcando 30, e ao marcar "Fiz o talhao todo" fecha em 100%. Embaixo da barra aparece o tamanho real do talhao e quanto ja foi feito antes.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Confirmar sem digitar nada nao apaga mais o que ja foi feito',
+        texto: 'No mesmo caso acima, se o piloto abrisse o voo parcial e confirmasse sem preencher, o app gravava zero por cima do que ja estava salvo e o trabalho do dia anterior sumia do relatorio. Agora o que voce informa e SOMADO ao que o voo ja tinha, nunca substitui. Vale tambem pra bordadura.',
+      },
+    ],
+  },
+  {
     versao: '6.8',
     data: '2026-09-28',
     itens: [

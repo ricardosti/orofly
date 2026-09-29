@@ -629,6 +629,10 @@ export default function PilotApp({onSwitchMode}) {
   // `area_feita - bordadura` na hora de exibir: o valor derivado come o ponto enquanto
   // ele digita "2.5" (vira 2, e o ponto nunca entra).
   const [pulvHoje,setPulvHoje] = useState('')
+  // Bordadura de HOJE, separada de `form.bordadura` (que guarda o acumulado do voo e
+  // alimenta o Passo 5 e o banco). Sem essa separação, reabrir um parcial trazia a
+  // bordadura antiga no campo e o piloto digitava por cima, apagando o que já havia.
+  const [bordHoje,setBordHoje] = useState('')
   // Guarda o valor que o piloto tentou digitar quando passa do saldo. Antes o número
   // era cortado em silêncio: ele escrevia 100 (o talhão inteiro), virava 65 (o saldo)
   // e nada explicava. Agora a tela conta o que aconteceu.
@@ -4453,7 +4457,7 @@ Quando: ${tempoErroDebug.quando}`}
                       // Pré-preenche o percorrido com o escopo do voo: quem fechou o talhão
                       // (a maioria) só confere e confirma, sem digitar nada.
                       setFezTudo(true)
-                      setPulvHoje('')
+                      setPulvHoje(''); setBordHoje('')
                       setForm(f=>({...f, area_feita: f.area_feita || String(parseFloat(f.area_ha)||'')}))
                       setParcialModalOpen(true)
                     }}>
@@ -4570,8 +4574,7 @@ Quando: ${tempoErroDebug.quando}`}
                   <button style={{background:'transparent',color:'#fff',border:'1px solid rgba(255,255,255,.3)',borderRadius:18,padding:'10px 16px',fontWeight:600,fontSize:13,cursor:'pointer'}}
                     onClick={()=>{
                       setFezTudo(false)
-                      const jaPulv = +(areaFeitaAtual(form)-bordaduraAtual(form)).toFixed(2)
-                      setPulvHoje(jaPulv>0?String(jaPulv):'')
+                      setPulvHoje(''); setBordHoje('')
                       setParcialModalOpen(true)
                     }}>✏️ Editar progresso</button>
                   <button style={{background:'#ffb020',color:theme.text,border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
@@ -5033,6 +5036,13 @@ Quando: ${tempoErroDebug.quando}`}
       {/* FINALIZADO PARCIAL — marcar progresso */}
       {parcialModalOpen&&(()=>{
         const {total,feita,pct}=progressoParcial(form)
+        // Quanto DESTE voo já foi lançado antes (parcial salvo e retomado) e, portanto,
+        // quanto ainda resta dele. Os campos perguntam o de HOJE, então a barra e os tetos
+        // medem o RESTANTE: quem voltava pra terminar um talhão de 100 com 70 feitos via
+        // "faltam 100" e, se confirmasse, gravava 0 por cima dos 70.
+        const jaFeitoVoo = parseFloat(form.area_feita_anterior)||0
+        const jaBordVoo = parseFloat(form.bordadura_anterior)||0
+        const restanteVoo = Math.max(0, +((parseFloat(form.area_ha)||0) - jaFeitoVoo).toFixed(2))
         const talhoesSelP = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
         const multiTalhaoP = talhoesSelP.length > 1
         // Mesma resolução de fazenda/talhões usada na etapa de bordadura por talhão (Passo 5) —
@@ -5103,10 +5113,10 @@ Quando: ${tempoErroDebug.quando}`}
             ) : (()=>{
               // Tetos cruzados: o saldo do talhão se reparte entre o que foi pulverizado e
               // a bordadura, então cada campo é limitado pelo que o outro já ocupou.
-              const saldoT = parseFloat(form.area_ha)||0
-              const bordHoje = parseFloat(form.bordadura)||0
+              const saldoT = restanteVoo
+              const bordHojeN = parseFloat(bordHoje)||0
               const pulvN = parseFloat(pulvHoje)||0
-              const tetoPulv = saldoT>0 ? Math.max(0, +(saldoT-bordHoje).toFixed(2)) : null
+              const tetoPulv = saldoT>0 ? Math.max(0, +(saldoT-bordHojeN).toFixed(2)) : null
               const tetoBord = saldoT>0 ? Math.max(0, +(saldoT-(fezTudo?0:pulvN)).toFixed(2)) : null
               const nHa2 = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
               return (
@@ -5125,35 +5135,27 @@ Quando: ${tempoErroDebug.quando}`}
                       setAvisoCorteArea(tetoPulv!=null && !isNaN(digitado) && digitado>tetoPulv ? {digitado, teto:tetoPulv} : null)
                       const v = limitarArea(e.target.value, tetoPulv)
                       setPulvHoje(v)
-                      // `area_feita` segue sendo o PERCORRIDO (bordadura dentro), que é o que
-                      // o banco e os relatórios esperam — aqui ela é montada somando os dois.
-                      setForm(f=>({...f, area_feita:String(+((parseFloat(v)||0)+(parseFloat(f.bordadura)||0)).toFixed(2))}))
                     }}/>
                 )}
                 {avisoCorteArea && !fezTudo && (
                   <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:12,fontSize:11.5,lineHeight:1.5,color:theme.warningText2||theme.warningText}}>
                     Este voo só pode registrar até <strong>{avisoCorteArea.teto.toFixed(1)} ha</strong> — é o que falta no talhão
-                    {bordHoje>0.005 ? `, já descontando ${bordHoje.toFixed(1)} ha de bordadura` : ''}.
+                    {bordHojeN>0.005 ? `, já descontando ${bordHojeN.toFixed(1)} ha de bordadura` : ''}.
                     {(parseFloat(form.area_feita_anterior)||0) > 0.05 && ' O que foi aplicado antes já está contado.'}
                   </div>
                 )}
 
                 <FI label={fezTudo ? 'DESSE TOTAL, QUANTO FOI BORDADURA (HA)' : 'E QUANTO FOI DE BORDADURA (HA)'}
-                  ph="Ex: 1.28" val={form.bordadura} type="number"
+                  ph="Ex: 1.28" val={bordHoje} type="number"
                   min={0} max={tetoBord>0?tetoBord:undefined}
-                  onChange={e=>{
-                    const v = limitarArea(e.target.value, tetoBord)
-                    setForm(f=>({...f, bordadura:v,
-                      area_feita: fezTudo ? f.area_feita
-                        : String(+((parseFloat(pulvHoje)||0)+(parseFloat(v)||0)).toFixed(2))}))
-                  }}/>
+                  onChange={e=>setBordHoje(limitarArea(e.target.value, tetoBord))}/>
                 <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:14,lineHeight:1.5}}>
                   Faixa de segurança que você <b>não pulverizou</b> de propósito — ela{' '}
                   <b>conta como talhão entregue</b>, só não recebeu produto.{' '}
                   {fezTudo
                     ? <>Como você fechou o talhão, ela sai <b>de dentro</b> da área dele.</>
                     : <>Aqui ela <b>soma</b> ao que você pulverizou: o talhão recebeu{' '}
-                        <b>{nHa2(pulvN+bordHoje)} ha</b> hoje.</>}
+                        <b>{nHa2(pulvN+bordHojeN)} ha</b> hoje.</>}
                 </div>
               </>
               )
@@ -5162,17 +5164,24 @@ Quando: ${tempoErroDebug.quando}`}
             {/* O DESENHO. É ele que resolve a dúvida do "a bordadura conta?" — em vez de
                 explicar em texto, mostra as três faixas somando o talhão inteiro. */}
             {(()=>{
-              const saldo = parseFloat(form.area_ha)||0
+              const saldo = restanteVoo
               const talhaoCheio = parseFloat(form.area_talhao_total)||0
               // O que outros voos já fizeram é a diferença entre o talhão e o saldo que sobrou
               // dele. Não dá pra usar `area_feita_anterior` aqui: aquilo é o que já foi lançado
               // NESTE voo (dentro do saldo), não o de voos passados — somar os dois era medir
               // escopos diferentes na mesma barra.
-              const feitoAntes = talhaoCheio>saldo ? +(talhaoCheio-saldo).toFixed(2) : 0
+              // Já feito antes = o que outros voos entregaram (talhão cheio menos o escopo
+              // deste voo) MAIS o que este mesmo voo já lançou num parcial anterior.
+              const escopoVoo = parseFloat(form.area_ha)||0
+              const feitoOutrosVoos = talhaoCheio>escopoVoo ? +(talhaoCheio-escopoVoo).toFixed(2) : 0
+              const feitoAntes = +(feitoOutrosVoos + jaFeitoVoo).toFixed(2)
+              // Ao reabrir um voo salvo o talhão cheio não vem do banco (fica 0), então o
+              // tamanho real é reconstruído do que se sabe.
+              const talhaoReal = talhaoCheio>0 ? talhaoCheio : +(escopoVoo + feitoOutrosVoos).toFixed(2)
               // No parcial o percorrido é o pulverizado MAIS a bordadura — ela soma, não sai
               // de dentro. Quem fechou o talhão percorreu o saldo inteiro.
-              const bordHoje = parseFloat(form.bordadura)||0
-              const percorridoHoje = fezTudo ? saldo : Math.min(saldo, +((parseFloat(pulvHoje)||0)+bordHoje).toFixed(2))
+              const bordHojeB = parseFloat(bordHoje)||0
+              const percorridoHoje = fezTudo ? saldo : Math.min(saldo, +((parseFloat(pulvHoje)||0)+bordHojeB).toFixed(2))
               const nHa3 = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
               if (saldo<=0) return null
               return (
@@ -5188,7 +5197,7 @@ Quando: ${tempoErroDebug.quando}`}
                     </span>
                   </div>
                   <BarraTalhao theme={theme} total={saldo}
-                    percorrido={percorridoHoje} bordadura={bordHoje}/>
+                    percorrido={percorridoHoje} bordadura={bordHojeB}/>
                   {!fezTudo && percorridoHoje>0 && (saldo-percorridoHoje)<=0.05 && (
                     <div style={{fontSize:11.5,lineHeight:1.45,marginTop:9,padding:'9px 11px',borderRadius:10,
                       background:theme.successBg,color:'#00A86B',fontWeight:600}}>
@@ -5200,7 +5209,7 @@ Quando: ${tempoErroDebug.quando}`}
                       responde pelo saldo que pegou, não pelo que outro voo já entregou. */}
                   {feitoAntes > 0.05 && (
                     <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:8,lineHeight:1.4}}>
-                      {multiTalhaoP ? 'Os talhões somam' : `Talhão ${form.talhao} tem`} {nHa3(talhaoCheio)} ha
+                      {multiTalhaoP ? 'Os talhões somam' : `Talhão ${form.talhao} tem`} {nHa3(talhaoReal)} ha
                       {' · '}{nHa3(feitoAntes)} ha já feitos em voos anteriores.
                     </div>
                   )}
@@ -5216,11 +5225,15 @@ Quando: ${tempoErroDebug.quando}`}
               // precisar digitar de novo o número que ele já informou no Passo 1.
               // Não fechou: é o que ele pulverizou MAIS a bordadura — as duas faixas juntas
               // são o pedaço do talhão que ficou resolvido hoje.
-              const saldoT = parseFloat(form.area_ha)||0
-              const bordHojeC = multiTalhaoP ? 0 : (parseFloat(form.bordadura)||0)
-              const percorrido = fezTudo ? saldoT
-                : multiTalhaoP ? feita
-                : Math.min(saldoT, +((parseFloat(pulvHoje)||0)+bordHojeC).toFixed(2))
+              // O que foi feito HOJE, somado ao que este voo já tinha lançado. Antes isto
+              // SOBRESCREVIA: reabrir um parcial de 70 e confirmar gravava só o de hoje e
+              // os 70 sumiam do banco.
+              const bordHojeC = multiTalhaoP ? 0 : (parseFloat(bordHoje)||0)
+              const incrementoHoje = fezTudo ? restanteVoo
+                : Math.min(restanteVoo, +((parseFloat(pulvHoje)||0)+bordHojeC).toFixed(2))
+              const percorrido = multiTalhaoP ? feita : +(jaFeitoVoo + incrementoHoje).toFixed(2)
+              // Mesma soma pra bordadura: o campo pergunta a de hoje, o banco guarda a do voo.
+              const bordTotalVoo = multiTalhaoP ? bordaduraAtual(form) : +(jaBordVoo + bordHojeC).toFixed(2)
               setParcialModalOpen(false)
               setOpState(fezTudo ? 'finished' : 'paused_day')
               // Desconta do estoque só o incremento desde a última baixa (parcial ou início) —
@@ -5235,13 +5248,15 @@ Quando: ${tempoErroDebug.quando}`}
                 area_total_aplicada: multiTalhaoP ? f.area_total_aplicada : String(Math.max(0,percorrido-(parseFloat(f.area_feita_anterior)||0))),
                 // A bordadura também desce pro Passo 5, já com o motivo escolhido: ele acabou
                 // de digitar esse número aqui, não faz sentido a tela seguinte pedir de novo.
-                area_nao_aplicada: (!multiTalhaoP && bordHojeC>0) ? String(bordHojeC) : f.area_nao_aplicada,
+                bordadura: multiTalhaoP ? f.bordadura : String(bordTotalVoo),
+                area_nao_aplicada: (!multiTalhaoP && bordTotalVoo>0) ? String(bordTotalVoo) : f.area_nao_aplicada,
                 areaAplicadaPorTalhao: multiTalhaoP
                   ? talhoesSelP.reduce((acc,nome)=>({...acc,[nome]:String(Math.max(0,(parseFloat(f.area_feita_por_talhao?.[nome])||0)-(parseFloat(f.area_feita_por_talhao_anterior?.[nome])||0)))}),{...f.areaAplicadaPorTalhao})
                   : f.areaAplicadaPorTalhao}))
-              if (!multiTalhaoP && bordHojeC>0) setMotivoNaoAplicada('Bordadura')
+              if (!multiTalhaoP && bordTotalVoo>0) setMotivoNaoAplicada('Bordadura')
               const novoStatus = fezTudo ? 'finalizado' : 'pausado_dia'
-              const relSalvo = await saveToSupabase({status:novoStatus,area_feita:percorrido,area_deduzida:percorrido,dt_fim:n.iso})
+              const relSalvo = await saveToSupabase({status:novoStatus,area_feita:percorrido,area_deduzida:percorrido,
+                ...(multiTalhaoP ? {} : { bordadura: bordTotalVoo||null }), dt_fim:n.iso})
               if(relSalvo) registrar(fezTudo?'voo_finalizado':'voo_parcial',
                 [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
                 { cliente: clienteVal, meta: { area_feita: percorrido, fechou_talhao: fezTudo } })
