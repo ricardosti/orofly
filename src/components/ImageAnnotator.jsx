@@ -44,6 +44,14 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
   const [crop, setCrop] = useState(null) // {x,y,w,h} em px CSS, relativo ao box do canvas
+  // Corte livre (laço): o contorno que o dedo desenhou, em px DO CANVAS (não CSS), porque
+  // é nessas coordenadas que o recorte acontece. O retangular continua existindo — cada um
+  // serve pra uma coisa: retângulo pra enquadrar, laço pra recortar um talhão torto.
+  const [tipoCorte, setTipoCorte] = useState('retangulo') // 'retangulo' | 'livre'
+  const [laco, setLaco] = useState([])
+  // Tamanho atual do canvas, espelhado em estado: o overlay do laço precisa dele no render,
+  // e o canvas muda de tamanho a cada corte.
+  const [dimCanvas, setDimCanvas] = useState({ w:0, h:0 })
   const [cropDragging, setCropDragging] = useState(false)
 
   useEffect(() => {
@@ -64,6 +72,7 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
       }
       canvas.width = w; canvas.height = h
       ctx.drawImage(img, 0, 0, w, h)
+      setDimCanvas({ w, h })
       setPronto(true)
     }
     img.onerror = () => setErro('Não consegui carregar essa foto pra editar.')
@@ -87,6 +96,7 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
       canvas.width = img.width; canvas.height = img.height
       ctx.clearRect(0,0,canvas.width,canvas.height)
       ctx.drawImage(img,0,0)
+      setDimCanvas({ w: img.width, h: img.height })
       aoTerminar?.()
     }
     img.src = dataUrl
@@ -101,7 +111,14 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   }
 
   function iniciarTraco(e) {
-    if (!pronto || modo!=='desenho') return
+    if (!pronto) return
+    if (modo==='corte' && tipoCorte==='livre') {
+      e.preventDefault()
+      setDesenhando(true)
+      setLaco([coordDoEvento(e)])
+      return
+    }
+    if (modo!=='desenho') return
     e.preventDefault()
     salvarHistorico()
     setDesenhando(true)
@@ -110,6 +127,16 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   function desenhar(e) {
     if (!desenhando) return
     e.preventDefault()
+    if (modo==='corte' && tipoCorte==='livre') {
+      const p = coordDoEvento(e)
+      setLaco(l => {
+        // Descarta micro-movimento: um dedo parado viraria centenas de pontos iguais.
+        const u = l[l.length-1]
+        if (u && Math.hypot(p.x-u.x, p.y-u.y) < 2) return l
+        return [...l, p]
+      })
+      return
+    }
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
     const p = coordDoEvento(e)
@@ -142,15 +169,25 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   }
 
   // ── Corte ──
-  function iniciarModoCorte() {
+  function retanguloPadrao() {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
     const mx = rect.width*0.1, my = rect.height*0.1
-    setCrop({ x:mx, y:my, w:rect.width-mx*2, h:rect.height-my*2 })
+    return { x:mx, y:my, w:rect.width-mx*2, h:rect.height-my*2 }
+  }
+  function iniciarModoCorte() {
+    if (!canvasRef.current) return
+    setLaco([])
+    setCrop(tipoCorte==='livre' ? null : retanguloPadrao())
     setModo('corte')
   }
-  function cancelarCorte() { setCrop(null); setModo('desenho') }
+  function escolherTipoCorte(tipo) {
+    setTipoCorte(tipo)
+    setLaco([])
+    setCrop(tipo==='livre' ? null : retanguloPadrao())
+  }
+  function cancelarCorte() { setCrop(null); setLaco([]); setModo('desenho') }
 
   function pontoCliente(e) {
     const p = e.touches?.[0] || e
@@ -218,7 +255,42 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
     temp.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
     canvas.width = sw; canvas.height = sh
     canvas.getContext('2d').drawImage(temp, 0, 0)
+    setDimCanvas({ w: sw, h: sh })
     setCrop(null)
+    setModo('desenho')
+  }
+
+  // Recorta pelo contorno do laço: corta no retângulo que envolve o desenho e, dentro
+  // dele, deixa passar só o que está dentro do traço.
+  function aplicarCorteLivre() {
+    const canvas = canvasRef.current
+    if (!canvas || laco.length < 3) return
+    const xs = laco.map(p=>p.x), ys = laco.map(p=>p.y)
+    const x0 = Math.max(0, Math.floor(Math.min(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys)))
+    const x1 = Math.min(canvas.width, Math.ceil(Math.max(...xs))), y1 = Math.min(canvas.height, Math.ceil(Math.max(...ys)))
+    const w = x1-x0, h = y1-y0
+    if (w < 5 || h < 5) return
+    salvarHistorico()
+    const temp = document.createElement('canvas')
+    temp.width = w; temp.height = h
+    const tctx = temp.getContext('2d')
+    // O que sobra fora do contorno fica BRANCO, não transparente: transparência obrigaria
+    // a salvar em PNG, que pesa bem mais que o JPEG — e peso de imagem foi exatamente o
+    // que estourou a cota do Supabase em agosto.
+    tctx.fillStyle = '#ffffff'
+    tctx.fillRect(0, 0, w, h)
+    tctx.save()
+    tctx.beginPath()
+    tctx.moveTo(laco[0].x-x0, laco[0].y-y0)
+    laco.slice(1).forEach(p => tctx.lineTo(p.x-x0, p.y-y0))
+    tctx.closePath()
+    tctx.clip()
+    tctx.drawImage(canvas, -x0, -y0)
+    tctx.restore()
+    canvas.width = w; canvas.height = h
+    canvas.getContext('2d').drawImage(temp, 0, 0)
+    setDimCanvas({ w, h })
+    setLaco([])
     setModo('desenho')
   }
 
@@ -258,11 +330,34 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
         {!pronto && <span style={{ color:'#fff', fontSize:13 }}>Carregando...</span>}
         <div style={{ position:'relative', display: pronto?'inline-block':'none', maxWidth:'100%', maxHeight:'100%' }}>
           <canvas ref={canvasRef}
-            style={{ maxWidth:'100%', maxHeight:'100%', display:'block', touchAction:'none', cursor: modo==='desenho'?'crosshair':'default' }}
+            style={{ maxWidth:'100%', maxHeight:'100%', display:'block', touchAction:'none', cursor: (modo==='desenho'||(modo==='corte'&&tipoCorte==='livre'))?'crosshair':'default' }}
             onMouseDown={iniciarTraco} onMouseMove={desenhar} onMouseUp={pararTraco} onMouseLeave={pararTraco}
             onTouchStart={iniciarTraco} onTouchMove={desenhar} onTouchEnd={pararTraco}/>
 
-          {modo==='corte' && crop && (
+          {/* Contorno do laço. O <path> com fillRule evenodd escurece tudo MENOS o que
+              está dentro do traço — mesma leitura visual do corte retangular. */}
+          {modo==='corte' && tipoCorte==='livre' && dimCanvas.w>0 && (
+            <svg viewBox={`0 0 ${dimCanvas.w} ${dimCanvas.h}`} preserveAspectRatio="none"
+              style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}>
+              {laco.length>2 && (
+                <path fillRule="evenodd" fill="rgba(0,0,0,.55)"
+                  d={`M0,0 H${dimCanvas.w} V${dimCanvas.h} H0 Z M${laco[0].x},${laco[0].y} ${laco.slice(1).map(p=>`L${p.x},${p.y}`).join(' ')} Z`}/>
+              )}
+              {laco.length>1 && (
+                <polyline points={laco.map(p=>`${p.x},${p.y}`).join(' ')}
+                  fill="none" stroke="#00A86B" strokeWidth={Math.max(2, dimCanvas.w*0.005)}
+                  strokeLinecap="round" strokeLinejoin="round"/>
+              )}
+              {/* Tracejado ligando o fim ao começo: mostra que o contorno fecha sozinho. */}
+              {laco.length>2 && (
+                <line x1={laco[laco.length-1].x} y1={laco[laco.length-1].y} x2={laco[0].x} y2={laco[0].y}
+                  stroke="#00A86B" strokeWidth={Math.max(2, dimCanvas.w*0.004)}
+                  strokeDasharray={`${dimCanvas.w*0.012} ${dimCanvas.w*0.01}`} strokeLinecap="round"/>
+              )}
+            </svg>
+          )}
+
+          {modo==='corte' && tipoCorte==='retangulo' && crop && (
             <div style={{ position:'absolute', inset:0 }}>
               <div style={{ position:'absolute', left:0, top:0, right:0, height:crop.y, background:'rgba(0,0,0,.55)' }}/>
               <div style={{ position:'absolute', left:0, top:crop.y+crop.h, right:0, bottom:0, background:'rgba(0,0,0,.55)' }}/>
@@ -326,10 +421,27 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
           </>
         ) : (
           <>
-            <div style={{ fontSize:11.5, color:'rgba(255,255,255,.7)', textAlign:'center' }}>Arraste os cantos verdes pra ajustar a área, ou arraste o meio pra mover</div>
+            <div style={{ display:'flex', gap:8 }}>
+              {[['retangulo','▭ Retângulo'],['livre','✏️ Livre']].map(([t,label]) => (
+                <button key={t} onClick={()=>escolherTipoCorte(t)}
+                  style={{ flex:1, background: tipoCorte===t?'#00A86B':'rgba(255,255,255,.15)', color:'#fff', border:'none',
+                    borderRadius:12, padding:'9px', fontSize:12.5, fontWeight:700, cursor:'pointer' }}>{label}</button>
+              ))}
+            </div>
+            <div style={{ fontSize:11.5, color:'rgba(255,255,255,.7)', textAlign:'center' }}>
+              {tipoCorte==='livre'
+                ? (laco.length>2 ? 'Solte pra fechar o contorno. Pra refazer, é só desenhar de novo.'
+                   : 'Contorne com o dedo a parte que você quer manter — o contorno fecha sozinho')
+                : 'Arraste os cantos verdes pra ajustar a área, ou arraste o meio pra mover'}
+            </div>
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={cancelarCorte} style={{ flex:1, background:'rgba(255,255,255,.15)', color:'#fff', border:'none', borderRadius:12, padding:'11px', fontSize:13, fontWeight:600, cursor:'pointer' }}>✕ Cancelar corte</button>
-              <button onClick={aplicarCorte} style={{ flex:1.4, background:'#00A86B', color:'#fff', border:'none', borderRadius:12, padding:'11px', fontSize:13, fontWeight:700, cursor:'pointer' }}>✂️ Aplicar corte</button>
+              {tipoCorte==='livre' ? (
+                <button onClick={aplicarCorteLivre} disabled={laco.length<3}
+                  style={{ flex:1.4, background:'#00A86B', color:'#fff', border:'none', borderRadius:12, padding:'11px', fontSize:13, fontWeight:700, cursor:'pointer', opacity: laco.length<3?.4:1 }}>✂️ Aplicar corte</button>
+              ) : (
+                <button onClick={aplicarCorte} style={{ flex:1.4, background:'#00A86B', color:'#fff', border:'none', borderRadius:12, padding:'11px', fontSize:13, fontWeight:700, cursor:'pointer' }}>✂️ Aplicar corte</button>
+              )}
             </div>
           </>
         )}

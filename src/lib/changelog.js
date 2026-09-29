@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.1',
+    data: '2026-09-28',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Corte livre na foto, alem do retangular',
+        texto: 'No editor de foto, "Cortar" agora tem dois jeitos. RETANGULO e o de sempre, arrastando os cantos verdes. LIVRE e novo: voce contorna com o dedo a parte que quer manter e o contorno fecha sozinho — bom pra recortar um talhao torto, que nunca cabe num retangulo. O que fica fora do contorno sai branco, e a foto e cortada no menor retangulo que envolve o seu desenho, sem sobrar moldura. Se nao gostou, "Desfazer" volta a foto inteira.',
+      },
+    ],
+  },
+  {
     versao: '7.0',
     data: '2026-09-28',
     itens: [
