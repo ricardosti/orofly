@@ -29,8 +29,10 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   const cropDragRef = useRef(null)
   const [modo, setModo] = useState('desenho') // 'desenho' | 'corte'
   const [cor, setCor] = useState(CORES_ATALHO[0])
-  // Espessura contínua (1–24), em passos de 0,1% do maior lado da foto. Eram 3 degraus
-  // fixos (Fino/Médio/Grosso) e o Pastor pediu pra poder aumentar e reduzir à vontade.
+  // Espessura contínua, em passos de 0,1% do maior lado da foto. Eram 3 degraus fixos
+  // (Fino/Médio/Grosso). O teto vai até 100 (= 10% do lado maior, ~128 px numa foto de
+  // 1280) porque o uso não é só riscar: o Pastor PINTA area no mapa fotografado, e com
+  // pincel fino isso viraria dezenas de passadas.
   const [espessura, setEspessura] = useState(12)
   // Fracao do maior lado da imagem, nao pixel fixo: a foto pode chegar com 1280 px
   // ou com 700, e o traco de 4 px que era discreto numa ficava grosso na outra.
@@ -304,11 +306,14 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
                   borderRadius:13, border:'2px solid rgba(255,255,255,.4)', background:GRADIENTE_MATIZ }}/>
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <div style={{ width:Math.max(2,espessura), height:Math.max(2,espessura), borderRadius:'50%', background:cor,
+              {/* A bolinha mostra o tamanho real, mas trava em 34 px: acima disso o pincel
+                  não cabe na barra e empurraria o slider pra fora da tela. O número ao lado
+                  continua dizendo o valor de verdade. */}
+              <div style={{ width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <div style={{ width:Math.min(34,Math.max(2,espessura)), height:Math.min(34,Math.max(2,espessura)), borderRadius:'50%', background:cor,
                   border: cor==='#ffffff' ? '1px solid rgba(0,0,0,.3)' : 'none' }}/>
               </div>
-              <input type="range" min={1} max={24} value={espessura}
+              <input type="range" min={1} max={100} value={espessura}
                 onChange={e=>setEspessura(Number(e.target.value))}
                 style={{ flex:1, accentColor:'#00A86B', cursor:'pointer' }}/>
               <span style={{ fontSize:11, color:'rgba(255,255,255,.65)', width:34, textAlign:'right', flexShrink:0 }}>{espessura}</span>

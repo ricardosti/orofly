@@ -1294,11 +1294,11 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
 
               {/* Espessura: o círculo à esquerda mostra o tamanho real do traço. */}
               <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, opacity: ferramentaMao?.45:1 }}>
-                <div style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <div style={{ width:espessuraTela, height:espessuraTela, borderRadius:'50%', background:corTraco,
+                <div style={{ width:30, height:30, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <div style={{ width:Math.min(28,espessuraTela), height:Math.min(28,espessuraTela), borderRadius:'50%', background:corTraco,
                     border: corTraco==='#ffffff' ? '1px solid rgba(0,0,0,.3)' : 'none' }}/>
                 </div>
-                <input type="range" min={1} max={24} value={espessuraTela}
+                <input type="range" min={1} max={60} value={espessuraTela}
                   onChange={e=>setEspessuraTela(Number(e.target.value))}
                   style={{ flex:1, accentColor:'#ffb020', cursor:'pointer' }}/>
                 <span style={{ fontSize:11, color:'#9fc2af', width:34, textAlign:'right', flexShrink:0 }}>{espessuraTela} px</span>
@@ -1325,23 +1325,27 @@ export default function MapaFazendaViewer({ supabase, fazenda, avulso, onClose }
                   <div style={{ fontSize:12, fontWeight:600, color:'#ffcf8a' }}>⚠️ Mapa não calibrado — use "🎯 Calibrar mapa" no menu ⋯</div>
                 ) : coordMira ? (
                   <>
-                    <div style={{ fontFamily:'ui-monospace,monospace', fontSize:11.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                      🎯 {formatarCoord(coordMira.lat, coordMira.lng)}
+                    {/* A etiqueta divide a linha com a coordenada quando cabe e cai pra linha
+                        de baixo quando não — o minWidth da coordenada é que força a quebra.
+                        Sem isso o flex encolhia a coordenada e sumia com a longitude inteira,
+                        que é justamente o que o piloto veio ler. */}
+                    <div style={{ display:'flex', alignItems:'center', gap:7, flexWrap:'wrap', rowGap:3 }}>
+                      <span style={{ fontFamily:'ui-monospace,monospace', fontSize:11.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', flex:'1 1 auto', minWidth:172 }}>
+                        🎯 {formatarCoord(coordMira.lat, coordMira.lng)}
+                      </span>
+                      {/* Altitude ao lado da coordenada: é ali que o piloto olha, e no fim da
+                          linha de baixo ninguém achava. O "~" lembra que o GPS do celular erra
+                          bem mais na altura que no plano — dezenas de metros. */}
+                      {pos && Number.isFinite(pos.altitude) && (
+                        <span style={{ background:'rgba(255,176,32,.18)', color:'#ffcf8a', borderRadius:7,
+                          padding:'2px 7px', fontWeight:700, fontSize:11, whiteSpace:'nowrap', flexShrink:0 }}>
+                          ⛰️ ~{Math.round(pos.altitude)} m
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize:10.5, color: gpsErro && !pos ? '#ffb0a0' : '#9fc2af', marginTop:2, display:'flex', alignItems:'center', gap:7, flexWrap:'wrap' }}>
                       {pos ? (
-                        <>
-                          <span>a {distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você</span>
-                          {/* A altitude estava no fim desta linha, em cinza, e ninguém achava.
-                              Agora é uma etiqueta própria. O "~" lembra que o GPS do celular
-                              erra bem mais na altura que no plano — dezenas de metros. */}
-                          {Number.isFinite(pos.altitude) && (
-                            <span style={{ background:'rgba(255,176,32,.18)', color:'#ffcf8a', borderRadius:7,
-                              padding:'2px 7px', fontWeight:700, fontSize:11, whiteSpace:'nowrap' }}>
-                              ⛰️ ~{Math.round(pos.altitude)} m
-                            </span>
-                          )}
-                        </>
+                        <span>a {distMiraGps<1 ? Math.round(distMiraGps*1000)+'m' : distMiraGps.toFixed(1)+'km'} de você</span>
                       ) : gpsErro ? `⚠️ sem sinal de GPS (${gpsErro}) — verifique se o GPS do celular está ligado`
                         : 'buscando seu GPS...'}
                     </div>

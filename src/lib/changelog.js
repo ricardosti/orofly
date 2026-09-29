@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.0',
+    data: '2026-09-28',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Pincel bem mais grosso pra PINTAR',
+        texto: 'No editor de foto o pincel ia ate 30 pixels, bom pra riscar e ruim pra pintar area — preencher uma gleba virava dezenas de passadas. O teto subiu pra 128 pixels (10% da largura da foto). No mapa tambem aumentou. A bolinha ao lado da barra continua mostrando o tamanho real antes de voce riscar.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Altitude junto da coordenada no mapa',
+        texto: 'A altitude saiu da linha de baixo e passou a ficar colada na coordenada da mira, que e onde o piloto olha. Quando a tela e estreita ela desce uma linha em vez de espremer a coordenada — a longitude nunca fica cortada.',
+      },
+    ],
+  },
+  {
     versao: '6.9',
     data: '2026-09-28',
     itens: [
