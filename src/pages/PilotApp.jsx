@@ -285,11 +285,26 @@ function BarraTalhao({ total, percorrido, bordadura, theme, compacta }) {
     { k:'bord',  v:bord,  cor:'#F0A72A', rotulo:'Bordadura',   desc:'faixa de segurança — conta como feito' },
     { k:'falta', v:falta, cor:theme.divider, rotulo:'Falta',   desc:'fica pra outro voo' },
   ]
+  // Percentuais das faixas arredondados PARA SOMAR 100. Arredondando cada um por si, um
+  // talhão de 100 ha com 96,5 pulverizados e 3,5 de bordadura mostrava 97% + 4% = 101% —
+  // dois ".5" subindo juntos. Método do maior resto: piso em todos e a sobra vai pras
+  // faixas com a maior parte fracionária.
+  const pctFaixa = (() => {
+    const brutos = faixas.map(f => pctDe(f.v))
+    const pisos = brutos.map(Math.floor)
+    const alvo = Math.round(brutos.reduce((a, b) => a + b, 0))
+    let sobra = alvo - pisos.reduce((a, b) => a + b, 0)
+    const porResto = brutos.map((b, i) => [i, b - pisos[i]]).sort((a, b) => b[1] - a[1])
+    const out = [...pisos]
+    for (let k = 0; k < porResto.length && sobra > 0; k++, sobra--) out[porResto[k][0]]++
+    // Faixa que existe mas não chega a 1% vira "<1%" em vez de "0%" (ver pctTxt).
+    return faixas.map((f, i) => (f.v > 0 && out[i] === 0) ? '<1%' : `${out[i]}%`)
+  })()
   return (
     <div>
       <div style={{display:'flex',height:alt,borderRadius:alt/2,overflow:'hidden',background:theme.divider,border:`1px solid ${theme.cardBorder2||theme.divider}`}}>
-        {faixas.map(f => f.v > 0 && (
-          <div key={f.k} title={`${f.rotulo}: ${nHa(f.v)} ha (${pctTxt(f.v)})`}
+        {faixas.map((f, i) => f.v > 0 && (
+          <div key={f.k} title={`${f.rotulo}: ${nHa(f.v)} ha (${pctFaixa[i]})`}
             style={{width:`${pctDe(f.v)}%`, display:'flex', alignItems:'center', justifyContent:'center',
               background: f.k==='falta'
               // Listrado na faixa que falta: diferencia do "vazio" mesmo em tela pequena
@@ -301,21 +316,21 @@ function BarraTalhao({ total, percorrido, bordadura, theme, compacta }) {
                 não cabe e sai cortado — nesse caso ele fica só na legenda. */}
             {!compacta && pctDe(f.v) >= 13 && (
               <span style={{fontSize:9.5,fontWeight:800,whiteSpace:'nowrap',
-                color: f.k==='falta' ? theme.textFaint2 : '#fff'}}>{pctTxt(f.v)}</span>
+                color: f.k==='falta' ? theme.textFaint2 : '#fff'}}>{pctFaixa[i]}</span>
             )}
           </div>
         ))}
       </div>
       {!compacta && (
         <div style={{display:'flex',flexWrap:'wrap',gap:'6px 14px',marginTop:8}}>
-          {faixas.filter(f=>f.v>0).map(f => (
+          {faixas.map((f, i) => f.v > 0 && (
             <div key={f.k} style={{display:'flex',alignItems:'flex-start',gap:6,minWidth:0}}>
               <div style={{width:11,height:11,borderRadius:3,flexShrink:0,marginTop:2,
                 background: f.k==='falta' ? theme.divider : f.cor,
                 border: f.k==='falta' ? `1px dashed ${theme.textFaint}` : 'none'}}/>
               <div style={{minWidth:0}}>
                 <div style={{fontSize:11.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap'}}>
-                  {f.rotulo} · {nHa(f.v)} ha · {pctTxt(f.v)}
+                  {f.rotulo} · {nHa(f.v)} ha · {pctFaixa[i]}
                 </div>
                 <div style={{fontSize:10,color:theme.textFaint2,lineHeight:1.3}}>{f.desc}</div>
               </div>
@@ -5147,38 +5162,46 @@ Quando: ${tempoErroDebug.quando}`}
             {/* O DESENHO. É ele que resolve a dúvida do "a bordadura conta?" — em vez de
                 explicar em texto, mostra as três faixas somando o talhão inteiro. */}
             {(()=>{
-              const anterior = parseFloat(form.area_feita_anterior)||0
               const saldo = parseFloat(form.area_ha)||0
-              const totalTalhao = (parseFloat(form.area_talhao_total)||0) || +(anterior+saldo).toFixed(2)
+              const talhaoCheio = parseFloat(form.area_talhao_total)||0
+              // O que outros voos já fizeram é a diferença entre o talhão e o saldo que sobrou
+              // dele. Não dá pra usar `area_feita_anterior` aqui: aquilo é o que já foi lançado
+              // NESTE voo (dentro do saldo), não o de voos passados — somar os dois era medir
+              // escopos diferentes na mesma barra.
+              const feitoAntes = talhaoCheio>saldo ? +(talhaoCheio-saldo).toFixed(2) : 0
               // No parcial o percorrido é o pulverizado MAIS a bordadura — ela soma, não sai
               // de dentro. Quem fechou o talhão percorreu o saldo inteiro.
               const bordHoje = parseFloat(form.bordadura)||0
               const percorridoHoje = fezTudo ? saldo : Math.min(saldo, +((parseFloat(pulvHoje)||0)+bordHoje).toFixed(2))
-              const bordTotal = bordHoje + (parseFloat(form.bordadura_anterior)||0)
-              if (totalTalhao<=0) return null
+              const nHa3 = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+              if (saldo<=0) return null
               return (
                 <div style={{background:theme.bg,borderRadius:14,padding:'13px 14px',marginBottom:16}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:9,gap:8}}>
                     <span style={{fontSize:11,fontWeight:700,color:theme.textFaint2,letterSpacing:.4}}>
-                      {multiTalhaoP ? 'TOTAL DA OPERAÇÃO' : `TALHÃO ${form.talhao||''}`.trim()}
+                      {feitoAntes>0.05
+                        ? (multiTalhaoP ? 'O QUE FALTAVA NESTES TALHÕES' : 'O QUE FALTAVA NESTE TALHÃO')
+                        : multiTalhaoP ? 'TOTAL DA OPERAÇÃO' : `TALHÃO ${form.talhao||''}`.trim()}
                     </span>
                     <span style={{fontSize:11.5,color:theme.textMuted,fontVariantNumeric:'tabular-nums'}}>
-                      {totalTalhao.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} ha
+                      {nHa3(saldo)} ha
                     </span>
                   </div>
-                  <BarraTalhao theme={theme} total={totalTalhao}
-                    percorrido={anterior + percorridoHoje} bordadura={bordTotal}/>
-                  {!fezTudo && percorridoHoje>0 && (totalTalhao-(anterior+percorridoHoje))<=0.05 && (
+                  <BarraTalhao theme={theme} total={saldo}
+                    percorrido={percorridoHoje} bordadura={bordHoje}/>
+                  {!fezTudo && percorridoHoje>0 && (saldo-percorridoHoje)<=0.05 && (
                     <div style={{fontSize:11.5,lineHeight:1.45,marginTop:9,padding:'9px 11px',borderRadius:10,
                       background:theme.successBg,color:'#00A86B',fontWeight:600}}>
                       Pelos números não sobrou nada do talhão. Se foi isso mesmo, marque
                       <b> "Fiz o talhão todo"</b> lá em cima — senão ele continua aparecendo em aberto.
                     </div>
                   )}
-                  {anterior > 0.05 && (
+                  {/* O talhão cheio vira legenda, não referência da barra: o piloto de hoje
+                      responde pelo saldo que pegou, não pelo que outro voo já entregou. */}
+                  {feitoAntes > 0.05 && (
                     <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:8,lineHeight:1.4}}>
-                      Inclui {anterior.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} ha
-                      já aplicados em voos anteriores deste talhão.
+                      {multiTalhaoP ? 'Os talhões somam' : `Talhão ${form.talhao} tem`} {nHa3(talhaoCheio)} ha
+                      {' · '}{nHa3(feitoAntes)} ha já feitos em voos anteriores.
                     </div>
                   )}
                 </div>
