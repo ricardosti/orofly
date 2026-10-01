@@ -15,6 +15,7 @@ import { registrar } from '../lib/atividade'
 import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
+import { lerNotaFiscal } from '../lib/notaFiscal'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
@@ -719,6 +720,10 @@ export default function PilotApp({onSwitchMode}) {
   const [osModo,setOsModo] = useState('lista')
   const [notaFotoPreview,setNotaFotoPreview] = useState(null)
   const [notaFotoFile,setNotaFotoFile] = useState(null)
+  // Leitura do QR Code da nota. Fica separada do formulário de propósito: ela só SUGERE.
+  // O lançamento nunca depende dela — se não ler, o piloto preenche como sempre fez.
+  const [notaQr,setNotaQr] = useState(null)
+  const [notaLendoQr,setNotaLendoQr] = useState(false)
   const [notaSaving,setNotaSaving] = useState(false)
   const [minhasNotas,setMinhasNotas] = useState([])
   const [gestaoPeriodo,setGestaoPeriodo] = useState('mes') // 'mes' | '30' | 'tudo'
@@ -1660,6 +1665,10 @@ export default function PilotApp({onSwitchMode}) {
 
   function handleNotaFoto(f){
     if(!f) return
+    // Lê o QR do arquivo ORIGINAL, antes de o editor reduzir pra 1280 px: o QR do cupom
+    // é pequeno e cada pixel conta. Roda solto, sem travar a abertura do editor.
+    setNotaQr(null); setNotaLendoQr(true)
+    lerNotaFiscal(f).then(r=>setNotaQr(r)).catch(()=>setNotaQr(null)).finally(()=>setNotaLendoQr(false))
     const r=new FileReader()
     r.onload=ev=>{
       setAnnotatorTarget({
@@ -2869,7 +2878,7 @@ export default function PilotApp({onSwitchMode}) {
             <div style={{position:'relative',marginBottom:14}}>
               <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:220,objectFit:'cover',borderRadius:14,display:'block'}}/>
               <button style={{position:'absolute',top:8,right:8,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:28,height:28,cursor:'pointer'}}
-                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null)}}>✕</button>
+                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null)}}>✕</button>
             </div>
           ) : (
             <div style={{display:'flex',gap:10,marginBottom:14}}>
@@ -2881,6 +2890,63 @@ export default function PilotApp({onSwitchMode}) {
           )}
           <input id="nota-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
           <input id="nota-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
+
+          {notaLendoQr && (
+            <div style={{fontSize:11.5,color:theme.textFaint2,marginBottom:14}}>🔎 Procurando o QR Code da nota...</div>
+          )}
+          {notaQr?.ok && (()=>{
+            // Já lancei essa nota? Confere pela chave entre as últimas notas do piloto.
+            // É uma checagem parcial de propósito — enquanto a chave não tiver coluna
+            // própria, ela mora na observação e só dá pra olhar o que está carregado.
+            const jaLancada = minhasNotas.find(n=>(n.observacao||'').includes(notaQr.chave))
+            const temDia = !!notaQr.dataEmissao
+            const foraDoMes = !temDia && notaForm.data && !notaForm.data.startsWith(notaQr.mesEmissao)
+            return (
+              <div style={{background:theme.successBg,border:'1px solid #00A86B',borderRadius:14,padding:'11px 12px',marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:800,color:'#00A86B',letterSpacing:.3,marginBottom:6}}>
+                  ✅ LI O QR DESTA NOTA
+                </div>
+                <div style={{fontSize:11.5,color:theme.text,lineHeight:1.6}}>
+                  <div>{notaQr.modelo==='65'?'Cupom fiscal':'Nota fiscal'} nº <b>{notaQr.numero}</b> · {notaQr.uf||'—'}</div>
+                  <div>CNPJ <b>{notaQr.cnpjFormatado}</b></div>
+                  <div>Emitida em <b>{temDia ? notaQr.dataEmissao.split('-').reverse().join('/') : `${String(notaQr.mes).padStart(2,'0')}/${notaQr.ano}`}</b>{!temDia && ' (o QR não informa o dia)'}</div>
+                  {notaQr.valor>0 && <div>Valor <b>R$ {notaQr.valor.toFixed(2).replace('.',',')}</b></div>}
+                </div>
+                {jaLancada && (
+                  <div style={{marginTop:8,padding:'7px 9px',borderRadius:9,background:theme.warningBg,color:theme.warningText2||theme.warningText,fontSize:11.5,fontWeight:600,lineHeight:1.45}}>
+                    ⚠️ Essa nota já foi lançada em {String(jaLancada.data||'').split('-').reverse().join('/')}
+                    {jaLancada.valor?` (R$ ${Number(jaLancada.valor).toFixed(2).replace('.',',')})`:''}. Confere antes de lançar de novo.
+                  </div>
+                )}
+                {foraDoMes && (
+                  <div style={{marginTop:8,fontSize:11,color:theme.textFaint2,lineHeight:1.45}}>
+                    A data preenchida está fora de {String(notaQr.mes).padStart(2,'0')}/{notaQr.ano}, que é quando a nota foi emitida.
+                  </div>
+                )}
+                <button onClick={()=>{
+                  const marca = `${notaQr.modelo==='65'?'NFC-e':'NFe'} nº ${notaQr.numero} · CNPJ ${notaQr.cnpjFormatado} · chave ${notaQr.chave}`
+                  setNotaForm(f=>({...f,
+                    // Só preenche o que a nota REALMENTE informou. O QR versão 2 (o
+                    // obrigatório hoje) não traz dia nem valor — inventar um dia a partir
+                    // do mês seria dado errado numa prestação de contas.
+                    data: notaQr.dataEmissao || f.data,
+                    valor: notaQr.valor>0 ? String(notaQr.valor) : f.valor,
+                    observacao: (f.observacao||'').includes(notaQr.chave) ? f.observacao
+                      : [f.observacao, marca].filter(Boolean).join('\n'),
+                  }))
+                  showToast('✅ Dados da nota preenchidos')
+                }}
+                  style={{width:'100%',marginTop:9,background:'#00A86B',color:'#fff',border:'none',borderRadius:11,padding:'9px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>
+                  Usar estes dados
+                </button>
+              </div>
+            )
+          })()}
+          {notaQr && !notaQr.ok && (
+            <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'9px 11px',marginBottom:14,fontSize:11.5,color:theme.textFaint2,lineHeight:1.45}}>
+              Não deu pra ler o QR ({notaQr.motivo}). Preencha na mão, como sempre — a foto foi guardada do mesmo jeito.
+            </div>
+          )}
 
           {(notaTab==='despesa' || veiculosDB.length===0) && (
             <>

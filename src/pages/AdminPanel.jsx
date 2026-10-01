@@ -5250,9 +5250,10 @@ export default function AdminPanel({ onSwitchMode }) {
                   // que cobriu vários talhões, e refazer essa conta na mão daria número
                   // diferente do que o relatório do cliente mostra.
                   // Serve pra não mandar piloto pra talhão que já está fechado.
-                  const statusTalhoes = (() => {
-                    if (!atrFazendaSel) return {}
-                    const fz = invFazendas.find(f=>f.id===atrFazendaSel)
+                  // Extraído pra uma função por fazenda: o "tirar os que já terminou" precisa
+                  // olhar TODAS as fazendas do piloto de uma vez, não só a que está aberta.
+                  const statusDaFazenda = (fid) => {
+                    const fz = invFazendas.find(f=>f.id===fid)
                     if (!fz) return {}
                     const catalogo = invTalhoes.filter(t=>t.fazenda_id===fz.id).map(t=>({nome:t.nome, area_ha:t.area_ha}))
                     const voosFz = relatorios.filter(r=>
@@ -5267,7 +5268,49 @@ export default function AdminPanel({ onSwitchMode }) {
                       })
                       return Object.fromEntries((cons.talhoes||[]).map(t=>[t.nome, t.status]))
                     } catch(e) { console.warn('status por talhão não calculado:', e); return {} }
-                  })()
+                  }
+                  const statusTalhoes = atrFazendaSel ? statusDaFazenda(atrFazendaSel) : {}
+
+                  // O que dá pra liberar do piloto: talhões já fechados em que ele ainda consta,
+                  // e fazendas inteiras 100% concluídas. Roda só pro piloto ABERTO — é uma volta
+                  // no consolidado por fazenda, caro demais pra fazer na lista inteira.
+                  const liberavelDoPiloto = (pid) => {
+                    const meusTalhoes = pilotoTalhoes.filter(pt=>pt.piloto_id===pid)
+                    const fidsInteira = pilotoFazendas.filter(pf=>pf.piloto_id===pid).map(pf=>pf.fazenda_id)
+                    const fidsSoltos = meusTalhoes.map(pt=>invTalhoes.find(t=>t.id===pt.talhao_id)?.fazenda_id).filter(Boolean)
+                    const talhoesFin = [], fazendasFin = []
+                    for (const fid of new Set([...fidsSoltos, ...fidsInteira])) {
+                      const st = statusDaFazenda(fid)
+                      const daFazenda = invTalhoes.filter(t=>t.fazenda_id===fid)
+                      // Fazenda inteira só sai quando TODOS os talhões fecharam. Com algum
+                      // pendente ela fica: virar "lista de pendentes" mudaria o sentido da
+                      // atribuição (fazenda inteira cobre talhão cadastrado depois) sem pedir.
+                      if (fidsInteira.includes(fid) && daFazenda.length && daFazenda.every(t=>st[t.nome]==='FINALIZADO')) fazendasFin.push(fid)
+                      for (const pt of meusTalhoes) {
+                        const t = daFazenda.find(x=>x.id===pt.talhao_id)
+                        if (t && st[t.nome]==='FINALIZADO') talhoesFin.push(t.id)
+                      }
+                    }
+                    return { talhoesFin:[...new Set(talhoesFin)], fazendasFin:[...new Set(fazendasFin)] }
+                  }
+
+                  async function desvincular(pid, talhaoIds, fazendaIds) {
+                    setAtrSalvando(true)
+                    try {
+                      if (talhaoIds.length) {
+                        const { error } = await supabase.from('piloto_talhoes').delete().eq('piloto_id',pid).in('talhao_id',talhaoIds)
+                        if (error) throw error
+                        setPilotoTalhoes(v=>v.filter(pt=>!(pt.piloto_id===pid && talhaoIds.includes(pt.talhao_id))))
+                      }
+                      if (fazendaIds.length) {
+                        const { error } = await supabase.from('piloto_fazendas').delete().eq('piloto_id',pid).in('fazenda_id',fazendaIds)
+                        if (error) throw error
+                        setPilotoFazendas(v=>v.filter(pf=>!(pf.piloto_id===pid && fazendaIds.includes(pf.fazenda_id))))
+                      }
+                      return true
+                    } catch(e) { showToast('Erro: '+e.message,'error'); return false }
+                    finally { setAtrSalvando(false) }
+                  }
                   const SELO_TALHAO = {
                     FINALIZADO: { txt:'feito',   cor:'#059669' },
                     PARCIAL:    { txt:'parcial', cor:'#B45309' },
@@ -5429,9 +5472,14 @@ export default function AdminPanel({ onSwitchMode }) {
                             const nome = p.nome||p.email
                             const resumo = nFaz===0 && nTal===0 ? 'Sem atribuição'
                               : [nFaz>0?`${nFaz} fazenda${nFaz>1?'s':''}`:null, nTal>0?`${nTal} ${nTal>1?'talhões':'talhão'}`:null].filter(Boolean).join(' · ')
+                            // Só calcula o que dá pra liberar do piloto ABERTO — a conta roda o
+                            // consolidado de cada fazenda dele, caro demais pra lista toda.
+                            const lib = sel ? liberavelDoPiloto(p.id) : null
+                            const nFin = lib ? lib.talhoesFin.length + lib.fazendasFin.length : 0
                             return (
-                              <button key={p.id} onClick={()=>{setAtrPilotoSel(p.id); setAtrFazendaSel(null); setAtrBuscaTalhao('')}}
-                                style={{width:'100%',textAlign:'left',background: sel?theme.successBg:'none',border:'none',borderBottom:`1px solid ${theme.divider}`,
+                              <div key={p.id} style={{borderBottom:`1px solid ${theme.divider}`, background: sel?theme.successBg:'none'}}>
+                              <button onClick={()=>{setAtrPilotoSel(p.id); setAtrFazendaSel(null); setAtrBuscaTalhao('')}}
+                                style={{width:'100%',textAlign:'left',background:'none',border:'none',
                                   padding:'10px 12px',cursor:'pointer',display:'flex',alignItems:'center',gap:10}}>
                                 <div style={{width:31,height:31,borderRadius:'50%',background:corDoNome(nome),color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,flexShrink:0}}>
                                   {iniciais(nome)}
@@ -5442,6 +5490,41 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </div>
                                 {sel && <span style={{color:'#059669',fontSize:14,fontWeight:700}}>✓</span>}
                               </button>
+
+                              {/* Desvincular a partir do PILOTO, não da fazenda: antes o Pastor
+                                  tinha que abrir fazenda por fazenda pra achar o "Limpar". */}
+                              {sel && (nFaz>0 || nTal>0) && (
+                                <div style={{display:'flex',gap:6,padding:'0 12px 10px'}}>
+                                  <button disabled={atrSalvando || nFin===0} title={nFin===0?'Nenhum talhão dele está fechado ainda':'Tira só o que já foi concluído'}
+                                    onClick={async()=>{
+                                      const quais = [lib.talhoesFin.length?`${lib.talhoesFin.length} ${lib.talhoesFin.length>1?'talhões':'talhão'}`:null,
+                                        lib.fazendasFin.length?`${lib.fazendasFin.length} fazenda${lib.fazendasFin.length>1?'s':''} inteira${lib.fazendasFin.length>1?'s':''}`:null].filter(Boolean).join(' e ')
+                                      if (!window.confirm(`Tirar ${nome} de ${quais}?
+
+Só sai o que já está concluído — ele continua no que ainda falta.`)) return
+                                      if (await desvincular(p.id, lib.talhoesFin, lib.fazendasFin)) showToast(`✅ ${nome} saiu de ${quais}`)
+                                    }}
+                                    style={{flex:1,background: nFin?theme.successBg:theme.bg, color: nFin?'#059669':theme.textFaint,
+                                      border:`1px solid ${nFin?'#059669':theme.cardBorder2}`,borderRadius:7,padding:'5px 8px',
+                                      fontSize:10.5,fontWeight:700,cursor: nFin?'pointer':'default'}}>
+                                    {nFin ? `✓ Tirar ${nFin} que já terminou` : 'Nada terminado ainda'}
+                                  </button>
+                                  <button disabled={atrSalvando}
+                                    onClick={async()=>{
+                                      const ids = pilotoTalhoes.filter(pt=>pt.piloto_id===p.id).map(pt=>pt.talhao_id)
+                                      const fids = pilotoFazendas.filter(pf=>pf.piloto_id===p.id).map(pf=>pf.fazenda_id)
+                                      if (!window.confirm(`Tirar ${nome} de TUDO (${resumo})?
+
+Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir de novo depois.`)) return
+                                      if (await desvincular(p.id, ids, fids)) showToast(`✅ ${nome} liberado de tudo`)
+                                    }}
+                                    style={{flex:1,background:theme.bg,color:theme.dangerText,border:`1px solid ${theme.cardBorder2}`,borderRadius:7,
+                                      padding:'5px 8px',fontSize:10.5,fontWeight:700,cursor:'pointer'}}>
+                                    ✕ Liberar de tudo
+                                  </button>
+                                </div>
+                              )}
+                              </div>
                             )
                           })}
                         </div>

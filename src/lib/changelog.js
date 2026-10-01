@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.2',
+    data: '2026-10-01',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Tirar o piloto da fazenda sem abrir uma por uma',
+        texto: 'Em Fazendas & Clientes > Equipes, ao escolher um piloto aparecem dois botoes no cartao dele. "Tirar o que ja terminou" remove so os talhoes ja concluidos, em todas as fazendas de uma vez, e mantem o que ainda falta — fazenda inteira so sai quando TODOS os talhoes dela fecharam. "Liberar de tudo" tira o piloto de tudo de uma vez, com confirmacao. Antes era preciso abrir fazenda por fazenda pra achar o botao de limpar. Desvincular nao apaga voo nem relatorio: so tira da lista, e da pra atribuir de novo.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'O app le o QR Code da nota fiscal',
+        texto: 'Ao tirar a foto de uma nota no Cadastro de Notas, o app procura o QR Code sozinho. Achando, mostra o numero da nota, o CNPJ de quem emitiu e o mes da emissao, e avisa se essa nota JA foi lancada antes — o erro mais comum em prestacao de contas. O botao "Usar estes dados" preenche o que a nota informou e guarda a chave na observacao. Importante: o QR das notas de hoje (versao 2) traz a chave mas NAO traz o valor nem o dia exato, entao esses dois continuam sendo preenchidos a mao; em nota de emissor antigo (versao 1) o valor vem junto. Nada disso e obrigatorio: se nao ler, preenche como sempre e a foto e guardada igual.',
+      },
+    ],
+  },
+  {
     versao: '7.1',
     data: '2026-09-28',
     itens: [
