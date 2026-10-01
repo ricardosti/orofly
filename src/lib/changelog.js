@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.3',
+    data: '2026-10-01',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'O app le o valor e a data do texto da nota',
+        texto: 'Depois de fotografar a nota, aparece o botao "Ler valor e data do texto da nota". Ele le o que esta impresso e preenche o valor total e a data — inclusive em nota SEM QR Code, como DANFE e comprovante de pedagio. Em DANFE ele tambem le a chave de acesso impressa e tira dela o CNPJ. Funciona offline e nao gasta internet. Leva uns segundos, por isso fica sob botao: voce decide quando vale. CONFIRA O VALOR antes de salvar — leitura automatica erra de vez em quando, principalmente em cupom apagado.',
+      },
+    ],
+  },
+  {
     versao: '7.2',
     data: '2026-10-01',
     itens: [

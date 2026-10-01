@@ -124,9 +124,15 @@ function lerComJsQr(canvas) {
 
 // Desenha a imagem num canvas de no máximo `maxLado`. Foto de celular vem com 3000+ px e
 // o jsQR varre pixel a pixel: sem reduzir, trava a tela por segundos no aparelho do piloto.
-async function paraCanvas(origem, maxLado = 1400) {
+async function paraCanvas(origem, maxLado = 1400, minLado = 0) {
   const bitmap = origem instanceof Blob ? await createImageBitmap(origem) : origem
-  const escala = Math.min(1, maxLado / Math.max(bitmap.width, bitmap.height)) || 1
+  const maior = Math.max(bitmap.width, bitmap.height)
+  let escala = Math.min(1, maxLado / maior) || 1
+  // Piso de resolução, usado pelo OCR. Ampliar não inventa detalhe nenhum, mas dá ao
+  // Tesseract mais pixel por caractere — e só isso já corrigiu leitura errada nos testes:
+  // com texto de 20 px ele devolvia "60,80" no lugar de "60,00". Teto de 3x porque acima
+  // disso é só borrão caro de processar.
+  if (minLado && maior * escala < minLado) escala = Math.min(3, minLado / maior)
   const canvas = document.createElement('canvas')
   canvas.width = Math.round(bitmap.width * escala)
   canvas.height = Math.round(bitmap.height * escala)
@@ -167,4 +173,148 @@ export function palpiteCategoria(nomeEstabelecimento) {
   const n = String(nomeEstabelecimento || '')
   for (const [re, cat] of PISTAS_CATEGORIA) if (re.test(n)) return cat
   return null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEGRAU 2 — OCR do texto impresso, pras notas que não têm QR (DANFE, pedágio,
+// nota de serviço) e pro VALOR, que o QR versão 2 não traz em nota nenhuma.
+//
+// Usa o Tesseract que já está no projeto (o mesmo que lê coordenada de mapa), em
+// 'eng' e não 'por': o modelo de inglês já foi baixado por aquele uso, e o que
+// interessa aqui — dígitos e a palavra TOTAL — é igual nos dois idiomas. Trocar
+// custaria mais uns megabytes de download pro piloto sem ganho nenhum.
+
+// Rótulos que antecedem o valor da nota, do mais específico pro mais genérico.
+// Quanto mais específico, mais confiança — "VALOR A PAGAR" é inequívoco, "TOTAL"
+// sozinho pode ser muita coisa.
+const ROTULOS_VALOR = [
+  [/VALOR\s*A\s*PAGAR/, 10],
+  [/TOTAL\s*A\s*PAGAR/, 10],
+  [/VALOR\s*TOTAL/,      8],
+  [/TOTAL\s*(R\$|:)/,    7],
+  [/\bTOTAL\b/,          5],
+]
+// Linhas que TÊM a palavra total/valor mas não são o valor da nota. Sem isso, o
+// "VALOR APROX DOS TRIBUTOS" que vem no rodapé de todo cupom seria lido como o
+// total — é a armadilha mais comum.
+const NAO_E_O_TOTAL = /SUBTOTAL|TRIBUTO|ITENS|QTDE|QUANTIDADE|TROCO|DESCONTO|ACRESCIMO|DINHEIRO|CARTAO|PIX|RECEBIDO/
+
+const semAcento = t => String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+
+// Converte "1.234,56" (e variantes que o OCR produz) em número. Formato brasileiro:
+// ponto é milhar, vírgula é decimal. Trocar os dois seria errar por mil.
+function numeroBr(txt) {
+  const limpo = String(txt||'').replace(/\s/g,'')
+  if (!/^\d{1,3}(\.\d{3})*,\d{2}$|^\d+,\d{2}$/.test(limpo)) return null
+  const n = parseFloat(limpo.replace(/\./g,'').replace(',','.'))
+  return Number.isFinite(n) ? n : null
+}
+
+// Teto de sanidade. O OCR confunde vírgula com ponto e transforma 128,90 em 12890;
+// acima disso é quase certo erro de leitura, e preencher errado é pior que não
+// preencher. O piloto digita, como já fazia.
+const TETO_DESPESA = 50000
+
+// Função PURA: recebe o texto que o OCR devolveu e tira dele o que der. Separada
+// do Tesseract de propósito — é aqui que mora a chance de errar, e assim dá pra
+// testar com cupom de verdade sem depender de imagem nem de navegador.
+export function extrairDaNota(texto) {
+  const linhas = semAcento(texto).toUpperCase().split(/\r?\n/)
+  const achados = { chave: null, valor: null, data: null, avisos: [] }
+
+  // ── Chave de acesso impressa (DANFE traz os 44 dígitos embaixo do código de
+  // barras, geralmente em grupos de 4). O dígito verificador decide se o OCR
+  // acertou: sem ele, um 8 lido como 3 viraria CNPJ errado com ar de certeza.
+  const digitos = semAcento(texto).replace(/[^\d]/g,'')
+  for (let i = 0; i + 44 <= digitos.length; i++) {
+    const c = digitos.slice(i, i + 44)
+    if (chaveValida(c)) { achados.chave = c; break }
+  }
+  if (!achados.chave && /\d{40,}/.test(digitos)) {
+    achados.avisos.push('vi uma sequência longa de números, mas nenhuma chave válida — o OCR provavelmente trocou algum dígito')
+  }
+
+  // ── Valor total: pontua cada linha candidata e fica com a melhor.
+  let melhor = null
+  for (const linha of linhas) {
+    if (NAO_E_O_TOTAL.test(linha)) continue
+    const peso = ROTULOS_VALOR.find(([re]) => re.test(linha))?.[1]
+    if (!peso) continue
+    // Na linha do total costuma haver um número só; havendo mais, o valor é o último
+    // (o rótulo vem antes). Pega o maior entre os válidos pra não cair num código.
+    const numeros = (linha.match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}/g) || [])
+      .map(numeroBr).filter(v => v !== null && v > 0 && v <= TETO_DESPESA)
+    if (!numeros.length) continue
+    const v = Math.max(...numeros)
+    if (!melhor || peso > melhor.peso || (peso === melhor.peso && v > melhor.valor)) melhor = { valor: v, peso, linha }
+  }
+  if (melhor) achados.valor = melhor.valor
+  else if (/TOTAL/.test(semAcento(texto).toUpperCase())) {
+    achados.avisos.push('achei a palavra TOTAL mas não um valor legível ao lado')
+  }
+
+  // ── Data da emissão: prefere a que estiver ao lado de um rótulo de emissão;
+  // não achando, a primeira data plausível do papel.
+  const hoje = new Date()
+  const dataValida = (d, m, a) => {
+    if (a < 100) a += 2000
+    if (m < 1 || m > 12 || d < 1 || d > 31 || a < 2015) return null
+    const dt = new Date(a, m - 1, d)
+    if (dt > hoje) return null                       // nota do futuro é leitura errada
+    if (dt.getDate() !== d || dt.getMonth() !== m - 1) return null
+    return `${a}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+  }
+  // Em cupom térmico o OCR troca dígito com frequência — num teste real, "28/09/2026"
+  // saiu "28/89/2026" (0 lido como 8) e a data era descartada. Quando a leitura não
+  // forma data válida, tenta as confusões típicas de dígito. Só aceita se UMA única
+  // variante der certo: havendo duas, não dá pra saber qual era, e chutar a data de uma
+  // despesa é pior do que deixar em branco.
+  const CONFUSOES = { '0':'8', '8':'0', '1':'7', '7':'1', '6':'5', '5':'6', '9':'0' }
+  const corrigirData = (dd, mm, aa) => {
+    const variantes = new Set()
+    for (const [i, parte] of [[0, dd], [1, mm]]) {
+      for (let k = 0; k < parte.length; k++) {
+        const troca = CONFUSOES[parte[k]]
+        if (!troca) continue
+        const novo = parte.slice(0, k) + troca + parte.slice(k + 1)
+        const iso = i === 0 ? dataValida(+novo, +mm, +aa) : dataValida(+dd, +novo, +aa)
+        if (iso) variantes.add(iso)
+      }
+    }
+    return variantes.size === 1 ? [...variantes][0] : null
+  }
+  const comRotulo = [], soltas = []
+  for (const linha of linhas) {
+    for (const m of linha.matchAll(/(\d{2})\/(\d{2})\/(\d{2,4})/g)) {
+      const iso = dataValida(+m[1], +m[2], +m[3]) || corrigirData(m[1], m[2], m[3])
+      if (!iso) continue
+      ;(/EMISS|DATA|DT\b/.test(linha) ? comRotulo : soltas).push(iso)
+    }
+  }
+  achados.data = comRotulo[0] || soltas[0] || null
+  return achados
+}
+
+// Roda o Tesseract na foto e passa o texto pro extrator. Ajusta a resolução antes: foto
+// de celular vem com 3000+ px (lento demais no aparelho do piloto) e foto tirada de longe
+// vem com o texto pequeno demais pro OCR acertar o dígito.
+export async function lerNotaPorOcr(arquivo, aoProgredir) {
+  let worker = null
+  try {
+    // 2400 de teto e 1600 de piso: abaixo disso o OCR troca 0 por 8 no valor, e valor
+    // errado é pior que valor em branco — ninguém confere o que já veio preenchido.
+    const { canvas } = await paraCanvas(arquivo, 2400, 1600)
+    const { binarizar } = await import('./ocrCoordenadas')
+    binarizar(canvas)                      // cupom térmico tem contraste fraco
+    const { createWorker } = await import('tesseract.js')
+    worker = await createWorker('eng', 1, aoProgredir ? { logger: aoProgredir } : undefined)
+    const { data } = await worker.recognize(canvas)
+    const achados = extrairDaNota(data?.text || '')
+    return { ok: !!(achados.chave || achados.valor || achados.data), origem: 'ocr', ...achados,
+             ...(achados.chave ? dadosDaChave(achados.chave) : {}), textoBruto: data?.text || '' }
+  } catch (e) {
+    return { ok: false, motivo: `não consegui ler o texto da nota (${e?.message || e})` }
+  } finally {
+    try { await worker?.terminate() } catch { /* worker já caiu: nada a fazer */ }
+  }
 }

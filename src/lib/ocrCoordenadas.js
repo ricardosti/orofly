@@ -34,7 +34,7 @@ function recortarCanvas(bitmap, sx, sy, sw, sh) {
 
 // Preto e branco puro — destaca texto escuro em fundo cinza/amarelado de papel
 // escaneado/fotografado, o que ajuda bastante a precisão do OCR.
-function binarizar(canvas, limiar = 150) {
+export function binarizar(canvas, limiar = 150) {
   const ctx = canvas.getContext('2d')
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const d = img.data

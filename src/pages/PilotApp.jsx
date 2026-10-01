@@ -15,7 +15,7 @@ import { registrar } from '../lib/atividade'
 import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
-import { lerNotaFiscal } from '../lib/notaFiscal'
+import { lerNotaFiscal, lerNotaPorOcr } from '../lib/notaFiscal'
 import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
@@ -724,6 +724,11 @@ export default function PilotApp({onSwitchMode}) {
   // O lançamento nunca depende dela — se não ler, o piloto preenche como sempre fez.
   const [notaQr,setNotaQr] = useState(null)
   const [notaLendoQr,setNotaLendoQr] = useState(false)
+  // Leitura do TEXTO da nota (Tesseract). Separada do QR e sob botão de propósito:
+  // leva alguns segundos, baixa o modelo na primeira vez e nem sempre é desejada —
+  // o piloto no campo decide se vale gastar isso.
+  const [notaOcr,setNotaOcr] = useState(null)
+  const [notaOcrPct,setNotaOcrPct] = useState(null)
   const [notaSaving,setNotaSaving] = useState(false)
   const [minhasNotas,setMinhasNotas] = useState([])
   const [gestaoPeriodo,setGestaoPeriodo] = useState('mes') // 'mes' | '30' | 'tudo'
@@ -1667,7 +1672,7 @@ export default function PilotApp({onSwitchMode}) {
     if(!f) return
     // Lê o QR do arquivo ORIGINAL, antes de o editor reduzir pra 1280 px: o QR do cupom
     // é pequeno e cada pixel conta. Roda solto, sem travar a abertura do editor.
-    setNotaQr(null); setNotaLendoQr(true)
+    setNotaQr(null); setNotaOcr(null); setNotaLendoQr(true)
     lerNotaFiscal(f).then(r=>setNotaQr(r)).catch(()=>setNotaQr(null)).finally(()=>setNotaLendoQr(false))
     const r=new FileReader()
     r.onload=ev=>{
@@ -2878,7 +2883,7 @@ export default function PilotApp({onSwitchMode}) {
             <div style={{position:'relative',marginBottom:14}}>
               <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:220,objectFit:'cover',borderRadius:14,display:'block'}}/>
               <button style={{position:'absolute',top:8,right:8,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:28,height:28,cursor:'pointer'}}
-                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null)}}>✕</button>
+                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null)}}>✕</button>
             </div>
           ) : (
             <div style={{display:'flex',gap:10,marginBottom:14}}>
@@ -2944,9 +2949,67 @@ export default function PilotApp({onSwitchMode}) {
           })()}
           {notaQr && !notaQr.ok && (
             <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'9px 11px',marginBottom:14,fontSize:11.5,color:theme.textFaint2,lineHeight:1.45}}>
-              Não deu pra ler o QR ({notaQr.motivo}). Preencha na mão, como sempre — a foto foi guardada do mesmo jeito.
+              Não achei QR nessa nota ({notaQr.motivo}). Dá pra tentar ler o texto impresso aqui embaixo, ou preencher na mão como sempre.
             </div>
           )}
+
+          {/* Leitura do texto impresso. Fica sob botão porque custa segundos e, na
+              primeira vez, baixa o modelo de OCR — decisão do piloto, não do app. */}
+          {notaFotoFile && !notaOcr && notaOcrPct===null && (
+            <button onClick={async()=>{
+              setNotaOcrPct(0)
+              const r = await lerNotaPorOcr(notaFotoFile, m=>{
+                if (m?.status==='recognizing text') setNotaOcrPct(Math.round((m.progress||0)*100))
+              })
+              setNotaOcr(r); setNotaOcrPct(null)
+            }}
+              style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,
+                padding:'10px',fontSize:12.5,fontWeight:600,cursor:'pointer',marginBottom:14}}>
+              🔎 Ler valor e data do texto da nota
+            </button>
+          )}
+          {notaOcrPct!==null && (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:11.5,color:theme.textFaint2,marginBottom:5}}>Lendo o texto da nota... {notaOcrPct}%</div>
+              <div style={{height:5,background:theme.divider,borderRadius:20,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${notaOcrPct}%`,background:'#00A86B',borderRadius:20,transition:'width .3s'}}/>
+              </div>
+            </div>
+          )}
+          {notaOcr && (()=>{
+            const achou = [notaOcr.valor>0?'valor':null, notaOcr.data?'data':null, notaOcr.chave?'chave':null].filter(Boolean)
+            if (!achou.length) return (
+              <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'9px 11px',marginBottom:14,fontSize:11.5,color:theme.textFaint2,lineHeight:1.45}}>
+                Não consegui tirar nada do texto{notaOcr.avisos?.length?` (${notaOcr.avisos[0]})`:''}. Preencha na mão — a foto foi guardada do mesmo jeito.
+              </div>
+            )
+            return (
+              <div style={{background:theme.successBg,border:'1px solid #00A86B',borderRadius:14,padding:'11px 12px',marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:800,color:'#00A86B',letterSpacing:.3,marginBottom:6}}>🔎 LI DO TEXTO DA NOTA</div>
+                <div style={{fontSize:11.5,color:theme.text,lineHeight:1.6}}>
+                  {notaOcr.valor>0 && <div>Valor <b>R$ {notaOcr.valor.toFixed(2).replace('.',',')}</b></div>}
+                  {notaOcr.data && <div>Data <b>{notaOcr.data.split('-').reverse().join('/')}</b></div>}
+                  {notaOcr.chave && <div>CNPJ <b>{notaOcr.cnpjFormatado}</b> · nota nº <b>{notaOcr.numero}</b></div>}
+                </div>
+                <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:6,lineHeight:1.4}}>
+                  Leitura automática erra às vezes — confira antes de salvar.
+                </div>
+                <button onClick={()=>{
+                  setNotaForm(f=>({...f,
+                    valor: notaOcr.valor>0 ? String(notaOcr.valor) : f.valor,
+                    data: notaOcr.data || f.data,
+                    observacao: notaOcr.chave && !(f.observacao||'').includes(notaOcr.chave)
+                      ? [f.observacao, `NFe nº ${notaOcr.numero} · CNPJ ${notaOcr.cnpjFormatado} · chave ${notaOcr.chave}`].filter(Boolean).join('\n')
+                      : f.observacao,
+                  }))
+                  showToast('✅ Preenchido — confira o valor')
+                }}
+                  style={{width:'100%',marginTop:9,background:'#00A86B',color:'#fff',border:'none',borderRadius:11,padding:'9px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>
+                  Usar ({achou.join(' e ')})
+                </button>
+              </div>
+            )
+          })()}
 
           {(notaTab==='despesa' || veiculosDB.length===0) && (
             <>
