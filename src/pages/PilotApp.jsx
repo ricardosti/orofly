@@ -3144,12 +3144,21 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
           )}
-          {notaOcr?.ok && (notaOcr.valor>0 || notaOcr.data) && (
-            <div style={{background:theme.successBg,border:'1px solid #00A86B',borderRadius:12,padding:'9px 11px',marginBottom:14,fontSize:11.5,lineHeight:1.5,color:theme.text}}>
-              ✍️ Preenchi {[notaOcr.valor>0?'o valor':null, notaOcr.data?'a data':null].filter(Boolean).join(' e ')} pela
-              leitura da nota. <b>Confira e corrija se precisar</b> — os campos continuam editáveis.
-            </div>
-          )}
+          {notaOcr?.ok && (notaOcr.valor>0 || notaOcr.data) && (()=>{
+            // Quando o valor veio de fonte duvidosa (subtotal, ou deduzido), o aviso precisa
+            // ser mais forte que o "confira" de sempre — o piloto tem que olhar esse número.
+            const ressalva = (notaOcr.avisos||[]).find(a=>/SUBTOTAL|deduzido|só pelos números/i.test(a))
+            return (
+              <div style={{background: ressalva?theme.warningBg:theme.successBg,
+                border:`1px solid ${ressalva?(theme.warningText||'#c98a1c'):'#00A86B'}`,
+                borderRadius:12,padding:'10px 11px',marginBottom:14,fontSize:11.5,lineHeight:1.55,
+                color: ressalva?(theme.warningText2||theme.warningText):theme.text}}>
+                {ressalva ? '⚠️' : '✍️'} Preenchi {[notaOcr.valor>0?'o valor':null, notaOcr.data?'a data':null].filter(Boolean).join(' e ')} pela
+                leitura da nota. <b>Confira antes de salvar</b> — os campos continuam editáveis.
+                {ressalva && <div style={{marginTop:5,fontWeight:700}}>Atenção: {ressalva}.</div>}
+              </div>
+            )
+          })()}
           {notaOcr && (()=>{
             const achou = [notaOcr.valor>0?'valor':null, notaOcr.data?'data':null, notaOcr.chave?'chave':null].filter(Boolean)
             if (!achou.length) return (

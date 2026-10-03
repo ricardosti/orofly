@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.5',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'O app aproveita o que conseguir ler da nota',
+        texto: 'Antes, se a linha do TOTAL nao saisse legivel, o campo ficava vazio mesmo que o SUBTOTAL estivesse perfeitamente visivel. Agora ele usa o que conseguir: primeiro o total, depois o subtotal, e por fim uma leitura so dos numeros do cupom. Sempre que o valor nao vier da linha do total, aparece um aviso em amarelo dizendo de onde veio e pedindo conferencia — e o campo continua editavel.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Leitura extra so com numeros',
+        texto: 'Em nota fotografada de longe o app costuma acertar o rotulo ("TOTAL R$") e errar o numero ao lado. Entrou uma tentativa final que le apenas digitos, sem letras: assim o leitor para de confundir 5 com S e 0 com O. Ela roda so quando as outras falham.',
+      },
+    ],
+  },
+  {
     versao: '8.4',
     data: '2026-10-03',
     itens: [

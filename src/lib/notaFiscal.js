@@ -240,7 +240,11 @@ const ROTULOS_VALOR = [
 // Linhas que TÊM a palavra total/valor mas não são o valor da nota. Sem isso, o
 // "VALOR APROX DOS TRIBUTOS" que vem no rodapé de todo cupom seria lido como o
 // total — é a armadilha mais comum.
-const NAO_E_O_TOTAL = /SUBTOTAL|TRIBUTO|ITENS|QTDE|QUANTIDADE|TROCO|DESCONTO|ACRESCIMO|DINHEIRO|CARTAO|PIX|RECEBIDO/
+const NAO_E_O_TOTAL = /TRIBUTO|ITENS|QTDE|QUANTIDADE|TROCO|DESCONTO|ACRESCIMO|DINHEIRO|CARTAO|PIX|RECEBIDO/
+// SUBTOTAL não é o total (falta desconto e acréscimo), mas quando o OCR só consegue ler
+// essa linha é melhor preencher com ele e pedir conferência do que deixar o campo vazio —
+// na prática, sem desconto os dois são iguais. Entra com peso baixo e sempre avisando.
+const EH_SUBTOTAL = /SUBTOTAL/
 
 const semAcento = t => String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
 
@@ -317,12 +321,13 @@ export function extrairDaNota(texto) {
   let melhor = null
   for (const linha of linhas) {
     if (NAO_E_O_TOTAL.test(linha)) continue
-    const peso = ROTULOS_VALOR.find(([re]) => re.test(linha))?.[1]
+    // Subtotal entra com peso 2: perde pra qualquer rótulo de total de verdade.
+    const peso = EH_SUBTOTAL.test(linha) ? 2 : ROTULOS_VALOR.find(([re]) => re.test(linha))?.[1]
     if (!peso) continue
     const numeros = numerosDaLinha(linha)
     if (!numeros.length) continue
     const v = Math.max(...numeros)
-    if (!melhor || peso > melhor.peso || (peso === melhor.peso && v > melhor.valor)) melhor = { valor: v, peso }
+    if (!melhor || peso > melhor.peso || (peso === melhor.peso && v > melhor.valor)) melhor = { valor: v, peso, subtotal: peso === 2 }
   }
 
   // 2) rótulo numa linha e número na SEGUINTE. Cupom estreito quebra a linha entre o
@@ -357,7 +362,11 @@ export function extrairDaNota(texto) {
     }
   }
 
-  if (melhor) achados.valor = melhor.valor
+  if (melhor) {
+    achados.valor = melhor.valor
+    if (melhor.subtotal) achados.avisos.push('só o SUBTOTAL foi legível — se a nota tiver desconto, o total é outro')
+    else if (melhor.peso <= 1) achados.avisos.push('o valor foi deduzido do cupom — confira com atenção')
+  }
   else if (/TOTAL/.test(semAcento(texto).toUpperCase())) {
     achados.avisos.push('achei a palavra TOTAL mas não um valor legível')
     // Deixa no console o que o OCR enxergou perto do TOTAL. Sem isso, "não leu" vira
@@ -446,6 +455,37 @@ export async function lerNotaPorOcr(arquivo, aoProgredir) {
       binarizar(copia)
       const r2 = await tentar(copia)
       if (r2.util) r = r2
+    }
+
+    // Última tentativa, só pelo VALOR: reconhece apenas dígitos e separadores.
+    // Em cupom fotografado de longe o OCR acerta o rótulo ("SUBTOTAL R$") e erra o número
+    // ao lado — medido num cupom real. Proibindo letra, o reconhecedor deixa de disputar
+    // entre "5" e "S", "0" e "O", "1" e "l", e o que sobra é quase só número.
+    // Roda em faixas horizontais, porque o número do total fica na metade de baixo e
+    // faixa menor é ampliada mais pelo paraCanvas.
+    if (!r.achados.valor) {
+      try {
+        await worker.setParameters({ tessedit_char_whitelist: '0123456789.,' })
+        const faixas = [[0.30, 0.62], [0.55, 0.90], [0.0, 0.55]]
+        for (const [de, ate] of faixas) {
+          const h = Math.round((ate - de) * canvas.height)
+          if (h < 40) continue
+          const faixa = document.createElement('canvas')
+          faixa.width = canvas.width; faixa.height = h
+          faixa.getContext('2d', { willReadFrequently: true })
+            .drawImage(canvas, 0, Math.round(de * canvas.height), canvas.width, h, 0, 0, canvas.width, h)
+          const { data } = await worker.recognize(faixa)
+          // Sem as letras não dá pra saber qual número é o total, então vale o MAIOR da
+          // faixa — num cupom o total é sempre maior ou igual a cada item.
+          const nums = (String(data?.text || '').match(/\d{1,3}(?:[.,]\d{3})+[.,]\d{2}|\d+[.,]\d{2}/g) || [])
+            .map(numeroBr).filter(v => v !== null && v > 0 && v <= TETO_DESPESA)
+          if (nums.length) {
+            r.achados.valor = Math.max(...nums)
+            r.achados.avisos.push('o valor foi lido só pelos números do cupom — confira com atenção')
+            break
+          }
+        }
+      } catch { /* a passada só-números não deu: segue sem ela */ }
     }
     const achados = r.achados
     return { ok: !!(achados.chave || achados.valor || achados.data), origem: 'ocr', ...achados,
