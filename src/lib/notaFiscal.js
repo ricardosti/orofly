@@ -136,7 +136,10 @@ async function paraCanvas(origem, maxLado = 1400, minLado = 0) {
   const canvas = document.createElement('canvas')
   canvas.width = Math.round(bitmap.width * escala)
   canvas.height = Math.round(bitmap.height * escala)
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  // willReadFrequently: este canvas é lido várias vezes (uma por tentativa do leitor de
+  // QR). Sem a dica, o navegador o mantém na GPU e cada leitura obriga uma cópia de
+  // volta — ele mesmo avisa no console. Com a dica, o canvas já nasce na memória.
+  canvas.getContext('2d', { willReadFrequently: true }).drawImage(bitmap, 0, 0, canvas.width, canvas.height)
   return { canvas, bitmap }
 }
 
@@ -149,7 +152,8 @@ function recorte(canvas, x0, y0, x1, y1) {
   if (w < 40 || h < 40) return null
   const c = document.createElement('canvas')
   c.width = w; c.height = h
-  c.getContext('2d').drawImage(canvas, Math.round(x0 * canvas.width), Math.round(y0 * canvas.height), w, h, 0, 0, w, h)
+  c.getContext('2d', { willReadFrequently: true })
+    .drawImage(canvas, Math.round(x0 * canvas.width), Math.round(y0 * canvas.height), w, h, 0, 0, w, h)
   return c
 }
 

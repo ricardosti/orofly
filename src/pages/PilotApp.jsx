@@ -1702,6 +1702,19 @@ export default function PilotApp({onSwitchMode}) {
           leitor.onload = ev2 => setNotaFotoPreview(ev2.target.result)
           leitor.readAsDataURL(blob)
           setNotaFotoFile(arquivo)
+          // SEGUNDA tentativa, agora no que saiu do editor. É o caso real: o piloto vê
+          // "não achei QR", recorta a nota pra deixar o código grande — e nada acontece,
+          // porque a leitura tinha rodado antes, na foto inteira. Agora o recorte vale.
+          // Só repete se a primeira não achou; achando, não mexe no que já está na tela.
+          setNotaQr(anterior => {
+            if (anterior?.ok) return anterior
+            setNotaLendoQr(true)
+            lerNotaFiscal(arquivo)
+              .then(r => { if (r?.ok) setNotaQr(r) })
+              .catch(() => {})
+              .finally(() => setNotaLendoQr(false))
+            return anterior
+          })
         }
       })
     }
@@ -3034,7 +3047,14 @@ export default function PilotApp({onSwitchMode}) {
           })()}
           {notaQr && !notaQr.ok && (
             <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'9px 11px',marginBottom:14,fontSize:11.5,color:theme.textFaint2,lineHeight:1.45}}>
-              Não achei QR nessa nota ({notaQr.motivo}). Dá pra tentar ler o texto impresso aqui embaixo, ou preencher na mão como sempre.
+              {notaQr.motivo === 'não achei QR Code nessa foto' ? (
+                <>
+                  <b>Não achei o QR Code.</b> O quadradinho precisa aparecer <b>inteiro</b> na
+                  foto, com os quatro cantos — cortado numa borda que seja, nenhum leitor
+                  consegue. Tire outra foto enquadrando só ele, ou use a leitura do texto aqui
+                  embaixo.
+                </>
+              ) : `Não deu pra usar o QR: ${notaQr.motivo}.`}
             </div>
           )}
 

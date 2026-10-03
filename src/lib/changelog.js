@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.9',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Recortar a foto pra achar o QR agora funciona',
+        texto: 'Quando o app dizia que nao achou o QR, o jeito natural era recortar a foto deixando o codigo grande — mas nao adiantava, porque a leitura tinha acontecido antes do editor, na foto inteira. Agora, se a primeira tentativa falhar, o app le de novo depois que voce corta.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'O aviso explica por que o QR nao foi lido',
+        texto: 'O QR Code so pode ser lido se aparecer INTEIRO na foto, com os quatro cantos: faltando um pedaco de canto que seja, nenhum leitor do mundo consegue — nao e limitacao do app. O aviso agora diz isso, em vez de so avisar que nao achou.',
+      },
+    ],
+  },
+  {
     versao: '7.8',
     data: '2026-10-03',
     itens: [
