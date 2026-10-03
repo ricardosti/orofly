@@ -44,7 +44,8 @@ const CAMPOS_NUMERICOS_EDICAO = [
   'vazao_i', 'vazao_f', 'altura', 'velocidade_drone', 'faixa_aplicacao',
 ]
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
-import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON } from '../lib/categoriasDespesa'
+import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON, iconeCategoria } from '../lib/categoriasDespesa'
+import { dataLocal, fmtData } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { apiUrl } from '../lib/apiBase'
 import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT_PDF_CONFIG, MOCK_RELATORIO } from '../lib/reportTemplates'
@@ -2300,7 +2301,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                                   <span style={{color:theme.text,fontWeight:600}}>{CAT_ICON[c.categoria]||'🧾'} {c.categoria}</span>
                                                   <span style={{color:'#059669',fontWeight:700}}>R$ {parseFloat(c.valor||0).toFixed(2)}</span>
                                                 </div>
-                                                <div style={{color:theme.textFaint2,marginTop:2}}>{c.piloto_nome||'—'} · {new Date(c.data).toLocaleDateString('pt-BR')}</div>
+                                                <div style={{color:theme.textFaint2,marginTop:2}}>{c.piloto_nome||'—'} · {fmtData(c.data)}</div>
                                                 {c.observacao && <div style={{color:theme.textMuted,marginTop:2,fontStyle:'italic'}}>{c.observacao}</div>}
                                               </div>
                                             ))}
@@ -3536,7 +3537,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                     {viagensVeic.length>0 && (
                                       <div style={{marginTop:10,borderTop:`1px solid ${theme.divider}`,paddingTop:8}}>
                                         {viagensVeic.map(vg=>(
-                                          <div key={vg.id} style={{fontSize:11,color:theme.textMuted,padding:'3px 0'}}>{new Date(vg.data).toLocaleDateString('pt-BR')} · {vg.destino||'—'} · {((vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km{vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}</div>
+                                          <div key={vg.id} style={{fontSize:11,color:theme.textMuted,padding:'3px 0'}}>{fmtData(vg.data)} · {vg.destino||'—'} · {((vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km{vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}</div>
                                         ))}
                                       </div>
                                     )}
@@ -3564,7 +3565,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                     {manutVeic.length>0 && (
                                       <div style={{marginTop:10,borderTop:`1px solid ${theme.divider}`,paddingTop:8}}>
                                         {manutVeic.map(m=>(
-                                          <div key={m.id} style={{fontSize:11,color:theme.textMuted,padding:'3px 0'}}>{new Date(m.data).toLocaleDateString('pt-BR')} · {m.tipo}{m.custo?` · R$ ${parseFloat(m.custo).toFixed(2)}`:''}</div>
+                                          <div key={m.id} style={{fontSize:11,color:theme.textMuted,padding:'3px 0'}}>{fmtData(m.data)} · {m.tipo}{m.custo?` · R$ ${parseFloat(m.custo).toFixed(2)}`:''}</div>
                                         ))}
                                       </div>
                                     )}
@@ -3622,7 +3623,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     if(movFiltros.produto && m.produto_nome!==movFiltros.produto) return false
                     if(movFiltros.tipo && m.tipo!==movFiltros.tipo) return false
                     if(movFiltros.fazenda && fazendaDoMovimento(m)!==movFiltros.fazenda) return false
-                    if(movFiltros.dataIni && new Date(m.created_at)<new Date(movFiltros.dataIni)) return false
+                    if(movFiltros.dataIni && new Date(m.created_at)<dataLocal(movFiltros.dataIni)) return false
                     if(movFiltros.dataFim && new Date(m.created_at)>new Date(movFiltros.dataFim+'T23:59:59')) return false
                     return true
                   })
@@ -5856,8 +5857,8 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
               if(custosFiltros.piloto && c.piloto_nome!==custosFiltros.piloto) return false
               if(custosFiltros.categoria && c.categoria!==custosFiltros.categoria) return false
               if(custosFiltros.clienteFazenda && chaveClienteFazenda(c)!==custosFiltros.clienteFazenda) return false
-              if(custosFiltros.dataIni && new Date(c.data)<new Date(custosFiltros.dataIni)) return false
-              if(custosFiltros.dataFim && new Date(c.data)>new Date(custosFiltros.dataFim)) return false
+              if(custosFiltros.dataIni && dataLocal(c.data)<dataLocal(custosFiltros.dataIni)) return false
+              if(custosFiltros.dataFim && dataLocal(c.data)>dataLocal(custosFiltros.dataFim)) return false
               return true
             })
 
@@ -5883,13 +5884,13 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
             })
             const rankingClienteFazenda = Object.entries(porClienteFazenda).sort((a,b)=>b[1].total-a[1].total)
 
-            const categoriaChart = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).map(([nome,valor])=>({name:`${CATEGORIA_ICON[nome]||''} ${nome}`,value:parseFloat(valor.toFixed(2))}))
+            const categoriaChart = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).map(([nome,valor])=>({name:`${iconeCategoria(nome)} ${nome}`,value:parseFloat(valor.toFixed(2))}))
             const CORES_CAT = ['#059669',theme.warningText,'#2f6fed','#8e44ad',theme.dangerText]
 
             // Evolução diária no período filtrado
             const porDia = {}
             custosFiltrados.forEach(c=>{
-              const key = new Date(c.data).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})
+              const key = fmtData(c.data,{day:'2-digit',month:'2-digit'})
               porDia[key] = (porDia[key]||0)+parseFloat(c.valor||0)
             })
             const evolucaoDiaria = Object.entries(porDia)
@@ -5964,7 +5965,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                   </div>
                   <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
                     <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>MAIOR CATEGORIA</div>
-                    <div style={{fontSize:16,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>{maiorCategoria?`${CATEGORIA_ICON[maiorCategoria[0]]||''} ${maiorCategoria[0]}`:'—'}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>{maiorCategoria?`${iconeCategoria(maiorCategoria[0])} ${maiorCategoria[0]}`:'—'}</div>
                     {maiorCategoria&&<div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>R$ {maiorCategoria[1].toFixed(2)}</div>}
                   </div>
                 </div>
@@ -6067,12 +6068,12 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                             return (
                               <tr key={c.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>
-                                  <div style={{fontWeight:600}}>{CATEGORIA_ICON[c.categoria]||'🧾'} {c.categoria}</div>
+                                  <div style={{fontWeight:600}}>{iconeCategoria(c.categoria)} {c.categoria}</div>
                                   {c.observacao && <div style={{fontSize:11,color:theme.textFaint2,fontStyle:'italic',marginTop:2}}>{c.observacao}</div>}
                                 </td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>{c.piloto_nome||'—'}</td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,fontWeight:700,color:'#059669'}}>R$ {parseFloat(c.valor).toFixed(2)}</td>
-                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap'}}>{new Date(c.data).toLocaleDateString('pt-BR')}</td>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap'}}>{fmtData(c.data)}</td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>
                                   {c.ordem_servico ? (
                                     <span style={{fontSize:11,fontWeight:600,color: rel?'#059669':theme.warningText}}>
@@ -6110,21 +6111,21 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
 
                   const viagensF = viagens.filter(vg=>{
                     if(veicFiltros.veiculo && vg.veiculo_id!==veicFiltros.veiculo) return false
-                    if(veicFiltros.dataIni && new Date(vg.data)<new Date(veicFiltros.dataIni)) return false
-                    if(veicFiltros.dataFim && new Date(vg.data)>new Date(veicFiltros.dataFim)) return false
+                    if(veicFiltros.dataIni && dataLocal(vg.data)<dataLocal(veicFiltros.dataIni)) return false
+                    if(veicFiltros.dataFim && dataLocal(vg.data)>dataLocal(veicFiltros.dataFim)) return false
                     return true
                   })
                   const manutF = manutencoes.filter(m=>{
                     if(veicFiltros.veiculo && m.veiculo_id!==veicFiltros.veiculo) return false
-                    if(veicFiltros.dataIni && new Date(m.data)<new Date(veicFiltros.dataIni)) return false
-                    if(veicFiltros.dataFim && new Date(m.data)>new Date(veicFiltros.dataFim)) return false
+                    if(veicFiltros.dataIni && dataLocal(m.data)<dataLocal(veicFiltros.dataIni)) return false
+                    if(veicFiltros.dataFim && dataLocal(m.data)>dataLocal(veicFiltros.dataFim)) return false
                     return true
                   })
                   const despesasF = custos.filter(c=>{
                     if(!c.veiculo_id) return false
                     if(veicFiltros.veiculo && c.veiculo_id!==veicFiltros.veiculo) return false
-                    if(veicFiltros.dataIni && new Date(c.data)<new Date(veicFiltros.dataIni)) return false
-                    if(veicFiltros.dataFim && new Date(c.data)>new Date(veicFiltros.dataFim)) return false
+                    if(veicFiltros.dataIni && dataLocal(c.data)<dataLocal(veicFiltros.dataIni)) return false
+                    if(veicFiltros.dataFim && dataLocal(c.data)>dataLocal(veicFiltros.dataFim)) return false
                     return true
                   })
 
@@ -6144,7 +6145,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                   const timeline = [
                     ...viagensF.map(vg=>({tipo:'viagem', data:vg.data, id:'vg-'+vg.id, veiculo:veicById[vg.veiculo_id]?.placa||'—', detalhe:`🛣️ ${vg.destino||'Viagem'} · ${Math.max(0,(vg.km_final||0)-(vg.km_inicial||0)).toFixed(0)} km${vg.motorista?` · ${vg.motorista}`:''}${vg.ordem_servico?` · OS ${vg.ordem_servico}`:''}`, valor:null})),
                     ...manutF.map(m=>({tipo:'manutencao', data:m.data, id:'mn-'+m.id, veiculo:veicById[m.veiculo_id]?.placa||'—', detalhe:`🔧 ${m.tipo}${m.km?` · ${parseFloat(m.km).toLocaleString('pt-BR')} km`:''}${m.observacao?` · ${m.observacao}`:''}`, valor:m.custo?parseFloat(m.custo):null})),
-                    ...despesasF.map(c=>({tipo:'despesa', data:c.data, id:'ds-'+c.id, veiculo:veicById[c.veiculo_id]?.placa||'—', detalhe:`${CATEGORIA_ICON[c.categoria]||'🧾'} ${c.categoria} · ${c.piloto_nome||'—'}`, valor:parseFloat(c.valor||0)})),
+                    ...despesasF.map(c=>({tipo:'despesa', data:c.data, id:'ds-'+c.id, veiculo:veicById[c.veiculo_id]?.placa||'—', detalhe:`${iconeCategoria(c.categoria)} ${c.categoria} · ${c.piloto_nome||'—'}`, valor:parseFloat(c.valor||0)})),
                   ].sort((a,b)=>new Date(b.data)-new Date(a.data))
 
                   const filtrosVeicAtivos = Object.values(veicFiltros).some(Boolean)
@@ -6224,7 +6225,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                             <div key={ev.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 18px',borderBottom:i<timeline.length-1?'1px solid #f6faf7':'none'}}>
                               <div>
                                 <div style={{fontSize:13,fontWeight:600}}>{ev.detalhe}</div>
-                                <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>🚗 {ev.veiculo} · {new Date(ev.data).toLocaleDateString('pt-BR')}</div>
+                                <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>🚗 {ev.veiculo} · {fmtData(ev.data)}</div>
                               </div>
                               {ev.valor!=null && <div style={{fontWeight:700,fontSize:14,color:ev.tipo==='manutencao'?theme.warningText:'#059669',fontFamily:"'Syne',sans-serif"}}>R$ {ev.valor.toFixed(2)}</div>}
                             </div>
@@ -6345,7 +6346,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                             <div key={c.id} style={{background:'#f7fbf8',borderRadius:12,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
                               <div>
                                 <div style={{fontSize:13,fontWeight:600}}>{CAT_ICON[c.categoria]||'🧾'} {c.categoria} — {c.piloto_nome||'—'}</div>
-                                <div style={{fontSize:11,color:theme.textFaint2}}>{new Date(c.data).toLocaleDateString('pt-BR')}{c.observacao?` · ${c.observacao}`:''}</div>
+                                <div style={{fontSize:11,color:theme.textFaint2}}>{fmtData(c.data)}{c.observacao?` · ${c.observacao}`:''}</div>
                               </div>
                               <div style={{fontSize:14,fontWeight:700,color:'#059669'}}>R$ {parseFloat(c.valor).toFixed(2)}</div>
                             </div>
@@ -6362,7 +6363,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                             <div key={v.id} style={{background:'#f7fbf8',borderRadius:12,padding:'10px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:6}}>
                               <div>
                                 <div style={{fontSize:13,fontWeight:600}}>🚗 {veiculos.find(x=>x.id===v.veiculo_id)?.placa || '—'} — {v.motorista||'—'}</div>
-                                <div style={{fontSize:11,color:theme.textFaint2}}>{new Date(v.data).toLocaleDateString('pt-BR')}{v.destino?` · ${v.destino}`:''}</div>
+                                <div style={{fontSize:11,color:theme.textFaint2}}>{fmtData(v.data)}{v.destino?` · ${v.destino}`:''}</div>
                               </div>
                               <div style={{fontSize:14,fontWeight:700,color:'#2f6fed'}}>{Math.max(0,(v.km_final||0)-(v.km_inicial||0)).toFixed(0)} km</div>
                             </div>
@@ -8554,7 +8555,7 @@ function TelaArquivos({ lista, loading, erro, filtroCategoria, setFiltroCategori
                     <td style={{ padding:'10px 14px', color:theme.textMuted }}>{CATEGORIA_ARQUIVO_LABEL[it?.categoria]||it?.categoria||'—'}</td>
                     <td style={{ padding:'10px 14px', color:theme.textMuted }}>{it?.relLabel||'—'}</td>
                     <td style={{ padding:'10px 14px', color:theme.textMuted }}>{fmtTamanho(it?.tamanho)}</td>
-                    <td style={{ padding:'10px 14px', color:theme.textMuted }}>{it?.data ? new Date(it.data).toLocaleDateString('pt-BR') : '—'}</td>
+                    <td style={{ padding:'10px 14px', color:theme.textMuted }}>{it?.data ? fmtData(it.data) : '—'}</td>
                     <td style={{ padding:'10px 14px', whiteSpace:'nowrap' }}>
                       <button onClick={() => visualizar(it)} style={{ background:theme.bg, color:theme.textMuted, border:`1px solid ${theme.cardBorder2}`, borderRadius:10, padding:'5px 10px', fontSize:11.5, cursor:'pointer', marginRight:6 }}>
                         👁️ Ver

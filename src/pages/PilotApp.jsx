@@ -16,7 +16,8 @@ import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr } from '../lib/notaFiscal'
-import { CATEGORIA_DESPESA_OPTS } from '../lib/categoriasDespesa'
+import { CATEGORIA_DESPESA_OPTS, iconeCategoria } from '../lib/categoriasDespesa'
+import { dataLocal, fmtData } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -731,6 +732,10 @@ export default function PilotApp({onSwitchMode}) {
   const [notaOcrPct,setNotaOcrPct] = useState(null)
   const [notaSaving,setNotaSaving] = useState(false)
   const [minhasNotas,setMinhasNotas] = useState([])
+  // Filtros da lista de notas do piloto. Antes a lista vinha crua, e achar "quanto gastei
+  // de combustível esse mês" exigia somar na mão.
+  const [notaFiltroCat,setNotaFiltroCat] = useState('todas')
+  const [notaFiltroMes,setNotaFiltroMes] = useState('mes')   // 'mes' | '30' | 'tudo'
   const [gestaoPeriodo,setGestaoPeriodo] = useState('mes') // 'mes' | '30' | 'tudo'
   const [loadingNotas,setLoadingNotas] = useState(false)
   const [minhaAgenda,setMinhaAgenda] = useState([])
@@ -1670,6 +1675,14 @@ export default function PilotApp({onSwitchMode}) {
 
   function handleNotaFoto(f){
     if(!f) return
+    // PDF não passa pelo editor de imagem (ele só sabe desenhar em foto) nem pelo leitor
+    // de QR. Vai direto como anexo — é o formato em que o posto manda a nota por e-mail.
+    if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name||'')) {
+      setNotaQr(null); setNotaOcr(null)
+      setNotaFotoFile(f)
+      setNotaFotoPreview('pdf:' + (f.name || 'nota.pdf'))
+      return
+    }
     // Lê o QR do arquivo ORIGINAL, antes de o editor reduzir pra 1280 px: o QR do cupom
     // é pequeno e cada pixel conta. Roda solto, sem travar a abertura do editor.
     setNotaQr(null); setNotaOcr(null); setNotaLendoQr(true)
@@ -1839,8 +1852,12 @@ export default function PilotApp({onSwitchMode}) {
     try {
       let foto_url = null
       if(notaFotoFile){
-        const path = `despesas/${profile.id}/${Date.now()}.jpg`
-        const {error:upErr} = await supabase.storage.from('relatorios').upload(path,notaFotoFile,{upsert:true})
+        // Mantém a extensão real do arquivo: comprovante em PDF gravado como .jpg não
+        // abre depois, e o contentType errado faz o navegador tentar desenhar o PDF
+        // como imagem e mostrar um quadrado quebrado.
+        const ehPdf = notaFotoFile.type === 'application/pdf' || /\.pdf$/i.test(notaFotoFile.name||'')
+        const path = `despesas/${profile.id}/${Date.now()}.${ehPdf?'pdf':'jpg'}`
+        const {error:upErr} = await supabase.storage.from('relatorios').upload(path,notaFotoFile,{upsert:true,contentType:notaFotoFile.type||undefined})
         esquecerUrl(path)
         if(!upErr) foto_url = path
       }
@@ -2781,7 +2798,7 @@ export default function PilotApp({onSwitchMode}) {
   if(view==='gestao') {
     const hojeG = new Date()
     const notasFiltradas = minhasNotas.filter(n=>{
-      const d = new Date(n.data)
+      const d = dataLocal(n.data)
       if(gestaoPeriodo==='tudo') return true
       if(gestaoPeriodo==='30'){ const d30=new Date(hojeG); d30.setDate(d30.getDate()-30); return d>=d30 }
       return d.getMonth()===hojeG.getMonth() && d.getFullYear()===hojeG.getFullYear()
@@ -2824,7 +2841,7 @@ export default function PilotApp({onSwitchMode}) {
             ) : categoriasOrdenadas.length===0 ? (
               <div style={{textAlign:'center',color:theme.textMuted,padding:24,background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,fontSize:13}}>Nenhuma nota nesse período</div>
             ) : categoriasOrdenadas.map(([cat,total])=>{
-              const ic = CATEGORIA_DESPESA_OPTS.find(([c])=>c===cat)?.[1]||'🧾'
+              const ic = iconeCategoria(cat)
               const pct = totalGestao>0 ? (total/totalGestao)*100 : 0
               return (
                 <div key={cat} style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'12px 14px',marginBottom:8}}>
@@ -2881,7 +2898,15 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>FOTO DA NOTA</div>
           {notaFotoPreview ? (
             <div style={{position:'relative',marginBottom:14}}>
+              {String(notaFotoPreview).startsWith('pdf:') ? (
+                <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:14,padding:'22px 14px',textAlign:'center'}}>
+                  <div style={{fontSize:30}}>📄</div>
+                  <div style={{fontSize:12.5,color:theme.text,fontWeight:600,marginTop:6,wordBreak:'break-all'}}>{String(notaFotoPreview).slice(4)}</div>
+                  <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:3}}>PDF anexado</div>
+                </div>
+              ) : (
               <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:220,objectFit:'cover',borderRadius:14,display:'block'}}/>
+              )}
               <button style={{position:'absolute',top:8,right:8,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:28,height:28,cursor:'pointer'}}
                 onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null)}}>✕</button>
             </div>
@@ -2891,10 +2916,13 @@ export default function PilotApp({onSwitchMode}) {
                 onClick={()=>document.getElementById('nota-camera')?.click()}>📸 Câmera</button>
               <button style={{flex:1,background:'#e6f1fb',color:'#2f6fed',border:'none',borderRadius:16,padding:'14px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
                 onClick={()=>document.getElementById('nota-galeria')?.click()}>🖼️ Galeria</button>
+              <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:16,padding:'14px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>document.getElementById('nota-pdf')?.click()}>📄 PDF</button>
             </div>
           )}
           <input id="nota-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
           <input id="nota-galeria" type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
+          <input id="nota-pdf" type="file" accept="application/pdf" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
 
           {notaLendoQr && (
             <div style={{fontSize:11.5,color:theme.textFaint2,marginBottom:14}}>🔎 Procurando o QR Code da nota...</div>
@@ -3070,7 +3098,7 @@ export default function PilotApp({onSwitchMode}) {
                     ))}
                   </div>
                   {notaForm.itensViagem.map(item=>{
-                    const ic = CATEGORIA_DESPESA_OPTS.find(([c])=>c===item.categoria)?.[1]||'🧾'
+                    const ic = iconeCategoria(item.categoria)
                     return (
                       <div key={item.id} style={{marginBottom:8}}>
                         <div style={{display:'flex',gap:8,alignItems:'center'}}>
@@ -3129,23 +3157,84 @@ export default function PilotApp({onSwitchMode}) {
         </div>
 
         {/* Notas recentes */}
+        {(()=>{
+          const hojeN = new Date()
+          const noPeriodo = n => {
+            if (notaFiltroMes==='tudo') return true
+            const d = dataLocal(n.data)
+            if (notaFiltroMes==='30') { const d30=new Date(hojeN); d30.setDate(d30.getDate()-30); return d>=d30 }
+            return d.getMonth()===hojeN.getMonth() && d.getFullYear()===hojeN.getFullYear()
+          }
+          const doPeriodo = minhasNotas.filter(noPeriodo)
+          const notasVisiveis = doPeriodo.filter(n=>notaFiltroCat==='todas' || n.categoria===notaFiltroCat)
+          const totalVisivel = notasVisiveis.reduce((a,n)=>a+(parseFloat(n.valor)||0),0)
+          // Só mostra chip de categoria que realmente aparece no período — lista de 8
+          // botões num celular, com 6 deles zerados, é ruído.
+          const catsNoPeriodo = [...new Set(doPeriodo.map(n=>n.categoria).filter(Boolean))]
+          const nMes = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+          return (
         <div>
           <div style={{fontSize:13,fontWeight:700,color:theme.text,marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>Notas Recentes</div>
+
+          {/* Total e período, juntos da lista — antes isso só existia na tela Gestão,
+              separada, e ninguém cruzava as duas. */}
+          <div style={{background:theme.successBg,borderRadius:16,padding:'12px 14px',marginBottom:10,display:'flex',alignItems:'center',gap:12}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:10,fontWeight:700,color:'#00A86B',letterSpacing:.4}}>
+                {notaFiltroCat==='todas' ? 'TOTAL' : iconeCategoria(notaFiltroCat)+' '+notaFiltroCat.toUpperCase()}
+              </div>
+              <div style={{fontSize:21,fontWeight:800,color:'#00A86B',fontFamily:"'Poppins',sans-serif",marginTop:1}}>R$ {nMes(totalVisivel)}</div>
+              <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:1}}>
+                {notasVisiveis.length} {notasVisiveis.length===1?'nota':'notas'}
+              </div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
+              {[['mes','Este mês'],['30','30 dias'],['tudo','Tudo']].map(([v,lbl])=>(
+                <button key={v} onClick={()=>setNotaFiltroMes(v)}
+                  style={{background: notaFiltroMes===v?'#00A86B':theme.card, color: notaFiltroMes===v?'#fff':theme.textMuted,
+                    border:`1px solid ${notaFiltroMes===v?'#00A86B':theme.cardBorder2}`, borderRadius:9,
+                    padding:'5px 10px', fontSize:10.5, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap'}}>{lbl}</button>
+              ))}
+            </div>
+          </div>
+
+          {catsNoPeriodo.length>1 && (
+            <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:10,paddingBottom:2}}>
+              <button onClick={()=>setNotaFiltroCat('todas')}
+                style={{background: notaFiltroCat==='todas'?'#00A86B':theme.card, color: notaFiltroCat==='todas'?'#fff':theme.textMuted,
+                  border:`1px solid ${notaFiltroCat==='todas'?'#00A86B':theme.cardBorder2}`, borderRadius:20, padding:'6px 13px',
+                  fontSize:11.5, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0}}>Todas</button>
+              {catsNoPeriodo.map(cat=>(
+                <button key={cat} onClick={()=>setNotaFiltroCat(cat)}
+                  style={{background: notaFiltroCat===cat?'#00A86B':theme.card, color: notaFiltroCat===cat?'#fff':theme.textMuted,
+                    border:`1px solid ${notaFiltroCat===cat?'#00A86B':theme.cardBorder2}`, borderRadius:20, padding:'6px 13px',
+                    fontSize:11.5, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0}}>
+                  {iconeCategoria(cat)} {cat}
+                </button>
+              ))}
+            </div>
+          )}
+
           {loadingNotas?<div style={{textAlign:'center',color:theme.textMuted,padding:20}}>Carregando...</div>
           :minhasNotas.length===0?<div style={{textAlign:'center',color:theme.textMuted,padding:20,fontSize:13}}>Nenhuma nota cadastrada ainda</div>
-          :minhasNotas.map(n=>(
+          :notasVisiveis.length===0?<div style={{textAlign:'center',color:theme.textMuted,padding:20,fontSize:13}}>Nenhuma nota nesse filtro</div>
+          :notasVisiveis.map(n=>(
             <div key={n.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:'12px 14px',marginBottom:8}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div>
-                  <div style={{fontWeight:600,fontSize:13,color:theme.text}}>{CATEGORIA_DESPESA_OPTS.find(([c])=>c===n.categoria)?.[1]||'🧾'} {n.categoria}</div>
-                  <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>{new Date(n.data).toLocaleDateString('pt-BR')}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}{n.veiculo_id?` · 🚗 ${veiculosDB.find(v=>v.id===n.veiculo_id)?.placa||''}`:''}</div>
+                  <div style={{fontWeight:600,fontSize:13,color:theme.text}}>{iconeCategoria(n.categoria)} {n.categoria}</div>
+                  <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>{fmtData(n.data)}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}{n.veiculo_id?` · 🚗 ${veiculosDB.find(v=>v.id===n.veiculo_id)?.placa||''}`:''}</div>
                 </div>
                 <div style={{fontWeight:700,fontSize:14,color:'#00A86B',fontFamily:"'Poppins',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
               </div>
-              {n.foto_url && <div style={{marginTop:10}}><StorageFotoSlot supabase={supabase} path={n.foto_url} height={120}/></div>}
+              {n.foto_url && (/\.pdf$/i.test(n.foto_url)
+                ? <div style={{marginTop:10,fontSize:11.5,color:theme.textFaint2}}>📄 Comprovante em PDF anexado</div>
+                : <div style={{marginTop:10}}><StorageFotoSlot supabase={supabase} path={n.foto_url} height={120}/></div>)}
             </div>
           ))}
         </div>
+          )
+        })()}
       </div>
       <BottomNav/>
       {toast&&<div style={s.toast}>{toast}</div>}

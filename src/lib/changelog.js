@@ -9,6 +9,32 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.4',
+    data: '2026-10-02',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'As datas das despesas apareciam um dia antes',
+        texto: 'Uma nota lancada no dia 12 aparecia como 11 — no app do piloto, no painel, nas viagens e nas manutencoes. Era erro de fuso horario: a data vinha do banco sem hora e era lida como horario de Londres, o que no Brasil cai no dia anterior. Pior que o texto errado: a despesa do dia 1o do mes caia no mes anterior e sumia do filtro "este mes", sem ninguem perceber. Corrigido em todos os lugares.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Categorias novas de despesa',
+        texto: 'Entraram Combustivel, Alimentacao, Manutencao, Pecas e Ferramentas, junto com Hotel, Pedagio e Outros. As notas ja lancadas continuam como estao (com Almoco e Gasolina) pra nao bagunçar os relatorios antigos — elas seguem aparecendo normalmente, com o icone certo.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Total e filtros junto da lista de notas',
+        texto: 'Na lista de notas do piloto agora tem o total em destaque, com os botoes Este mes / 30 dias / Tudo, e botoes de categoria pra ver quanto saiu so de combustivel, so de hotel e assim por diante. Antes esse total so existia numa tela separada.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Comprovante em PDF',
+        texto: 'Alem de camera e galeria, da pra anexar um PDF — que e como o posto costuma mandar a nota por e-mail. O arquivo e guardado com a extensao certa e aparece identificado na lista.',
+      },
+    ],
+  },
+  {
     versao: '7.3',
     data: '2026-10-01',
     itens: [
