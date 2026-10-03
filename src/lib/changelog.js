@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.6',
+    data: '2026-10-02',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Grafico Recebido x Gasto por mes',
+        texto: 'No painel, em Custos, entrou o grafico dos ultimos 6 meses comparando o que entrou com o que saiu. Recebido e o faturamento da operacao (area voada x preco por hectare do cliente), nao dinheiro na mao do piloto. Gasto sao as despesas lancadas no mes. O grafico mostra o mes inteiro e NAO segue os filtros da tela de proposito — filtrar por um piloto deixaria a barra vermelha menor por recorte, e nao por resultado. Voo parcial e cobrado pelo que foi voado de verdade, nao pelo tamanho do talhao.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Aviso quando falta preco no cadastro do cliente',
+        texto: 'Se algum voo do periodo for de cliente sem preco por hectare cadastrado, o grafico avisa quantos voos e quantos hectares ficaram de fora da conta. Sem esse aviso a barra verde apareceria menor que a realidade e daria a impressao de prejuizo.',
+      },
+    ],
+  },
+  {
     versao: '7.5',
     data: '2026-10-02',
     itens: [

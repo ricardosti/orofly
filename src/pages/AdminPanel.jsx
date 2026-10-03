@@ -46,6 +46,7 @@ const CAMPOS_NUMERICOS_EDICAO = [
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
 import { CATEGORIA_DESPESA_OPTS, CATEGORIA_LEGADA, CATEGORIA_ICON, iconeCategoria } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData } from '../lib/datas'
+import { indexarClientes, receitaDoVoo, totalizarReceita, mesDoVoo, mesDaDespesa, rotuloMes, ultimosMeses } from '../lib/faturamento'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { apiUrl } from '../lib/apiBase'
 import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT_PDF_CONFIG, MOCK_RELATORIO } from '../lib/reportTemplates'
@@ -5904,6 +5905,36 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
             const rankingClienteFazenda = Object.entries(porClienteFazenda).sort((a,b)=>b[1].total-a[1].total)
 
             const categoriaChart = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1]).map(([nome,valor])=>({name:`${iconeCategoria(nome)} ${nome}`,value:parseFloat(valor.toFixed(2))}))
+
+            // ── Recebido × Gasto por mês ──
+            // O "Recebido" é o FATURAMENTO da operação no período (área voada × preço do
+            // cliente), não dinheiro na mão do piloto — ele paga na hora, com cartão da
+            // empresa. Usa o gasto SEM os filtros da tela de propósito: o gráfico é a visão
+            // do mês inteiro, e filtrar por piloto deixaria a barra vermelha menor que a
+            // verde por recorte, não por resultado.
+            const clientesIdx = indexarClientes(invClientes)
+            const mesesGrafico = ultimosMeses(6)
+            const gastoPorMes = {}, receitaPorMes = {}
+            custos.forEach(c=>{
+              const m = mesDaDespesa(c); if(!m) return
+              gastoPorMes[m] = (gastoPorMes[m]||0) + (parseFloat(c.valor)||0)
+            })
+            relatorios.forEach(r=>{
+              const m = mesDoVoo(r); if(!m) return
+              const rec = receitaDoVoo(r, clientesIdx)
+              if (rec!=null) receitaPorMes[m] = (receitaPorMes[m]||0) + rec
+            })
+            const serieMensal = mesesGrafico.map(m=>({
+              name: rotuloMes(m),
+              Recebido: +(receitaPorMes[m]||0).toFixed(2),
+              Gasto: +(gastoPorMes[m]||0).toFixed(2),
+            }))
+            const temAlgumaBarra = serieMensal.some(d=>d.Recebido>0 || d.Gasto>0)
+            // Voos do período do gráfico que não puderam ser faturados por falta de preço
+            // no cadastro do cliente. Sem esse aviso, a barra verde aparece menor que a
+            // realidade e dá a impressão de prejuízo.
+            const semPrecoNoPeriodo = totalizarReceita(
+              relatorios.filter(r=>mesesGrafico.includes(mesDoVoo(r))), clientesIdx)
             const CORES_CAT = ['#059669',theme.warningText,'#2f6fed','#8e44ad',theme.dangerText]
 
             // Evolução diária no período filtrado
@@ -6075,6 +6106,42 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                     </div>
                   </div>
                 )}
+
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,marginBottom:14,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                  <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:10,marginBottom:4,flexWrap:'wrap'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif"}}>Recebido × Gasto por mês</div>
+                    <div style={{fontSize:11,color:theme.textFaint2}}>últimos 6 meses · não segue os filtros acima</div>
+                  </div>
+                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,lineHeight:1.5}}>
+                    Recebido = área voada × preço por hectare do cliente. Gasto = despesas lançadas no mês.
+                  </div>
+                  {!temAlgumaBarra ? (
+                    <div style={{padding:'26px 10px',textAlign:'center',color:theme.textFaint,fontSize:12.5,lineHeight:1.6}}>
+                      Ainda não há voo faturável nem despesa nos últimos 6 meses.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={230}>
+                      <BarChart data={serieMensal} margin={{top:5,right:5,left:0,bottom:0}}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={theme.divider}/>
+                        <XAxis dataKey="name" tick={{fontSize:11}} stroke={theme.textFaint2}/>
+                        <YAxis tick={{fontSize:11}} stroke={theme.textFaint2}
+                          tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k`:v}/>
+                        <Tooltip formatter={v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}/>
+                        <Legend wrapperStyle={{fontSize:12}}/>
+                        <Bar dataKey="Recebido" fill="#059669" radius={[6,6,0,0]}/>
+                        <Bar dataKey="Gasto" fill="#f97362" radius={[6,6,0,0]}/>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                  {semPrecoNoPeriodo.semPreco>0 && (
+                    <div style={{marginTop:10,padding:'9px 11px',borderRadius:10,background:theme.warningBg,
+                      color:theme.warningText2||theme.warningText,fontSize:11.5,lineHeight:1.5,fontWeight:600}}>
+                      ⚠️ {semPrecoNoPeriodo.semPreco} {semPrecoNoPeriodo.semPreco===1?'voo ficou':'voos ficaram'} de fora do Recebido
+                      ({semPrecoNoPeriodo.areaSemPreco.toFixed(1)} ha) porque o cliente não tem preço por hectare cadastrado.
+                      A barra verde está menor que a realidade — cadastre o preço em Inventário → Clientes.
+                    </div>
+                  )}
+                </div>
 
                 {/* Lista de notas */}
                 {custosFiltrados.length===0 ? (
