@@ -16,6 +16,7 @@ import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr } from '../lib/notaFiscal'
+import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
@@ -455,7 +456,11 @@ export default function PilotApp({onSwitchMode}) {
   const [showPerfil,setShowPerfil] = useState(false)
   const [avatarUrl,setAvatarUrl] = useState(null)
   const [gpsPos,setGpsPos] = useState(null)
-  const [notaTab,setNotaTab] = useState('viagem')
+  // Aba Viagem desligada a pedido do Pastor em 03/10/2026 — pode voltar. Está aqui como
+  // interruptor único de propósito: o formulário de viagem, o salvamento e os campos de
+  // veículo/km continuam todos no lugar, só não aparecem. Pra religar, basta `true`.
+  const ABA_VIAGEM_ATIVA = false
+  const [notaTab,setNotaTab] = useState(ABA_VIAGEM_ATIVA ? 'viagem' : 'despesa')
   // Calculadora de calda — modo1: informo água disponível e descubro quantos ha dá pra
   // cobrir; modo2: informo a área e descubro quanta água/produto preparar.
   const [calcModo,setCalcModo] = useState('agua')
@@ -2895,8 +2900,10 @@ export default function PilotApp({onSwitchMode}) {
 
         {veiculosDB.length>0 && (
           <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4}}>
-            <button style={{flex:1,background:notaTab==='viagem'?'#fff':'transparent',color:notaTab==='viagem'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='viagem'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
-              onClick={()=>setNotaTab('viagem')}>🚗 Viagem</button>
+            {ABA_VIAGEM_ATIVA && (
+              <button style={{flex:1,background:notaTab==='viagem'?'#fff':'transparent',color:notaTab==='viagem'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='viagem'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                onClick={()=>setNotaTab('viagem')}>🚗 Viagem</button>
+            )}
             <button style={{flex:1,background:notaTab==='despesa'?'#fff':'transparent',color:notaTab==='despesa'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='despesa'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
               onClick={()=>setNotaTab('despesa')}>🧾 Despesa</button>
           </div>
@@ -2909,7 +2916,11 @@ export default function PilotApp({onSwitchMode}) {
               é o que importa pro piloto: a leitura é feita no próprio aparelho, de graça,
               no meio do talhão onde não tem sinal. */}
           {!notaFotoPreview && (
-            <button onClick={()=>document.getElementById('nota-camera')?.click()}
+            <button onClick={async()=>{
+                const f = await abrirCamera()
+                if (f) handleNotaFoto(f)
+                else if (!cameraNativaDisponivel()) document.getElementById('nota-camera')?.click()
+              }}
               style={{width:'100%',display:'flex',alignItems:'center',gap:11,marginBottom:12,textAlign:'left',
                 background:theme.successBg,border:'1px solid #00A86B',borderRadius:16,padding:'12px 13px',cursor:'pointer'}}>
               <span style={{fontSize:24,lineHeight:1}}>🔳</span>
@@ -2947,9 +2958,17 @@ export default function PilotApp({onSwitchMode}) {
               </div>
               <div style={{display:'flex',gap:8}}>
                 <button style={{flex:1,background:theme.successBg,color:'#00A86B',border:'none',borderRadius:12,padding:'11px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}
-                  onClick={()=>document.getElementById('nota-camera')?.click()}>📸 Câmera</button>
+                  onClick={async()=>{
+                    const f = await abrirCamera()
+                    if (f) handleNotaFoto(f)
+                    else if (!cameraNativaDisponivel()) document.getElementById('nota-camera')?.click()
+                  }}>📸 Câmera</button>
                 <button style={{flex:1,background:'#e6f1fb',color:'#2f6fed',border:'none',borderRadius:12,padding:'11px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}
-                  onClick={()=>document.getElementById('nota-galeria')?.click()}>🖼️ Galeria</button>
+                  onClick={async()=>{
+                    const f = await abrirGaleria()
+                    if (f) handleNotaFoto(f)
+                    else if (!cameraNativaDisponivel()) document.getElementById('nota-galeria')?.click()
+                  }}>🖼️ Galeria</button>
                 <button style={{flex:1,background:theme.card,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'11px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}
                   onClick={()=>document.getElementById('nota-pdf')?.click()}>📄 PDF</button>
               </div>

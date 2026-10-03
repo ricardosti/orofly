@@ -9,6 +9,37 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.8',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'A leitura da nota mostrava um CNPJ que nao existia nela',
+        texto: 'Ao ler o texto de um cupom, o app juntava todos os numeros do papel e montava uma "chave de acesso" com pedacos do codigo do produto, do valor e da hora. O resultado passava na conferencia por acaso e aparecia um CNPJ que nao estava na nota, com cara de certeza. Agora so vale sequencia que esta junta no papel, com preferencia pra que vem logo depois de "Chave de Acesso". Testado com um cupom de verdade: le a chave certa.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'O valor nao era preenchido em cupom de coluna quebrada',
+        texto: 'Em muito cupom o texto sai numa coluna e os numeros em outra, entao "VALOR TOTAL" ficava numa linha e o valor em outra, e o app nao achava. Agora ele procura tambem nas linhas seguintes e, em ultimo caso, usa o maior valor do cupom (avisando que foi deducao). Troco, dinheiro recebido e tributos continuam de fora da conta.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'O botao Camera abre a camera mesmo',
+        texto: 'No celular, tocar em "Camera" as vezes abria a galeria de fotos. O app passou a usar a camera do proprio sistema em vez de pedir pelo navegador, que tratava o pedido como sugestao. Vale tambem pro atalho de ler o QR Code.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Mais tentativas pra achar o QR Code',
+        texto: 'Nota amassada, desbotada ou fotografada de longe fazia o app desistir rapido. Agora ele tenta a foto inteira, ampliada, so o rodape (onde fica o QR), o miolo, e por fim em preto e branco. Conferido em 6 situacoes, incluindo QR bem pequeno e cupom com pouco contraste.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Aba Viagem desativada por enquanto',
+        texto: 'A aba Viagem saiu da tela de Notas a pedido da operacao. Nada foi apagado: os lancamentos de viagem ja feitos continuam no sistema e a aba pode voltar quando precisar.',
+      },
+    ],
+  },
+  {
     versao: '7.7',
     data: '2026-10-02',
     itens: [

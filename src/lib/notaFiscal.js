@@ -142,19 +142,58 @@ async function paraCanvas(origem, maxLado = 1400, minLado = 0) {
 
 // Lê o QR de uma foto de nota. Devolve sempre um objeto — nunca lança, porque isso roda
 // durante o lançamento da despesa e falha de leitura não pode travar o piloto.
+// Recorta uma faixa do canvas (fração 0–1) num canvas novo. Serve pra dar ao leitor um
+// pedaço com o QR grande, em vez da folha inteira onde ele é um detalhe.
+function recorte(canvas, x0, y0, x1, y1) {
+  const w = Math.round((x1 - x0) * canvas.width), h = Math.round((y1 - y0) * canvas.height)
+  if (w < 40 || h < 40) return null
+  const c = document.createElement('canvas')
+  c.width = w; c.height = h
+  c.getContext('2d').drawImage(canvas, Math.round(x0 * canvas.width), Math.round(y0 * canvas.height), w, h, 0, 0, w, h)
+  return c
+}
+
 export async function lerNotaFiscal(arquivo) {
   try {
-    const { canvas, bitmap } = await paraCanvas(arquivo)
+    const { canvas, bitmap } = await paraCanvas(arquivo, 1600)
+    // 1) Detector nativo na imagem original, que é o caminho mais rápido quando existe.
     let texto = await lerComDetectorNativo(bitmap)
-    if (!texto) texto = lerComJsQr(canvas)
-    // Segunda passada ampliada: o QR do cupom é pequeno e, numa foto da nota inteira,
-    // às vezes só aparece com mais resolução.
-    if (!texto) {
-      const grande = await paraCanvas(arquivo, 2200)
-      texto = lerComJsQr(grande.canvas)
+    if (texto) return parseConteudoQr(texto)
+
+    // 2) jsQR em várias tentativas. Nota de campo chega amassada, com dobra atravessando
+    // o código e fotografada de longe — numa única passada o leitor desiste fácil.
+    // A ordem vai do mais barato ao mais caro, e para na primeira que ler.
+    const grande = (await paraCanvas(arquivo, 2600)).canvas
+    const tentativas = [
+      ['imagem toda', canvas],
+      ['imagem ampliada', grande],
+      // O QR da NFC-e fica no rodapé do cupom; recortar a metade de baixo faz ele
+      // ocupar o dobro da área e muda bastante a chance de leitura.
+      ['metade de baixo', recorte(grande, 0, 0.45, 1, 1)],
+      ['metade de cima', recorte(grande, 0, 0, 1, 0.55)],
+      ['miolo', recorte(grande, 0.1, 0.25, 0.9, 0.85)],
+    ]
+    for (const [, alvo] of tentativas) {
+      if (!alvo) continue
+      texto = lerComJsQr(alvo)
+      if (texto) return parseConteudoQr(texto)
     }
-    if (!texto) return { ok: false, motivo: 'não achei QR Code nessa foto' }
-    return parseConteudoQr(texto)
+
+    // 3) Última cartada: preto e branco. Cupom térmico desbotado e foto contra a luz
+    // ficam com contraste fraco, e binarizar às vezes resolve o que o resto não leu.
+    try {
+      const { binarizar } = await import('./ocrCoordenadas')
+      for (const alvo of [recorte(grande, 0, 0.45, 1, 1), grande]) {
+        if (!alvo) continue
+        const bn = recorte(alvo, 0, 0, 1, 1)   // cópia, pra não estragar o original
+        if (!bn) continue
+        binarizar(bn)
+        texto = lerComJsQr(bn)
+        if (texto) return parseConteudoQr(texto)
+      }
+    } catch { /* binarização indisponível: segue sem ela */ }
+
+    return { ok: false, motivo: 'não achei QR Code nessa foto' }
   } catch (e) {
     return { ok: false, motivo: `não consegui ler a imagem (${e?.message || e})` }
   }
@@ -222,35 +261,86 @@ export function extrairDaNota(texto) {
   const linhas = semAcento(texto).toUpperCase().split(/\r?\n/)
   const achados = { chave: null, valor: null, data: null, avisos: [] }
 
-  // ── Chave de acesso impressa (DANFE traz os 44 dígitos embaixo do código de
-  // barras, geralmente em grupos de 4). O dígito verificador decide se o OCR
-  // acertou: sem ele, um 8 lido como 3 viraria CNPJ errado com ar de certeza.
-  const digitos = semAcento(texto).replace(/[^\d]/g,'')
-  for (let i = 0; i + 44 <= digitos.length; i++) {
-    const c = digitos.slice(i, i + 44)
-    if (chaveValida(c)) { achados.chave = c; break }
+  // ── Chave de acesso impressa (a nota traz os 44 dígitos em grupos de 4).
+  //
+  // Antes isto juntava TODOS os dígitos do papel e deslizava uma janela de 44. Não
+  // funciona: o dígito verificador passa por acaso em 1 de cada 11 tentativas, e com
+  // dezenas de janelas achar lixo "válido" é quase certo. Num cupom real o app leu
+  // `0001010000495140055399…` — pedaços do código do produto, do valor e da hora
+  // colados — e exibiu um CNPJ que não existia na nota, com cara de certeza.
+  //
+  // Agora só considera bloco que apareça JUNTO no papel, e dá preferência ao que vem
+  // logo depois do rótulo "Chave de Acesso". Os separadores aceitos são espaço, hífen
+  // e ponto (como a chave é impressa); barra e dois-pontos NÃO entram, e é isso que
+  // impede a data e a hora de se fundirem ao número ao lado.
+  const blocosDe44 = (t) => {
+    const out = []
+    for (const m of String(t).matchAll(/(?<!\d)(?:\d[\s.-]*){44}(?!\d)/g)) out.push(m[0].replace(/\D/g, ''))
+    return out
   }
-  if (!achados.chave && /\d{40,}/.test(digitos)) {
-    achados.avisos.push('vi uma sequência longa de números, mas nenhuma chave válida — o OCR provavelmente trocou algum dígito')
+  const semAc = semAcento(texto)
+  const linhasAc = semAc.split(/\r?\n/)
+  const candidatos = []
+  linhasAc.forEach((l, i) => {
+    if (/CHAVE\s*DE\s*ACESSO/i.test(l)) candidatos.push(...blocosDe44(linhasAc.slice(i, i + 3).join(' ')))
+  })
+  candidatos.push(...blocosDe44(semAc))
+  achados.chave = candidatos.find(chaveValida) || null
+  if (!achados.chave && candidatos.length) {
+    achados.avisos.push('achei uma sequência de 44 dígitos, mas o dígito verificador não bate — o OCR trocou algum número')
   }
 
-  // ── Valor total: pontua cada linha candidata e fica com a melhor.
+  // ── Valor total, em três tentativas, da mais confiável pra menos.
+  const numerosDaLinha = (l) => (l.match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}/g) || [])
+    .map(numeroBr).filter(v => v !== null && v > 0 && v <= TETO_DESPESA)
+
+  // 1) rótulo e número na MESMA linha — o caso bem comportado.
   let melhor = null
   for (const linha of linhas) {
     if (NAO_E_O_TOTAL.test(linha)) continue
     const peso = ROTULOS_VALOR.find(([re]) => re.test(linha))?.[1]
     if (!peso) continue
-    // Na linha do total costuma haver um número só; havendo mais, o valor é o último
-    // (o rótulo vem antes). Pega o maior entre os válidos pra não cair num código.
-    const numeros = (linha.match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}/g) || [])
-      .map(numeroBr).filter(v => v !== null && v > 0 && v <= TETO_DESPESA)
+    const numeros = numerosDaLinha(linha)
     if (!numeros.length) continue
     const v = Math.max(...numeros)
-    if (!melhor || peso > melhor.peso || (peso === melhor.peso && v > melhor.valor)) melhor = { valor: v, peso, linha }
+    if (!melhor || peso > melhor.peso || (peso === melhor.peso && v > melhor.valor)) melhor = { valor: v, peso }
   }
+
+  // 2) rótulo numa linha e número na SEGUINTE. Cupom estreito quebra a linha entre o
+  // texto e o número, e aí a tentativa 1 não acha nada.
+  if (!melhor) {
+    for (let i = 0; i < linhas.length; i++) {
+      if (NAO_E_O_TOTAL.test(linhas[i])) continue
+      const peso = ROTULOS_VALOR.find(([re]) => re.test(linhas[i]))?.[1]
+      if (!peso || numerosDaLinha(linhas[i]).length) continue
+      for (let k = i + 1; k <= i + 2 && k < linhas.length; k++) {
+        if (NAO_E_O_TOTAL.test(linhas[k])) continue
+        const n = numerosDaLinha(linhas[k])
+        if (n.length) { melhor = { valor: Math.max(...n), peso }; break }
+      }
+      if (melhor) break
+    }
+  }
+
+  // 3) Último recurso: o MAIOR valor do papel. O cupom fotografado às vezes sai com
+  // todos os rótulos numa coluna e todos os números noutra, sem como parear — foi o
+  // caso real de um cupom de lanchonete. Numa nota o total é sempre >= cada item, e
+  // as linhas de troco, dinheiro e tributo já ficam de fora pelo NAO_E_O_TOTAL. Só
+  // entra se a palavra TOTAL aparecer em algum lugar, pra não chutar em foto que não
+  // é nota nenhuma.
+  if (!melhor && /\bTOTAL\b/.test(semAcento(texto).toUpperCase())) {
+    const todos = linhas
+      .filter(l => !NAO_E_O_TOTAL.test(l) && !/\bUN\b\s*X|\bX\s*\d+,\d{2}/.test(l))  // tira linha de item
+      .flatMap(numerosDaLinha)
+    if (todos.length) {
+      melhor = { valor: Math.max(...todos), peso: 1 }
+      achados.avisos.push('o valor foi deduzido como o maior do cupom — confira com atenção')
+    }
+  }
+
   if (melhor) achados.valor = melhor.valor
   else if (/TOTAL/.test(semAcento(texto).toUpperCase())) {
-    achados.avisos.push('achei a palavra TOTAL mas não um valor legível ao lado')
+    achados.avisos.push('achei a palavra TOTAL mas não um valor legível')
   }
 
   // ── Data da emissão: prefere a que estiver ao lado de um rótulo de emissão;
