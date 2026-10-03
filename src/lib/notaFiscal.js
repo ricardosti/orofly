@@ -395,9 +395,11 @@ export function extrairDaNota(texto) {
 export async function lerNotaPorOcr(arquivo, aoProgredir) {
   let worker = null
   try {
-    // 2400 de teto e 1600 de piso: abaixo disso o OCR troca 0 por 8 no valor, e valor
-    // errado é pior que valor em branco — ninguém confere o que já veio preenchido.
-    const { canvas } = await paraCanvas(arquivo, 2400, 1600)
+    // Teto 3000 e piso 2000. O teto subiu porque foto de celular chega com 3000+ px e
+    // reduzir pra 2400 jogava fora justamente o detalhe dos dígitos da chave, que são
+    // pequenos. O piso existe pro contrário: abaixo de ~30 px por caractere o OCR troca
+    // 0 por 8 no valor, e valor errado é pior que valor em branco.
+    const { canvas } = await paraCanvas(arquivo, 3000, 2000)
     const { binarizar } = await import('./ocrCoordenadas')
     binarizar(canvas)                      // cupom térmico tem contraste fraco
     const { createWorker } = await import('tesseract.js')

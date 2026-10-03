@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.1',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'A miniatura da nota cortava a foto na tela',
+        texto: 'Depois de anexar, a imagem aparecia cortada na miniatura — muitas vezes sem o QR Code — mesmo com o arquivo guardado inteiro. Era so a forma de exibir. Agora a miniatura mostra a nota inteira.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Leitura do texto aproveita fotos maiores',
+        texto: 'A foto era reduzida antes da leitura do texto, e isso jogava fora justamente o detalhe dos numeros da chave, que sao pequenos. O limite subiu, entao foto de celular com mais resolucao passa a ajudar em vez de ser desperdicada.',
+      },
+    ],
+  },
+  {
     versao: '8.0',
     data: '2026-10-03',
     itens: [

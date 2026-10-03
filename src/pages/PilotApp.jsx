@@ -2982,7 +2982,10 @@ export default function PilotApp({onSwitchMode}) {
                   <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:3}}>PDF anexado</div>
                 </div>
               ) : (
-              <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:220,objectFit:'cover',borderRadius:14,display:'block'}}/>
+              // `contain`, não `cover`: com cover a prévia CORTAVA a nota na tela e dava a
+              // impressão de que o app tinha cortado a foto — inclusive o QR sumia da
+              // vista, mesmo estando inteiro no arquivo guardado.
+              <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:300,objectFit:'contain',background:theme.bg,borderRadius:14,display:'block'}}/>
               )}
               <button style={{position:'absolute',top:8,right:8,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:28,height:28,cursor:'pointer'}}
                 onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null);setNotaFotoOriginal(null)}}>✕</button>
