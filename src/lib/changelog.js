@@ -9,6 +9,32 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.6',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Valor e data conferidos na SEFAZ',
+        texto: 'Quando o app consegue a chave de acesso da nota (pelo QR Code ou pelo texto impresso), ele consulta a SEFAZ e preenche o valor e a data OFICIAIS da nota, junto com o nome de quem emitiu. Aparece uma caixa verde "Conferido na SEFAZ", e a leitura do texto da foto nem precisa rodar. Hoje vale para nota de SP em qualquer caso, e para os outros estados quando o QR Code e lido. Sem internet, ou se a SEFAZ nao responder, o app segue com a leitura da foto, como antes. Se a nota estiver cancelada, a caixa avisa.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Leitura do texto muito melhor em foto com sombra',
+        texto: 'Antes de ler, o app agora tira da foto a sombra da mao, das dobras do cupom e do fundo escuro. Numa nota real em que antes nao saia nenhum numero, agora saem valor, data e chave de acesso.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'O app nao lanca mais numero chutado',
+        texto: 'Quando cada leitura da foto da um numero diferente para o total (cupom amassado, vinco em cima do numero), o campo de valor fica vazio e aparece um aviso com os numeros que o app viu, para o piloto digitar o certo. Tambem deixou de confundir a aliquota do imposto ("18,00%") com o valor da despesa, e a chave de acesso passou a ser conferida tambem pela estrutura, alem do digito verificador.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Trocar a foto troca os dados',
+        texto: 'Ao apagar ou trocar a foto da nota, o valor e a chave de acesso que o app tinha preenchido a partir dela saem junto. Antes, trocar a foto errada pela certa deixava o valor e a chave da errada. O que o piloto digitou continua intocado.',
+      },
+    ],
+  },
+  {
     versao: '8.5',
     data: '2026-10-03',
     itens: [

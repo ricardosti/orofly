@@ -15,7 +15,7 @@ import { registrar } from '../lib/atividade'
 import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
-import { lerNotaFiscal, lerNotaPorOcr } from '../lib/notaFiscal'
+import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL } from '../lib/categoriasDespesa'
@@ -736,6 +736,19 @@ export default function PilotApp({onSwitchMode}) {
   // o piloto no campo decide se vale gastar isso.
   const [notaOcr,setNotaOcr] = useState(null)
   const [notaOcrPct,setNotaOcrPct] = useState(null)
+  // Consulta da nota na SEFAZ pela chave (ver consultarSefaz). null = não tentou;
+  // {carregando}; {ok:true, valor, data, emitente, cancelada}; {ok:false, motivo}.
+  const [notaSefaz,setNotaSefaz] = useState(null)
+  // Número da leitura em andamento. A foto pode ser trocada no meio de uma leitura que leva
+  // segundos, e o resultado atrasado da foto ANTERIOR não pode cair no formulário da nova.
+  const leituraNotaRef = useRef(0)
+  // Valor que o próprio app escreveu no campo a partir da foto. Se a SEFAZ responde depois,
+  // troca esse palpite pelo valor oficial — mas nunca o que o piloto digitou.
+  const valorAutoRef = useRef(null)
+  // Leitura (o número acima) em que a SEFAZ já confirmou a nota. A leitura do texto pode
+  // terminar DEPOIS — o OCR leva dezenas de segundos no celular — e não pode escrever o
+  // palpite dela por cima do valor oficial.
+  const sefazOkRef = useRef(0)
   // Guarda a foto como veio da câmera. A nota anexada é só comprovante — o caminho curto
   // é subir direto — mas quem quiser riscar ou recortar precisa do arquivo original, não
   // da versão já reduzida.
@@ -1685,6 +1698,8 @@ export default function PilotApp({onSwitchMode}) {
 
   function handleNotaFoto(f){
     if(!f) return
+    const leitura = ++leituraNotaRef.current
+    setNotaSefaz(null); soltarDadosDaFoto()
     // PDF não passa pelo editor de imagem (ele só sabe desenhar em foto) nem pelo leitor
     // de QR. Vai direto como anexo — é o formato em que o posto manda a nota por e-mail.
     if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name||'')) {
@@ -1697,15 +1712,19 @@ export default function PilotApp({onSwitchMode}) {
     // e cada pixel conta.
     setNotaQr(null); setNotaOcr(null); setNotaLendoQr(true)
     lerNotaFiscal(f)
-      .then(r=>{
-        setNotaQr(r)
-        // O QR versão 2 (o obrigatório hoje) traz a chave mas NUNCA o valor nem o dia.
-        // Em vez de esperar o piloto pedir, busca no texto impresso logo em seguida —
-        // é o que falta pra nota chegar preenchida.
-        if (!r?.valor) lerTextoDaNota(f)
+      .catch(()=>null)
+      .then(async r=>{
+        if (leitura !== leituraNotaRef.current) return
+        setNotaQr(r); setNotaLendoQr(false)
+        // QR de emissor antigo (versão 1) já traz o valor.
+        if (r?.valor) return
+        // O QR atual traz a chave mas NUNCA o valor nem o dia. Com a chave, a SEFAZ dá os
+        // dois oficiais — e a leitura do texto, que leva segundos e erra, nem precisa rodar.
+        if (r?.ok && await confirmarNaSefaz(r.chave, r.textoBruto, leitura)) return
+        // Sem QR (ou SEFAZ fora do alcance): busca no texto impresso logo em seguida, em
+        // vez de esperar o piloto pedir.
+        if (leitura === leituraNotaRef.current) lerTextoDaNota(f, leitura)
       })
-      .catch(()=>setNotaQr(null))
-      .finally(()=>setNotaLendoQr(false))
     setNotaFotoOriginal(f)
 
     // A foto entra DIRETO, sem passar pelo editor: nota é comprovante, e abrir o editor
@@ -1716,7 +1735,7 @@ export default function PilotApp({onSwitchMode}) {
     // era o EDITOR que reduzia pra 1280 px, e foto de 3–8 MB direto da câmera foi o que
     // estourou a cota de banda do Supabase em agosto de 2026.
     comprimirImagem(f).then(res => {
-      if (!res) return
+      if (!res || leitura !== leituraNotaRef.current) return
       setNotaFotoPreview(res.dataUrl)
       setNotaFotoFile(res.blob ? new File([res.blob], 'nota.jpg', {type:'image/jpeg'}) : f)
     })
@@ -1725,24 +1744,68 @@ export default function PilotApp({onSwitchMode}) {
   // Leitura do texto impresso. Sempre da foto ORIGINAL: a versão guardada já passou pela
   // compressão de 1280 px, e nela cada letra do cupom fica com ~10 px — bem abaixo do que
   // o OCR precisa. Era por isso que o QR funcionava e o texto não.
-  async function lerTextoDaNota(arquivo){
+  async function lerTextoDaNota(arquivo, leitura = leituraNotaRef.current){
     const alvo = arquivo || notaFotoOriginal || notaFotoFile
     if (!alvo) return
     setNotaOcrPct(0)
     try {
       const r = await lerNotaPorOcr(alvo, m=>{
-        if (m?.status==='recognizing text') setNotaOcrPct(Math.round((m.progress||0)*100))
+        if (leitura===leituraNotaRef.current && m?.status==='recognizing text') setNotaOcrPct(Math.round((m.progress||0)*100))
       })
+      if (leitura !== leituraNotaRef.current) return
+      // A SEFAZ já confirmou esta nota enquanto o OCR rodava (o piloto recortou o QR no
+      // editor, por exemplo): o valor oficial já está no campo, e o palpite não entra.
+      if (sefazOkRef.current === leitura) { setNotaOcr(r); return }
+      // Achou a chave impressa (QR ilegível): a SEFAZ vale mais que qualquer número lido
+      // da foto. Só cai no valor lido se a SEFAZ não responder.
+      if (r?.chave && await confirmarNaSefaz(r.chave, null, leitura)) { setNotaOcr(r); return }
       setNotaOcr(r)
       // Preenche na hora, em vez de esperar um "usar estes dados": o campo continua
-      // editável e o piloto corrige se a leitura errou. Só escreve em campo VAZIO —
-      // valor que ele já digitou vale mais que o que a máquina leu.
-      if (r?.ok) setNotaForm(f=>({...f,
-        valor: (!f.valor && r.valor>0) ? String(r.valor) : f.valor,
-        data:  r.data || f.data,
-        chave_acesso: r.chave || f.chave_acesso,
-      }))
-    } catch { setNotaOcr(null) } finally { setNotaOcrPct(null) }
+      // editável e o piloto corrige se a leitura errou. Só escreve em campo vazio ou no
+      // que o próprio app escreveu antes — valor que ele digitou vale mais que o lido.
+      if (r?.ok) {
+        // O "anterior" é lido aqui fora: a função passada ao setNotaForm roda mais tarde
+        // (e duas vezes em desenvolvimento), e ler a ref lá dentro via o valor já trocado.
+        const anterior = valorAutoRef.current, novo = r.valor>0 ? String(r.valor) : null
+        if (novo) valorAutoRef.current = novo
+        setNotaForm(f=>({...f,
+          valor: (novo && (!f.valor || f.valor === anterior)) ? novo : f.valor,
+          data: r.data || f.data,
+          chave_acesso: r.chave || f.chave_acesso,
+        }))
+      }
+    } catch { setNotaOcr(null) } finally { if (leitura === leituraNotaRef.current) setNotaOcrPct(null) }
+  }
+
+  // O que o app preencheu a partir de uma foto sai junto com ela: o valor (se o piloto não
+  // mexeu) e a chave de acesso, que não tem campo pra digitar — sempre vem da foto. Sem
+  // isso, trocar a foto errada pela certa deixava o valor e a chave da errada, e a chave de
+  // outra nota dispara a trava de nota repetida.
+  function soltarDadosDaFoto(){
+    const anterior = valorAutoRef.current
+    valorAutoRef.current = null
+    setNotaForm(f=>({...f, chave_acesso:'', valor: (anterior && f.valor===anterior) ? '' : f.valor}))
+  }
+
+  // Pergunta à SEFAZ pela chave e, se ela responder, preenche valor e data com o que está
+  // registrado na nota. Devolve true quando não é pra seguir lendo a foto: deu certo, ou a
+  // foto já foi trocada (aí não mexe em nada).
+  async function confirmarNaSefaz(chave, urlDoQr, leitura){
+    setNotaSefaz({carregando:true})
+    const s = await consultarSefaz(chave, urlDoQr)
+    if (leitura !== leituraNotaRef.current) return true
+    setNotaSefaz(s)
+    if (!s.ok) return false
+    sefazOkRef.current = leitura
+    const anterior = valorAutoRef.current, novo = String(s.valor)
+    valorAutoRef.current = novo
+    setNotaForm(f=>({...f,
+      // Troca o campo vazio e o palpite da leitura da foto; o que o piloto digitou fica.
+      valor: (!f.valor || f.valor === anterior) ? novo : f.valor,
+      data: s.data || f.data,
+      chave_acesso: s.chave,
+    }))
+    return true
   }
 
   // Abre o editor com a foto que já está anexada — riscar algo ou recortar pra ajudar a
@@ -1764,15 +1827,22 @@ export default function PilotApp({onSwitchMode}) {
           // "não achei QR", recorta a nota pra deixar o código grande — e nada acontece,
           // porque a leitura tinha rodado antes, na foto inteira. Agora o recorte vale.
           // Só repete se a primeira não achou; achando, não mexe no que já está na tela.
-          setNotaQr(anterior => {
-            if (anterior?.ok) return anterior
-            setNotaLendoQr(true)
-            lerNotaFiscal(arquivo)
-              .then(r => { if (r?.ok) setNotaQr(r) })
-              .catch(() => {})
-              .finally(() => setNotaLendoQr(false))
-            return anterior
-          })
+          // (Antes isto rodava DENTRO de um setNotaQr, que em desenvolvimento o React chama
+          // duas vezes — e agora a leitura puxa uma consulta à SEFAZ junto.)
+          if (notaQr?.ok) return
+          const leitura = leituraNotaRef.current
+          setNotaLendoQr(true)
+          lerNotaFiscal(arquivo)
+            .catch(() => null)
+            .then(r => {
+              if (leitura !== leituraNotaRef.current) return
+              setNotaLendoQr(false)
+              if (!r?.ok) return
+              setNotaQr(r)
+              // Com a chave agora legível, a SEFAZ dá o valor oficial — por cima do palpite
+              // que a leitura do texto tenha deixado (o que o piloto digitou fica).
+              if (!r.valor) confirmarNaSefaz(r.chave, r.textoBruto, leitura)
+            })
         }
       })
     }
@@ -1999,7 +2069,8 @@ export default function PilotApp({onSwitchMode}) {
       showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
       setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
       setOsModo('lista')
-      setNotaFotoPreview(null); setNotaFotoFile(null); setNotaQr(null); setNotaOcr(null)
+      setNotaFotoPreview(null); setNotaFotoFile(null); setNotaQr(null); setNotaOcr(null); setNotaSefaz(null)
+      leituraNotaRef.current++
       loadNotas()
     } catch(e){ showToast('Erro: '+e.message,'error') } finally { setNotaSaving(false) }
   }
@@ -3020,7 +3091,10 @@ export default function PilotApp({onSwitchMode}) {
               <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:300,objectFit:'contain',background:theme.bg,borderRadius:14,display:'block'}}/>
               )}
               <button style={{position:'absolute',top:8,right:8,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:28,height:28,cursor:'pointer'}}
-                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null);setNotaFotoOriginal(null)}}>✕</button>
+                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null);setNotaFotoOriginal(null)
+                  // Descarta o que ainda estiver lendo desta foto.
+                  setNotaSefaz(null); setNotaLendoQr(false); setNotaOcrPct(null); leituraNotaRef.current++
+                  soltarDadosDaFoto()}}>✕</button>
               {/* Discreto de propósito: o caminho normal é a foto entrar e pronto. */}
               {notaFotoOriginal && !String(notaFotoPreview).startsWith('pdf:') && (
                 <button onClick={editarFotoNota}
@@ -3068,7 +3142,9 @@ export default function PilotApp({onSwitchMode}) {
             // É uma checagem parcial de propósito — enquanto a chave não tiver coluna
             // própria, ela mora na observação e só dá pra olhar o que está carregado.
             const jaLancada = minhasNotas.find(n=>n.chave_acesso===notaQr.chave || (n.observacao||'').includes(notaQr.chave))
-            const temDia = !!notaQr.dataEmissao
+            // O QR atual não traz o dia; quando a SEFAZ responde, o dia vem dela.
+            const diaEmissao = notaQr.dataEmissao || (notaSefaz?.ok ? notaSefaz.data : null)
+            const temDia = !!diaEmissao
             const foraDoMes = !temDia && notaForm.data && !notaForm.data.startsWith(notaQr.mesEmissao)
             return (
               <div style={{background:theme.successBg,border:'1px solid #00A86B',borderRadius:14,padding:'11px 12px',marginBottom:14}}>
@@ -3078,7 +3154,7 @@ export default function PilotApp({onSwitchMode}) {
                 <div style={{fontSize:11.5,color:theme.text,lineHeight:1.6}}>
                   <div>{notaQr.modelo==='65'?'Cupom fiscal':'Nota fiscal'} nº <b>{notaQr.numero}</b> · {notaQr.uf||'—'}</div>
                   <div>CNPJ <b>{notaQr.cnpjFormatado}</b></div>
-                  <div>Emitida em <b>{temDia ? notaQr.dataEmissao.split('-').reverse().join('/') : `${String(notaQr.mes).padStart(2,'0')}/${notaQr.ano}`}</b>{!temDia && ' (o QR não informa o dia)'}</div>
+                  <div>Emitida em <b>{temDia ? diaEmissao.split('-').reverse().join('/') : `${String(notaQr.mes).padStart(2,'0')}/${notaQr.ano}`}</b>{!temDia && ' (o QR não informa o dia)'}</div>
                   {notaQr.valor>0 && <div>Valor <b>R$ {notaQr.valor.toFixed(2).replace('.',',')}</b></div>}
                 </div>
                 {jaLancada && (
@@ -3119,17 +3195,47 @@ export default function PilotApp({onSwitchMode}) {
               {notaQr.motivo === 'não achei QR Code nessa foto' ? (
                 <>
                   <b>Não achei o QR Code.</b> O quadradinho precisa aparecer <b>inteiro</b> na
-                  foto, com os quatro cantos — cortado numa borda que seja, nenhum leitor
-                  consegue. Tire outra foto enquadrando só ele, ou use a leitura do texto aqui
-                  embaixo.
+                  foto, com os quatro cantos e sem dobra por cima — cupom amassado deforma o
+                  código. Estique a nota e tire outra foto de perto, ou use a leitura do texto
+                  aqui embaixo.
                 </>
               ) : `Não deu pra usar o QR: ${notaQr.motivo}.`}
             </div>
           )}
 
+          {/* Conferência na SEFAZ pela chave. Quando dá certo, é o valor oficial da nota e
+              as caixas da leitura do texto (palpite) nem aparecem. */}
+          {notaSefaz?.carregando && (
+            <div style={{fontSize:11.5,color:theme.textFaint2,marginBottom:14}}>🔎 Conferindo a nota na SEFAZ...</div>
+          )}
+          {notaSefaz?.ok && (
+            <div style={{background:notaSefaz.cancelada?theme.warningBg:theme.successBg,
+              border:`1px solid ${notaSefaz.cancelada?(theme.warningText||'#c98a1c'):'#00A86B'}`,borderRadius:14,padding:'11px 12px',marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:800,letterSpacing:.3,marginBottom:6,
+                color:notaSefaz.cancelada?(theme.warningText2||theme.warningText):'#00A86B'}}>
+                {notaSefaz.cancelada ? '⚠️ NOTA CANCELADA NA SEFAZ' : '✅ CONFERIDO NA SEFAZ'}
+              </div>
+              <div style={{fontSize:11.5,color:theme.text,lineHeight:1.6}}>
+                {notaSefaz.emitente && <div>{notaSefaz.emitente}</div>}
+                <div>Valor <b>R$ {notaSefaz.valor.toFixed(2).replace('.',',')}</b>
+                  {notaSefaz.data && <> · emitida em <b>{notaSefaz.data.split('-').reverse().join('/')}</b></>}</div>
+              </div>
+              <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:6,lineHeight:1.4}}>
+                {notaSefaz.cancelada
+                  ? 'O emissor cancelou esta nota: ela não vale como comprovante.'
+                  : 'Valor e data preenchidos com o que está registrado na nota.'}
+              </div>
+            </div>
+          )}
+          {notaSefaz?.ok===false && (
+            <div style={{fontSize:11,color:theme.textFaint2,marginBottom:12,lineHeight:1.45}}>
+              Não deu pra conferir na SEFAZ ({notaSefaz.motivo}) — sigo pela leitura da foto.
+            </div>
+          )}
+
           {/* Leitura do texto impresso. Fica sob botão porque custa segundos e, na
               primeira vez, baixa o modelo de OCR — decisão do piloto, não do app. */}
-          {notaFotoFile && !notaOcr && notaOcrPct===null && (
+          {notaFotoFile && !notaOcr && notaOcrPct===null && !notaSefaz?.ok && !notaSefaz?.carregando && (
             <button onClick={()=>lerTextoDaNota()}
               style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,
                 padding:'10px',fontSize:12.5,fontWeight:600,cursor:'pointer',marginBottom:14}}>
@@ -3144,10 +3250,10 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             </div>
           )}
-          {notaOcr?.ok && (notaOcr.valor>0 || notaOcr.data) && (()=>{
+          {!notaSefaz?.ok && notaOcr?.ok && (notaOcr.valor>0 || notaOcr.data) && (()=>{
             // Quando o valor veio de fonte duvidosa (subtotal, ou deduzido), o aviso precisa
             // ser mais forte que o "confira" de sempre — o piloto tem que olhar esse número.
-            const ressalva = (notaOcr.avisos||[]).find(a=>/SUBTOTAL|deduzido|só pelos números/i.test(a))
+            const ressalva = (notaOcr.avisos||[]).find(a=>/SUBTOTAL|deduzido|segurança/i.test(a))
             return (
               <div style={{background: ressalva?theme.warningBg:theme.successBg,
                 border:`1px solid ${ressalva?(theme.warningText||'#c98a1c'):'#00A86B'}`,
@@ -3159,7 +3265,7 @@ export default function PilotApp({onSwitchMode}) {
               </div>
             )
           })()}
-          {notaOcr && (()=>{
+          {!notaSefaz?.ok && notaOcr && (()=>{
             const achou = [notaOcr.valor>0?'valor':null, notaOcr.data?'data':null, notaOcr.chave?'chave':null].filter(Boolean)
             if (!achou.length) return (
               <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'9px 11px',marginBottom:14,fontSize:11.5,color:theme.textFaint2,lineHeight:1.45}}>
