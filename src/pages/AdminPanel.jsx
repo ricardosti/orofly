@@ -44,7 +44,7 @@ const CAMPOS_NUMERICOS_EDICAO = [
   'vazao_i', 'vazao_f', 'altura', 'velocidade_drone', 'faixa_aplicacao',
 ]
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
-import { CATEGORIA_DESPESA_OPTS, CATEGORIA_ICON, iconeCategoria } from '../lib/categoriasDespesa'
+import { CATEGORIA_DESPESA_OPTS, CATEGORIA_LEGADA, CATEGORIA_ICON, iconeCategoria } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { apiUrl } from '../lib/apiBase'
@@ -480,7 +480,24 @@ export default function AdminPanel({ onSwitchMode }) {
   const [osSearch, setOsSearch] = useState('')
   const [osSearchCliente, setOsSearchCliente] = useState('')
   const [fotoLightbox, setFotoLightbox] = useState(null)
-  const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',clienteFazenda:'',dataIni:'',dataFim:''})
+  const [custosFiltros, setCustosFiltros] = useState({piloto:'',categoria:'',clienteFazenda:'',dataIni:'',dataFim:'',conferencia:''})
+  const [conferindoId, setConferindoId] = useState(null)
+  // Conferência do financeiro: o piloto já pagou na hora, com cartão da empresa. Marcar
+  // aqui significa "esse lançamento bate com a fatura", não "foi pago agora".
+  async function alternarConferido(c) {
+    setConferindoId(c.id)
+    try {
+      const marcar = !c.conferido
+      const patch = marcar
+        ? { conferido:true, conferido_em:new Date().toISOString(), conferido_por:profile?.id||null }
+        : { conferido:false, conferido_em:null, conferido_por:null }
+      const { error } = await supabase.from('despesas').update(patch).eq('id', c.id)
+      if (error) throw error
+      setCustos(v=>v.map(x=>x.id===c.id?{...x,...patch}:x))
+      showToast(marcar?'✅ Conferida':'Conferência desfeita')
+    } catch(e) { showToast('Erro: '+e.message,'error') }
+    finally { setConferindoId(null) }
+  }
   const [veicFiltros, setVeicFiltros] = useState({veiculo:'',dataIni:'',dataFim:''})
   const [agenda, setAgenda] = useState([])
   const [agendaForm, setAgendaForm] = useState({piloto_id:'',cliente:'',fazenda:'',talhao:'',data_prevista:'',produtos:[{produto:'',dose:''}],drone:'',veiculo_id:'',observacao:''})
@@ -5859,6 +5876,8 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
               if(custosFiltros.clienteFazenda && chaveClienteFazenda(c)!==custosFiltros.clienteFazenda) return false
               if(custosFiltros.dataIni && dataLocal(c.data)<dataLocal(custosFiltros.dataIni)) return false
               if(custosFiltros.dataFim && dataLocal(c.data)>dataLocal(custosFiltros.dataFim)) return false
+              if(custosFiltros.conferencia==='pendentes' && c.conferido) return false
+              if(custosFiltros.conferencia==='conferidas' && !c.conferido) return false
               return true
             })
 
@@ -5933,6 +5952,15 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                     value={custosFiltros.categoria} onChange={e=>setCustosFiltros(f=>({...f,categoria:e.target.value}))}>
                     <option value="">Todas categorias</option>
                     {CATEGORIA_DESPESA_OPTS.map(([c])=><option key={c} value={c}>{c}</option>)}
+                    {/* Categoria antiga continua no filtro: sem isso não dava pra achar as
+                        notas de agosto, que estão como "Almoço" e "Gasolina". */}
+                    {CATEGORIA_LEGADA.map(([c])=><option key={c} value={c}>{c} (antiga)</option>)}
+                  </select>
+                  <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'0 0 170px'}}
+                    value={custosFiltros.conferencia} onChange={e=>setCustosFiltros(f=>({...f,conferencia:e.target.value}))}>
+                    <option value="">Conferidas e pendentes</option>
+                    <option value="pendentes">Só a conferir</option>
+                    <option value="conferidas">Só conferidas</option>
                   </select>
                   <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'7px 10px',fontSize:12,outline:'none',flex:'1 1 200px'}}
                     value={custosFiltros.clienteFazenda} onChange={e=>setCustosFiltros(f=>({...f,clienteFazenda:e.target.value}))}>
@@ -6057,7 +6085,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                       <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
                         <thead>
                           <tr style={{background:theme.bg}}>
-                            {['Categoria','Piloto','Valor','Data','Voo Vinculado','Foto','Ações'].map(h=>(
+                            {['Categoria','Piloto','Valor','Data','Pagamento','Conferência','Voo Vinculado','Foto','Ações'].map(h=>(
                               <th key={h} style={{padding:'11px 14px',textAlign:'left',fontSize:11,fontWeight:700,color:theme.textMuted,letterSpacing:.5,borderBottom:`1px solid ${theme.cardBorder2}`,whiteSpace:'nowrap',fontFamily:"'Syne',sans-serif"}}>{h}</th>
                             ))}
                           </tr>
@@ -6074,6 +6102,25 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>{c.piloto_nome||'—'}</td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,fontWeight:700,color:'#059669'}}>R$ {parseFloat(c.valor).toFixed(2)}</td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap'}}>{fmtData(c.data)}</td>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap',fontSize:12}}>
+                                  {c.forma_pagamento ? (
+                                    <>
+                                      <div>{c.forma_pagamento}{c.cartao?` · ${c.cartao}`:''}</div>
+                                      {c.tipo_combustivel && <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>⛽ {c.tipo_combustivel}</div>}
+                                    </>
+                                  ) : <span style={{color:'#c3d4c9'}}>—</span>}
+                                </td>
+                                <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap'}}>
+                                  {/* O botão é o próprio estado: clicar marca, clicar de novo
+                                      desfaz. Conferência errada não pode virar beco sem saída. */}
+                                  <button disabled={conferindoId===c.id} onClick={()=>alternarConferido(c)}
+                                    title={c.conferido ? `Conferida${c.conferido_em?' em '+fmtData(c.conferido_em):''} — clique pra desfazer` : 'Marcar como conferida com a fatura'}
+                                    style={{background: c.conferido?'#059669':theme.bg, color: c.conferido?'#fff':theme.textMuted,
+                                      border:`1px solid ${c.conferido?'#059669':theme.cardBorder2}`, borderRadius:20,
+                                      padding:'4px 11px', fontSize:11, fontWeight:700, cursor:'pointer', opacity: conferindoId===c.id?.5:1}}>
+                                    {c.conferido ? '✓ Conferida' : 'Conferir'}
+                                  </button>
+                                </td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>
                                   {c.ordem_servico ? (
                                     <span style={{fontSize:11,fontWeight:600,color: rel?'#059669':theme.warningText}}>

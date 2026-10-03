@@ -9,6 +9,27 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.5',
+    data: '2026-10-02',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Forma de pagamento e tipo de combustivel',
+        texto: 'Ao lancar a despesa, agora voce informa como pagou: Pix, Cartao, Dinheiro ou Boleto. Escolhendo Cartao, aparece o campo pra dizer QUAL cartao — e ele sugere os que voce ja usou antes, sem precisar digitar tudo de novo. Quando a categoria e Combustivel, da pra separar Diesel, Gasolina, Etanol ou Arla: o mesmo abastecimento leva diesel pra camionete e gasolina pro gerador ou pro drone.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Conferencia do financeiro',
+        texto: 'No painel, em Custos, cada despesa ganhou o botao "Conferir". Ele serve pro financeiro marcar que o lancamento bate com a fatura do cartao — nao e status de pagamento, porque o piloto ja pagou na hora. Clicar de novo desfaz, e fica guardado quem conferiu e quando. Tem filtro pra ver so o que falta conferir. O piloto nao consegue marcar a propria despesa como conferida.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'A chave da nota agora trava duplicata de verdade',
+        texto: 'A chave lida do QR Code passou a ter lugar proprio no cadastro. Antes o aviso de "essa nota ja foi lancada" so enxergava as notas que estavam carregadas na tela; agora vale pra equipe toda.',
+      },
+    ],
+  },
+  {
     versao: '7.4',
     data: '2026-10-02',
     itens: [

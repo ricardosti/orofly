@@ -16,7 +16,7 @@ import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr } from '../lib/notaFiscal'
-import { CATEGORIA_DESPESA_OPTS, iconeCategoria } from '../lib/categoriasDespesa'
+import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
@@ -708,7 +708,7 @@ export default function PilotApp({onSwitchMode}) {
   const [aiMessages,setAiMessages] = useState(null) // null = ainda não abriu (mostra saudação na abertura)
   const [aiInput,setAiInput] = useState('')
   const [aiDigitando,setAiDigitando] = useState(false)
-  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
   function addItemViagem(categoria){
     setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
   }
@@ -1875,6 +1875,12 @@ export default function PilotApp({onSwitchMode}) {
           categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
           ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
           veiculo_id:notaForm.veiculo_id||null,
+          forma_pagamento:notaForm.forma_pagamento||null,
+          // Cartão só faz sentido quando o pagamento foi no cartão — guardar "Pix" com um
+          // cartão preenchido atrapalharia a conferência contra a fatura.
+          cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
+          tipo_combustivel:notaForm.categoria==='Combustível' ? (notaForm.tipo_combustivel||null) : null,
+          chave_acesso:notaForm.chave_acesso||null,
         })
         if(error) throw error
       }
@@ -1901,6 +1907,9 @@ export default function PilotApp({onSwitchMode}) {
             categoria:item.categoria, valor:valorItem, data:notaForm.data,
             ordem_servico:osDigitada||null, relatorio_id, observacao:'Lançado durante viagem', foto_url,
             veiculo_id:notaForm.veiculo_id,
+            forma_pagamento:notaForm.forma_pagamento||null,
+            cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
+            tipo_combustivel:item.categoria==='Combustível' ? (item.tipo_combustivel||null) : null,
           })
           if(iErr) throw iErr
         }
@@ -1912,9 +1921,9 @@ export default function PilotApp({onSwitchMode}) {
         { meta: { km: (parseFloat(notaForm.km_final)||0)-(parseFloat(notaForm.km_inicial)||0) } })
       if(temDespesa) registrar('despesa_lancada', notaForm.categoria || 'Vários itens da viagem')
       showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
-      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[]})
+      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
       setOsModo('lista')
-      setNotaFotoPreview(null); setNotaFotoFile(null)
+      setNotaFotoPreview(null); setNotaFotoFile(null); setNotaQr(null); setNotaOcr(null)
       loadNotas()
     } catch(e){ showToast('Erro: '+e.message,'error') } finally { setNotaSaving(false) }
   }
@@ -2931,7 +2940,7 @@ export default function PilotApp({onSwitchMode}) {
             // Já lancei essa nota? Confere pela chave entre as últimas notas do piloto.
             // É uma checagem parcial de propósito — enquanto a chave não tiver coluna
             // própria, ela mora na observação e só dá pra olhar o que está carregado.
-            const jaLancada = minhasNotas.find(n=>(n.observacao||'').includes(notaQr.chave))
+            const jaLancada = minhasNotas.find(n=>n.chave_acesso===notaQr.chave || (n.observacao||'').includes(notaQr.chave))
             const temDia = !!notaQr.dataEmissao
             const foraDoMes = !temDia && notaForm.data && !notaForm.data.startsWith(notaQr.mesEmissao)
             return (
@@ -2957,14 +2966,17 @@ export default function PilotApp({onSwitchMode}) {
                   </div>
                 )}
                 <button onClick={()=>{
-                  const marca = `${notaQr.modelo==='65'?'NFC-e':'NFe'} nº ${notaQr.numero} · CNPJ ${notaQr.cnpjFormatado} · chave ${notaQr.chave}`
+                  const marca = `${notaQr.modelo==='65'?'NFC-e':'NFe'} nº ${notaQr.numero} · CNPJ ${notaQr.cnpjFormatado}`
                   setNotaForm(f=>({...f,
+                    // A chave ganhou coluna própria: a trava de nota repetida passa a valer
+                    // pra equipe toda, e não só pras notas carregadas nesta tela.
+                    chave_acesso: notaQr.chave,
                     // Só preenche o que a nota REALMENTE informou. O QR versão 2 (o
                     // obrigatório hoje) não traz dia nem valor — inventar um dia a partir
                     // do mês seria dado errado numa prestação de contas.
                     data: notaQr.dataEmissao || f.data,
                     valor: notaQr.valor>0 ? String(notaQr.valor) : f.valor,
-                    observacao: (f.observacao||'').includes(notaQr.chave) ? f.observacao
+                    observacao: (f.observacao||'').includes(marca) ? f.observacao
                       : [f.observacao, marca].filter(Boolean).join('\n'),
                   }))
                   showToast('✅ Dados da nota preenchidos')
@@ -3026,8 +3038,9 @@ export default function PilotApp({onSwitchMode}) {
                   setNotaForm(f=>({...f,
                     valor: notaOcr.valor>0 ? String(notaOcr.valor) : f.valor,
                     data: notaOcr.data || f.data,
-                    observacao: notaOcr.chave && !(f.observacao||'').includes(notaOcr.chave)
-                      ? [f.observacao, `NFe nº ${notaOcr.numero} · CNPJ ${notaOcr.cnpjFormatado} · chave ${notaOcr.chave}`].filter(Boolean).join('\n')
+                    chave_acesso: notaOcr.chave || f.chave_acesso,
+                    observacao: notaOcr.chave && !(f.observacao||'').includes(String(notaOcr.numero))
+                      ? [f.observacao, `NFe nº ${notaOcr.numero} · CNPJ ${notaOcr.cnpjFormatado}`].filter(Boolean).join('\n')
                       : f.observacao,
                   }))
                   showToast('✅ Preenchido — confira o valor')
@@ -3146,6 +3159,60 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           )}
           <div style={{fontSize:11,color:theme.textFaint2,marginBottom:14}}>{onSwitchMode?'Voos recentes de todos os pilotos aparecem na lista':'Voos recentes seus aparecem na lista'} — ou digite a OS manualmente</div>
+
+          {/* Tipo de combustível — só aparece quando a categoria é Combustível. O mesmo
+              abastecimento leva diesel pra camionete e gasolina pro gerador ou pro drone,
+              e sem separar não dá pra saber quanto cada um consome. */}
+          {notaForm.categoria==='Combustível' && (
+            <>
+              <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>TIPO DE COMBUSTÍVEL</div>
+              <div style={{display:'flex',gap:7,marginBottom:14,flexWrap:'wrap'}}>
+                {TIPOS_COMBUSTIVEL.map(t=>(
+                  <button key={t} onClick={()=>setNotaForm(f=>({...f,tipo_combustivel: f.tipo_combustivel===t?'':t}))}
+                    style={{flex:'1 1 70px',background: notaForm.tipo_combustivel===t?'#00A86B':theme.card,
+                      color: notaForm.tipo_combustivel===t?'#fff':theme.textMuted,
+                      border:`1px solid ${notaForm.tipo_combustivel===t?'#00A86B':theme.cardBorder2}`,
+                      borderRadius:12,padding:'10px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}>{t}</button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Forma de pagamento. O piloto paga na hora, com cartão da empresa — isto não é
+              "a pagar", é o registro de COMO saiu, pro financeiro bater com a fatura. */}
+          <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>FORMA DE PAGAMENTO</div>
+          <div style={{display:'flex',gap:7,marginBottom:notaForm.forma_pagamento==='Cartão'?10:14}}>
+            {[['Pix','💠'],['Cartão','💳'],['Dinheiro','💵'],['Boleto','🧾']].map(([fp,ic])=>(
+              <button key={fp} onClick={()=>setNotaForm(f=>({...f,forma_pagamento: f.forma_pagamento===fp?'':fp, cartao: fp==='Cartão'?f.cartao:''}))}
+                style={{flex:1,background: notaForm.forma_pagamento===fp?'#00A86B':theme.card,
+                  color: notaForm.forma_pagamento===fp?'#fff':theme.textMuted,
+                  border:`1px solid ${notaForm.forma_pagamento===fp?'#00A86B':theme.cardBorder2}`,
+                  borderRadius:12,padding:'10px 4px',fontSize:11.5,fontWeight:700,cursor:'pointer'}}>
+                <div style={{fontSize:15}}>{ic}</div>{fp}
+              </button>
+            ))}
+          </div>
+          {notaForm.forma_pagamento==='Cartão' && (()=>{
+            // Sugere os cartões que o próprio piloto já usou, em vez de exigir um cadastro
+            // novo: a lista se forma sozinha com o uso e evita digitar errado toda vez.
+            const jaUsados = [...new Set(minhasNotas.map(n=>n.cartao).filter(Boolean))]
+            return (
+              <>
+                <input list="cartoes-usados" style={{...sw.fi,marginBottom:jaUsados.length?6:14}} placeholder="Qual cartão? Ex: Final 4321, Cartão do Wallace"
+                  value={notaForm.cartao} onChange={e=>setNotaForm(f=>({...f,cartao:e.target.value}))}/>
+                <datalist id="cartoes-usados">{jaUsados.map(c=><option key={c} value={c}/>)}</datalist>
+                {jaUsados.length>0 && (
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
+                    {jaUsados.slice(0,4).map(c=>(
+                      <button key={c} onClick={()=>setNotaForm(f=>({...f,cartao:c}))}
+                        style={{background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:20,
+                          padding:'5px 11px',fontSize:11,fontWeight:600,cursor:'pointer'}}>{c}</button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )
+          })()}
 
           {/* Observação */}
           <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>OBSERVAÇÃO (OPCIONAL)</div>
