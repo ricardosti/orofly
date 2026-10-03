@@ -258,8 +258,11 @@ function numeroBr(txt) {
   if ((m = /^\d{1,3}(?:\.\d{3})+,\d{2}$/.exec(limpo))) return parseFloat(limpo.replace(/\./g,'').replace(',','.'))
   // 1,234.56 — milhar com vírgula, decimal com ponto (o OCR às vezes inverte)
   if ((m = /^\d{1,3}(?:,\d{3})+\.\d{2}$/.exec(limpo))) return parseFloat(limpo.replace(/,/g,''))
-  // 35,90 · 35.90 · 35 90 — dois dígitos depois de um separador qualquer
-  if ((m = /^(\d+)[.,\s](\d{2})$/.exec(limpo))) return parseFloat(`${m[1]}.${m[2]}`)
+  // 35,90 · 35.90 — dois dígitos depois de vírgula ou ponto.
+  // ESPAÇO não entra como separador: com ele, a hora de emissão "01/10/2026 08:22:23"
+  // virava o valor 2026,08 — medido num cupom real. O ganho de aceitar "35 90" não paga
+  // o risco de lançar a data como dinheiro.
+  if ((m = /^(\d+)[.,](\d{2})$/.exec(limpo))) return parseFloat(`${m[1]}.${m[2]}`)
   return null
 }
 
@@ -305,8 +308,9 @@ export function extrairDaNota(texto) {
   }
 
   // ── Valor total, em três tentativas, da mais confiável pra menos.
-  // Aceita vírgula, ponto ou espaço antes dos centavos — o OCR produz os três.
-  const numerosDaLinha = (l) => (l.match(/\d{1,3}(?:[.,]\d{3})+[.,]\d{2}|\d+[.,\s]\d{2}/g) || [])
+  // Aceita vírgula ou ponto antes dos centavos — o OCR troca um pelo outro. Espaço fica
+  // de fora: ele casava a hora da nota e virava valor (ver numeroBr).
+  const numerosDaLinha = (l) => (l.match(/\d{1,3}(?:[.,]\d{3})+[.,]\d{2}|\d+[.,]\d{2}/g) || [])
     .map(numeroBr).filter(v => v !== null && v > 0 && v <= TETO_DESPESA)
 
   // 1) rótulo e número na MESMA linha — o caso bem comportado.
