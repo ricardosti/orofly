@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.0',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'O editor cortava a nota e comia o QR Code',
+        texto: 'Foto de nota fiscal e comprida e estreita, e o editor nao reduzia a imagem pra caber: ele ampliava e cortava justamente o rodape, que e onde fica o QR Code. Era por isso que o app "nao lia" notas que estavam perfeitas na foto original. Agora a nota aparece inteira, com os quatro cantos do codigo visiveis, em qualquer formato de foto.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'A foto da nota entra direto',
+        texto: 'Antes toda foto abria o editor antes de ser anexada. Agora ela entra direto — nota e comprovante, quase nunca precisa de edicao. Quem quiser riscar algo ou recortar pra ajudar a leitura do QR tem o botao "Editar ou recortar" no canto da foto. A reducao de tamanho continua acontecendo, entao a foto nao fica pesada.',
+      },
+    ],
+  },
+  {
     versao: '7.9',
     data: '2026-10-03',
     itens: [

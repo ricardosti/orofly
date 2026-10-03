@@ -16,6 +16,7 @@ import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr } from '../lib/notaFiscal'
+import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData } from '../lib/datas'
@@ -735,6 +736,10 @@ export default function PilotApp({onSwitchMode}) {
   // o piloto no campo decide se vale gastar isso.
   const [notaOcr,setNotaOcr] = useState(null)
   const [notaOcrPct,setNotaOcrPct] = useState(null)
+  // Guarda a foto como veio da câmera. A nota anexada é só comprovante — o caminho curto
+  // é subir direto — mas quem quiser riscar ou recortar precisa do arquivo original, não
+  // da versão já reduzida.
+  const [notaFotoOriginal,setNotaFotoOriginal] = useState(null)
   const [notaSaving,setNotaSaving] = useState(false)
   const [minhasNotas,setMinhasNotas] = useState([])
   // Filtros da lista de notas do piloto. Antes a lista vinha crua, e achar "quanto gastei
@@ -1688,10 +1693,31 @@ export default function PilotApp({onSwitchMode}) {
       setNotaFotoPreview('pdf:' + (f.name || 'nota.pdf'))
       return
     }
-    // Lê o QR do arquivo ORIGINAL, antes de o editor reduzir pra 1280 px: o QR do cupom
-    // é pequeno e cada pixel conta. Roda solto, sem travar a abertura do editor.
+    // Lê o QR do arquivo ORIGINAL, antes de reduzir pra 1280 px: o QR do cupom é pequeno
+    // e cada pixel conta.
     setNotaQr(null); setNotaOcr(null); setNotaLendoQr(true)
     lerNotaFiscal(f).then(r=>setNotaQr(r)).catch(()=>setNotaQr(null)).finally(()=>setNotaLendoQr(false))
+    setNotaFotoOriginal(f)
+
+    // A foto entra DIRETO, sem passar pelo editor: nota é comprovante, e abrir o editor
+    // em toda foto era um passo a mais para quase ninguém. Quem quiser riscar ou recortar
+    // tem o botão "Editar foto" embaixo da imagem.
+    //
+    // Mas comprimir continua obrigatório, e por isso não dá pra só guardar o arquivo cru:
+    // era o EDITOR que reduzia pra 1280 px, e foto de 3–8 MB direto da câmera foi o que
+    // estourou a cota de banda do Supabase em agosto de 2026.
+    comprimirImagem(f).then(res => {
+      if (!res) return
+      setNotaFotoPreview(res.dataUrl)
+      setNotaFotoFile(res.blob ? new File([res.blob], 'nota.jpg', {type:'image/jpeg'}) : f)
+    })
+  }
+
+  // Abre o editor com a foto que já está anexada — riscar algo ou recortar pra ajudar a
+  // leitura do QR. Sai do caminho principal de propósito.
+  function editarFotoNota(){
+    const alvo = notaFotoOriginal
+    if(!alvo) return
     const r=new FileReader()
     r.onload=ev=>{
       setAnnotatorTarget({
@@ -1718,7 +1744,7 @@ export default function PilotApp({onSwitchMode}) {
         }
       })
     }
-    r.readAsDataURL(f)
+    r.readAsDataURL(alvo)
   }
 
   async function buscarPrevisao(lat,lon,local){
@@ -2959,7 +2985,15 @@ export default function PilotApp({onSwitchMode}) {
               <img src={notaFotoPreview} alt="nota" style={{width:'100%',maxHeight:220,objectFit:'cover',borderRadius:14,display:'block'}}/>
               )}
               <button style={{position:'absolute',top:8,right:8,background:'rgba(11,18,16,0.65)',color:'#fff',border:'none',borderRadius:20,width:28,height:28,cursor:'pointer'}}
-                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null)}}>✕</button>
+                onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null);setNotaFotoOriginal(null)}}>✕</button>
+              {/* Discreto de propósito: o caminho normal é a foto entrar e pronto. */}
+              {notaFotoOriginal && !String(notaFotoPreview).startsWith('pdf:') && (
+                <button onClick={editarFotoNota}
+                  style={{position:'absolute',left:8,bottom:8,background:'rgba(11,18,16,0.65)',color:'#fff',
+                    border:'none',borderRadius:16,padding:'5px 11px',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                  ✏️ Editar ou recortar
+                </button>
+              )}
             </div>
           ) : (
             // Área tracejada do modelo, mas com os três atalhos DENTRO: no celular, abrir

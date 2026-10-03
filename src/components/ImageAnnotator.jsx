@@ -53,6 +53,26 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
   // e o canvas muda de tamanho a cada corte.
   const [dimCanvas, setDimCanvas] = useState({ w:0, h:0 })
   const [cropDragging, setCropDragging] = useState(false)
+  // Altura livre pra imagem, medida de verdade.
+  //
+  // `max-height:100%` no canvas não resolve: percentual só vale quando o pai tem altura
+  // DEFINIDA, e o wrapper se ajusta ao conteúdo (altura automática) — o navegador então
+  // trata como `none`. Resultado medido: a área tinha 723 px e o canvas ficava com 1070,
+  // estourando e cortando o rodapé da nota, exatamente onde fica o QR Code.
+  // Medir e aplicar em pixel resolve, e o ResizeObserver mantém certo quando a tela gira
+  // ou a barra de ferramentas muda de tamanho.
+  const areaRef = useRef(null)
+  const [alturaLivre, setAlturaLivre] = useState(0)
+  useEffect(() => {
+    const el = areaRef.current
+    if (!el) return
+    const medir = () => setAlturaLivre(el.clientHeight)
+    medir()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(medir)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [pronto])
 
   useEffect(() => {
     if (!src) { setErro('Nenhuma foto pra editar.'); return }
@@ -326,11 +346,26 @@ export default function ImageAnnotator({ src, onSave, onCancel }) {
         <button onClick={onCancel} style={{ background:'rgba(255,255,255,.15)', border:'none', color:'#fff', borderRadius:16, padding:'6px 12px', fontSize:12, cursor:'pointer' }}>Cancelar</button>
       </div>
 
-      <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', touchAction:'none' }}>
+      {/* minHeight:0 é o que faz a imagem CABER em vez de ser cortada. Sem ele, um item
+          flex não encolhe abaixo do próprio conteúdo: o canvas de uma nota fiscal (alta e
+          estreita) ficava no tamanho natural, estourava a área e o overflow cortava o
+          rodapé — justamente onde fica o QR Code. */}
+      <div ref={areaRef} style={{ flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', touchAction:'none', padding:6 }}>
         {!pronto && <span style={{ color:'#fff', fontSize:13 }}>Carregando...</span>}
-        <div style={{ position:'relative', display: pronto?'inline-block':'none', maxWidth:'100%', maxHeight:'100%' }}>
+        {/* alignItems/justifyContent no centro: como flex, este wrapper esticava o canvas
+            na altura (align-self padrão é stretch) e a nota saía achatada — proporção 1.18
+            onde o papel tinha 1.78. Centralizado, o canvas mantém a forma. */}
+        <div style={{ position:'relative', display: pronto?'flex':'none', alignItems:'center', justifyContent:'center',
+          maxWidth:'100%', maxHeight:'100%', minHeight:0, minWidth:0 }}>
           <canvas ref={canvasRef}
-            style={{ maxWidth:'100%', maxHeight:'100%', display:'block', touchAction:'none', cursor: (modo==='desenho'||(modo==='corte'&&tipoCorte==='livre'))?'crosshair':'default' }}
+            // minWidth/minHeight 0: como filho de um flex, o canvas nasce com
+            // `min-height:auto`, que o proíbe de encolher abaixo do tamanho natural — e aí
+            // o max-height nunca chegava a valer. Medido: o wrapper respeitava o limite
+            // (711 px) e o canvas insistia em 1070, estourando e cortando o rodapé da nota,
+            // bem onde fica o QR Code.
+            style={{ maxWidth:'100%', maxHeight: alturaLivre ? `${alturaLivre - 12}px` : '100%',
+              minWidth:0, minHeight:0, width:'auto', height:'auto', display:'block', touchAction:'none',
+              cursor: (modo==='desenho'||(modo==='corte'&&tipoCorte==='livre'))?'crosshair':'default' }}
             onMouseDown={iniciarTraco} onMouseMove={desenhar} onMouseUp={pararTraco} onMouseLeave={pararTraco}
             onTouchStart={iniciarTraco} onTouchMove={desenhar} onTouchEnd={pararTraco}/>
 
