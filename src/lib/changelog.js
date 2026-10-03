@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '7.7',
+    data: '2026-10-02',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Tela de lancar despesa com a cara nova',
+        texto: 'As categorias viraram uma grade de 4 colunas com o icone em cima do nome, o que deixa o alvo do dedo maior. No topo entrou o atalho "Ler QR Code da nota", e o anexo do comprovante virou uma area tracejada com os tres caminhos dentro: Camera, Galeria e PDF. O aviso diz que a leitura do QR funciona SEM INTERNET, porque e verdade e e o que importa no campo: ela acontece no proprio aparelho, de graca.',
+      },
+    ],
+  },
+  {
     versao: '7.6',
     data: '2026-10-02',
     itens: [

@@ -2905,6 +2905,24 @@ export default function PilotApp({onSwitchMode}) {
         <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
           {/* Foto da nota */}
           <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>FOTO DA NOTA</div>
+          {/* Atalho do QR no topo. "sem internet" em vez de "com IA" porque é a verdade e
+              é o que importa pro piloto: a leitura é feita no próprio aparelho, de graça,
+              no meio do talhão onde não tem sinal. */}
+          {!notaFotoPreview && (
+            <button onClick={()=>document.getElementById('nota-camera')?.click()}
+              style={{width:'100%',display:'flex',alignItems:'center',gap:11,marginBottom:12,textAlign:'left',
+                background:theme.successBg,border:'1px solid #00A86B',borderRadius:16,padding:'12px 13px',cursor:'pointer'}}>
+              <span style={{fontSize:24,lineHeight:1}}>🔳</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:'block',fontSize:13,fontWeight:800,color:'#00A86B'}}>Ler QR Code da nota</span>
+                <span style={{display:'block',fontSize:11,color:theme.textMuted,marginTop:2,lineHeight:1.4}}>
+                  Fotografe a nota com o QR à mostra — funciona sem internet
+                </span>
+              </span>
+              <span style={{color:'#00A86B',fontSize:17,flexShrink:0}}>›</span>
+            </button>
+          )}
+
           {notaFotoPreview ? (
             <div style={{position:'relative',marginBottom:14}}>
               {String(notaFotoPreview).startsWith('pdf:') ? (
@@ -2920,13 +2938,21 @@ export default function PilotApp({onSwitchMode}) {
                 onClick={()=>{setNotaFotoPreview(null);setNotaFotoFile(null);setNotaQr(null);setNotaOcr(null)}}>✕</button>
             </div>
           ) : (
-            <div style={{display:'flex',gap:10,marginBottom:14}}>
-              <button style={{flex:1,background:theme.successBg,color:'#00A86B',border:'none',borderRadius:16,padding:'14px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                onClick={()=>document.getElementById('nota-camera')?.click()}>📸 Câmera</button>
-              <button style={{flex:1,background:'#e6f1fb',color:'#2f6fed',border:'none',borderRadius:16,padding:'14px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                onClick={()=>document.getElementById('nota-galeria')?.click()}>🖼️ Galeria</button>
-              <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:16,padding:'14px 8px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                onClick={()=>document.getElementById('nota-pdf')?.click()}>📄 PDF</button>
+            // Área tracejada do modelo, mas com os três atalhos DENTRO: no celular, abrir
+            // a câmera num toque é mais rápido que cair num seletor de arquivo.
+            <div style={{border:`1.5px dashed ${theme.cardBorder2}`,borderRadius:16,padding:'13px 11px',marginBottom:14,background:theme.bg}}>
+              <div style={{textAlign:'center',marginBottom:10}}>
+                <div style={{fontSize:12.5,fontWeight:700,color:theme.textMuted}}>📎 Anexar comprovante</div>
+                <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:2}}>Opcional · foto ou PDF</div>
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                <button style={{flex:1,background:theme.successBg,color:'#00A86B',border:'none',borderRadius:12,padding:'11px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}
+                  onClick={()=>document.getElementById('nota-camera')?.click()}>📸 Câmera</button>
+                <button style={{flex:1,background:'#e6f1fb',color:'#2f6fed',border:'none',borderRadius:12,padding:'11px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}
+                  onClick={()=>document.getElementById('nota-galeria')?.click()}>🖼️ Galeria</button>
+                <button style={{flex:1,background:theme.card,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'11px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}
+                  onClick={()=>document.getElementById('nota-pdf')?.click()}>📄 PDF</button>
+              </div>
             </div>
           )}
           <input id="nota-camera" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleNotaFoto(e.target.files[0])}/>
@@ -3056,11 +3082,24 @@ export default function PilotApp({onSwitchMode}) {
             <>
               {/* Categoria */}
               <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>CATEGORIA</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
-                {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>(
-                  <button key={cat} type="button" style={{background:notaForm.categoria===cat?'#00A86B':theme.bg,color:notaForm.categoria===cat?'#fff':theme.text,border:'none',borderRadius:16,padding:'10px 8px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
-                    onClick={()=>setNotaForm(f=>({...f,categoria:cat}))}>{ic} {cat}</button>
-                ))}
+              {/* Grade de 4 colunas com o ícone em cima do nome. Em 2 colunas o nome
+                  cabia ao lado do ícone; em 4 não cabe, então empilha — é também o que
+                  deixa o alvo do dedo maior, que é o que importa no campo. */}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:7,marginBottom:14}}>
+                {CATEGORIA_DESPESA_OPTS.map(([cat,ic])=>{
+                  const sel = notaForm.categoria===cat
+                  return (
+                    <button key={cat} type="button"
+                      style={{background: sel?'#00A86B':theme.bg, color: sel?'#fff':theme.text,
+                        border:`1px solid ${sel?'#00A86B':theme.cardBorder2}`, borderRadius:14, padding:'10px 3px',
+                        cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:4, minWidth:0}}
+                      onClick={()=>setNotaForm(f=>({...f,categoria:cat}))}>
+                      <span style={{fontSize:19,lineHeight:1}}>{ic}</span>
+                      <span style={{fontSize:9.5,fontWeight:700,lineHeight:1.15,textAlign:'center',
+                        overflowWrap:'anywhere',hyphens:'auto'}}>{cat}</span>
+                    </button>
+                  )
+                })}
               </div>
 
               {/* Valor + data */}
