@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.2',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'A leitura do texto estava usando a foto reduzida',
+        texto: 'O leitor de texto rodava na copia ja reduzida da foto, onde cada letra do cupom fica com cerca de 10 pontos — pequeno demais pra ler. Por isso o QR funcionava (esse sempre usou a foto original) e o texto nao. Agora os dois usam a foto como ela veio da camera.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Valor e data chegam preenchidos',
+        texto: 'Depois de anexar a nota, o app le o QR Code e, em seguida, o texto impresso — sem voce pedir. O valor e a data entram nos campos sozinhos, e CONTINUAM EDITAVEIS: se a leitura errar, e so corrigir por cima. O QR das notas de hoje nao traz o valor (e regra da nota fiscal), e por isso o texto e lido logo depois.',
+      },
+    ],
+  },
+  {
     versao: '8.1',
     data: '2026-10-03',
     itens: [

@@ -1696,7 +1696,16 @@ export default function PilotApp({onSwitchMode}) {
     // Lê o QR do arquivo ORIGINAL, antes de reduzir pra 1280 px: o QR do cupom é pequeno
     // e cada pixel conta.
     setNotaQr(null); setNotaOcr(null); setNotaLendoQr(true)
-    lerNotaFiscal(f).then(r=>setNotaQr(r)).catch(()=>setNotaQr(null)).finally(()=>setNotaLendoQr(false))
+    lerNotaFiscal(f)
+      .then(r=>{
+        setNotaQr(r)
+        // O QR versão 2 (o obrigatório hoje) traz a chave mas NUNCA o valor nem o dia.
+        // Em vez de esperar o piloto pedir, busca no texto impresso logo em seguida —
+        // é o que falta pra nota chegar preenchida.
+        if (!r?.valor) lerTextoDaNota(f)
+      })
+      .catch(()=>setNotaQr(null))
+      .finally(()=>setNotaLendoQr(false))
     setNotaFotoOriginal(f)
 
     // A foto entra DIRETO, sem passar pelo editor: nota é comprovante, e abrir o editor
@@ -1711,6 +1720,29 @@ export default function PilotApp({onSwitchMode}) {
       setNotaFotoPreview(res.dataUrl)
       setNotaFotoFile(res.blob ? new File([res.blob], 'nota.jpg', {type:'image/jpeg'}) : f)
     })
+  }
+
+  // Leitura do texto impresso. Sempre da foto ORIGINAL: a versão guardada já passou pela
+  // compressão de 1280 px, e nela cada letra do cupom fica com ~10 px — bem abaixo do que
+  // o OCR precisa. Era por isso que o QR funcionava e o texto não.
+  async function lerTextoDaNota(arquivo){
+    const alvo = arquivo || notaFotoOriginal || notaFotoFile
+    if (!alvo) return
+    setNotaOcrPct(0)
+    try {
+      const r = await lerNotaPorOcr(alvo, m=>{
+        if (m?.status==='recognizing text') setNotaOcrPct(Math.round((m.progress||0)*100))
+      })
+      setNotaOcr(r)
+      // Preenche na hora, em vez de esperar um "usar estes dados": o campo continua
+      // editável e o piloto corrige se a leitura errou. Só escreve em campo VAZIO —
+      // valor que ele já digitou vale mais que o que a máquina leu.
+      if (r?.ok) setNotaForm(f=>({...f,
+        valor: (!f.valor && r.valor>0) ? String(r.valor) : f.valor,
+        data:  r.data || f.data,
+        chave_acesso: r.chave || f.chave_acesso,
+      }))
+    } catch { setNotaOcr(null) } finally { setNotaOcrPct(null) }
   }
 
   // Abre o editor com a foto que já está anexada — riscar algo ou recortar pra ajudar a
@@ -3098,13 +3130,7 @@ export default function PilotApp({onSwitchMode}) {
           {/* Leitura do texto impresso. Fica sob botão porque custa segundos e, na
               primeira vez, baixa o modelo de OCR — decisão do piloto, não do app. */}
           {notaFotoFile && !notaOcr && notaOcrPct===null && (
-            <button onClick={async()=>{
-              setNotaOcrPct(0)
-              const r = await lerNotaPorOcr(notaFotoFile, m=>{
-                if (m?.status==='recognizing text') setNotaOcrPct(Math.round((m.progress||0)*100))
-              })
-              setNotaOcr(r); setNotaOcrPct(null)
-            }}
+            <button onClick={()=>lerTextoDaNota()}
               style={{width:'100%',background:theme.bg,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,
                 padding:'10px',fontSize:12.5,fontWeight:600,cursor:'pointer',marginBottom:14}}>
               🔎 Ler valor e data do texto da nota
@@ -3116,6 +3142,12 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{height:5,background:theme.divider,borderRadius:20,overflow:'hidden'}}>
                 <div style={{height:'100%',width:`${notaOcrPct}%`,background:'#00A86B',borderRadius:20,transition:'width .3s'}}/>
               </div>
+            </div>
+          )}
+          {notaOcr?.ok && (notaOcr.valor>0 || notaOcr.data) && (
+            <div style={{background:theme.successBg,border:'1px solid #00A86B',borderRadius:12,padding:'9px 11px',marginBottom:14,fontSize:11.5,lineHeight:1.5,color:theme.text}}>
+              ✍️ Preenchi {[notaOcr.valor>0?'o valor':null, notaOcr.data?'a data':null].filter(Boolean).join(' e ')} pela
+              leitura da nota. <b>Confira e corrija se precisar</b> — os campos continuam editáveis.
             </div>
           )}
           {notaOcr && (()=>{

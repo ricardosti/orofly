@@ -132,7 +132,7 @@ async function paraCanvas(origem, maxLado = 1400, minLado = 0) {
   // Tesseract mais pixel por caractere — e só isso já corrigiu leitura errada nos testes:
   // com texto de 20 px ele devolvia "60,80" no lugar de "60,00". Teto de 3x porque acima
   // disso é só borrão caro de processar.
-  if (minLado && maior * escala < minLado) escala = Math.min(3, minLado / maior)
+  if (minLado && maior * escala < minLado) escala = Math.min(4, minLado / maior)
   const canvas = document.createElement('canvas')
   canvas.width = Math.round(bitmap.width * escala)
   canvas.height = Math.round(bitmap.height * escala)
@@ -399,15 +399,36 @@ export async function lerNotaPorOcr(arquivo, aoProgredir) {
     // reduzir pra 2400 jogava fora justamente o detalhe dos dígitos da chave, que são
     // pequenos. O piso existe pro contrário: abaixo de ~30 px por caractere o OCR troca
     // 0 por 8 no valor, e valor errado é pior que valor em branco.
-    const { canvas } = await paraCanvas(arquivo, 3000, 2000)
-    const { binarizar } = await import('./ocrCoordenadas')
-    binarizar(canvas)                      // cupom térmico tem contraste fraco
+    const { canvas } = await paraCanvas(arquivo, 4200, 3200)
     const { createWorker } = await import('tesseract.js')
     worker = await createWorker('eng', 1, aoProgredir ? { logger: aoProgredir } : undefined)
-    const { data } = await worker.recognize(canvas)
-    const achados = extrairDaNota(data?.text || '')
+
+    // Duas passadas, e NÃO uma só binarizada.
+    //
+    // A binarização (preto no branco, por um limiar fixo) salva o cupom térmico
+    // desbotado, mas DESTRÓI a foto bem iluminada: o traço fino do valor some junto com
+    // o reflexo do papel. Numa nota nítida de restaurante o OCR devolvia "LR EI CL : ld"
+    // no lugar de "TOTAL R$ 35,90".
+    // Então tenta como a foto veio e, só se não sair nada aproveitável, tenta binarizada.
+    const tentar = async (alvo) => {
+      const { data } = await worker.recognize(alvo)
+      const achados = extrairDaNota(data?.text || '')
+      return { achados, texto: data?.text || '', util: !!(achados.chave || achados.valor) }
+    }
+    let r = await tentar(canvas)
+    if (!r.util) {
+      const { binarizar } = await import('./ocrCoordenadas')
+      // Copia pra não estragar o canvas original, que pode ser reaproveitado.
+      const copia = document.createElement('canvas')
+      copia.width = canvas.width; copia.height = canvas.height
+      copia.getContext('2d', { willReadFrequently: true }).drawImage(canvas, 0, 0)
+      binarizar(copia)
+      const r2 = await tentar(copia)
+      if (r2.util) r = r2
+    }
+    const achados = r.achados
     return { ok: !!(achados.chave || achados.valor || achados.data), origem: 'ocr', ...achados,
-             ...(achados.chave ? dadosDaChave(achados.chave) : {}), textoBruto: data?.text || '' }
+             ...(achados.chave ? dadosDaChave(achados.chave) : {}), textoBruto: r.texto }
   } catch (e) {
     return { ok: false, motivo: `não consegui ler o texto da nota (${e?.message || e})` }
   } finally {
