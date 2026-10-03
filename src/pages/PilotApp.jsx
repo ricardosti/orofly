@@ -16,6 +16,7 @@ import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
+import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente } from '../lib/filaDespesas'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL } from '../lib/categoriasDespesa'
@@ -755,6 +756,12 @@ export default function PilotApp({onSwitchMode}) {
   const [notaFotoOriginal,setNotaFotoOriginal] = useState(null)
   const [notaSaving,setNotaSaving] = useState(false)
   const [minhasNotas,setMinhasNotas] = useState([])
+  // Despesas lançadas sem sinal, guardadas no aparelho até a internet voltar (ver
+  // lib/filaDespesas). O tamanho também fica numa ref, pro intervalo de 20 s não abrir o
+  // banco local à toa quando a fila está vazia.
+  const [filaNotas,setFilaNotas] = useState([])
+  const filaTamanhoRef = useRef(0)
+  const sincronizandoRef = useRef(false)
   // Filtros da lista de notas do piloto. Antes a lista vinha crua, e achar "quanto gastei
   // de combustível esse mês" exigia somar na mão.
   const [notaFiltroCat,setNotaFiltroCat] = useState('todas')
@@ -1136,6 +1143,27 @@ export default function PilotApp({onSwitchMode}) {
       clearInterval(id)
     }
   },[pendingSync]) // eslint-disable-line
+
+  // Despesas guardadas sem sinal: mesmos gatilhos da sincronização do voo, pelo mesmo motivo
+  // (o 'online' sozinho falha no WebView do Android). Ao abrir o app também tenta, porque o
+  // piloto pode ter fechado tudo ainda no talhão.
+  useEffect(()=>{
+    if(!profile?.id) return
+    pedirArmazenamentoPersistente()
+    atualizarFila().then(()=>sincronizarFila())
+    const aoVoltar = () => { if(document.visibilityState!=='hidden') sincronizarFila() }
+    const periodico = () => { if(filaTamanhoRef.current>0) sincronizarFila() }
+    window.addEventListener('online',aoVoltar)
+    document.addEventListener('visibilitychange',aoVoltar)
+    window.addEventListener('focus',aoVoltar)
+    const id=setInterval(periodico,20000)
+    return ()=>{
+      window.removeEventListener('online',aoVoltar)
+      document.removeEventListener('visibilitychange',aoVoltar)
+      window.removeEventListener('focus',aoVoltar)
+      clearInterval(id)
+    }
+  },[profile?.id]) // eslint-disable-line
 
   // Avisa ao fechar com operação em andamento
   useEffect(()=>{
@@ -1675,9 +1703,53 @@ export default function PilotApp({onSwitchMode}) {
   async function loadNotas(){
     setLoadingNotas(true)
     try {
-      const {data}=await supabase.from('despesas').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
-      setMinhasNotas(data||[])
+      const {data,error}=await supabase.from('despesas').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
+      // Sem sinal a busca volta com erro (o cliente não lança). Antes isso virava lista
+      // vazia — "Nenhuma nota cadastrada ainda" — e parecia que as notas tinham sumido.
+      if(!error) setMinhasNotas(data||[])
     } catch {} finally { setLoadingNotas(false) }
+  }
+
+  async function atualizarFila(){
+    try {
+      const minhas = (await listarFila()).filter(i=>i.piloto_id===profile?.id)
+      filaTamanhoRef.current = minhas.length
+      setFilaNotas(minhas)
+    } catch { /* aparelho sem IndexedDB: segue sem fila */ }
+  }
+
+  // Manda pro banco o que ficou guardado sem sinal. Para na primeira falta de rede (não
+  // adianta insistir nas outras); erro do banco marca só aquela nota, que para de ser
+  // reenviada sozinha e aparece na lista com o motivo.
+  async function sincronizarFila(){
+    if(sincronizandoRef.current || !profile?.id || !navigator.onLine) return
+    sincronizandoRef.current = true
+    let enviadas = 0
+    try {
+      const itens = (await listarFila()).filter(i=>i.piloto_id===profile.id && !i.erro)
+      for(const item of itens){
+        try {
+          const r = await comPrazo(enviarDespesa(item, supabase), 30000)
+          if(r.foto_url) esquecerUrl(r.foto_url)
+          await removerDaFila(item.id)
+          enviadas++
+          // Registra aqui, e não ao guardar: sem sinal o registro também não subiria. Leva
+          // a hora em que o piloto lançou, pro log não mentir sobre quando foi.
+          registrar('despesa_lancada', item.despesa.categoria, { meta:{ sem_sinal:true, lancada_em:item.criado_em } })
+        } catch(e) {
+          if(ehFalhaDeRede(e)) break
+          await guardarNaFila({...item, erro: e?.message || String(e)})
+        }
+      }
+    } catch { /* aparelho sem IndexedDB */ }
+    finally {
+      sincronizandoRef.current = false
+      await atualizarFila()
+      if(enviadas){
+        showToast(enviadas===1 ? '✅ A nota guardada sem sinal subiu' : `✅ ${enviadas} notas guardadas sem sinal subiram`)
+        loadNotas()
+      }
+    }
   }
 
   async function loadAgenda(){
@@ -1996,77 +2068,122 @@ export default function PilotApp({onSwitchMode}) {
     }
     setNotaSaving(true)
     try {
-      let foto_url = null
-      if(notaFotoFile){
-        // Mantém a extensão real do arquivo: comprovante em PDF gravado como .jpg não
-        // abre depois, e o contentType errado faz o navegador tentar desenhar o PDF
-        // como imagem e mostrar um quadrado quebrado.
-        const ehPdf = notaFotoFile.type === 'application/pdf' || /\.pdf$/i.test(notaFotoFile.name||'')
-        const path = `despesas/${profile.id}/${Date.now()}.${ehPdf?'pdf':'jpg'}`
-        const {error:upErr} = await supabase.storage.from('relatorios').upload(path,notaFotoFile,{upsert:true,contentType:notaFotoFile.type||undefined})
-        esquecerUrl(path)
-        if(!upErr) foto_url = path
-      }
-      let relatorio_id = null
-      const osDigitada = notaForm.ordem_servico.trim()
-      if(osDigitada){
-        const {data:relMatch} = await supabase.from('relatorios').select('id').ilike('ordem_servico',osDigitada).maybeSingle()
-        if(relMatch) relatorio_id = relMatch.id
-      }
-
-      // Só lança despesa se categoria+valor foram preenchidos — registrar viagem sem custo é válido
-      if(temDespesa){
-        const {error} = await supabase.from('despesas').insert({
-          piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
-          categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
-          ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
-          veiculo_id:notaForm.veiculo_id||null,
-          forma_pagamento:notaForm.forma_pagamento||null,
-          // Cartão só faz sentido quando o pagamento foi no cartão — guardar "Pix" com um
-          // cartão preenchido atrapalharia a conferência contra a fatura.
-          cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
-          tipo_combustivel:notaForm.categoria==='Combustível' ? (notaForm.tipo_combustivel||null) : null,
-          chave_acesso:notaForm.chave_acesso||null,
-        })
-        if(error) throw error
-      }
-
-      // Se marcou veículo + km, registra a viagem e atualiza o km atual do carro
-      if(temViagem){
-        const kmIni = parseFloat(notaForm.km_inicial)
-        const kmFim = parseFloat(notaForm.km_final)
-        const {error:vErr} = await supabase.from('viagens').insert({
-          veiculo_id: notaForm.veiculo_id, motorista: profile.nome||profile.email, data: notaForm.data,
-          km_inicial: kmIni, km_final: kmFim,
-          ordem_servico: osDigitada||null, relatorio_id, observacao: notaForm.observacao||'Registrado via Cadastro de Notas',
-        })
-        if(vErr) throw vErr
-        await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',notaForm.veiculo_id)
-        setVeiculosDB(vs=>vs.map(v=>v.id===notaForm.veiculo_id?{...v,km_atual:kmFim}:v))
-
-        // Despesas lançadas durante a viagem (gasolina, pedágio, almoço etc.) — uma por item
-        for(const item of notaForm.itensViagem){
-          const valorItem = parseFloat(item.valor)
-          if(!(valorItem>0)) continue
-          const {error:iErr} = await supabase.from('despesas').insert({
+      if(temDespesa && !temViagem){
+        // Despesa sozinha — o caso de hoje, com a aba Viagem desligada — vai pela fila, que
+        // aguenta ficar sem sinal (ver lib/filaDespesas). Viagem com km continua precisando
+        // de internet, pelo caminho de baixo.
+        const osDigitada = notaForm.ordem_servico.trim()
+        // Mantém a extensão real do arquivo: comprovante em PDF gravado como .jpg não abre
+        // depois, e o contentType errado faz o navegador desenhar um quadrado quebrado.
+        const ehPdf = !!notaFotoFile && (notaFotoFile.type === 'application/pdf' || /\.pdf$/i.test(notaFotoFile.name||''))
+        const item = {
+          id: crypto.randomUUID(), piloto_id: profile.id, criado_em: new Date().toISOString(),
+          ordem_servico: osDigitada || null,
+          foto: notaFotoFile || null, fotoExt: ehPdf ? 'pdf' : 'jpg',
+          despesa: {
             piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
-            categoria:item.categoria, valor:valorItem, data:notaForm.data,
-            ordem_servico:osDigitada||null, relatorio_id, observacao:'Lançado durante viagem', foto_url,
-            veiculo_id:notaForm.veiculo_id,
+            categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
+            ordem_servico:osDigitada||null, observacao:notaForm.observacao||null,
+            veiculo_id:notaForm.veiculo_id||null,
             forma_pagamento:notaForm.forma_pagamento||null,
+            // Cartão só faz sentido quando o pagamento foi no cartão — guardar "Pix" com um
+            // cartão preenchido atrapalharia a conferência contra a fatura.
             cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
-            tipo_combustivel:item.categoria==='Combustível' ? (item.tipo_combustivel||null) : null,
-          })
-          if(iErr) throw iErr
+            tipo_combustivel:notaForm.categoria==='Combustível' ? (notaForm.tipo_combustivel||null) : null,
+            chave_acesso:notaForm.chave_acesso||null,
+          },
         }
-      }
+        // Com sinal, tenta mandar na hora (com prazo: sinal fraco no campo não pode deixar o
+        // botão em "Salvando..." pra sempre). Sem sinal, ou se cair no meio, guarda.
+        let enviada = null
+        if(navigator.onLine){
+          try { enviada = await comPrazo(enviarDespesa(item, supabase), 20000) }
+          catch(e){ if(!ehFalhaDeRede(e)) throw e }
+        }
+        if(enviada){
+          if(enviada.foto_url) esquecerUrl(enviada.foto_url)
+          registrar('despesa_lancada', notaForm.categoria)
+          showToast(enviada.relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
+        } else {
+          // Se nem guardar no aparelho der certo, o erro sobe pro catch e o formulário fica
+          // como está — o piloto não perde o que digitou.
+          await guardarNaFila(item)
+          await atualizarFila()
+          showToast('📥 Sem sinal: a nota ficou guardada no aparelho e sobe sozinha quando a internet voltar')
+        }
+      } else {
+        let foto_url = null
+        if(notaFotoFile){
+          // Mantém a extensão real do arquivo: comprovante em PDF gravado como .jpg não
+          // abre depois, e o contentType errado faz o navegador tentar desenhar o PDF
+          // como imagem e mostrar um quadrado quebrado.
+          const ehPdf = notaFotoFile.type === 'application/pdf' || /\.pdf$/i.test(notaFotoFile.name||'')
+          const path = `despesas/${profile.id}/${Date.now()}.${ehPdf?'pdf':'jpg'}`
+          const {error:upErr} = await supabase.storage.from('relatorios').upload(path,notaFotoFile,{upsert:true,contentType:notaFotoFile.type||undefined})
+          esquecerUrl(path)
+          if(!upErr) foto_url = path
+        }
+        let relatorio_id = null
+        const osDigitada = notaForm.ordem_servico.trim()
+        if(osDigitada){
+          const {data:relMatch} = await supabase.from('relatorios').select('id').ilike('ordem_servico',osDigitada).maybeSingle()
+          if(relMatch) relatorio_id = relMatch.id
+        }
 
-      // Uma nota pode gerar as duas coisas: a viagem em si e as despesas do caminho.
-      if(temViagem) registrar('viagem_registrada',
-        veiculosDB.find(v=>v.id===notaForm.veiculo_id)?.placa || null,
-        { meta: { km: (parseFloat(notaForm.km_final)||0)-(parseFloat(notaForm.km_inicial)||0) } })
-      if(temDespesa) registrar('despesa_lancada', notaForm.categoria || 'Vários itens da viagem')
-      showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
+        // Só lança despesa se categoria+valor foram preenchidos — registrar viagem sem custo é válido
+        if(temDespesa){
+          const {error} = await supabase.from('despesas').insert({
+            piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
+            categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
+            ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
+            veiculo_id:notaForm.veiculo_id||null,
+            forma_pagamento:notaForm.forma_pagamento||null,
+            // Cartão só faz sentido quando o pagamento foi no cartão — guardar "Pix" com um
+            // cartão preenchido atrapalharia a conferência contra a fatura.
+            cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
+            tipo_combustivel:notaForm.categoria==='Combustível' ? (notaForm.tipo_combustivel||null) : null,
+            chave_acesso:notaForm.chave_acesso||null,
+          })
+          if(error) throw error
+        }
+
+        // Se marcou veículo + km, registra a viagem e atualiza o km atual do carro
+        if(temViagem){
+          const kmIni = parseFloat(notaForm.km_inicial)
+          const kmFim = parseFloat(notaForm.km_final)
+          const {error:vErr} = await supabase.from('viagens').insert({
+            veiculo_id: notaForm.veiculo_id, motorista: profile.nome||profile.email, data: notaForm.data,
+            km_inicial: kmIni, km_final: kmFim,
+            ordem_servico: osDigitada||null, relatorio_id, observacao: notaForm.observacao||'Registrado via Cadastro de Notas',
+          })
+          if(vErr) throw vErr
+          await supabase.from('veiculos').update({km_atual: kmFim}).eq('id',notaForm.veiculo_id)
+          setVeiculosDB(vs=>vs.map(v=>v.id===notaForm.veiculo_id?{...v,km_atual:kmFim}:v))
+
+          // Despesas lançadas durante a viagem (gasolina, pedágio, almoço etc.) — uma por item
+          for(const item of notaForm.itensViagem){
+            const valorItem = parseFloat(item.valor)
+            if(!(valorItem>0)) continue
+            const {error:iErr} = await supabase.from('despesas').insert({
+              piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
+              categoria:item.categoria, valor:valorItem, data:notaForm.data,
+              ordem_servico:osDigitada||null, relatorio_id, observacao:'Lançado durante viagem', foto_url,
+              veiculo_id:notaForm.veiculo_id,
+              forma_pagamento:notaForm.forma_pagamento||null,
+              cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
+              tipo_combustivel:item.categoria==='Combustível' ? (item.tipo_combustivel||null) : null,
+            })
+            if(iErr) throw iErr
+          }
+        }
+
+        // Uma nota pode gerar as duas coisas: a viagem em si e as despesas do caminho.
+        if(temViagem) registrar('viagem_registrada',
+          veiculosDB.find(v=>v.id===notaForm.veiculo_id)?.placa || null,
+          { meta: { km: (parseFloat(notaForm.km_final)||0)-(parseFloat(notaForm.km_inicial)||0) } })
+        if(temDespesa) registrar('despesa_lancada', notaForm.categoria || 'Vários itens da viagem')
+        showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
+      }
       setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
       setOsModo('lista')
       setNotaFotoPreview(null); setNotaFotoFile(null); setNotaQr(null); setNotaOcr(null); setNotaSefaz(null)
@@ -2560,7 +2677,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 5px'}}>
             {[
               [null,'icon-novo-voo.png',theme.successBg,'Novo voo','Iniciar operação',()=>{ limpar(true); setView('form') }],
-              ['📋',null,'#e0ecfb','Notas','Ver registros',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
+              ['📋',null,'#e0ecfb','Notas',filaNotas.length?`${filaNotas.length} sem sinal, a enviar`:'Ver registros',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
               ['🌤️',null,'#f3ecfb','Tempo','Previsão detalhada',()=>setView('tempo')],
               ['⚠️',null,theme.dangerBg,'Incidente','Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
               [null,'icon-relatorios.png',theme.successBg,'Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
@@ -3141,7 +3258,11 @@ export default function PilotApp({onSwitchMode}) {
             // Já lancei essa nota? Confere pela chave entre as últimas notas do piloto.
             // É uma checagem parcial de propósito — enquanto a chave não tiver coluna
             // própria, ela mora na observação e só dá pra olhar o que está carregado.
+            // Inclui as guardadas sem sinal: lançar a mesma nota de novo enquanto a primeira
+            // espera a internet seria duplicata do mesmo jeito.
+            const naFila = filaNotas.find(i=>i.despesa.chave_acesso && i.despesa.chave_acesso===notaQr.chave)
             const jaLancada = minhasNotas.find(n=>n.chave_acesso===notaQr.chave || (n.observacao||'').includes(notaQr.chave))
+              || (naFila && {data:naFila.despesa.data, valor:naFila.despesa.valor})
             // O QR atual não traz o dia; quando a SEFAZ responde, o dia vem dela.
             const diaEmissao = notaQr.dataEmissao || (notaSefaz?.ok ? notaSefaz.data : null)
             const temDia = !!diaEmissao
@@ -3503,6 +3624,48 @@ export default function PilotApp({onSwitchMode}) {
           const nMes = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
           return (
         <div>
+          {/* Lançadas sem sinal: ficam no aparelho e sobem sozinhas quando a internet voltar.
+              Ficam fora do total abaixo de propósito — ainda não estão no sistema. */}
+          {filaNotas.length>0 && (
+            <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:16,padding:'12px 14px',marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:800,letterSpacing:.3,color:theme.warningText2||theme.warningText}}>
+                📥 {filaNotas.length===1 ? '1 NOTA GUARDADA NO APARELHO' : `${filaNotas.length} NOTAS GUARDADAS NO APARELHO`}
+              </div>
+              <div style={{fontSize:11,color:theme.textMuted,marginTop:3,lineHeight:1.45}}>
+                Sobem sozinhas quando a internet voltar. Não desinstale o app antes disso.
+              </div>
+              {filaNotas.map(i=>(
+                <div key={i.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,marginTop:9,paddingTop:9,borderTop:`1px solid ${theme.cardBorder2}`}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:600,fontSize:12.5,color:theme.text}}>
+                      {iconeCategoria(i.despesa.categoria)} {i.despesa.categoria} · R$ {Number(i.despesa.valor).toFixed(2)}
+                    </div>
+                    <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:1}}>
+                      {fmtData(i.despesa.data)}{i.foto?' · com foto':''}{i.erro?'':' · aguardando sinal'}
+                    </div>
+                    {i.erro && <div style={{fontSize:10.5,fontWeight:600,marginTop:2,color:theme.warningText2||theme.warningText}}>Não subiu: {i.erro}</div>}
+                  </div>
+                  {i.erro && (
+                    <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
+                      <button onClick={async()=>{ await guardarNaFila({...i, erro:null}); await atualizarFila(); sincronizarFila() }}
+                        style={{background:theme.card,color:'#00A86B',border:'1px solid #00A86B',borderRadius:9,padding:'5px 9px',fontSize:10.5,fontWeight:700,cursor:'pointer'}}>Tentar de novo</button>
+                      <button onClick={()=>setConfirmDialog({
+                          message:`Descartar a nota de ${i.despesa.categoria} (R$ ${Number(i.despesa.valor).toFixed(2)})? Ela não chegou ao sistema e vai ser apagada do aparelho.`,
+                          onConfirm: async()=>{ await removerDaFila(i.id); await atualizarFila() }})}
+                        style={{background:theme.card,color:theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:9,padding:'5px 9px',fontSize:10.5,fontWeight:700,cursor:'pointer'}}>Descartar</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {filaNotas.some(i=>!i.erro) && (
+                <button onClick={()=>{ if(!navigator.onLine){ showToast('Ainda sem internet — a nota sobe sozinha quando o sinal voltar') } else sincronizarFila() }}
+                  style={{width:'100%',marginTop:10,background:'#00A86B',color:'#fff',border:'none',borderRadius:11,padding:'9px',fontSize:12.5,fontWeight:700,cursor:'pointer'}}>
+                  Enviar agora
+                </button>
+              )}
+            </div>
+          )}
+
           <div style={{fontSize:13,fontWeight:700,color:theme.text,marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>Notas Recentes</div>
 
           {/* Total e período, juntos da lista — antes isso só existia na tela Gestão,

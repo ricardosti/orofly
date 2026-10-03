@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.7',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Nota lancada sem sinal fica guardada e sobe sozinha',
+        texto: 'Sem internet no talhao, a nota agora fica guardada no aparelho, com a foto, em vez de dar erro. Ela aparece num quadro amarelo "Guardada no aparelho" e sobe sozinha quando o sinal volta: ao reabrir o app, ao voltar pra ele ou a cada 20 segundos. Tem tambem o botao "Enviar agora". Se o sinal cair no meio do envio, a nota nao entra duplicada. O atalho Notas da tela inicial avisa quantas estao esperando. Se o sistema recusar alguma, ela mostra o motivo e da pra tentar de novo ou descartar.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'A lista de notas nao some mais sem sinal',
+        texto: 'Sem internet, a lista "Notas Recentes" ficava vazia ("Nenhuma nota cadastrada ainda") e parecia que as notas tinham sumido. Agora ela mantem o que ja estava carregado.',
+      },
+    ],
+  },
+  {
     versao: '8.6',
     data: '2026-10-03',
     itens: [
