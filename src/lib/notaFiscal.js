@@ -244,13 +244,23 @@ const NAO_E_O_TOTAL = /SUBTOTAL|TRIBUTO|ITENS|QTDE|QUANTIDADE|TROCO|DESCONTO|ACR
 
 const semAcento = t => String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
 
-// Converte "1.234,56" (e variantes que o OCR produz) em número. Formato brasileiro:
-// ponto é milhar, vírgula é decimal. Trocar os dois seria errar por mil.
+// Converte o que está no papel em número. O formato brasileiro é "1.234,56" — ponto de
+// milhar, vírgula decimal — mas o OCR raramente devolve isso limpo: ele troca a vírgula
+// por ponto, por espaço, ou come o separador. Um cupom real chegou com "TOTAL" legível e
+// o valor ao lado recusado por isso.
+//
+// O que NÃO se aceita: número sem nenhum separador decimal. "3590" tanto pode ser 35,90
+// quanto 3.590,00, e errar por cem no lançamento é pior do que deixar em branco.
 function numeroBr(txt) {
-  const limpo = String(txt||'').replace(/\s/g,'')
-  if (!/^\d{1,3}(\.\d{3})*,\d{2}$|^\d+,\d{2}$/.test(limpo)) return null
-  const n = parseFloat(limpo.replace(/\./g,'').replace(',','.'))
-  return Number.isFinite(n) ? n : null
+  const limpo = String(txt||'').replace(/\s+/g,' ').trim()
+  let m
+  // 1.234,56 — milhar com ponto, decimal com vírgula (o jeito certo)
+  if ((m = /^\d{1,3}(?:\.\d{3})+,\d{2}$/.exec(limpo))) return parseFloat(limpo.replace(/\./g,'').replace(',','.'))
+  // 1,234.56 — milhar com vírgula, decimal com ponto (o OCR às vezes inverte)
+  if ((m = /^\d{1,3}(?:,\d{3})+\.\d{2}$/.exec(limpo))) return parseFloat(limpo.replace(/,/g,''))
+  // 35,90 · 35.90 · 35 90 — dois dígitos depois de um separador qualquer
+  if ((m = /^(\d+)[.,\s](\d{2})$/.exec(limpo))) return parseFloat(`${m[1]}.${m[2]}`)
+  return null
 }
 
 // Teto de sanidade. O OCR confunde vírgula com ponto e transforma 128,90 em 12890;
@@ -295,7 +305,8 @@ export function extrairDaNota(texto) {
   }
 
   // ── Valor total, em três tentativas, da mais confiável pra menos.
-  const numerosDaLinha = (l) => (l.match(/\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}/g) || [])
+  // Aceita vírgula, ponto ou espaço antes dos centavos — o OCR produz os três.
+  const numerosDaLinha = (l) => (l.match(/\d{1,3}(?:[.,]\d{3})+[.,]\d{2}|\d+[.,\s]\d{2}/g) || [])
     .map(numeroBr).filter(v => v !== null && v > 0 && v <= TETO_DESPESA)
 
   // 1) rótulo e número na MESMA linha — o caso bem comportado.
@@ -345,6 +356,12 @@ export function extrairDaNota(texto) {
   if (melhor) achados.valor = melhor.valor
   else if (/TOTAL/.test(semAcento(texto).toUpperCase())) {
     achados.avisos.push('achei a palavra TOTAL mas não um valor legível')
+    // Deixa no console o que o OCR enxergou perto do TOTAL. Sem isso, "não leu" vira
+    // adivinhação — e o formato que o OCR inventa muda de cupom pra cupom.
+    try {
+      const perto = linhas.filter(l => /TOTAL|VALOR|PAGO/.test(l)).slice(0, 6)
+      console.warn('[nota] TOTAL encontrado mas sem valor legível. Linhas lidas:', perto)
+    } catch { /* console indisponível */ }
   }
 
   // ── Data da emissão: prefere a que estiver ao lado de um rótulo de emissão;

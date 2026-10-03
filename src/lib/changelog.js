@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.3',
+    data: '2026-10-03',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'O valor era recusado quando o OCR trocava a virgula',
+        texto: 'A leitura achava a palavra TOTAL mas descartava o numero do lado, porque so aceitava o formato com virgula (35,90). Na pratica o OCR devolve "35.90", "35 90" ou ate o formato invertido, e tudo isso era jogado fora. Agora os quatro formatos sao aceitos. Numero sem separador nenhum (3590) continua recusado de proposito: pode ser 35,90 ou 3.590,00, e errar por cem e pior que deixar em branco.',
+      },
+    ],
+  },
+  {
     versao: '8.2',
     data: '2026-10-03',
     itens: [
