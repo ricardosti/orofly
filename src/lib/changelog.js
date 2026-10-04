@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.1',
+    data: '2026-10-04',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Notas lancadas no visual novo',
+        texto: 'A aba Notas lancadas do app do piloto ganhou o visual do modelo: resumo do mes no topo, grafico de gastos por mes (verde e o que o financeiro ja conferiu, laranja o que falta conferir; tocar num mes escolhe o periodo), categorias com icone e cor, selo de conferencia em cada nota e o botao + para lancar uma nova.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Mais de um combustivel na mesma nota',
+        texto: 'Quando o mesmo cupom tem diesel e gasolina (diesel na picape, gasolina no gerador), o piloto marca os dois tipos de combustivel. Pedido do Pastor.',
+      },
+    ],
+  },
+  {
     versao: '9.0',
     data: '2026-10-04',
     itens: [

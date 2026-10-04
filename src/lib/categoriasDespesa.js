@@ -40,3 +40,9 @@ export const iconeCategoria = (nome) => CATEGORIA_ICON[nome] || '🧾'
 // camionete e gasolina pro gerador ou pro drone, e sem separar não dá pra saber quanto
 // cada um consome.
 export const TIPOS_COMBUSTIVEL = ['Diesel', 'Gasolina', 'Etanol', 'Arla']
+
+// Mais de um tipo na mesma nota — pedido do Pastor (04/10/2026): no mesmo cupom o piloto põe
+// diesel na picape e gasolina no gerador. Fica tudo no mesmo campo, "Diesel + Gasolina",
+// sempre na ordem da lista acima (assim "Gasolina + Diesel" não vira um tipo à parte).
+export const tiposDoCombustivel = texto => String(texto || '').split('+').map(t => t.trim()).filter(Boolean)
+export const juntarCombustiveis = tipos => TIPOS_COMBUSTIVEL.filter(t => tipos.includes(t)).join(' + ')

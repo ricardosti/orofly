@@ -19,7 +19,7 @@ import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
 import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente } from '../lib/filaDespesas'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
-import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL } from '../lib/categoriasDespesa'
+import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
@@ -771,6 +771,8 @@ export default function PilotApp({onSwitchMode}) {
   const [notasAba,setNotasAba] = useState('nova')
   // Mês da lista de notas lançadas ('aaaa-mm', ou 'todos'). Começa no mês corrente.
   const [notaMes,setNotaMes] = useState(()=>hojeISO().slice(0,7))
+  // Quantos meses o gráfico "Gastos por mês" mostra.
+  const [notaGrafMeses,setNotaGrafMeses] = useState(6)
   // Nota aberta pelo "⋮": detalhes e comprovante.
   const [notaDetalhe,setNotaDetalhe] = useState(null)
   const [gestaoPeriodo,setGestaoPeriodo] = useState('mes') // 'mes' | '30' | 'tudo'
@@ -3168,7 +3170,7 @@ export default function PilotApp({onSwitchMode}) {
         <div style={{display:'flex',background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:16,padding:4,gap:4}}>
           {[['nova','Nova Despesa'],['lancadas','Notas lançadas']].map(([v,lbl])=>(
             <button key={v} onClick={()=>setNotasAba(v)}
-              style={{flex:1,background:notasAba===v?theme.successBg:'transparent',color:notasAba===v?theme.text:theme.textMuted,
+              style={{flex:1,background:notasAba===v?theme.successBg:'transparent',color:notasAba===v?'#138A55':theme.textMuted,
                 border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:notasAba===v?700:600,cursor:'pointer'}}>
               {lbl}{v==='lancadas' && filaNotas.length>0 ? ` · ${filaNotas.length} 📥` : ''}
             </button>
@@ -3569,20 +3571,32 @@ export default function PilotApp({onSwitchMode}) {
           {/* Tipo de combustível — só aparece quando a categoria é Combustível. O mesmo
               abastecimento leva diesel pra camionete e gasolina pro gerador ou pro drone,
               e sem separar não dá pra saber quanto cada um consome. */}
-          {notaForm.categoria==='Combustível' && (
+          {/* Pode marcar mais de um: no mesmo cupom vai diesel pra picape e gasolina pro
+              gerador (pedido do Pastor). Grava "Diesel + Gasolina" no mesmo campo. */}
+          {notaForm.categoria==='Combustível' && (()=>{
+            const marcados = tiposDoCombustivel(notaForm.tipo_combustivel)
+            return (
             <>
               <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:6,fontFamily:"'Poppins',sans-serif"}}>TIPO DE COMBUSTÍVEL</div>
-              <div style={{display:'flex',gap:7,marginBottom:14,flexWrap:'wrap'}}>
-                {TIPOS_COMBUSTIVEL.map(t=>(
-                  <button key={t} onClick={()=>setNotaForm(f=>({...f,tipo_combustivel: f.tipo_combustivel===t?'':t}))}
-                    style={{flex:'1 1 70px',background: notaForm.tipo_combustivel===t?'#00A86B':theme.card,
-                      color: notaForm.tipo_combustivel===t?'#fff':theme.textMuted,
-                      border:`1px solid ${notaForm.tipo_combustivel===t?'#00A86B':theme.cardBorder2}`,
-                      borderRadius:12,padding:'10px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}>{t}</button>
-                ))}
+              <div style={{display:'flex',gap:7,marginBottom:6,flexWrap:'wrap'}}>
+                {TIPOS_COMBUSTIVEL.map(t=>{
+                  const marcado = marcados.includes(t)
+                  return (
+                    <button key={t} onClick={()=>setNotaForm(f=>{
+                        const atuais = tiposDoCombustivel(f.tipo_combustivel)
+                        return {...f, tipo_combustivel: juntarCombustiveis(atuais.includes(t) ? atuais.filter(x=>x!==t) : [...atuais, t])}
+                      })}
+                      style={{flex:'1 1 70px',background: marcado?'#00A86B':theme.card,
+                        color: marcado?'#fff':theme.textMuted,
+                        border:`1px solid ${marcado?'#00A86B':theme.cardBorder2}`,
+                        borderRadius:12,padding:'10px 6px',fontSize:12,fontWeight:700,cursor:'pointer'}}>{t}</button>
+                  )
+                })}
               </div>
+              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:14}}>Pode marcar mais de um — ex.: diesel na picape e gasolina no gerador.</div>
             </>
-          )}
+            )
+          })()}
 
           {/* Forma de pagamento. O piloto paga na hora, com cartão da empresa — isto não é
               "a pagar", é o registro de COMO saiu, pro financeiro bater com a fatura. */}
@@ -3631,7 +3645,8 @@ export default function PilotApp({onSwitchMode}) {
 
         </>)}
 
-        {/* Notas lançadas — no layout do modelo: total do mês, categorias, mês e a lista. */}
+        {/* Notas lançadas — no modelo que o Ricardo mandou (04/10/2026): resumo do mês, gráfico
+            de gastos por mês, categorias com cor, período e a lista. */}
         {notasAba==='lancadas' && (()=>{
           // Mês da nota pela data da despesa; nota sem data cai no mês em que foi lançada
           // (sem isso ela só apareceria em "Todos os meses").
@@ -3644,8 +3659,9 @@ export default function PilotApp({onSwitchMode}) {
             const t = new Date(a, m-1, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})
             return t.charAt(0).toUpperCase() + t.slice(1)
           }
+          const mesAtual = hojeISO().slice(0,7)
           // Meses que têm nota, mais o corrente — mesmo vazio, é o que o piloto procura primeiro.
-          const meses = [...new Set([hojeISO().slice(0,7), ...minhasNotas.map(chaveMes).filter(Boolean)])].sort().reverse()
+          const meses = [...new Set([mesAtual, ...minhasNotas.map(chaveMes).filter(Boolean)])].sort().reverse()
           const doPeriodo = minhasNotas.filter(n => notaMes==='todos' || chaveMes(n)===notaMes)
           const notasVisiveis = doPeriodo.filter(n=>notaFiltroCat==='todas' || n.categoria===notaFiltroCat)
           const totalVisivel = notasVisiveis.reduce((a,n)=>a+(parseFloat(n.valor)||0),0)
@@ -3653,7 +3669,7 @@ export default function PilotApp({onSwitchMode}) {
           // botões num celular, com 6 deles zerados, é ruído.
           const catsNoPeriodo = [...new Set(doPeriodo.map(n=>n.categoria).filter(Boolean))]
           const nMes = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
-          const VERDE = '#00A86B'
+          const VERDE = '#16A05D', VERDE_BARRA = '#3DC285', LARANJA = '#FA7B52'
           const subtitulo = n => n.observacao || (n.ordem_servico ? `OS ${n.ordem_servico}` : '')
             || (n.veiculo_id ? `🚗 ${veiculosDB.find(v=>v.id===n.veiculo_id)?.placa||''}` : '') || n.forma_pagamento || ''
           const iconeCalendario = (cor, t = 15) => (
@@ -3661,10 +3677,57 @@ export default function PilotApp({onSwitchMode}) {
               <rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>
             </svg>
           )
+          const seta = (cor, t = 15) => (
+            <svg width={t} height={t} viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          )
+          // Selo da conferência do financeiro — o "Pago"/"Pendente" do modelo (o banco não
+          // guarda pagamento; a conferência é o que existe, e o Ricardo aprovou assim).
+          const selo = conferido => (
+            <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,fontWeight:600,borderRadius:20,padding:'3px 9px 3px 5px',whiteSpace:'nowrap',
+              background: conferido ? '#E3F7EC' : '#FFF1E4', color: conferido ? '#138A55' : '#D9700A'}}>
+              {conferido
+                ? <svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill={VERDE}/><path d="M7 12.4l3.3 3.3L17 9" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F08A1C" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="9.5"/><path d="M12 7v5.3l3.3 2"/></svg>}
+              {conferido ? 'Conferido' : 'A conferir'}
+            </span>
+          )
+
+          // Gráfico: os últimos N meses até o atual, com o que o financeiro já conferiu (verde)
+          // e o que ainda falta conferir (laranja). O modelo tinha "Recebido × Gasto", mas o
+          // banco não guarda dinheiro recebido pelo piloto — por isso as duas cores contam a
+          // conferência, o mesmo critério do selo de cada nota.
+          const ABREV = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
+          const [anoAtual, numMesAtual] = mesAtual.split('-').map(Number)
+          const grafico = Array.from({length:notaGrafMeses}, (_, i) => {
+            const d = new Date(anoAtual, numMesAtual - 1 - (notaGrafMeses - 1 - i), 1)
+            const k = isoLocal(d).slice(0,7)
+            const doMes = minhasNotas.filter(n => chaveMes(n) === k)
+            const soma = l => l.reduce((a,n)=>a+(parseFloat(n.valor)||0),0)
+            return { k, rotulo: ABREV[d.getMonth()], conferido: soma(doMes.filter(n=>n.conferido)), aConferir: soma(doMes.filter(n=>!n.conferido)) }
+          })
+          const maior = Math.max(0, ...grafico.flatMap(g => [g.conferido, g.aConferir]))
+          // Escala redonda em três faixas (0 · 1.000 · 2.000 · 3.000), como no modelo.
+          const passo = (() => {
+            if (maior <= 0) return 1
+            const bruto = maior / 3, pot = 10 ** Math.floor(Math.log10(bruto)), m = bruto / pot
+            return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * pot
+          })()
+          const ALTURA = 112, FOLGA = 18     // px das barras; folga em cima pro número da maior
+          // Com 12 meses não cabe número em toda barra num celular: fica só no mês escolhido.
+          const comNumero = g => notaGrafMeses <= 6 || g.k === notaMes
+          const nBarra = v => Math.round(v).toLocaleString('pt-BR')
+          const tamValor = nMes(totalVisivel).length > 8 ? 16 : nMes(totalVisivel).length > 6 ? 18 : 21
           return (
         <div>
-          <div style={{fontSize:11.5,color:theme.textFaint2,fontWeight:600}}>🧾 Financeiro</div>
-          <div style={{fontSize:22,fontWeight:800,color:theme.text,fontFamily:"'Poppins',sans-serif",margin:'2px 0 12px'}}>Notas lançadas</div>
+          <div style={{display:'flex',alignItems:'center',gap:6,fontSize:12.5,color:theme.textMuted,fontWeight:600}}>
+            <svg width="16" height="16" viewBox="0 0 24 24" style={{flexShrink:0}}>
+              <path d="M5 6.5 15.6 3.3l1.2 3.2" fill="none" stroke={theme.textMuted} strokeWidth="2" strokeLinejoin="round"/>
+              <rect x="2.5" y="6.5" width="19" height="14" rx="2.6" fill={theme.textMuted}/>
+              <rect x="14.6" y="11.3" width="7" height="4.4" rx="1.6" fill={theme.card}/>
+            </svg>
+            Financeiro
+          </div>
+          <div style={{fontSize:24,fontWeight:800,color:theme.text,fontFamily:"'Poppins',sans-serif",margin:'2px 0 12px'}}>Notas lançadas</div>
 
           {/* Lançadas sem sinal: ficam no aparelho e sobem sozinhas quando a internet voltar.
               Ficam fora do total abaixo de propósito — ainda não estão no sistema. */}
@@ -3708,44 +3771,126 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           )}
 
-          {/* Total do mês. O valor vai sem "R$" (o rótulo já diz "em R$") e nunca quebra de
-              linha; se num celular estreito não couber ao lado do mês, o mês desce. */}
-          <div style={{background:theme.successBg,border:'1px solid rgba(0,168,107,.22)',borderRadius:18,padding:14,marginBottom:12,
-            display:'flex',alignItems:'center',flexWrap:'wrap',columnGap:10,rowGap:10}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,flex:'1 1 auto',minWidth:0}}>
-              <span style={{width:42,height:42,borderRadius:'50%',background:VERDE,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.4A9 9 0 0 1 20.6 9H15z"/>
+          {/* Resumo do mês. O lado esquerdo parte de 140 px (o rótulo pode quebrar, o valor
+              não), o que deixa o mês do lado até em celular de 360 px; mais estreito que isso,
+              o mês desce pra linha de baixo. */}
+          <div style={{background:'#EFFAF4',border:'1px solid #CBEBD9',borderRadius:20,padding:'14px 12px',marginBottom:12,
+            display:'flex',alignItems:'center',flexWrap:'wrap',columnGap:8,rowGap:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,flex:'1 1 140px',minWidth:0}}>
+              <span style={{width:42,height:42,borderRadius:'50%',background:'#D3F1E1',display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <svg width="22" height="22" viewBox="0 0 24 24">
+                  <path d="M11.5 12.5V4A8.5 8.5 0 1 0 20 12.5Z" fill={VERDE}/>
+                  <path d="M12.9 11.1V2.6A8.5 8.5 0 0 1 21.4 11.1Z" fill={VERDE} opacity=".72"/>
                 </svg>
               </span>
               <div style={{minWidth:0}}>
-                <div style={{fontSize:11,color:theme.textMuted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                  {notaFiltroCat!=='todas' ? `${iconeCategoria(notaFiltroCat)} ${notaFiltroCat} em R$` : notaMes==='todos' ? 'Total em R$' : 'Total do mês em R$'}
+                <div style={{fontSize:11,color:theme.textMuted,fontWeight:500,lineHeight:1.3}}>
+                  {notaFiltroCat!=='todas' ? `${notaFiltroCat} em R$` : notaMes==='todos' ? 'Total em R$' : 'Total do mês em R$'}
                 </div>
-                <div style={{fontSize:22,fontWeight:800,color:theme.text,fontFamily:"'Poppins',sans-serif",lineHeight:1.15,whiteSpace:'nowrap'}}>{nMes(totalVisivel)}</div>
+                <div style={{fontSize:tamValor,fontWeight:800,color:VERDE,fontFamily:"'Poppins',sans-serif",lineHeight:1.2,whiteSpace:'nowrap'}}>
+                  <span style={{fontSize:Math.round(tamValor*.64)}}>R$ </span>{nMes(totalVisivel)}
+                </div>
               </div>
             </div>
-            <div style={{borderLeft:'1px solid rgba(0,168,107,.25)',paddingLeft:10,flex:'0 0 auto'}}>
-              <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap'}}>
-                {iconeCalendario(VERDE,14)}{notaMes==='todos' ? 'Todos os meses' : nomeMes(notaMes)}
-              </div>
-              <div style={{fontSize:11,color:theme.textMuted,marginTop:2,whiteSpace:'nowrap'}}>
-                {notasVisiveis.length} {notasVisiveis.length===1?'nota lançada':'notas lançadas'}
+            <div style={{display:'flex',alignItems:'center',gap:6,borderLeft:'1px solid #CBEBD9',paddingLeft:9,flex:'0 0 auto'}}>
+              {iconeCalendario(VERDE,18)}
+              <div>
+                <div style={{fontSize:12,fontWeight:600,color:theme.text,whiteSpace:'nowrap'}}>{notaMes==='todos' ? 'Todos os meses' : nomeMes(notaMes)}</div>
+                <div style={{fontSize:11,color:theme.textMuted,marginTop:1,whiteSpace:'nowrap'}}>
+                  {notasVisiveis.length} {notasVisiveis.length===1?'nota lançada':'notas lançadas'}
+                </div>
               </div>
             </div>
           </div>
 
+          {/* Gastos por mês. Tocar num mês escolhe o período lá embaixo. */}
+          <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:20,padding:'14px 14px 10px',marginBottom:12,boxShadow:'0 2px 10px rgba(11,18,16,.04)'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8}}>
+              <div style={{fontSize:15,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>Gastos por mês</div>
+              <div style={{position:'relative',flexShrink:0}}>
+                <select value={notaGrafMeses} onChange={e=>setNotaGrafMeses(Number(e.target.value))}
+                  style={{appearance:'none',WebkitAppearance:'none',border:'none',background:'transparent',color:theme.textMuted,
+                    fontSize:12,fontWeight:600,padding:'4px 20px 4px 4px',cursor:'pointer',outline:'none'}}>
+                  {[3,6,12].map(n=><option key={n} value={n}>Últimos {n} meses</option>)}
+                </select>
+                <span style={{position:'absolute',right:2,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'flex'}}>{seta(theme.textMuted,14)}</span>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:14,fontSize:11.5,color:theme.textMuted,margin:'4px 0 8px'}}>
+              {[[VERDE_BARRA,'Conferido'],[LARANJA,'A conferir']].map(([c,l])=>(
+                <span key={l} style={{display:'inline-flex',alignItems:'center',gap:6}}><span style={{width:9,height:9,borderRadius:'50%',background:c}}/>{l}</span>
+              ))}
+            </div>
+            {maior<=0 ? (
+              <div style={{textAlign:'center',fontSize:12.5,color:theme.textMuted,padding:'26px 0'}}>Nenhuma nota nos últimos {notaGrafMeses} meses</div>
+            ) : (
+              <div style={{display:'flex',gap:6}}>
+                <div style={{position:'relative',width:30,height:ALTURA+FOLGA,flexShrink:0}}>
+                  {[0,1,2,3].map(i=>(
+                    <div key={i} style={{position:'absolute',right:0,bottom:i*ALTURA/3-6,fontSize:10,lineHeight:'12px',color:theme.textFaint2}}>
+                      {(passo*i).toLocaleString('pt-BR',{maximumFractionDigits:1})}
+                    </div>
+                  ))}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{position:'relative',height:ALTURA+FOLGA}}>
+                    {[0,1,2,3].map(i=>(
+                      <div key={i} style={{position:'absolute',left:0,right:0,bottom:i*ALTURA/3,borderTop:`1px ${i===0?'solid':'dashed'} ${theme.cardBorder}`}}/>
+                    ))}
+                    <div style={{position:'absolute',inset:0,display:'flex'}}>
+                      {grafico.map(g=>{
+                        const escolhido = g.k===notaMes
+                        const hC = g.conferido/(passo*3)*ALTURA, hA = g.aConferir/(passo*3)*ALTURA
+                        // Números das duas barras na mesma altura se atropelam: o da mais alta sobe.
+                        const perto = g.conferido>0 && g.aConferir>0 && Math.abs(hC-hA) < 13
+                        const barra = (v, h, cor, sobe) => (
+                          <div style={{width:'34%',maxWidth:24,height:'100%',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end'}}>
+                            {v>0 && comNumero(g) && (
+                              <div style={{fontSize:9.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap',marginBottom:sobe?13:2}}>{nBarra(v)}</div>
+                            )}
+                            {v>0 && <div style={{width:'100%',height:Math.max(3,h),background:cor,borderRadius:'5px 5px 2px 2px'}}/>}
+                          </div>
+                        )
+                        return (
+                          <div key={g.k} onClick={()=>{ setNotaMes(g.k); setNotaFiltroCat('todas') }}
+                            style={{flex:1,height:'100%',display:'flex',alignItems:'flex-end',justifyContent:'center',gap:3,cursor:'pointer',
+                              borderRadius:8,background: escolhido ? 'rgba(22,160,93,.07)' : 'transparent'}}>
+                            {barra(g.conferido, hC, VERDE_BARRA, perto && hC>=hA)}
+                            {barra(g.aConferir, hA, LARANJA, perto && hA>hC)}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div style={{display:'flex',marginTop:5}}>
+                    {grafico.map(g=>(
+                      <div key={g.k} onClick={()=>{ setNotaMes(g.k); setNotaFiltroCat('todas') }}
+                        style={{flex:1,textAlign:'center',fontSize:11,cursor:'pointer',
+                          fontWeight: g.k===notaMes ? 700 : 500, color: g.k===notaMes ? VERDE : theme.textMuted}}>{g.rotulo}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Categorias */}
           {catsNoPeriodo.length>0 && (
-            <div style={{display:'flex',gap:7,overflowX:'auto',marginBottom:12,paddingBottom:2}}>
+            <div style={{display:'flex',gap:8,overflowX:'auto',marginBottom:12,paddingBottom:3,scrollbarWidth:'none'}}>
               {['todas',...catsNoPeriodo].map(cat=>{
                 const ativo = notaFiltroCat===cat
                 return (
                   <button key={cat} onClick={()=>setNotaFiltroCat(cat)}
-                    style={{background: ativo?'#0B7A50':theme.card, color: ativo?'#fff':theme.text,
-                      border:`1px solid ${ativo?'#0B7A50':theme.cardBorder2}`, borderRadius:20, padding:'7px 13px',
-                      fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0}}>
-                    {cat==='todas' ? 'Todas' : `${iconeCategoria(cat)} ${cat}`}
+                    style={{display:'inline-flex',alignItems:'center',gap:8,background: ativo?VERDE:theme.card, color: ativo?'#fff':theme.text,
+                      border:`1px solid ${ativo?VERDE:theme.cardBorder2}`, borderRadius:22, padding: cat==='todas'?'9px 20px':'5px 14px 5px 5px',
+                      fontSize:12.5, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0}}>
+                    {cat!=='todas' && (
+                      <span style={{width:26,height:26,borderRadius:8,background: ativo?'rgba(255,255,255,.22)':estiloCategoria(cat).fundo,
+                        display:'inline-flex',alignItems:'center',justifyContent:'center'}}>
+                        <IconeCategoria nome={cat} tam={16} cor={ativo?'#fff':undefined} fundo={ativo?'#49B581':undefined}/>
+                      </span>
+                    )}
+                    {cat==='todas' ? 'Todas' : cat}
                   </button>
                 )
               })}
@@ -3753,17 +3898,17 @@ export default function PilotApp({onSwitchMode}) {
           )}
 
           {/* Período */}
-          <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:16,padding:'10px 12px',marginBottom:12}}>
-            <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,letterSpacing:.5,marginBottom:6}}>PERÍODO</div>
+          <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:18,padding:'10px 12px 12px',marginBottom:12}}>
+            <div style={{fontSize:10.5,fontWeight:700,color:theme.textFaint2,letterSpacing:.5,marginBottom:6}}>PERÍODO</div>
             <div style={{position:'relative'}}>
-              <span style={{position:'absolute',left:11,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'flex'}}>{iconeCalendario(theme.text,16)}</span>
+              <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'flex'}}>{iconeCalendario(theme.text,17)}</span>
               <select value={notaMes} onChange={e=>{ setNotaMes(e.target.value); setNotaFiltroCat('todas') }}
                 style={{width:'100%',appearance:'none',WebkitAppearance:'none',border:`1px solid ${theme.cardBorder2}`,borderRadius:12,
-                  padding:'10px 34px 10px 36px',fontSize:13.5,fontWeight:600,background:theme.inputBg,color:theme.text,outline:'none',cursor:'pointer'}}>
+                  padding:'11px 36px 11px 38px',fontSize:13.5,fontWeight:600,background:theme.inputBg,color:theme.text,outline:'none',cursor:'pointer'}}>
                 {meses.map(k=><option key={k} value={k}>{nomeMes(k)}</option>)}
                 <option value="todos">Todos os meses</option>
               </select>
-              <span style={{position:'absolute',right:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:theme.textMuted,fontSize:12}}>▾</span>
+              <span style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'flex'}}>{seta(theme.text,17)}</span>
             </div>
           </div>
 
@@ -3776,33 +3921,40 @@ export default function PilotApp({onSwitchMode}) {
             {notaMes!=='todos' && doPeriodo.length===0 && <div style={{fontSize:12,color:theme.textFaint2}}>As anteriores estão nos outros meses, em PERÍODO.</div>}
           </div>
           :notasVisiveis.map(n=>(
-            <div key={n.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:'12px 6px 12px 12px',marginBottom:9,
-              display:'flex',alignItems:'center',gap:11,boxShadow:'0 2px 10px rgba(11,18,16,.04)'}}>
-              <span style={{width:46,height:46,borderRadius:14,background:theme.successBg,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>
-                {iconeCategoria(n.categoria)}
+            <div key={n.id} style={{background:theme.card,borderRadius:18,border:`1px solid ${theme.cardBorder}`,padding:'12px 2px 12px 12px',marginBottom:10,
+              display:'flex',alignItems:'center',gap:10,boxShadow:'0 2px 10px rgba(11,18,16,.04)'}}>
+              <span style={{width:48,height:48,borderRadius:15,background:estiloCategoria(n.categoria).fundo,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <IconeCategoria nome={n.categoria} tam={24}/>
               </span>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:14,color:theme.text}}>{n.categoria}</div>
+                <div style={{fontWeight:700,fontSize:14.5,color:theme.text}}>{n.categoria}</div>
                 {subtitulo(n) && (
-                  <div style={{fontSize:11.5,color:theme.textMuted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{subtitulo(n)}</div>
+                  <div style={{fontSize:12,color:theme.textMuted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{subtitulo(n)}</div>
                 )}
-                <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:theme.textFaint2,marginTop:3}}>
-                  {iconeCalendario(theme.textFaint2,12)}{fmtData(n.data)}
+                <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:theme.textMuted,marginTop:4}}>
+                  {iconeCalendario(theme.textMuted,13)}{fmtData(n.data)}
                 </div>
               </div>
-              <div style={{textAlign:'right',flexShrink:0}}>
-                <div style={{fontWeight:800,fontSize:14.5,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>R$ {nMes(parseFloat(n.valor)||0)}</div>
-                {/* "Conferido" é a conferência do financeiro (despesas.conferido) — o que
-                    existe no sistema; "pago" não é registrado em lugar nenhum. */}
-                <span style={{display:'inline-flex',alignItems:'center',gap:3,marginTop:4,fontSize:10.5,fontWeight:700,borderRadius:20,padding:'3px 8px',
-                  background:n.conferido?theme.successBg:theme.bg, color:n.conferido?VERDE:theme.textMuted}}>
-                  {n.conferido ? '✓ Conferido' : 'A conferir'}
-                </span>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6,flexShrink:0}}>
+                <div style={{fontWeight:800,fontSize:15,color:theme.text,fontFamily:"'Poppins',sans-serif",whiteSpace:'nowrap'}}>R$ {nMes(parseFloat(n.valor)||0)}</div>
+                {selo(n.conferido)}
               </div>
+              <div style={{alignSelf:'stretch',width:1,background:theme.divider,margin:'6px 0',flexShrink:0}}/>
               <button onClick={()=>setNotaDetalhe(n)} aria-label="Detalhes da nota"
-                style={{background:'none',border:'none',padding:'8px 6px',cursor:'pointer',color:theme.textMuted,fontSize:19,lineHeight:1,flexShrink:0}}>⋮</button>
+                style={{background:'none',border:'none',padding:'10px 7px',cursor:'pointer',display:'flex',flexShrink:0}}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill={theme.text}><circle cx="12" cy="5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="19" r="2.1"/></svg>
+              </button>
             </div>
           ))}
+
+          {/* "+" do modelo: volta pra aba Nova Despesa. Mesmo lugar e tamanho do botão do
+              assistente na tela inicial. A folga embaixo impede que ele cubra a última nota. */}
+          <div style={{height:64}}/>
+          <button onClick={()=>{ setNotasAba('nova'); window.scrollTo(0,0) }} aria-label="Lançar nova nota"
+            style={{position:'fixed',right:16,bottom:86,zIndex:60,width:56,height:56,borderRadius:'50%',background:'linear-gradient(135deg,#1DB46A,#138A55)',
+              border:'none',boxShadow:'0 8px 20px rgba(22,160,93,0.4)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
         </div>
           )
         })()}
@@ -3816,8 +3968,8 @@ export default function PilotApp({onSwitchMode}) {
         <div style={s.modalOverlay} onClick={()=>setNotaDetalhe(null)}>
           <div style={{...s.modal,background:theme.card}} onClick={e=>e.stopPropagation()}>
             <div style={{display:'flex',alignItems:'center',gap:11,marginBottom:14}}>
-              <span style={{width:46,height:46,borderRadius:14,background:theme.successBg,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>
-                {iconeCategoria(notaDetalhe.categoria)}
+              <span style={{width:46,height:46,borderRadius:14,background:estiloCategoria(notaDetalhe.categoria).fundo,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <IconeCategoria nome={notaDetalhe.categoria} tam={23}/>
               </span>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontWeight:700,fontSize:15,color:theme.text}}>{notaDetalhe.categoria}</div>
@@ -6176,6 +6328,73 @@ Quando: ${tempoErroDebug.quando}`}
       {toast&&<div style={s.toast}>{toast}</div>}
     </div>
   )
+}
+
+// Cor e ícone de cada categoria de despesa, do modelo da tela de notas (04/10/2026). As
+// categorias antigas (Almoço, Gasolina) usam o visual da que as substituiu.
+const ESTILO_CATEGORIA = {
+  'Combustível': { cor:'#16A05D', fundo:'#E3F7EC', icone:'combustivel' },
+  'Gasolina':    { cor:'#16A05D', fundo:'#E3F7EC', icone:'combustivel' },
+  'Alimentação': { cor:'#F08A1C', fundo:'#FFF1E0', icone:'alimentacao' },
+  'Almoço':      { cor:'#F08A1C', fundo:'#FFF1E0', icone:'alimentacao' },
+  'Hotel':       { cor:'#2F7FEA', fundo:'#E8F1FE', icone:'hotel' },
+  'Pedágio':     { cor:'#0E9C96', fundo:'#E0F5F3', icone:'pedagio' },
+  'Manutenção':  { cor:'#9A4FDF', fundo:'#F3EAFD', icone:'manutencao' },
+  'Peças':       { cor:'#4D5BD6', fundo:'#ECEEFC', icone:'pecas' },
+  'Ferramentas': { cor:'#C7511F', fundo:'#FCEDE5', icone:'ferramentas' },
+  'Outros':      { cor:'#6B7A8C', fundo:'#EEF1F4', icone:'outros' },
+}
+function estiloCategoria(nome) {
+  return ESTILO_CATEGORIA[nome] || { cor:'#6B7A8C', fundo:'#EEF1F4', icone:'nota' }
+}
+
+// Ícone desenhado (não emoji) da categoria. `fundo` pinta os "furos" do desenho — a janela
+// da bomba, o centro da engrenagem —, que precisam ter a cor do quadrado atrás.
+function IconeCategoria({ nome, tam = 22, cor, fundo }) {
+  const e = estiloCategoria(nome)
+  const c = cor || e.cor, f = fundo || e.fundo
+  const traco = { fill:'none', stroke:c, strokeWidth:2.2, strokeLinecap:'round', strokeLinejoin:'round' }
+  const desenhos = {
+    combustivel: <>
+      <path d="M4 4.5A2.5 2.5 0 0 1 6.5 2h5A2.5 2.5 0 0 1 14 4.5V21H4z" fill={c}/>
+      <rect x="6.3" y="4.6" width="5.4" height="4.4" rx="1" fill={f}/>
+      <path d="M2.5 21.2h13" {...traco}/>
+      <path d="M14 11.5h1.6a1.9 1.9 0 0 1 1.9 1.9v3.4a1.6 1.6 0 0 0 3.2 0V8.6L17.8 5.6" {...traco}/>
+    </>,
+    alimentacao: <>
+      <path d="M5 2.5v5.2a3 3 0 0 0 6 0V2.5M8 2.5v19" {...traco}/>
+      <path d="M19.5 2.2c-2.7.6-4.6 3.5-4.6 7.3v4.3h2.6v7.7h2z" fill={c}/>
+    </>,
+    hotel: <>
+      <path d="M2.8 5v15M21.2 13.5V20" {...traco}/>
+      <rect x="2.8" y="12.6" width="18.4" height="4.6" rx="1" fill={c}/>
+      <rect x="4.6" y="8.4" width="5.2" height="3.3" rx="1.6" fill={c}/>
+      <path d="M11 8.4h6.4a3.8 3.8 0 0 1 3.8 3.8v.4H11z" fill={c}/>
+    </>,
+    pedagio: <>
+      <path d="M8.5 3 4.5 21M15.5 3l4 18" {...traco}/>
+      <path d="M12 4v2.6M12 10.4v3.2M12 17.4v3.2" {...traco}/>
+    </>,
+    manutencao: <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.4-3.4a6 6 0 0 1-7.6 7.6l-6.6 6.6a2.1 2.1 0 0 1-3-3l6.6-6.6a6 6 0 0 1 7.6-7.6z"
+      fill={c} stroke={c} strokeWidth="1.2" strokeLinejoin="round"/>,
+    pecas: <>
+      {[0,45,90,135,180,225,270,315].map(a=><rect key={a} x="10.3" y="1.6" width="3.4" height="4.6" rx="1" fill={c} transform={`rotate(${a} 12 12)`}/>)}
+      <circle cx="12" cy="12" r="6.6" fill={c}/>
+      <circle cx="12" cy="12" r="2.6" fill={f}/>
+    </>,
+    ferramentas: <>
+      <path d="M13.6 10.4 3.9 20.1" {...traco} strokeWidth="2.8"/>
+      <path d="M9.9 7.1 14.1 2.9l6.9 6.9-4.2 4.2z" fill={c}/>
+    </>,
+    outros: <>
+      <circle cx="5" cy="12" r="2.1" fill={c}/><circle cx="12" cy="12" r="2.1" fill={c}/><circle cx="19" cy="12" r="2.1" fill={c}/>
+    </>,
+    nota: <>
+      <path d="M5.5 2.5h13v19l-3.2-2-3.3 2-3.3-2-3.2 2z" fill={c}/>
+      <path d="M9 8h6M9 12h6" stroke={f} strokeWidth="1.8" strokeLinecap="round"/>
+    </>,
+  }
+  return <svg width={tam} height={tam} viewBox="0 0 24 24" style={{display:'block',flexShrink:0}}>{desenhos[e.icone]}</svg>
 }
 
 // Componente para mostrar foto do Storage no PilotApp
