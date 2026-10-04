@@ -1002,17 +1002,18 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, totais = nu
     area:a.area+(l.area||0), realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0),
   }), { talhoes:0, tocados:0, area:0, realizado:0, emAberto:0 })
   const geral = { ...somado, drones: totais?.drones ?? new Set(linhas.flatMap(l=>l.pilotos||[])).size }
-  const pctGeral = totais ? totais.pct : (geral.area > 0 ? Math.min(100,(geral.realizado/geral.area)*100) : 0)
+  const totalCampanha = totais?.cobertoTotal ?? linhas.reduce((a,l)=>a+Math.min(l.realizadoTotal||0,l.area||0),0)
+  const pctGeral = totais ? totais.pct : (geral.area > 0 ? Math.min(100,(totalCampanha/geral.area)*100) : 0)
   const porStatus = st => linhas.filter(l=>l.statusCodigo===st).reduce((a,l)=>a+(l.area||0),0)
 
   const cards = [
     ['TOTAL DE HECTARES', nHa(totais?.area ?? geral.area), 'hectares'],
     ['EM EXECUÇÃO', nHa(totais?.areaExecucao ?? porStatus('executando')), 'hectares'],
     ['FINALIZADOS', nHa(totais?.areaFinalizada ?? porStatus('concluida')), 'hectares'],
-    ['HA REALIZADOS', nHa(totais?.coberto ?? geral.realizado), 'hectares'],
+    ['NO PERÍODO', nHa(totais?.coberto ?? geral.realizado), 'hectares feitos'],
     ['NA SEQUÊNCIA', nHa(totais?.areaSequencia ?? porStatus('sequencia')), 'hectares'],
     ['DRONES', String(geral.drones), 'em operação'],
-    ['PROGRESSO', `${Math.floor(pctGeral)}%`, 'dos hectares'],
+    ['PROGRESSO', `${Math.floor(pctGeral)}%`, 'total da campanha'],
   ]
   const wc = (CW - 6*3) / 7
   cards.forEach(([lbl,val,sub],i)=>{
@@ -1031,16 +1032,19 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, totais = nu
   y += 7
 
   // Larguras: fazenda e cliente ficam com o espaço que sobra, os números com o que precisam.
+  // "NO PERÍODO" é o que entrou na janela escolhida; "TOTAL", "FALTA", "%" e o status são
+  // da campanha da fazenda inteira — a fazenda que terminou nos últimos dias aparece pronta.
   const COLS = [
-    ['FAZENDA',    CW*0.23, 'l'],
-    ['CLIENTE',    CW*0.13, 'l'],
-    ['TALHÕES',    CW*0.08, 'r'],
-    ['DRONES',     CW*0.07, 'r'],
-    ['ÁREA (HA)',  CW*0.11, 'r'],
-    ['REALIZADO',  CW*0.11, 'r'],
-    ['FALTA',      CW*0.11, 'r'],
-    ['%',          CW*0.06, 'r'],
-    ['STATUS',     CW*0.10, 'l'],
+    ['FAZENDA',    CW*0.21, 'l'],
+    ['CLIENTE',    CW*0.12, 'l'],
+    ['TALHÕES',    CW*0.07, 'r'],
+    ['DRONES',     CW*0.06, 'r'],
+    ['ÁREA (HA)',  CW*0.10, 'r'],
+    ['NO PERÍODO', CW*0.10, 'r'],
+    ['TOTAL',      CW*0.10, 'r'],
+    ['FALTA',      CW*0.10, 'r'],
+    ['%',          CW*0.05, 'r'],
+    ['STATUS',     CW*0.09, 'l'],
   ]
   const xDe = i => M + COLS.slice(0,i).reduce((a,c)=>a+c[1],0)
 
@@ -1085,14 +1089,15 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, totais = nu
         l.drones ? String(l.drones) : '—',
         nHa(l.area),
         l.realizado > 0 ? nHa(l.realizado) : '—',
-        l.emAberto > 0 ? nHa(l.emAberto) : '—',
+        l.realizadoTotal > 0 ? nHa(l.realizadoTotal) : '—',
+        l.emAberto > 0.05 ? nHa(l.emAberto) : '—',
         l.pct == null ? '—' : `${Math.floor(l.pct)}%`,
         l.status || '',
       ]
       COLS.forEach((c,ci)=>{
         const x = c[2]==='r' ? xDe(ci)+c[1]-2 : xDe(ci)+2
         if (ci===5 && l.realizado>0) { doc.setFont('helvetica','bold'); doc.setTextColor(...G) }
-        else if (ci===8) { doc.setFontSize(5.6); doc.setTextColor(...GR) }
+        else if (ci===9) { doc.setFontSize(5.6); doc.setTextColor(...GR) }
         else { doc.setFont('helvetica','normal'); doc.setTextColor(...DK); doc.setFontSize(6.4) }
         doc.text(truncFit(doc, txt(valores[ci]), c[1]-4), x, y+3.7, { align: c[2]==='r'?'right':'left' })
       })
@@ -1101,13 +1106,14 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, totais = nu
 
     // Fechamento do grupo
     const g = doGrupo.reduce((a,l)=>({talhoes:a.talhoes+(l.talhoes||0), area:a.area+(l.area||0),
-      realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0)}), {talhoes:0,area:0,realizado:0,emAberto:0})
+      realizado:a.realizado+(l.realizado||0), total:a.total+Math.min(l.realizadoTotal||0,l.area||0),
+      emAberto:a.emAberto+(l.emAberto||0)}), {talhoes:0,area:0,realizado:0,total:0,emAberto:0})
     doc.setFillColor(235,243,238); doc.rect(M, y, CW, 5.6, 'F')
     doc.setFontSize(6.4); doc.setFont('helvetica','bold'); doc.setTextColor(...G)
     doc.text(`TOTAL ${txt(mod).toUpperCase()}`, xDe(0)+2, y+3.8)
     const dronesGrupo = new Set(doGrupo.flatMap(l=>l.pilotos||[])).size
-    const totaisGrupo = [null,null,String(g.talhoes),String(dronesGrupo||'—'),nHa(g.area),nHa(g.realizado),nHa(g.emAberto),
-      `${g.area>0?Math.floor(Math.min(100,(g.realizado/g.area)*100)):0}%`,null]
+    const totaisGrupo = [null,null,String(g.talhoes),String(dronesGrupo||'—'),nHa(g.area),nHa(g.realizado),nHa(g.total),nHa(g.emAberto),
+      `${g.area>0?Math.floor(Math.min(100,(g.total/g.area)*100)):0}%`,null]
     COLS.forEach((c,ci)=>{
       if (totaisGrupo[ci]==null) return
       doc.text(totaisGrupo[ci], xDe(ci)+c[1]-2, y+3.8, { align:'right' })
@@ -1120,7 +1126,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, totais = nu
   doc.setFillColor(...G); doc.rect(M, y, CW, 6.4, 'F')
   doc.setFontSize(6.8); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255)
   doc.text('TOTAL GERAL', xDe(0)+2, y+4.3)
-  const tg = [null,null,String(geral.talhoes),String(geral.drones||'—'),nHa(geral.area),nHa(geral.realizado),nHa(geral.emAberto),`${Math.floor(pctGeral)}%`,null]
+  const tg = [null,null,String(geral.talhoes),String(geral.drones||'—'),nHa(geral.area),nHa(geral.realizado),nHa(totalCampanha),nHa(geral.emAberto),`${Math.floor(pctGeral)}%`,null]
   COLS.forEach((c,ci)=>{ if (tg[ci]!=null) doc.text(tg[ci], xDe(ci)+c[1]-2, y+4.3, { align:'right' }) })
   y += 6.4
 

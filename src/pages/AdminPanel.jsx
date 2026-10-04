@@ -731,23 +731,24 @@ export default function AdminPanel({ onSwitchMode }) {
     t += `✅ Finalizados: ${nHa(T.areaFinalizada)} ha\n`
     t += `🔄 Em execução: ${nHa(T.areaExecucao)} ha\n`
     t += `🕒 Na sequência: ${nHa(T.areaSequencia)} ha\n`
-    t += `📐 Realizados: ${nHa(T.coberto)} ha · falta ${nHa(T.emAberto)} ha\n`
+    t += `📐 Feitos no período: ${nHa(T.coberto)} ha · falta ${nHa(T.emAberto)} ha\n`
     t += `🚁 Drones em operação: ${T.drones}\n`
 
     const MARCA = { concluida:'✅', executando:'🔄', sequencia:'🕒' }
     const mods = [...new Set(linhas.map(l=>l.modalidade))].sort((a,b)=>compararNomes(a,b))
     mods.forEach(mod=>{
       const doG = linhas.filter(l=>l.modalidade===mod)
-      const gg = doG.reduce((a,l)=>({area:a.area+(l.area||0), realizado:a.realizado+(l.realizado||0)}),{area:0,realizado:0})
+      const gg = doG.reduce((a,l)=>({area:a.area+(l.area||0), total:a.total+Math.min(l.realizadoTotal||0,l.area||0)}),{area:0,total:0})
       t += `\n*${String(mod).toUpperCase()}* — ${doG.length} ${doG.length===1?'fazenda':'fazendas'}\n`
       doG.forEach(l=>{
         t += `${MARCA[l.statusCodigo]||'⬜'} ${l.fazenda} — ${nHa(l.area)} ha`
-        if (l.realizado>0) t += ` · feito ${nHa(l.realizado)} (${Math.floor(l.pct||0)}%)`
+        if (l.pct!=null) t += ` · ${Math.floor(l.pct)}%`
+        if (l.realizado>0) t += ` · +${nHa(l.realizado)} no período`
         if (l.emAberto>0.05) t += ` · falta ${nHa(l.emAberto)}`
         if (l.drones) t += ` · ${l.drones} ${l.drones===1?'drone':'drones'}`
         t += `\n`
       })
-      t += `_Subtotal: ${nHa(gg.realizado)} de ${nHa(gg.area)} ha_\n`
+      t += `_Subtotal: ${nHa(gg.total)} de ${nHa(gg.area)} ha_\n`
     })
     t += `\n_${new Date().toLocaleDateString('pt-BR')} · Orofly_`
     return t
@@ -762,7 +763,7 @@ export default function AdminPanel({ onSwitchMode }) {
       const linhas = linhasTela.map(l => ({
         modalidade: l.modalidade, fazenda: l.fz.nome, cliente: l.fz.cliente,
         talhoes: l.talhoes, talhoesTocados: l.talhoesTocados,
-        area: l.area, realizado: l.coberto, emAberto: l.emAberto, pct: l.pct,
+        area: l.area, realizado: l.coberto, realizadoTotal: l.cobertoTotal, emAberto: l.emAberto, pct: l.pct,
         drones: l.drones, pilotos: l.pilotos,
         status: ROTULO_STATUS[l.status], statusCodigo: l.status,
       }))
@@ -7498,7 +7499,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
               { rotulo:'Total de hectares', valor:nHa(T.area),           sub:'Hectares',  cor:VERDE,   icone:'area' },
               { rotulo:'Em execução',       valor:nHa(T.areaExecucao),   sub:'Hectares',  cor:LARANJA, icone:'drone',   fundo:'rgba(217,119,6,.07)' },
               { rotulo:'Finalizados',       valor:nHa(T.areaFinalizada), sub:'Hectares',  cor:VERDE,   icone:'check' },
-              { rotulo:'Ha realizados',     valor:nHa(T.coberto),        sub:`Hectares · ${T.voos} ${T.voos===1?'voo':'voos'}`, cor:VERDE, icone:'check' },
+              { rotulo:'Realizados no período', valor:nHa(T.coberto),  sub:`Hectares · ${T.voos} ${T.voos===1?'voo':'voos'}`, cor:VERDE, icone:'check' },
               { rotulo:'Na sequência',      valor:nHa(T.areaSequencia),  sub:'Hectares',  cor:AZUL,    icone:'relogio', fundo:'rgba(37,99,235,.06)' },
               { rotulo:'Drones',            valor:String(T.drones),      sub:'em operação', cor:LARANJA, icone:'drone' },
             ]
@@ -7585,6 +7586,9 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:600,color:theme.text,marginBottom:8}}>Progresso geral das operações</div>
                   {barra(T.pct, VERDE, 10)}
+                  <div style={{fontSize:11,color:theme.textMuted,marginTop:6}}>
+                    Falta <strong style={{color:theme.text}}>{nHa(T.emAberto)} ha</strong> · no período foram feitos <strong style={{color:VERDE}}>{nHa(T.coberto)} ha</strong>
+                  </div>
                 </div>
                 <div style={{textAlign:'right',flexShrink:0}}>
                   <div style={{fontSize:24,fontWeight:800,color:VERDE,fontFamily:"'Syne',sans-serif",lineHeight:1}}>{Math.floor(T.pct)}%</div>
@@ -7627,7 +7631,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                   </div>
                 ) : (
                   <div style={{overflowX:'auto'}}>
-                    <table style={{width:'100%',borderCollapse:'collapse',minWidth:980}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',minWidth:1060}}>
                       <thead><tr style={{background:theme.bg}}>
                         <th style={{...th,width:28}} title="Na sequência"></th>
                         <th style={th}>Fazenda</th>
@@ -7635,9 +7639,10 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                         <th style={th}>Tratamento</th>
                         <th style={{...th,textAlign:'right'}}>Área (ha)</th>
                         <th style={{...th,textAlign:'right'}} title="Um por piloto que voou na fazenda no período">Drones</th>
-                        <th style={{...th,textAlign:'right'}}>Área realizada</th>
+                        <th style={{...th,textAlign:'right'}} title="Feito dentro do período escolhido">No período</th>
+                        <th style={{...th,textAlign:'right'}} title="Feito na campanha atual da fazenda, desde o início do ciclo">Realizado total</th>
                         <th style={{...th,textAlign:'right'}}>Falta</th>
-                        <th style={{...th,minWidth:150}}>Progresso</th>
+                        <th style={{...th,minWidth:150}} title="Progresso total da fazenda na campanha">Progresso</th>
                         <th style={th}>Status</th>
                       </tr></thead>
                       <tbody>
@@ -7659,7 +7664,11 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                               <td style={{...td,color:theme.textMuted}}>{l.modalidade}</td>
                               <td style={tdNum}>{nHa(l.area)}</td>
                               <td style={{...tdNum,fontWeight:600}}>{l.drones || '—'}</td>
-                              <td style={{...tdNum,fontWeight:600,color:l.coberto>0?VERDE:theme.textFaint}}>{l.coberto>0?nHa(l.coberto):'—'}</td>
+                              <td style={{...tdNum,fontWeight:600,color:l.coberto>0?VERDE:theme.textFaint}}>
+                                {l.coberto>0?nHa(l.coberto):'—'}
+                                {l.coberto>0 && l.pctPeriodo!=null && <div style={{fontSize:10.5,fontWeight:400,color:theme.textFaint}}>{Math.floor(l.pctPeriodo)}% da área</div>}
+                              </td>
+                              <td style={{...tdNum,color:l.cobertoTotal>0?theme.text:theme.textFaint}}>{l.cobertoTotal>0?nHa(l.cobertoTotal):'—'}</td>
                               <td style={{...tdNum,color:l.emAberto>0.05?theme.text:theme.textFaint}}>{l.emAberto>0.05?nHa(l.emAberto):'—'}</td>
                               <td style={td}>
                                 <div style={{display:'flex',alignItems:'center',gap:9}}>

@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.9',
+    data: '2026-10-04',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Sequencia mostra o progresso total da fazenda',
+        texto: 'O status, o "falta" e o progresso passaram a considerar a campanha inteira da fazenda (desde o inicio do ciclo), e nao so o periodo escolhido. Uma fazenda que fez os ultimos 20% nos ultimos 3 dias agora aparece como Finalizada. A tabela mostra as duas coisas: o que foi feito no periodo e o realizado total. O PDF e o WhatsApp seguem o mesmo criterio.',
+      },
+    ],
+  },
+  {
     versao: '8.8',
     data: '2026-10-04',
     itens: [
