@@ -24,3 +24,13 @@ export function fmtData(valor, opcoes) {
   const d = dataLocal(valor)
   return d && !isNaN(d) ? d.toLocaleDateString('pt-BR', opcoes) : '—'
 }
+
+// Data aaaa-mm-dd no fuso LOCAL — o inverso do dataLocal. `toISOString()` é UTC: das 21h
+// à meia-noite (Brasília) ele já devolve o dia seguinte. Era assim que a despesa lançada à
+// noite nascia com a data de amanhã, e o voo retomado depois das 21h aparecia no formulário
+// com o dia errado e a hora certa.
+export function isoLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+export const hojeISO = () => isoLocal(new Date())

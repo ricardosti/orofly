@@ -20,7 +20,7 @@ import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede,
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL } from '../lib/categoriasDespesa'
-import { dataLocal, fmtData } from '../lib/datas'
+import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -90,7 +90,9 @@ function initForm(data) {
     const parseDt = iso => {
       if (!iso) return {data:'',hh:'',mm:''}
       const d=new Date(iso)
-      return {data:d.toISOString().split('T')[0],hh:String(d.getHours()).padStart(2,'0'),mm:String(d.getMinutes()).padStart(2,'0')}
+      // Dia e hora no MESMO fuso: o dia em UTC com a hora local mostrava o voo das 21h30
+      // como sendo do dia seguinte.
+      return {data:isoLocal(d),hh:String(d.getHours()).padStart(2,'0'),mm:String(d.getMinutes()).padStart(2,'0')}
     }
     const ini=parseDt(data.dt_inicio), fim=parseDt(data.dt_fim)
     return {
@@ -715,7 +717,7 @@ export default function PilotApp({onSwitchMode}) {
   const [aiMessages,setAiMessages] = useState(null) // null = ainda não abriu (mostra saudação na abertura)
   const [aiInput,setAiInput] = useState('')
   const [aiDigitando,setAiDigitando] = useState(false)
-  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:hojeISO(),ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
   function addItemViagem(categoria){
     setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
   }
@@ -2184,7 +2186,7 @@ export default function PilotApp({onSwitchMode}) {
         if(temDespesa) registrar('despesa_lancada', notaForm.categoria || 'Vários itens da viagem')
         showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
       }
-      setNotaForm({categoria:'',valor:'',data:new Date().toISOString().split('T')[0],ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
+      setNotaForm({categoria:'',valor:'',data:hojeISO(),ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
       setOsModo('lista')
       setNotaFotoPreview(null); setNotaFotoFile(null); setNotaQr(null); setNotaOcr(null); setNotaSefaz(null)
       leituraNotaRef.current++
@@ -2295,7 +2297,6 @@ export default function PilotApp({onSwitchMode}) {
       if (error) throw error
       setFlights(fs=>fs.filter(f=>f.id!==rel.id))
       if (relId===rel.id) limpar(true)
-      setRascunhoParaExcluir(null)
       showToast('🗑️ Rascunho excluído')
     } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
   }

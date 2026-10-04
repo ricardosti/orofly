@@ -5,17 +5,16 @@
 // usam exatamente os números que a tela mostra — relatório que diverge do que o gestor
 // está vendo destrói a confiança nele.
 
+import { isoLocal } from './datas'
+
 // Status de cada fazenda no relatório, na ordem em que aparecem na tabela.
 export const ORDEM_STATUS = { concluida: 0, executando: 1, sequencia: 2, parada: 3 }
 export const ROTULO_STATUS = {
   concluida: 'Finalizado', executando: 'Em execução', sequencia: 'Na sequência', parada: '—',
 }
 
-// Data no fuso LOCAL. `toISOString()` é UTC: depois das 21h (Brasília) o "hoje" virava
-// amanhã, e o filtro "último dia" mostrava um dia sem voo nenhum.
-export function isoLocal(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+// Datas no fuso LOCAL (ver lib/datas): com `toISOString()`, que é UTC, depois das 21h
+// (Brasília) o "hoje" virava amanhã e o filtro "último dia" mostrava um dia sem voo nenhum.
 
 export function periodoUltimosDias(n, hoje = new Date()) {
   const ate = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate())
