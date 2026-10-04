@@ -19,7 +19,7 @@ import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
 import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente } from '../lib/filaDespesas'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
-import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis } from '../lib/categoriasDespesa'
+import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
@@ -717,7 +717,7 @@ export default function PilotApp({onSwitchMode}) {
   const [aiMessages,setAiMessages] = useState(null) // null = ainda não abriu (mostra saudação na abertura)
   const [aiInput,setAiInput] = useState('')
   const [aiDigitando,setAiDigitando] = useState(false)
-  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:hojeISO(),ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
+  const [notaForm,setNotaForm] = useState({categoria:'',valor:'',data:hojeISO(),ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',combustivel_valores:{},chave_acesso:''})
   function addItemViagem(categoria){
     setNotaForm(f=>({...f,itensViagem:[...f.itensViagem,{id:Date.now()+Math.random(),categoria,valor:''}]}))
   }
@@ -2069,7 +2069,19 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   async function salvarNota(){
-    const temDespesa = notaForm.categoria && notaForm.valor && parseFloat(notaForm.valor)>0
+    // Combustível com mais de um tipo: o valor de cada um tem que fechar com o da nota.
+    let divisao = null
+    if(notaForm.categoria==='Combustível'){
+      const tipos = tiposDoCombustivel(notaForm.tipo_combustivel)
+      if(tipos.length>1){
+        divisao = conferirDivisao(tipos, notaForm.combustivel_valores, notaForm.valor)
+        if(divisao.erro){ showToast(divisao.erro,'error'); return }
+      }
+    }
+    const valorNota = divisao ? divisao.total : parseFloat(notaForm.valor)
+    // A divisão só entra quando existe: nota comum segue sem a coluna nova.
+    const comDivisao = divisao ? { combustivel_valores: divisao.valores } : {}
+    const temDespesa = notaForm.categoria && valorNota>0
     const temViagem = notaForm.veiculo_id && notaForm.km_inicial!=='' && notaForm.km_final!==''
     if(!temDespesa && !temViagem){
       showToast('Preencha categoria+valor, ou selecione um veículo e informe o km inicial/final','error'); return
@@ -2093,7 +2105,7 @@ export default function PilotApp({onSwitchMode}) {
           foto: notaFotoFile || null, fotoExt: ehPdf ? 'pdf' : 'jpg',
           despesa: {
             piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
-            categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
+            categoria:notaForm.categoria, valor:valorNota, data:notaForm.data,
             ordem_servico:osDigitada||null, observacao:notaForm.observacao||null,
             veiculo_id:notaForm.veiculo_id||null,
             forma_pagamento:notaForm.forma_pagamento||null,
@@ -2101,6 +2113,7 @@ export default function PilotApp({onSwitchMode}) {
             // cartão preenchido atrapalharia a conferência contra a fatura.
             cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
             tipo_combustivel:notaForm.categoria==='Combustível' ? (notaForm.tipo_combustivel||null) : null,
+            ...comDivisao,
             chave_acesso:notaForm.chave_acesso||null,
           },
         }
@@ -2145,7 +2158,7 @@ export default function PilotApp({onSwitchMode}) {
         if(temDespesa){
           const {error} = await supabase.from('despesas').insert({
             piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
-            categoria:notaForm.categoria, valor:parseFloat(notaForm.valor), data:notaForm.data,
+            categoria:notaForm.categoria, valor:valorNota, data:notaForm.data,
             ordem_servico:osDigitada||null, relatorio_id, observacao:notaForm.observacao||null, foto_url,
             veiculo_id:notaForm.veiculo_id||null,
             forma_pagamento:notaForm.forma_pagamento||null,
@@ -2153,6 +2166,7 @@ export default function PilotApp({onSwitchMode}) {
             // cartão preenchido atrapalharia a conferência contra a fatura.
             cartao:notaForm.forma_pagamento==='Cartão' ? (notaForm.cartao||null) : null,
             tipo_combustivel:notaForm.categoria==='Combustível' ? (notaForm.tipo_combustivel||null) : null,
+            ...comDivisao,
             chave_acesso:notaForm.chave_acesso||null,
           })
           if(error) throw error
@@ -2195,7 +2209,7 @@ export default function PilotApp({onSwitchMode}) {
         if(temDespesa) registrar('despesa_lancada', notaForm.categoria || 'Vários itens da viagem')
         showToast(relatorio_id?'✅ Registrado e vinculado ao voo!':'✅ Registrado!')
       }
-      setNotaForm({categoria:'',valor:'',data:hojeISO(),ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',chave_acesso:''})
+      setNotaForm({categoria:'',valor:'',data:hojeISO(),ordem_servico:'',observacao:'',veiculo_id:'',km_inicial:'',km_final:'',itensViagem:[],forma_pagamento:'',cartao:'',tipo_combustivel:'',combustivel_valores:{},chave_acesso:''})
       setOsModo('lista')
       setNotaFotoPreview(null); setNotaFotoFile(null); setNotaQr(null); setNotaOcr(null); setNotaSefaz(null)
       leituraNotaRef.current++
@@ -3593,7 +3607,48 @@ export default function PilotApp({onSwitchMode}) {
                   )
                 })}
               </div>
-              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:14}}>Pode marcar mais de um — ex.: diesel na picape e gasolina no gerador.</div>
+              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:marcados.length>1?10:14}}>Pode marcar mais de um — ex.: diesel na picape e gasolina no gerador.</div>
+              {/* Com mais de um tipo, quanto foi de cada — o Pastor precisa saber quanto cada
+                  um consome. A soma tem que bater com o valor da nota (ver conferirDivisao). */}
+              {marcados.length>1 && (()=>{
+                const lerV = t => parseFloat(String(t ?? '').replace(',', '.'))
+                const digitados = notaForm.combustivel_valores || {}
+                const soma = Math.round(marcados.reduce((a,t)=>a+(lerV(digitados[t])||0),0)*100)/100
+                const total = lerV(notaForm.valor)
+                const vazios = marcados.filter(t=>!(lerV(digitados[t])>0))
+                const falta = total>0 ? Math.round((total-soma)*100)/100 : null
+                const reais = v => 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+                return (
+                  <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:14,padding:'10px 12px 12px',marginBottom:14}}>
+                    <div style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:8,fontFamily:"'Poppins',sans-serif"}}>QUANTO FOI DE CADA?</div>
+                    {marcados.map(t=>(
+                      <div key={t} style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+                        <div style={{width:74,fontSize:13,fontWeight:600,color:theme.text,flexShrink:0}}>{t}</div>
+                        <input type="number" inputMode="decimal" style={sw.fi} placeholder="0,00" value={digitados[t]||''}
+                          onChange={e=>{ const v = e.target.value; setNotaForm(f=>({...f,combustivel_valores:{...(f.combustivel_valores||{}),[t]:v}})) }}/>
+                      </div>
+                    ))}
+                    {total>0 ? (
+                      Math.abs(falta)<0.01
+                        ? <div style={{fontSize:11.5,fontWeight:600,color:'#00875A'}}>✓ Soma {reais(soma)} — bate com o valor da nota</div>
+                        : falta>0
+                          ? <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+                              <span style={{fontSize:11.5,fontWeight:600,color:theme.warningText2||theme.warningText}}>Faltam {reais(falta)} pra fechar {reais(total)}</span>
+                              {/* Um campo vazio só: o resto é dele — um toque em vez de fazer a conta. */}
+                              {vazios.length===1 && (
+                                <button onClick={()=>setNotaForm(f=>({...f,combustivel_valores:{...(f.combustivel_valores||{}),[vazios[0]]:falta.toFixed(2)}}))}
+                                  style={{background:theme.card,color:'#00A86B',border:'1px solid #00A86B',borderRadius:9,padding:'5px 9px',fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                                  Usar {reais(falta)} em {vazios[0]}
+                                </button>
+                              )}
+                            </div>
+                          : <div style={{fontSize:11.5,fontWeight:600,color:theme.dangerText}}>Passou {reais(-falta)} do valor da nota ({reais(total)})</div>
+                    ) : (
+                      <div style={{fontSize:11.5,color:theme.textMuted}}>Sem o valor da nota, ele vai ser a soma: {reais(soma)}</div>
+                    )}
+                  </div>
+                )
+              })()}
             </>
             )
           })()}
@@ -3982,7 +4037,7 @@ export default function PilotApp({onSwitchMode}) {
             {[
               ['Observação', notaDetalhe.observacao],
               ['Pagamento', notaDetalhe.forma_pagamento && (notaDetalhe.cartao ? `${notaDetalhe.forma_pagamento} · ${notaDetalhe.cartao}` : notaDetalhe.forma_pagamento)],
-              ['Combustível', notaDetalhe.tipo_combustivel],
+              ['Combustível', descreverCombustivel(notaDetalhe)],
               ['Ordem de serviço', notaDetalhe.ordem_servico],
               ['Conferência', notaDetalhe.conferido ? 'Conferida pelo financeiro' : 'Aguardando a conferência do financeiro'],
             ].filter(([,v])=>v).map(([k,v])=>(

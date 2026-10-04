@@ -44,7 +44,7 @@ const CAMPOS_NUMERICOS_EDICAO = [
   'vazao_i', 'vazao_f', 'altura', 'velocidade_drone', 'faixa_aplicacao',
 ]
 import ImportarFazendasModal from '../components/ImportarFazendasModal'
-import { CATEGORIA_DESPESA_OPTS, CATEGORIA_LEGADA, CATEGORIA_ICON, iconeCategoria } from '../lib/categoriasDespesa'
+import { CATEGORIA_DESPESA_OPTS, CATEGORIA_LEGADA, CATEGORIA_ICON, iconeCategoria, descreverCombustivel, valoresPorCombustivel } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData } from '../lib/datas'
 import { indexarClientes, receitaDoVoo, totalizarReceita, mesDoVoo, mesDaDespesa, rotuloMes, ultimosMeses } from '../lib/faturamento'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
@@ -5907,6 +5907,18 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
             })
             const rankingPiloto = Object.entries(porPiloto).sort((a,b)=>b[1].total-a[1].total)
 
+            // Combustível por tipo — o "quanto cada um consome" do Pastor. Nota com diesel e
+            // gasolina entra dividida pelo que o piloto informou (ver valoresPorCombustivel),
+            // e conta uma vez em cada tipo — por isso as notas daqui podem somar mais que o total.
+            const porCombustivel = {}
+            custosFiltrados.forEach(c=>{
+              Object.entries(valoresPorCombustivel(c)).forEach(([tipo,v])=>{
+                if(!porCombustivel[tipo]) porCombustivel[tipo]={total:0,qtd:0}
+                porCombustivel[tipo].total+=v; porCombustivel[tipo].qtd++
+              })
+            })
+            const rankingCombustivel = Object.entries(porCombustivel).sort((a,b)=>b[1].total-a[1].total)
+
             // Por Cliente/Fazenda — via o voo vinculado (relatorio_id ou OS em texto)
             const porClienteFazenda = {}
             custosFiltrados.forEach(c=>{
@@ -6062,6 +6074,27 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                   </div>
                 )}
 
+                {/* Combustível por tipo */}
+                {rankingCombustivel.length>0 && (
+                  <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
+                    <SecTitle>Combustível por Tipo</SecTitle>
+                    <div style={{overflowX:'auto'}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+                        <thead><tr style={{background:theme.bg}}>{['Tipo','Notas','Total'].map(h=><th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif"}}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {rankingCombustivel.map(([tipo,st],i)=>(
+                            <tr key={tipo} style={{background:i%2===0?'#fff':'#f9fbfa'}}>
+                              <td style={{padding:'8px 10px',fontWeight:500}}>⛽ {tipo}</td>
+                              <td style={{padding:'8px 10px',color:theme.textMuted}}>{st.qtd}</td>
+                              <td style={{padding:'8px 10px',fontWeight:700,color:'#059669'}}>R$ {st.total.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {/* Ranking por Cliente/Fazenda */}
                 {rankingClienteFazenda.length>0 && (
                   <div style={{background:theme.card,borderRadius:20,border:`1px solid ${theme.cardBorder}`,padding:'18px',marginBottom:16,boxShadow:'0 6px 20px rgba(11,18,16,0.05)'}}>
@@ -6176,6 +6209,12 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                               <tr key={c.id} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>
                                   <div style={{fontWeight:600}}>{iconeCategoria(c.categoria)} {c.categoria}</div>
+                                  {/* Um combustível por linha: "Diesel R$ 250,00" / "Gasolina R$ 62,40". */}
+                                  {c.tipo_combustivel && (
+                                    <div style={{fontSize:11,color:theme.textMuted,marginTop:2}}>
+                                      {descreverCombustivel(c).split(' · ').map(p=><div key={p} style={{whiteSpace:'nowrap'}}>⛽ {p}</div>)}
+                                    </div>
+                                  )}
                                   {c.observacao && <div style={{fontSize:11,color:theme.textFaint2,fontStyle:'italic',marginTop:2}}>{c.observacao}</div>}
                                 </td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`}}>{c.piloto_nome||'—'}</td>
@@ -6185,7 +6224,6 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                   {c.forma_pagamento ? (
                                     <>
                                       <div>{c.forma_pagamento}{c.cartao?` · ${c.cartao}`:''}</div>
-                                      {c.tipo_combustivel && <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>⛽ {c.tipo_combustivel}</div>}
                                     </>
                                   ) : <span style={{color:'#c3d4c9'}}>—</span>}
                                 </td>

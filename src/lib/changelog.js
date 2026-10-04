@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.2',
+    data: '2026-10-04',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Quanto foi de cada combustivel',
+        texto: 'Com mais de um combustivel marcado na mesma nota, o app pede quanto foi de cada (ex.: diesel R$ 250,00 e gasolina R$ 62,40) e confere se a soma bate com o valor da nota; um toque completa o que falta. No painel, a nota mostra a divisao e o Financeiro ganhou o quadro Combustivel por Tipo, com o total de cada combustivel no periodo. Pedido do Pastor.',
+      },
+    ],
+  },
+  {
     versao: '9.1',
     data: '2026-10-04',
     itens: [
