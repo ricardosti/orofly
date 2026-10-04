@@ -767,7 +767,12 @@ export default function PilotApp({onSwitchMode}) {
   // Filtros da lista de notas do piloto. Antes a lista vinha crua, e achar "quanto gastei
   // de combustível esse mês" exigia somar na mão.
   const [notaFiltroCat,setNotaFiltroCat] = useState('todas')
-  const [notaFiltroMes,setNotaFiltroMes] = useState('mes')   // 'mes' | '30' | 'tudo'
+  // Aba da tela de notas: o formulário ("Nova Despesa") ou a lista ("Notas lançadas").
+  const [notasAba,setNotasAba] = useState('nova')
+  // Mês da lista de notas lançadas ('aaaa-mm', ou 'todos'). Começa no mês corrente.
+  const [notaMes,setNotaMes] = useState(()=>hojeISO().slice(0,7))
+  // Nota aberta pelo "⋮": detalhes e comprovante.
+  const [notaDetalhe,setNotaDetalhe] = useState(null)
   const [gestaoPeriodo,setGestaoPeriodo] = useState('mes') // 'mes' | '30' | 'tudo'
   const [loadingNotas,setLoadingNotas] = useState(false)
   const [minhaAgenda,setMinhaAgenda] = useState([])
@@ -1705,7 +1710,9 @@ export default function PilotApp({onSwitchMode}) {
   async function loadNotas(){
     setLoadingNotas(true)
     try {
-      const {data,error}=await supabase.from('despesas').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
+      // 500, e não 30: a lista agora filtra por mês, e com só as 30 últimas o mês passado
+      // de quem lança muito apareceria pela metade. São só as notas do próprio piloto.
+      const {data,error}=await supabase.from('despesas').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(500)
       // Sem sinal a busca volta com erro (o cliente não lança). Antes isso virava lista
       // vazia — "Nenhuma nota cadastrada ainda" — e parecia que as notas tinham sumido.
       if(!error) setMinhasNotas(data||[])
@@ -2678,7 +2685,7 @@ export default function PilotApp({onSwitchMode}) {
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 5px'}}>
             {[
               [null,'icon-novo-voo.png',theme.successBg,'Novo voo','Iniciar operação',()=>{ limpar(true); setView('form') }],
-              ['📋',null,'#e0ecfb','Notas',filaNotas.length?`${filaNotas.length} sem sinal, a enviar`:'Ver registros',()=>{loadNotas();loadOsOpcoes();setView('notas')}],
+              ['📋',null,'#e0ecfb','Notas',filaNotas.length?`${filaNotas.length} sem sinal, a enviar`:'Ver registros',()=>{loadNotas();loadOsOpcoes();setNotasAba('lancadas');setView('notas')}],
               ['🌤️',null,'#f3ecfb','Tempo','Previsão detalhada',()=>setView('tempo')],
               ['⚠️',null,theme.dangerBg,'Incidente','Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
               [null,'icon-relatorios.png',theme.successBg,'Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
@@ -3132,7 +3139,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
 
           <button style={{background:theme.bg,color:'#00A86B',border:'none',borderRadius:16,padding:'12px 16px',fontSize:13,fontWeight:700,cursor:'pointer'}}
-            onClick={()=>{loadOsOpcoes();setView('notas')}}>🧾 Lançar nova nota</button>
+            onClick={()=>{loadOsOpcoes();setNotasAba('nova');setView('notas')}}>🧾 Lançar nova nota</button>
         </div>
         <BottomNav/>
         {toast&&<div style={s.toast}>{toast}</div>}
@@ -3156,9 +3163,24 @@ export default function PilotApp({onSwitchMode}) {
       </div>
 
       <div style={{padding:16,display:'flex',flexDirection:'column',gap:14}}>
+        {/* Duas abas, como no modelo: lançar e consultar não disputam mais a mesma rolagem —
+            antes a lista ficava no fim da tela, embaixo do formulário inteiro. */}
+        <div style={{display:'flex',background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:16,padding:4,gap:4}}>
+          {[['nova','Nova Despesa'],['lancadas','Notas lançadas']].map(([v,lbl])=>(
+            <button key={v} onClick={()=>setNotasAba(v)}
+              style={{flex:1,background:notasAba===v?theme.successBg:'transparent',color:notasAba===v?theme.text:theme.textMuted,
+                border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:notasAba===v?700:600,cursor:'pointer'}}>
+              {lbl}{v==='lancadas' && filaNotas.length>0 ? ` · ${filaNotas.length} 📥` : ''}
+            </button>
+          ))}
+        </div>
+
         <button style={{...s.nowBtn,padding:'10px 16px',fontSize:13,alignSelf:'flex-start'}} onClick={()=>setView('home')}>← Voltar</button>
 
-        {veiculosDB.length>0 && (
+        {notasAba==='nova' && (<>
+        {/* Viagem × despesa: só faz sentido com a aba Viagem ligada — sem ela, a barra
+            mostrava um botão "Despesa" sozinho. */}
+        {ABA_VIAGEM_ATIVA && veiculosDB.length>0 && (
           <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4}}>
             {ABA_VIAGEM_ATIVA && (
               <button style={{flex:1,background:notaTab==='viagem'?'#fff':'transparent',color:notaTab==='viagem'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'10px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:notaTab==='viagem'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
@@ -3607,24 +3629,43 @@ export default function PilotApp({onSwitchMode}) {
           </button>
         </div>
 
-        {/* Notas recentes */}
-        {(()=>{
-          const hojeN = new Date()
-          const noPeriodo = n => {
-            if (notaFiltroMes==='tudo') return true
-            const d = dataLocal(n.data)
-            if (notaFiltroMes==='30') { const d30=new Date(hojeN); d30.setDate(d30.getDate()-30); return d>=d30 }
-            return d.getMonth()===hojeN.getMonth() && d.getFullYear()===hojeN.getFullYear()
+        </>)}
+
+        {/* Notas lançadas — no layout do modelo: total do mês, categorias, mês e a lista. */}
+        {notasAba==='lancadas' && (()=>{
+          // Mês da nota pela data da despesa; nota sem data cai no mês em que foi lançada
+          // (sem isso ela só apareceria em "Todos os meses").
+          const chaveMes = n => {
+            const x = n.data ? dataLocal(n.data) : n.created_at ? new Date(n.created_at) : null
+            return x && !isNaN(x) ? isoLocal(x).slice(0,7) : ''
           }
-          const doPeriodo = minhasNotas.filter(noPeriodo)
+          const nomeMes = k => {
+            const [a,m] = k.split('-').map(Number)
+            const t = new Date(a, m-1, 1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})
+            return t.charAt(0).toUpperCase() + t.slice(1)
+          }
+          // Meses que têm nota, mais o corrente — mesmo vazio, é o que o piloto procura primeiro.
+          const meses = [...new Set([hojeISO().slice(0,7), ...minhasNotas.map(chaveMes).filter(Boolean)])].sort().reverse()
+          const doPeriodo = minhasNotas.filter(n => notaMes==='todos' || chaveMes(n)===notaMes)
           const notasVisiveis = doPeriodo.filter(n=>notaFiltroCat==='todas' || n.categoria===notaFiltroCat)
           const totalVisivel = notasVisiveis.reduce((a,n)=>a+(parseFloat(n.valor)||0),0)
           // Só mostra chip de categoria que realmente aparece no período — lista de 8
           // botões num celular, com 6 deles zerados, é ruído.
           const catsNoPeriodo = [...new Set(doPeriodo.map(n=>n.categoria).filter(Boolean))]
           const nMes = v => v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+          const VERDE = '#00A86B'
+          const subtitulo = n => n.observacao || (n.ordem_servico ? `OS ${n.ordem_servico}` : '')
+            || (n.veiculo_id ? `🚗 ${veiculosDB.find(v=>v.id===n.veiculo_id)?.placa||''}` : '') || n.forma_pagamento || ''
+          const iconeCalendario = (cor, t = 15) => (
+            <svg width={t} height={t} viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="2.1" strokeLinecap="round" style={{flexShrink:0}}>
+              <rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>
+            </svg>
+          )
           return (
         <div>
+          <div style={{fontSize:11.5,color:theme.textFaint2,fontWeight:600}}>🧾 Financeiro</div>
+          <div style={{fontSize:22,fontWeight:800,color:theme.text,fontFamily:"'Poppins',sans-serif",margin:'2px 0 12px'}}>Notas lançadas</div>
+
           {/* Lançadas sem sinal: ficam no aparelho e sobem sozinhas quando a internet voltar.
               Ficam fora do total abaixo de propósito — ainda não estão no sistema. */}
           {filaNotas.length>0 && (
@@ -3667,62 +3708,99 @@ export default function PilotApp({onSwitchMode}) {
             </div>
           )}
 
-          <div style={{fontSize:13,fontWeight:700,color:theme.text,marginBottom:10,fontFamily:"'Poppins',sans-serif"}}>Notas Recentes</div>
-
-          {/* Total e período, juntos da lista — antes isso só existia na tela Gestão,
-              separada, e ninguém cruzava as duas. */}
-          <div style={{background:theme.successBg,borderRadius:16,padding:'12px 14px',marginBottom:10,display:'flex',alignItems:'center',gap:12}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:10,fontWeight:700,color:'#00A86B',letterSpacing:.4}}>
-                {notaFiltroCat==='todas' ? 'TOTAL' : iconeCategoria(notaFiltroCat)+' '+notaFiltroCat.toUpperCase()}
-              </div>
-              <div style={{fontSize:21,fontWeight:800,color:'#00A86B',fontFamily:"'Poppins',sans-serif",marginTop:1}}>R$ {nMes(totalVisivel)}</div>
-              <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:1}}>
-                {notasVisiveis.length} {notasVisiveis.length===1?'nota':'notas'}
+          {/* Total do mês. O valor vai sem "R$" (o rótulo já diz "em R$") e nunca quebra de
+              linha; se num celular estreito não couber ao lado do mês, o mês desce. */}
+          <div style={{background:theme.successBg,border:'1px solid rgba(0,168,107,.22)',borderRadius:18,padding:14,marginBottom:12,
+            display:'flex',alignItems:'center',flexWrap:'wrap',columnGap:10,rowGap:10}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,flex:'1 1 auto',minWidth:0}}>
+              <span style={{width:42,height:42,borderRadius:'50%',background:VERDE,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.4A9 9 0 0 1 20.6 9H15z"/>
+                </svg>
+              </span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:11,color:theme.textMuted,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                  {notaFiltroCat!=='todas' ? `${iconeCategoria(notaFiltroCat)} ${notaFiltroCat} em R$` : notaMes==='todos' ? 'Total em R$' : 'Total do mês em R$'}
+                </div>
+                <div style={{fontSize:22,fontWeight:800,color:theme.text,fontFamily:"'Poppins',sans-serif",lineHeight:1.15,whiteSpace:'nowrap'}}>{nMes(totalVisivel)}</div>
               </div>
             </div>
-            <div style={{display:'flex',flexDirection:'column',gap:4,flexShrink:0}}>
-              {[['mes','Este mês'],['30','30 dias'],['tudo','Tudo']].map(([v,lbl])=>(
-                <button key={v} onClick={()=>setNotaFiltroMes(v)}
-                  style={{background: notaFiltroMes===v?'#00A86B':theme.card, color: notaFiltroMes===v?'#fff':theme.textMuted,
-                    border:`1px solid ${notaFiltroMes===v?'#00A86B':theme.cardBorder2}`, borderRadius:9,
-                    padding:'5px 10px', fontSize:10.5, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap'}}>{lbl}</button>
-              ))}
+            <div style={{borderLeft:'1px solid rgba(0,168,107,.25)',paddingLeft:10,flex:'0 0 auto'}}>
+              <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap'}}>
+                {iconeCalendario(VERDE,14)}{notaMes==='todos' ? 'Todos os meses' : nomeMes(notaMes)}
+              </div>
+              <div style={{fontSize:11,color:theme.textMuted,marginTop:2,whiteSpace:'nowrap'}}>
+                {notasVisiveis.length} {notasVisiveis.length===1?'nota lançada':'notas lançadas'}
+              </div>
             </div>
           </div>
 
-          {catsNoPeriodo.length>1 && (
-            <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:10,paddingBottom:2}}>
-              <button onClick={()=>setNotaFiltroCat('todas')}
-                style={{background: notaFiltroCat==='todas'?'#00A86B':theme.card, color: notaFiltroCat==='todas'?'#fff':theme.textMuted,
-                  border:`1px solid ${notaFiltroCat==='todas'?'#00A86B':theme.cardBorder2}`, borderRadius:20, padding:'6px 13px',
-                  fontSize:11.5, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0}}>Todas</button>
-              {catsNoPeriodo.map(cat=>(
-                <button key={cat} onClick={()=>setNotaFiltroCat(cat)}
-                  style={{background: notaFiltroCat===cat?'#00A86B':theme.card, color: notaFiltroCat===cat?'#fff':theme.textMuted,
-                    border:`1px solid ${notaFiltroCat===cat?'#00A86B':theme.cardBorder2}`, borderRadius:20, padding:'6px 13px',
-                    fontSize:11.5, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0}}>
-                  {iconeCategoria(cat)} {cat}
-                </button>
-              ))}
+          {/* Categorias */}
+          {catsNoPeriodo.length>0 && (
+            <div style={{display:'flex',gap:7,overflowX:'auto',marginBottom:12,paddingBottom:2}}>
+              {['todas',...catsNoPeriodo].map(cat=>{
+                const ativo = notaFiltroCat===cat
+                return (
+                  <button key={cat} onClick={()=>setNotaFiltroCat(cat)}
+                    style={{background: ativo?'#0B7A50':theme.card, color: ativo?'#fff':theme.text,
+                      border:`1px solid ${ativo?'#0B7A50':theme.cardBorder2}`, borderRadius:20, padding:'7px 13px',
+                      fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0}}>
+                    {cat==='todas' ? 'Todas' : `${iconeCategoria(cat)} ${cat}`}
+                  </button>
+                )
+              })}
             </div>
           )}
 
+          {/* Período */}
+          <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:16,padding:'10px 12px',marginBottom:12}}>
+            <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,letterSpacing:.5,marginBottom:6}}>PERÍODO</div>
+            <div style={{position:'relative'}}>
+              <span style={{position:'absolute',left:11,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',display:'flex'}}>{iconeCalendario(theme.text,16)}</span>
+              <select value={notaMes} onChange={e=>{ setNotaMes(e.target.value); setNotaFiltroCat('todas') }}
+                style={{width:'100%',appearance:'none',WebkitAppearance:'none',border:`1px solid ${theme.cardBorder2}`,borderRadius:12,
+                  padding:'10px 34px 10px 36px',fontSize:13.5,fontWeight:600,background:theme.inputBg,color:theme.text,outline:'none',cursor:'pointer'}}>
+                {meses.map(k=><option key={k} value={k}>{nomeMes(k)}</option>)}
+                <option value="todos">Todos os meses</option>
+              </select>
+              <span style={{position:'absolute',right:13,top:'50%',transform:'translateY(-50%)',pointerEvents:'none',color:theme.textMuted,fontSize:12}}>▾</span>
+            </div>
+          </div>
+
+          {/* Lista */}
           {loadingNotas?<div style={{textAlign:'center',color:theme.textMuted,padding:20}}>Carregando...</div>
           :minhasNotas.length===0?<div style={{textAlign:'center',color:theme.textMuted,padding:20,fontSize:13}}>Nenhuma nota cadastrada ainda</div>
-          :notasVisiveis.length===0?<div style={{textAlign:'center',color:theme.textMuted,padding:20,fontSize:13}}>Nenhuma nota nesse filtro</div>
+          :notasVisiveis.length===0?<div style={{textAlign:'center',color:theme.textMuted,padding:20,fontSize:13,lineHeight:1.5}}>
+            {notaMes==='todos' ? 'Nenhuma nota nessa categoria' : `Nenhuma nota em ${nomeMes(notaMes)}`}
+            {/* Começo de mês com a lista vazia parece nota sumida — aponta onde estão. */}
+            {notaMes!=='todos' && doPeriodo.length===0 && <div style={{fontSize:12,color:theme.textFaint2}}>As anteriores estão nos outros meses, em PERÍODO.</div>}
+          </div>
           :notasVisiveis.map(n=>(
-            <div key={n.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:'12px 14px',marginBottom:8}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div>
-                  <div style={{fontWeight:600,fontSize:13,color:theme.text}}>{iconeCategoria(n.categoria)} {n.categoria}</div>
-                  <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>{fmtData(n.data)}{n.ordem_servico?` · OS ${n.ordem_servico}`:''}{n.veiculo_id?` · 🚗 ${veiculosDB.find(v=>v.id===n.veiculo_id)?.placa||''}`:''}</div>
+            <div key={n.id} style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:'12px 6px 12px 12px',marginBottom:9,
+              display:'flex',alignItems:'center',gap:11,boxShadow:'0 2px 10px rgba(11,18,16,.04)'}}>
+              <span style={{width:46,height:46,borderRadius:14,background:theme.successBg,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>
+                {iconeCategoria(n.categoria)}
+              </span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:14,color:theme.text}}>{n.categoria}</div>
+                {subtitulo(n) && (
+                  <div style={{fontSize:11.5,color:theme.textMuted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{subtitulo(n)}</div>
+                )}
+                <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:theme.textFaint2,marginTop:3}}>
+                  {iconeCalendario(theme.textFaint2,12)}{fmtData(n.data)}
                 </div>
-                <div style={{fontWeight:700,fontSize:14,color:'#00A86B',fontFamily:"'Poppins',sans-serif"}}>R$ {parseFloat(n.valor).toFixed(2)}</div>
               </div>
-              {n.foto_url && (/\.pdf$/i.test(n.foto_url)
-                ? <div style={{marginTop:10,fontSize:11.5,color:theme.textFaint2}}>📄 Comprovante em PDF anexado</div>
-                : <div style={{marginTop:10}}><StorageFotoSlot supabase={supabase} path={n.foto_url} height={120}/></div>)}
+              <div style={{textAlign:'right',flexShrink:0}}>
+                <div style={{fontWeight:800,fontSize:14.5,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>R$ {nMes(parseFloat(n.valor)||0)}</div>
+                {/* "Conferido" é a conferência do financeiro (despesas.conferido) — o que
+                    existe no sistema; "pago" não é registrado em lugar nenhum. */}
+                <span style={{display:'inline-flex',alignItems:'center',gap:3,marginTop:4,fontSize:10.5,fontWeight:700,borderRadius:20,padding:'3px 8px',
+                  background:n.conferido?theme.successBg:theme.bg, color:n.conferido?VERDE:theme.textMuted}}>
+                  {n.conferido ? '✓ Conferido' : 'A conferir'}
+                </span>
+              </div>
+              <button onClick={()=>setNotaDetalhe(n)} aria-label="Detalhes da nota"
+                style={{background:'none',border:'none',padding:'8px 6px',cursor:'pointer',color:theme.textMuted,fontSize:19,lineHeight:1,flexShrink:0}}>⋮</button>
             </div>
           ))}
         </div>
@@ -3733,6 +3811,45 @@ export default function PilotApp({onSwitchMode}) {
       {toast&&<div style={s.toast}>{toast}</div>}
       <ExitConfirmModal/>
       <ConfirmDialogModal/>
+      {/* Detalhes da nota lançada. Só leitura: corrigir ou excluir é com o gestor (RLS). */}
+      {notaDetalhe && (
+        <div style={s.modalOverlay} onClick={()=>setNotaDetalhe(null)}>
+          <div style={{...s.modal,background:theme.card}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',alignItems:'center',gap:11,marginBottom:14}}>
+              <span style={{width:46,height:46,borderRadius:14,background:theme.successBg,display:'inline-flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>
+                {iconeCategoria(notaDetalhe.categoria)}
+              </span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:15,color:theme.text}}>{notaDetalhe.categoria}</div>
+                <div style={{fontSize:12,color:theme.textMuted}}>{fmtData(notaDetalhe.data)}</div>
+              </div>
+              <div style={{fontWeight:800,fontSize:17,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>
+                R$ {(parseFloat(notaDetalhe.valor)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
+              </div>
+            </div>
+            {[
+              ['Observação', notaDetalhe.observacao],
+              ['Pagamento', notaDetalhe.forma_pagamento && (notaDetalhe.cartao ? `${notaDetalhe.forma_pagamento} · ${notaDetalhe.cartao}` : notaDetalhe.forma_pagamento)],
+              ['Combustível', notaDetalhe.tipo_combustivel],
+              ['Ordem de serviço', notaDetalhe.ordem_servico],
+              ['Conferência', notaDetalhe.conferido ? 'Conferida pelo financeiro' : 'Aguardando a conferência do financeiro'],
+            ].filter(([,v])=>v).map(([k,v])=>(
+              <div key={k} style={{display:'flex',justifyContent:'space-between',gap:12,padding:'8px 0',borderTop:`1px solid ${theme.divider}`,fontSize:12.5}}>
+                <span style={{color:theme.textMuted}}>{k}</span>
+                <span style={{color:theme.text,fontWeight:600,textAlign:'right'}}>{v}</span>
+              </div>
+            ))}
+            {notaDetalhe.foto_url ? (/\.pdf$/i.test(notaDetalhe.foto_url)
+              ? <div style={{marginTop:12,fontSize:12.5,color:theme.textMuted}}>📄 Comprovante em PDF anexado</div>
+              : <div style={{marginTop:12,background:theme.bg,borderRadius:8}}><StorageFotoSlot supabase={supabase} path={notaDetalhe.foto_url} height={340} fit="contain"/></div>)
+              : <div style={{marginTop:12,fontSize:12.5,color:theme.textFaint2}}>Sem comprovante anexado</div>}
+            <button onClick={()=>setNotaDetalhe(null)}
+              style={{width:'100%',marginTop:16,background:theme.bg,color:theme.text,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:12,fontSize:13.5,fontWeight:600,cursor:'pointer'}}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
       {annotatorTarget && (
         <ImageAnnotator src={annotatorTarget.src}
           onSave={blob=>{ annotatorTarget.aplicar(blob); setAnnotatorTarget(null) }}
@@ -6062,7 +6179,8 @@ Quando: ${tempoErroDebug.quando}`}
 }
 
 // Componente para mostrar foto do Storage no PilotApp
-function StorageFotoSlot({ supabase, path, height=60 }) {
+// `fit="contain"` mostra a foto inteira (nota fiscal não pode ter o total cortado).
+function StorageFotoSlot({ supabase, path, height=60, fit='cover' }) {
   const { theme } = useTheme()
   const [url, setUrl] = useState(null)
   useEffect(() => {
@@ -6070,7 +6188,7 @@ function StorageFotoSlot({ supabase, path, height=60 }) {
     urlAssinada(supabase, path).then(u => { if (u) setUrl(u) })
   }, [path, supabase])
   if (!url) return <div style={{fontSize:10,color:theme.textMuted,padding:8}}>⏳</div>
-  return <img src={url} alt="foto" style={{width:'100%',height,objectFit:'cover',borderRadius:8,display:'block'}} />
+  return <img src={url} alt="foto" style={{width:'100%',height,objectFit:fit,borderRadius:8,display:'block'}} />
 }
 
 // Radar de chuva em tempo real (RainViewer, gratuito, sem chave de API) — mesma técnica

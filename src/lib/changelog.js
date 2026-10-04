@@ -9,6 +9,27 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.0',
+    data: '2026-10-04',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Notas do piloto em duas abas',
+        texto: 'A tela de notas do app do piloto ganhou duas abas: Nova Despesa (o formulario) e Notas lancadas. A lista, que ficava no fim da tela embaixo do formulario inteiro, virou uma aba propria, com o total do mes, filtro por categoria, escolha do mes e um cartao por nota com o status da conferencia do financeiro. Os tres pontinhos abrem os detalhes e o comprovante; a foto so e baixada quando a nota e aberta. O atalho Notas da tela inicial abre direto na lista.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Data da nota lancada a noite',
+        texto: 'Depois das 21h a nota nova ja vinha com a data do dia seguinte, e o voo retomado a noite aparecia no formulario com o dia errado. Agora vale a data do Brasil.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Falso "Erro ao excluir" no rascunho',
+        texto: 'Ao excluir um rascunho de voo, o app apagava certo mas mostrava "Erro ao excluir". Corrigido.',
+      },
+    ],
+  },
+  {
     versao: '8.9',
     data: '2026-10-04',
     itens: [
