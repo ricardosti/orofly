@@ -960,7 +960,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 //
 // `linhas` chega pronto do painel: [{ modalidade, fazenda, cliente, talhoes,
 // talhoesTocados, area, realizado, emAberto, pct, status }]
-export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig = null }) {
+export async function gerarPDFSequencia({ linhas = [], periodo = {}, totais = null, pdfConfig = null }) {
   // EMPRESA e jsPDF vêm do módulo, igual nos outros geradores — quem carrega a
   // configuração da empresa é o setEmpresaConfig, chamado lá no painel.
   const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: [297, 210] })
@@ -987,7 +987,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
     doc.setFontSize(16); doc.setFont('helvetica','bold'); doc.setTextColor(...G); doc.text('OROFLY', M, y + 13)
   }
   doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(...DK)
-  doc.text('SEQUÊNCIA DE OPERAÇÃO', PW - M, y + 8, { align:'right' })
+  doc.text('RELATÓRIO DE OPERAÇÕES', PW - M, y + 8, { align:'right' })
   doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...GR)
   doc.text(txt(`Período: ${fmtD(periodo.de)} a ${fmtD(periodo.ate)}`), PW - M, y + 13.5, { align:'right' })
   doc.setFontSize(6.5); doc.setTextColor(...G)
@@ -995,42 +995,52 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
   y += 23
   doc.setDrawColor(...G); doc.setLineWidth(0.6); doc.line(M, y, PW - M, y); y += 7
 
-  // Totais gerais no topo: é o número que a chefia olha primeiro.
-  const geral = linhas.reduce((a,l)=>({
+  // Totais gerais no topo: é o número que a chefia olha primeiro. Vêm prontos da tela
+  // (lib/sequencia) quando existem — assim o arquivo não tem como divergir do que o gestor viu.
+  const somado = linhas.reduce((a,l)=>({
     talhoes:a.talhoes+(l.talhoes||0), tocados:a.tocados+(l.talhoesTocados||0),
     area:a.area+(l.area||0), realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0),
   }), { talhoes:0, tocados:0, area:0, realizado:0, emAberto:0 })
-  const pctGeral = geral.area > 0 ? Math.min(100,(geral.realizado/geral.area)*100) : 0
+  const geral = { ...somado, drones: totais?.drones ?? new Set(linhas.flatMap(l=>l.pilotos||[])).size }
+  const pctGeral = totais ? totais.pct : (geral.area > 0 ? Math.min(100,(geral.realizado/geral.area)*100) : 0)
+  const porStatus = st => linhas.filter(l=>l.statusCodigo===st).reduce((a,l)=>a+(l.area||0),0)
 
   const cards = [
-    ['FAZENDAS', String(linhas.length), 'na sequência'],
-    ['TALHÕES', String(geral.talhoes), `${geral.tocados} trabalhados`],
-    ['ÁREA TOTAL', nHa(geral.area), 'hectares'],
-    ['REALIZADO', nHa(geral.realizado), 'hectares'],
-    ['EM ABERTO', nHa(geral.emAberto), 'hectares'],
-    ['AVANÇO', `${Math.floor(pctGeral)}%`, 'do período'],
+    ['TOTAL DE HECTARES', nHa(totais?.area ?? geral.area), 'hectares'],
+    ['EM EXECUÇÃO', nHa(totais?.areaExecucao ?? porStatus('executando')), 'hectares'],
+    ['FINALIZADOS', nHa(totais?.areaFinalizada ?? porStatus('concluida')), 'hectares'],
+    ['HA REALIZADOS', nHa(totais?.coberto ?? geral.realizado), 'hectares'],
+    ['NA SEQUÊNCIA', nHa(totais?.areaSequencia ?? porStatus('sequencia')), 'hectares'],
+    ['DRONES', String(geral.drones), 'em operação'],
+    ['PROGRESSO', `${Math.floor(pctGeral)}%`, 'dos hectares'],
   ]
-  const wc = (CW - 5*4) / 6
+  const wc = (CW - 6*3) / 7
   cards.forEach(([lbl,val,sub],i)=>{
-    const x = M + i*(wc+4)
-    doc.setFillColor(247,250,248); doc.rect(x, y, wc, 20, 'F')
+    const x = M + i*(wc+3)
+    doc.setFillColor(247,250,248); doc.rect(x, y, wc, 18, 'F')
     doc.setFillColor(...G); doc.rect(x, y, wc, 0.9, 'F')
-    doc.setFontSize(5.6); doc.setFont('helvetica','bold'); doc.setTextColor(...GR); doc.text(lbl, x+3, y+5)
-    doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(...G); doc.text(val, x+3, y+12.5)
-    doc.setFontSize(5.4); doc.setFont('helvetica','normal'); doc.setTextColor(...GR); doc.text(sub, x+3, y+17)
+    doc.setFontSize(5.4); doc.setFont('helvetica','bold'); doc.setTextColor(...GR); doc.text(txt(lbl), x+2.5, y+5)
+    doc.setFontSize(11.5); doc.setFont('helvetica','bold'); doc.setTextColor(...G); doc.text(val, x+2.5, y+11.8)
+    doc.setFontSize(5.2); doc.setFont('helvetica','normal'); doc.setTextColor(...GR); doc.text(sub, x+2.5, y+15.6)
   })
-  y += 26
+  y += 21
+
+  // Barra do progresso geral, como na tela.
+  doc.setFillColor(230,236,232); doc.roundedRect(M, y, CW, 2.6, 1.3, 1.3, 'F')
+  if (pctGeral > 0) { doc.setFillColor(...G); doc.roundedRect(M, y, Math.max(2.6, CW*pctGeral/100), 2.6, 1.3, 1.3, 'F') }
+  y += 7
 
   // Larguras: fazenda e cliente ficam com o espaço que sobra, os números com o que precisam.
   const COLS = [
-    ['FAZENDA',    CW*0.24, 'l'],
-    ['CLIENTE',    CW*0.14, 'l'],
-    ['TALHÕES',    CW*0.10, 'r'],
-    ['ÁREA (HA)',  CW*0.13, 'r'],
-    ['REALIZADO',  CW*0.13, 'r'],
-    ['EM ABERTO',  CW*0.13, 'r'],
+    ['FAZENDA',    CW*0.23, 'l'],
+    ['CLIENTE',    CW*0.13, 'l'],
+    ['TALHÕES',    CW*0.08, 'r'],
+    ['DRONES',     CW*0.07, 'r'],
+    ['ÁREA (HA)',  CW*0.11, 'r'],
+    ['REALIZADO',  CW*0.11, 'r'],
+    ['FALTA',      CW*0.11, 'r'],
     ['%',          CW*0.06, 'r'],
-    ['STATUS',     CW*0.07, 'l'],
+    ['STATUS',     CW*0.10, 'l'],
   ]
   const xDe = i => M + COLS.slice(0,i).reduce((a,c)=>a+c[1],0)
 
@@ -1072,6 +1082,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
         l.fazenda || '—',
         l.cliente || '—',
         `${l.talhoes||0}${l.talhoesTocados ? ` (${l.talhoesTocados})` : ''}`,
+        l.drones ? String(l.drones) : '—',
         nHa(l.area),
         l.realizado > 0 ? nHa(l.realizado) : '—',
         l.emAberto > 0 ? nHa(l.emAberto) : '—',
@@ -1080,8 +1091,8 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
       ]
       COLS.forEach((c,ci)=>{
         const x = c[2]==='r' ? xDe(ci)+c[1]-2 : xDe(ci)+2
-        if (ci===4 && l.realizado>0) { doc.setFont('helvetica','bold'); doc.setTextColor(...G) }
-        else if (ci===7) { doc.setFontSize(5.6); doc.setTextColor(...GR) }
+        if (ci===5 && l.realizado>0) { doc.setFont('helvetica','bold'); doc.setTextColor(...G) }
+        else if (ci===8) { doc.setFontSize(5.6); doc.setTextColor(...GR) }
         else { doc.setFont('helvetica','normal'); doc.setTextColor(...DK); doc.setFontSize(6.4) }
         doc.text(truncFit(doc, txt(valores[ci]), c[1]-4), x, y+3.7, { align: c[2]==='r'?'right':'left' })
       })
@@ -1094,11 +1105,12 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
     doc.setFillColor(235,243,238); doc.rect(M, y, CW, 5.6, 'F')
     doc.setFontSize(6.4); doc.setFont('helvetica','bold'); doc.setTextColor(...G)
     doc.text(`TOTAL ${txt(mod).toUpperCase()}`, xDe(0)+2, y+3.8)
-    const totais = [null,null,String(g.talhoes),nHa(g.area),nHa(g.realizado),nHa(g.emAberto),
+    const dronesGrupo = new Set(doGrupo.flatMap(l=>l.pilotos||[])).size
+    const totaisGrupo = [null,null,String(g.talhoes),String(dronesGrupo||'—'),nHa(g.area),nHa(g.realizado),nHa(g.emAberto),
       `${g.area>0?Math.floor(Math.min(100,(g.realizado/g.area)*100)):0}%`,null]
     COLS.forEach((c,ci)=>{
-      if (totais[ci]==null) return
-      doc.text(totais[ci], xDe(ci)+c[1]-2, y+3.8, { align:'right' })
+      if (totaisGrupo[ci]==null) return
+      doc.text(totaisGrupo[ci], xDe(ci)+c[1]-2, y+3.8, { align:'right' })
     })
     y += 5.6 + 3
   })
@@ -1108,7 +1120,7 @@ export async function gerarPDFSequencia({ linhas = [], periodo = {}, pdfConfig =
   doc.setFillColor(...G); doc.rect(M, y, CW, 6.4, 'F')
   doc.setFontSize(6.8); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255)
   doc.text('TOTAL GERAL', xDe(0)+2, y+4.3)
-  const tg = [null,null,String(geral.talhoes),nHa(geral.area),nHa(geral.realizado),nHa(geral.emAberto),`${Math.floor(pctGeral)}%`,null]
+  const tg = [null,null,String(geral.talhoes),String(geral.drones||'—'),nHa(geral.area),nHa(geral.realizado),nHa(geral.emAberto),`${Math.floor(pctGeral)}%`,null]
   COLS.forEach((c,ci)=>{ if (tg[ci]!=null) doc.text(tg[ci], xDe(ci)+c[1]-2, y+4.3, { align:'right' }) })
   y += 6.4
 

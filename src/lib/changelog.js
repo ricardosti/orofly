@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '8.8',
+    data: '2026-10-04',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Sequencia virou o Relatorio de Operacoes',
+        texto: 'A tela Sequencia do painel ganhou o novo layout: indicadores de total de hectares, em execucao, finalizados, realizados, na sequencia e drones em operacao; barra de progresso geral; e uma tabela por fazenda com tratamento, area, drones, area realizada, quanto falta, progresso e status. O periodo agora e escolhido numa regua de 1 a 90 dias (ou por datas). O relatorio mostra as fazendas em operacao no periodo; as demais ficam num bloco a parte, pra colocar na sequencia. O PDF e o WhatsApp saem com os mesmos numeros da tela.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Relatorio da noite contava o dia errado',
+        texto: 'Depois das 21h o relatorio considerava que ja era o dia seguinte, e um voo das 21h30 entrava na conta do outro dia. Agora vale a data do Brasil.',
+      },
+    ],
+  },
+  {
     versao: '8.7',
     data: '2026-10-03',
     itens: [

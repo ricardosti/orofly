@@ -50,6 +50,7 @@ import { indexarClientes, receitaDoVoo, totalizarReceita, mesDoVoo, mesDaDespesa
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
 import { apiUrl } from '../lib/apiBase'
 import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT_PDF_CONFIG, MOCK_RELATORIO } from '../lib/reportTemplates'
+import { linhasDaSequencia, totaisDaSequencia, ordenarLinhas, periodoUltimosDias, ROTULO_STATUS } from '../lib/sequencia'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -352,14 +353,21 @@ export default function AdminPanel({ onSwitchMode }) {
   const [atrBuscaTalhao, setAtrBuscaTalhao] = useState('')
   const [atrFiltroFaz, setAtrFiltroFaz] = useState('todas') // todas | deste | sem
   const [atrFiltroTal, setAtrFiltroTal] = useState('todos') // todos | pendentes | feitos
-  // Sequência: período + fazendas escolhidas pra compor a rodada.
-  const [seqPeriodo, setSeqPeriodo] = useState('7')   // 1 | 7 | 15 | custom
+  // Sequência: período (últimos N dias pela régua, ou datas escolhidas) + fazendas colocadas
+  // na rodada. O cálculo mora em lib/sequencia.
+  const [seqDias, setSeqDias] = useState(7)
+  const [seqCustom, setSeqCustom] = useState(false)
   const [seqDe, setSeqDe] = useState('')
   const [seqAte, setSeqAte] = useState('')
   const [seqSelecionadas, setSeqSelecionadas] = useState([])
   const [seqBusca, setSeqBusca] = useState('')
-  const [seqSoSelecionadas, setSeqSoSelecionadas] = useState(false)
+  const [seqMostrarOutras, setSeqMostrarOutras] = useState(false)
+  const [seqMenuExport, setSeqMenuExport] = useState(false)
   const [seqExportando, setSeqExportando] = useState(null)   // 'pdf' | 'whats'
+  // Quando os voos chegaram do banco: é o "Atualizado em" do relatório. A hora de abrir a
+  // tela não serve — o gestor pode estar olhando dado de uma hora atrás.
+  const [seqAtualizadoEm, setSeqAtualizadoEm] = useState(null)
+  useEffect(() => { if (relatorios.length) setSeqAtualizadoEm(new Date()) }, [relatorios])
   const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
@@ -707,34 +715,36 @@ export default function AdminPanel({ onSwitchMode }) {
   }
 
   // Texto do WhatsApp da Sequência. Agrupado por modalidade igual ao PDF e à planilha,
-  // pra quem recebe pelo zap ver na mesma ordem de quem abriu o arquivo.
-  function buildTxtSequencia(linhas, periodo) {
+  // pra quem recebe pelo zap ver na mesma ordem de quem abriu o arquivo. Os totais vêm
+  // prontos da tela (lib/sequencia), pra mensagem e tela dizerem o mesmo número.
+  function buildTxtSequencia(linhas, periodo, T) {
     const nHa = v => (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
     const fmtD = d => d ? String(d).split('-').reverse().join('/') : '—'
-    const g = linhas.reduce((a,l)=>({talhoes:a.talhoes+(l.talhoes||0), tocados:a.tocados+(l.talhoesTocados||0),
-      area:a.area+(l.area||0), realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0)}),
-      {talhoes:0,tocados:0,area:0,realizado:0,emAberto:0})
-    const pct = g.area>0 ? Math.floor(Math.min(100,(g.realizado/g.area)*100)) : 0
+    const pct = Math.floor(T.pct)
 
-    let t = `🎯 *SEQUÊNCIA DE OPERAÇÃO*\n`
+    let t = `📊 *RELATÓRIO DE OPERAÇÕES*\n`
     t += `📅 ${fmtD(periodo.de)} a ${fmtD(periodo.ate)}\n\n`
-    t += `*Avanço:* ${nHa(g.realizado)} de ${nHa(g.area)} ha — ${pct}%\n`
+    t += `*Progresso:* ${pct}% dos hectares\n`
     // Barra em texto: no WhatsApp não tem gráfico, e 10 blocos dão a noção na hora.
     t += `${'▓'.repeat(Math.round(pct/10))}${'░'.repeat(10-Math.round(pct/10))}\n`
-    t += `*Talhões:* ${g.talhoes} (${g.tocados} trabalhados)\n`
-    t += `*Em aberto:* ${nHa(g.emAberto)} ha\n`
+    t += `🌾 Total: ${nHa(T.area)} ha\n`
+    t += `✅ Finalizados: ${nHa(T.areaFinalizada)} ha\n`
+    t += `🔄 Em execução: ${nHa(T.areaExecucao)} ha\n`
+    t += `🕒 Na sequência: ${nHa(T.areaSequencia)} ha\n`
+    t += `📐 Realizados: ${nHa(T.coberto)} ha · falta ${nHa(T.emAberto)} ha\n`
+    t += `🚁 Drones em operação: ${T.drones}\n`
 
+    const MARCA = { concluida:'✅', executando:'🔄', sequencia:'🕒' }
     const mods = [...new Set(linhas.map(l=>l.modalidade))].sort((a,b)=>compararNomes(a,b))
     mods.forEach(mod=>{
       const doG = linhas.filter(l=>l.modalidade===mod)
-      const gg = doG.reduce((a,l)=>({talhoes:a.talhoes+(l.talhoes||0), area:a.area+(l.area||0),
-        realizado:a.realizado+(l.realizado||0), emAberto:a.emAberto+(l.emAberto||0)}),{talhoes:0,area:0,realizado:0,emAberto:0})
-      t += `\n*${String(mod).toUpperCase()}* — ${doG.length} ${doG.length===1?'fazenda':'fazendas'} · ${gg.talhoes} ${gg.talhoes===1?'talhão':'talhões'}\n`
+      const gg = doG.reduce((a,l)=>({area:a.area+(l.area||0), realizado:a.realizado+(l.realizado||0)}),{area:0,realizado:0})
+      t += `\n*${String(mod).toUpperCase()}* — ${doG.length} ${doG.length===1?'fazenda':'fazendas'}\n`
       doG.forEach(l=>{
-        const marca = l.status==='Concluída' ? '✅' : l.status==='Executando' ? '🔄' : '⬜'
-        t += `${marca} ${l.fazenda} — ${nHa(l.area)} ha`
+        t += `${MARCA[l.statusCodigo]||'⬜'} ${l.fazenda} — ${nHa(l.area)} ha`
         if (l.realizado>0) t += ` · feito ${nHa(l.realizado)} (${Math.floor(l.pct||0)}%)`
         if (l.emAberto>0.05) t += ` · falta ${nHa(l.emAberto)}`
+        if (l.drones) t += ` · ${l.drones} ${l.drones===1?'drone':'drones'}`
         t += `\n`
       })
       t += `_Subtotal: ${nHa(gg.realizado)} de ${nHa(gg.area)} ha_\n`
@@ -743,7 +753,7 @@ export default function AdminPanel({ onSwitchMode }) {
     return t
   }
 
-  async function exportarSequencia(tipo, linhasTela, periodo) {
+  async function exportarSequencia(tipo, linhasTela, periodo, totais) {
     if (!linhasTela.length) return
     setSeqExportando(tipo)
     try {
@@ -753,17 +763,18 @@ export default function AdminPanel({ onSwitchMode }) {
         modalidade: l.modalidade, fazenda: l.fz.nome, cliente: l.fz.cliente,
         talhoes: l.talhoes, talhoesTocados: l.talhoesTocados,
         area: l.area, realizado: l.coberto, emAberto: l.emAberto, pct: l.pct,
-        status: l.status==='concluida'?'Concluída':l.status==='executando'?'Executando':l.status==='sequencia'?'Sequência':'—',
+        drones: l.drones, pilotos: l.pilotos,
+        status: ROTULO_STATUS[l.status], statusCodigo: l.status,
       }))
-      const nomeArq = `sequencia-${periodo.de||'inicio'}-a-${periodo.ate||'hoje'}.pdf`
+      const nomeArq = `operacoes-${periodo.de||'inicio'}-a-${periodo.ate||'hoje'}.pdf`
       if (tipo === 'whats') {
-        const texto = buildTxtSequencia(linhas, periodo)
-        const doc = await gerarPDFSequencia({ linhas, periodo })
+        const texto = buildTxtSequencia(linhas, periodo, totais)
+        const doc = await gerarPDFSequencia({ linhas, periodo, totais })
         const file = new File([doc.output('blob')], nomeArq, { type:'application/pdf' })
         await compartilharNativo({ text: texto, file, filename: nomeArq,
           webFallbackUrl: 'https://wa.me/?text=' + encodeURIComponent(texto) })
       } else {
-        const doc = await gerarPDFSequencia({ linhas, periodo })
+        const doc = await gerarPDFSequencia({ linhas, periodo, totais })
         await salvarOuCompartilharPdf(doc, nomeArq)
         showToast('✅ PDF gerado!')
       }
@@ -7437,252 +7448,286 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
           )}
 
           {tab === 'sequencia' && (() => {
-            // SEQUÊNCIA — a rodada de trabalho: escolhe as fazendas que entram, define o
-            // período e acompanha quanto já saiu de cada uma.
+            // SEQUÊNCIA — relatório de operações da rodada: o que já foi feito em cada fazenda
+            // no período, o que falta e quantos drones trabalharam. As fazendas com voo no
+            // período ou colocadas na sequência formam o relatório; as demais ficam numa lista
+            // à parte, só pra serem escolhidas. O cálculo mora em lib/sequencia (testado), e o
+            // PDF e o WhatsApp recebem os mesmos números da tela.
             //
-            // "Modalidade" vem de fazendas.produto (Herbicida/Inseticida/Fungicida), que é o
-            // campo que o cadastro já usa pra isso. Não existe coluna de região no banco,
-            // então o agrupamento secundário é por cliente.
-            const hojeISO = new Date().toISOString().slice(0,10)
-            const diasAtras = n => new Date(Date.now() - (n-1)*864e5).toISOString().slice(0,10)
-            const periodo = seqPeriodo === 'custom'
-              ? { de: seqDe, ate: seqAte }
-              : { de: diasAtras(parseInt(seqPeriodo,10)), ate: hojeISO }
-
-            // Voos do período, uma vez só — as linhas todas leem daqui.
-            const voosPeriodo = relatorios.filter(r => {
-              if (!STATUS_COM_AREA_APLICADA.includes(r.status)) return false
-              if (r.teste) return false
-              const d = (r.dt_inicio || r.created_at || '').slice(0,10)
-              if (!d) return false
-              if (periodo.de && d < periodo.de) return false
-              if (periodo.ate && d > periodo.ate) return false
-              return true
-            })
-
-            const linhas = ordenarPorNome(invFazendas).map(fz => {
-              const talhoesFz = invTalhoes.filter(t => t.fazenda_id === fz.id)
-              const area = talhoesFz.reduce((a,t) => a + (parseFloat(t.area_ha)||0), 0)
-              const voosFz = voosPeriodo.filter(r => r.fazenda === fz.nome && r.cliente === fz.cliente)
-              const realizado = voosFz.reduce((a,r) => a + areaLiquida(r), 0)
-              const bordadura = voosFz.reduce((a,r) => a + (parseFloat(r.bordadura)||0), 0)
-              const coberto = realizado + bordadura
-              // Talhões efetivamente tocados no período (um voo pode cobrir vários).
-              const talhoesTocados = new Set()
-              voosFz.forEach(r => (r.localizacao||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(n => talhoesTocados.add(n)))
-              const emAberto = Math.max(0, +(area - coberto).toFixed(2))
-              // Mesma tolerância de 0,05 ha da lista de fazendas: sobra de arredondamento
-              // não é pendência de campo.
-              const pct = area > 0 ? ((area - coberto) <= 0.05 ? 100 : Math.min(100, (coberto/area)*100)) : null
-              const selecionada = seqSelecionadas.includes(fz.id)
-              const status = pct === 100 ? 'concluida' : voosFz.length > 0 ? 'executando' : selecionada ? 'sequencia' : 'parada'
-              return { fz, modalidade: fz.produto || 'Sem modalidade', area, realizado, bordadura, coberto, emAberto, pct,
-                       talhoes: talhoesFz.length, talhoesTocados: talhoesTocados.size, voos: voosFz.length, selecionada, status }
-            })
+            // "Tratamento" vem de fazendas.produto (Herbicida/Inseticida/Fungicida), que é o
+            // campo que o cadastro já usa pra isso.
+            const periodo = seqCustom ? { de: seqDe, ate: seqAte } : periodoUltimosDias(seqDias)
+            const todas = linhasDaSequencia({ fazendas: invFazendas, talhoes: invTalhoes, relatorios, periodo,
+              selecionadas: seqSelecionadas, areaLiquida, statusComArea: STATUS_COM_AREA_APLICADA })
 
             const nb = t => (t||'').trim().toLowerCase()
-            const buscaSeq = nb(seqBusca)
-            const visiveis = linhas.filter(l =>
-              (!seqSoSelecionadas || l.selecionada) &&
-              (!buscaSeq || nb(l.fz.nome).includes(buscaSeq) || nb(l.fz.cliente).includes(buscaSeq) || nb(l.modalidade).includes(buscaSeq)))
+            const busca = nb(seqBusca)
+            const casa = l => !busca || nb(l.fz.nome).includes(busca) || nb(l.fz.cliente).includes(busca) || nb(l.modalidade).includes(busca)
+            const doRelatorio = ordenarLinhas(todas.filter(l => l.status !== 'parada' && casa(l)), compararNomes)
+            const outras = ordenarLinhas(todas.filter(l => l.status === 'parada' && casa(l)), compararNomes)
+            const T = totaisDaSequencia(doRelatorio)
 
-            // Os totais consideram o que está SELECIONADO — é a rodada que interessa. Sem
-            // nada marcado, mostra o total do que está na tela, pra a barra não ficar zerada.
-            const base = seqSelecionadas.length ? linhas.filter(l => l.selecionada) : visiveis
-            const tot = base.reduce((a,l) => ({
-              area: a.area + l.area, realizado: a.realizado + l.realizado, coberto: a.coberto + l.coberto,
-              emAberto: a.emAberto + l.emAberto, talhoes: a.talhoes + l.talhoes, talhoesTocados: a.talhoesTocados + l.talhoesTocados,
-              voos: a.voos + l.voos,
-            }), { area:0, realizado:0, coberto:0, emAberto:0, talhoes:0, talhoesTocados:0, voos:0 })
-            const pctTot = tot.area > 0 ? Math.min(100, (tot.coberto/tot.area)*100) : 0
-
-            // Agrupa por modalidade, na ordem da planilha do Pastor.
-            const grupos = [...new Set(visiveis.map(l => l.modalidade))].sort((a,b)=>compararNomes(a,b))
-
-            const SELO = {
-              executando: { txt:'Executando', cor:'#1D4ED8', bg:'rgba(29,78,216,.1)' },
-              sequencia:  { txt:'Sequência',  cor:'#B45309', bg:'rgba(180,83,9,.12)' },
-              concluida:  { txt:'Concluída',  cor:'#059669', bg:theme.successBg },
-              parada:     { txt:'—',          cor:theme.textFaint, bg:'transparent' },
+            const nHa = v => (v||0).toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 })
+            const fmtD = d => d ? d.split('-').reverse().join('/') : '—'
+            const VERDE = '#059669', LARANJA = '#D97706', AZUL = '#2563EB'
+            const ESTILO = {
+              concluida:  { cor:VERDE,   fundo:theme.successBg,          barra:VERDE,     icone:'check' },
+              executando: { cor:LARANJA, fundo:'rgba(217,119,6,.12)',   barra:'#F59E0B', icone:'drone' },
+              sequencia:  { cor:AZUL,    fundo:'rgba(37,99,235,.10)',   barra:AZUL,      icone:'relogio' },
+              parada:     { cor:theme.textFaint, fundo:'transparent',   barra:theme.textFaint, icone:null },
             }
-            const nHa = v => v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 })
-            const th = { padding:'9px 10px', textAlign:'left', fontSize:10, fontWeight:700, color:theme.textFaint2, letterSpacing:.4, textTransform:'uppercase', whiteSpace:'nowrap', borderBottom:`1px solid ${theme.cardBorder2}` }
-            const td = { padding:'9px 10px', fontSize:12.5, color:theme.text, borderBottom:`1px solid ${theme.divider}`, whiteSpace:'nowrap' }
+            // Ícones em SVG, brancos sobre um círculo colorido — emoji muda de desenho em cada
+            // aparelho e não pega a cor do tema.
+            const icone = (tipo, cor, t = 34) => (
+              <span style={{width:t,height:t,borderRadius:'50%',background:cor,display:'inline-flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                <svg width={t*0.56} height={t*0.56} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  {tipo==='check' && <polyline points="5 12.5 10 17 19 7"/>}
+                  {tipo==='relogio' && <><circle cx="12" cy="12" r="8"/><polyline points="12 7.5 12 12 15.2 14"/></>}
+                  {tipo==='drone' && <><circle cx="6" cy="6" r="2.4"/><circle cx="18" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M8 8l8 8M16 8l-8 8"/></>}
+                  {tipo==='area' && <><path d="M4 18l5-8 4 5 3-3 4 6z"/><circle cx="16.5" cy="7" r="1.6"/></>}
+                </svg>
+              </span>
+            )
+            const barra = (pct, cor, h = 7) => (
+              <div style={{height:h,background:theme.divider,borderRadius:20,overflow:'hidden',flex:1,minWidth:60}}>
+                <div style={{height:'100%',width:`${Math.max(0,Math.min(100,pct||0))}%`,background:cor,borderRadius:20}}/>
+              </div>
+            )
+
+            const kpis = [
+              { rotulo:'Total de hectares', valor:nHa(T.area),           sub:'Hectares',  cor:VERDE,   icone:'area' },
+              { rotulo:'Em execução',       valor:nHa(T.areaExecucao),   sub:'Hectares',  cor:LARANJA, icone:'drone',   fundo:'rgba(217,119,6,.07)' },
+              { rotulo:'Finalizados',       valor:nHa(T.areaFinalizada), sub:'Hectares',  cor:VERDE,   icone:'check' },
+              { rotulo:'Ha realizados',     valor:nHa(T.coberto),        sub:`Hectares · ${T.voos} ${T.voos===1?'voo':'voos'}`, cor:VERDE, icone:'check' },
+              { rotulo:'Na sequência',      valor:nHa(T.areaSequencia),  sub:'Hectares',  cor:AZUL,    icone:'relogio', fundo:'rgba(37,99,235,.06)' },
+              { rotulo:'Drones',            valor:String(T.drones),      sub:'em operação', cor:LARANJA, icone:'drone' },
+            ]
+
+            const th = { padding:'10px 12px', textAlign:'left', fontSize:11, fontWeight:600, color:theme.textFaint2, whiteSpace:'nowrap', borderBottom:`1px solid ${theme.cardBorder2}` }
+            const td = { padding:'10px 12px', fontSize:12.5, color:theme.text, borderBottom:`1px solid ${theme.divider}`, whiteSpace:'nowrap' }
             const tdNum = { ...td, textAlign:'right', fontVariantNumeric:'tabular-nums' }
+            const card = { background:theme.card, border:`1px solid ${theme.cardBorder}`, borderRadius:16, boxShadow:'0 4px 14px rgba(11,18,16,.04)' }
 
             function alternarFazenda(id) {
               setSeqSelecionadas(v => v.includes(id) ? v.filter(x=>x!==id) : [...v, id])
             }
+            const exportar = tipo => { setSeqMenuExport(false); exportarSequencia(tipo, doRelatorio, periodo, T) }
 
             return (
             <div>
-              <div style={{marginBottom:16}}>
-                <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?18:22,fontWeight:700,color:theme.text}}>🎯 Sequência</div>
-                <div style={{fontSize:12,color:theme.textMuted,marginTop:3,lineHeight:1.5,maxWidth:620}}>
-                  Monte a rodada: escolha as fazendas que entram e veja, no período, quanto já saiu
-                  e quanto falta em cada uma.
+              {/* ── Cabeçalho ── */}
+              <div style={{display:'flex',alignItems:'flex-start',gap:14,flexWrap:'wrap',marginBottom:14}}>
+                <span style={{color:VERDE,flexShrink:0,marginTop:2}}>
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="5.5" cy="6" r="2.3"/><circle cx="18.5" cy="6" r="2.3"/><path d="M5.5 6h4M14.5 6h4"/>
+                    <rect x="8.5" y="8" width="7" height="5" rx="2"/><path d="M9.5 13l-1.5 4M14.5 13l1.5 4M10.5 16.5h3"/>
+                  </svg>
+                </span>
+                <div style={{flex:1,minWidth:200}}>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontSize:isMobile?19:24,fontWeight:700,color:theme.text}}>
+                    {!seqCustom && seqDias===1 ? 'Relatório Diário de Operações' : 'Relatório de Operações'}
+                  </div>
+                  <div style={{fontSize:12.5,color:theme.textMuted,marginTop:3}}>Aplicação de defensivos agrícolas com drones</div>
+                </div>
+                <div style={{textAlign:'right',fontSize:12,color:theme.textMuted,lineHeight:1.45}}>
+                  📅 Atualizado em<br/>
+                  <strong style={{color:theme.text}}>
+                    {seqAtualizadoEm ? `${seqAtualizadoEm.toLocaleDateString('pt-BR')} ${seqAtualizadoEm.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}` : '—'}
+                  </strong>
                 </div>
               </div>
 
-              {/* ── Período ── */}
-              <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:14,padding:14,marginBottom:12}}>
-                <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
-                  {[['1','Último dia'],['7','Últimos 7 dias'],['15','Últimos 15 dias'],['custom','Personalizado']].map(([v,lbl])=>(
-                    <button key={v} onClick={()=>setSeqPeriodo(v)}
-                      style={{background: seqPeriodo===v?'#059669':theme.bg, color: seqPeriodo===v?'#fff':theme.textMuted,
-                        border:`1px solid ${seqPeriodo===v?'#059669':theme.cardBorder2}`, borderRadius:10, padding:'7px 14px',
-                        fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'}}>{lbl}</button>
-                  ))}
-                  {seqPeriodo==='custom' && (
-                    <>
-                      <input type="date" value={seqDe} onChange={e=>setSeqDe(e.target.value)}
-                        style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'6px 10px',fontSize:12,background:theme.inputBg,color:theme.text,outline:'none'}}/>
-                      <span style={{fontSize:11,color:theme.textMuted}}>até</span>
-                      <input type="date" value={seqAte} onChange={e=>setSeqAte(e.target.value)}
-                        style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'6px 10px',fontSize:12,background:theme.inputBg,color:theme.text}}/>
-                    </>
-                  )}
-                  <span style={{marginLeft:'auto',fontSize:11,color:theme.textFaint,whiteSpace:'nowrap'}}>
-                    {periodo.de && periodo.ate
-                      ? `${periodo.de.split('-').reverse().join('/')} a ${periodo.ate.split('-').reverse().join('/')}`
-                      : 'informe as datas'}
-                  </span>
-                </div>
+              {/* ── Período: régua de dias, ou datas escolhidas ── */}
+              <div style={{...card,padding:'12px 16px',marginBottom:12,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+                <span style={{fontSize:12,fontWeight:700,color:theme.textMuted}}>Período</span>
+                {!seqCustom ? (
+                  <>
+                    <input type="range" min={1} max={90} step={1} value={seqDias} onChange={e=>setSeqDias(parseInt(e.target.value,10)||1)}
+                      aria-label="Quantidade de dias do relatório"
+                      style={{flex:1,minWidth:170,accentColor:VERDE,cursor:'pointer'}}/>
+                    <strong style={{fontSize:13,color:theme.text,minWidth:118}}>{seqDias===1 ? 'Último dia' : `Últimos ${seqDias} dias`}</strong>
+                  </>
+                ) : (
+                  <>
+                    <input type="date" value={seqDe} onChange={e=>setSeqDe(e.target.value)}
+                      style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'6px 10px',fontSize:12,background:theme.inputBg,color:theme.text,outline:'none'}}/>
+                    <span style={{fontSize:11,color:theme.textMuted}}>até</span>
+                    <input type="date" value={seqAte} onChange={e=>setSeqAte(e.target.value)}
+                      style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'6px 10px',fontSize:12,background:theme.inputBg,color:theme.text,outline:'none'}}/>
+                  </>
+                )}
+                <span style={{fontSize:11.5,color:theme.textFaint,whiteSpace:'nowrap'}}>
+                  {periodo.de && periodo.ate ? `${fmtD(periodo.de)} a ${fmtD(periodo.ate)}` : 'informe as datas'}
+                </span>
+                <button onClick={()=>setSeqCustom(v=>!v)}
+                  style={{marginLeft:'auto',background:'none',border:'none',color:VERDE,fontSize:12,fontWeight:600,cursor:'pointer',padding:0}}>
+                  {seqCustom ? 'Usar a régua de dias' : 'Escolher datas'}
+                </button>
               </div>
 
-              {/* ── Resumo ── */}
-              <div style={{display:'grid',gridTemplateColumns:`repeat(auto-fit, minmax(${isMobile?140:158}px, 1fr))`,gap:10,marginBottom:12}}>
-                {[
-                  ['🌾 Fazendas', seqSelecionadas.length ? `${seqSelecionadas.length}` : `${visiveis.length}`, seqSelecionadas.length ? 'na sequência' : 'na tela'],
-                  ['🗺️ Talhões', `${tot.talhoes}`, `${tot.talhoesTocados} trabalhados`],
-                  ['📐 Área', `${nHa(tot.area)}`, 'hectares'],
-                  ['✅ Realizado', `${nHa(tot.coberto)}`, `${tot.voos} ${tot.voos===1?'voo':'voos'}`],
-                  ['⏳ Em aberto', `${nHa(tot.emAberto)}`, 'hectares'],
-                ].map(([lbl,val,sub])=>(
-                  <div key={lbl} style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:12,padding:'12px 14px'}}>
-                    <div style={{fontSize:10.5,color:theme.textFaint2,fontWeight:600}}>{lbl}</div>
-                    <div style={{fontSize:20,fontWeight:700,color:theme.text,fontFamily:"'Syne',sans-serif",marginTop:2,fontVariantNumeric:'tabular-nums'}}>{val}</div>
-                    <div style={{fontSize:10,color:theme.textFaint,marginTop:1}}>{sub}</div>
+              {/* ── Indicadores ── */}
+              <div style={{display:'grid',gridTemplateColumns:`repeat(auto-fit, minmax(${isMobile?150:170}px, 1fr))`,gap:10,marginBottom:12}}>
+                {kpis.map(k => (
+                  <div key={k.rotulo} style={{...card,background:k.fundo||theme.card,padding:'14px 14px',display:'flex',alignItems:'center',gap:11}}>
+                    {icone(k.icone, k.cor)}
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:12,color:k.cor===VERDE?theme.text:k.cor,fontWeight:600}}>{k.rotulo}</div>
+                      <div style={{fontSize:isMobile?19:22,fontWeight:800,color:theme.text,fontFamily:"'Syne',sans-serif",lineHeight:1.15,fontVariantNumeric:'tabular-nums'}}>{k.valor}</div>
+                      <div style={{fontSize:10.5,color:theme.textFaint}}>{k.sub}</div>
+                    </div>
                   </div>
                 ))}
-                <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:12,padding:'12px 14px'}}>
-                  <div style={{fontSize:10.5,color:theme.textFaint2,fontWeight:600}}>📊 Avanço</div>
-                  <div style={{fontSize:20,fontWeight:700,color:'#059669',fontFamily:"'Syne',sans-serif",marginTop:2}}>{Math.floor(pctTot)}%</div>
-                  <div style={{height:5,background:theme.divider,borderRadius:20,overflow:'hidden',marginTop:5}}>
-                    <div style={{height:'100%',width:`${pctTot}%`,background:'#059669',borderRadius:20}}/>
+              </div>
+
+              {/* ── Progresso geral ── */}
+              <div style={{...card,padding:'14px 16px',marginBottom:14,display:'flex',alignItems:'center',gap:14}}>
+                {icone('check', VERDE, 38)}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:theme.text,marginBottom:8}}>Progresso geral das operações</div>
+                  {barra(T.pct, VERDE, 10)}
+                </div>
+                <div style={{textAlign:'right',flexShrink:0}}>
+                  <div style={{fontSize:24,fontWeight:800,color:VERDE,fontFamily:"'Syne',sans-serif",lineHeight:1}}>{Math.floor(T.pct)}%</div>
+                  <div style={{fontSize:11,color:theme.textMuted,marginTop:3}}>dos hectares atendidos</div>
+                </div>
+              </div>
+
+              {/* ── Tabela ── */}
+              <div style={{...card,padding:isMobile?10:14,marginBottom:12}}>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
+                  <div style={{position:'relative',flex:1,minWidth:210}}>
+                    <span style={{position:'absolute',left:11,top:'50%',transform:'translateY(-50%)',fontSize:13,opacity:.7}}>🔍</span>
+                    <input placeholder="Buscar fazenda, cliente ou tratamento..." value={seqBusca} onChange={e=>setSeqBusca(e.target.value)}
+                      style={{width:'100%',boxSizing:'border-box',border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'9px 11px 9px 33px',fontSize:12.5,background:theme.inputBg,color:theme.text,outline:'none'}}/>
+                  </div>
+                  <div style={{position:'relative'}}>
+                    <button disabled={!!seqExportando || doRelatorio.length===0} onClick={()=>setSeqMenuExport(v=>!v)}
+                      style={{background:theme.bg,color:theme.text,border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'9px 14px',fontSize:12.5,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap',opacity:(seqExportando||!doRelatorio.length)?.5:1}}>
+                      📄 {seqExportando ? 'Gerando...' : 'Baixar PDF'} ▾
+                    </button>
+                    {seqMenuExport && (
+                      <>
+                        {/* Fundo invisível: clicar fora fecha o menu. */}
+                        <div onClick={()=>setSeqMenuExport(false)} style={{position:'fixed',inset:0,zIndex:40}}/>
+                        <div style={{position:'absolute',right:0,top:'calc(100% + 6px)',zIndex:41,background:theme.card,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,boxShadow:'0 10px 30px rgba(0,0,0,.15)',overflow:'hidden',minWidth:190}}>
+                          <button onClick={()=>exportar('pdf')}
+                            style={{display:'block',width:'100%',textAlign:'left',background:'none',border:'none',padding:'11px 14px',fontSize:12.5,color:theme.text,cursor:'pointer'}}>📄 Baixar PDF</button>
+                          <button onClick={()=>exportar('whats')}
+                            style={{display:'block',width:'100%',textAlign:'left',background:'none',border:'none',borderTop:`1px solid ${theme.divider}`,padding:'11px 14px',fontSize:12.5,color:theme.text,cursor:'pointer'}}>📲 Enviar pelo WhatsApp</button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              {/* ── Busca e filtros ── */}
-              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
-                <input placeholder="Buscar fazenda, cliente ou modalidade..." value={seqBusca} onChange={e=>setSeqBusca(e.target.value)}
-                  style={{flex:1,minWidth:200,border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'8px 11px',fontSize:12.5,background:theme.inputBg,color:theme.text,outline:'none'}}/>
-                <button onClick={()=>setSeqSoSelecionadas(v=>!v)}
-                  style={{background: seqSoSelecionadas?'#059669':theme.bg, color: seqSoSelecionadas?'#fff':theme.textMuted,
-                    border:`1px solid ${seqSoSelecionadas?'#059669':theme.cardBorder2}`, borderRadius:10, padding:'8px 13px', fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap'}}>
-                  ✓ Só as escolhidas ({seqSelecionadas.length})
-                </button>
-                {seqSelecionadas.length>0 && (
-                  <button onClick={()=>setSeqSelecionadas([])}
-                    style={{background:'none',border:'none',color:'#EF4444',fontSize:12,fontWeight:600,cursor:'pointer'}}>✕ limpar</button>
-                )}
-              </div>
-
-              {/* Exporta o que está NA TELA (base), que é o mesmo conjunto dos totais —
-                  assim o relatório nunca diverge do que o gestor está vendo. */}
-              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
-                <button disabled={!!seqExportando || base.length===0}
-                  onClick={()=>exportarSequencia('pdf', base, periodo)}
-                  style={{background:theme.bg,color:theme.text,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'9px 16px',fontSize:12.5,fontWeight:600,cursor:'pointer',opacity:(seqExportando||!base.length)?.5:1}}>
-                  {seqExportando==='pdf'?'Gerando...':'📄 Baixar PDF'}
-                </button>
-                <button disabled={!!seqExportando || base.length===0}
-                  onClick={()=>exportarSequencia('whats', base, periodo)}
-                  style={{background:'#25D366',color:'#fff',border:'none',borderRadius:12,padding:'9px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer',opacity:(seqExportando||!base.length)?.5:1}}>
-                  {seqExportando==='whats'?'Gerando...':'📲 WhatsApp'}
-                </button>
-                <span style={{alignSelf:'center',fontSize:11,color:theme.textFaint}}>
-                  {seqSelecionadas.length ? `${base.length} fazenda${base.length>1?'s':''} escolhida${base.length>1?'s':''}` : `${base.length} fazenda${base.length>1?'s':''} na tela`}
-                </span>
-              </div>
-
-              {/* ── Tabela por modalidade ── */}
-              {visiveis.length===0 ? (
-                <div style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:14,padding:34,textAlign:'center',color:theme.textMuted,fontSize:13}}>
-                  Nenhuma fazenda encontrada.
-                </div>
-              ) : grupos.map(mod => {
-                const doGrupo = visiveis.filter(l => l.modalidade === mod)
-                const g = doGrupo.reduce((a,l)=>({area:a.area+l.area, coberto:a.coberto+l.coberto, emAberto:a.emAberto+l.emAberto, talhoes:a.talhoes+l.talhoes}),{area:0,coberto:0,emAberto:0,talhoes:0})
-                const todasMarcadas = doGrupo.every(l=>l.selecionada)
-                return (
-                  <div key={mod} style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:14,overflow:'hidden',marginBottom:12}}>
-                    <div style={{padding:'10px 12px',background:theme.bg,borderBottom:`1px solid ${theme.cardBorder2}`,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-                      <input type="checkbox" style={{cursor:'pointer'}} checked={todasMarcadas}
-                        title={todasMarcadas?'Tirar todas da sequência':'Colocar todas na sequência'}
-                        onChange={e=>{
-                          const ids = doGrupo.map(l=>l.fz.id)
-                          setSeqSelecionadas(v => e.target.checked ? [...new Set([...v,...ids])] : v.filter(x=>!ids.includes(x)))
-                        }}/>
-                      <span style={{fontSize:13,fontWeight:700,color:theme.text}}>{mod}</span>
-                      <span style={{fontSize:11,color:theme.textFaint}}>{doGrupo.length} {doGrupo.length===1?'fazenda':'fazendas'} · {g.talhoes} {g.talhoes===1?'talhão':'talhões'}</span>
-                      <span style={{marginLeft:'auto',fontSize:11.5,color:theme.textMuted,fontVariantNumeric:'tabular-nums'}}>
-                        {nHa(g.coberto)} de {nHa(g.area)} ha · <strong style={{color:'#059669'}}>{g.area>0?Math.floor(Math.min(100,(g.coberto/g.area)*100)):0}%</strong>
-                      </span>
-                    </div>
-                    <div style={{overflowX:'auto'}}>
-                      <table style={{width:'100%',borderCollapse:'collapse',minWidth:760}}>
-                        <thead><tr style={{background:theme.bg}}>
-                          <th style={{...th,width:30}}></th>
-                          <th style={th}>Fazenda</th>
-                          <th style={th}>Cliente</th>
-                          <th style={{...th,textAlign:'right'}}>Talhões</th>
-                          <th style={{...th,textAlign:'right'}}>Área (ha)</th>
-                          <th style={{...th,textAlign:'right'}}>Realizado</th>
-                          <th style={{...th,textAlign:'right'}}>Em aberto</th>
-                          <th style={{...th,textAlign:'right'}}>%</th>
-                          <th style={th}>Status</th>
-                        </tr></thead>
-                        <tbody>
-                          {doGrupo.map(l => (
-                            <tr key={l.fz.id} style={{background: l.selecionada?theme.successBg:'transparent'}}>
-                              <td style={{...td,padding:'9px 6px 9px 10px'}}>
-                                <input type="checkbox" style={{cursor:'pointer'}} checked={l.selecionada} onChange={()=>alternarFazenda(l.fz.id)}/>
+                {doRelatorio.length===0 ? (
+                  <div style={{padding:'30px 10px',textAlign:'center',color:theme.textMuted,fontSize:13,lineHeight:1.5}}>
+                    Nenhuma fazenda em operação no período.<br/>
+                    Coloque fazendas na sequência na lista abaixo, ou aumente o período.
+                  </div>
+                ) : (
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',minWidth:980}}>
+                      <thead><tr style={{background:theme.bg}}>
+                        <th style={{...th,width:28}} title="Na sequência"></th>
+                        <th style={th}>Fazenda</th>
+                        <th style={th}>Cliente</th>
+                        <th style={th}>Tratamento</th>
+                        <th style={{...th,textAlign:'right'}}>Área (ha)</th>
+                        <th style={{...th,textAlign:'right'}} title="Um por piloto que voou na fazenda no período">Drones</th>
+                        <th style={{...th,textAlign:'right'}}>Área realizada</th>
+                        <th style={{...th,textAlign:'right'}}>Falta</th>
+                        <th style={{...th,minWidth:150}}>Progresso</th>
+                        <th style={th}>Status</th>
+                      </tr></thead>
+                      <tbody>
+                        {doRelatorio.map(l => {
+                          const e = ESTILO[l.status]
+                          return (
+                            <tr key={l.fz.id}>
+                              <td style={{...td,padding:'10px 4px 10px 12px'}}>
+                                <input type="checkbox" style={{cursor:'pointer',accentColor:VERDE}} checked={l.selecionada} onChange={()=>alternarFazenda(l.fz.id)}
+                                  title={l.selecionada?'Tirar da sequência':'Colocar na sequência'}/>
                               </td>
-                              <td style={{...td,fontWeight:600}}>{l.fz.nome}</td>
+                              <td style={{...td,fontWeight:700}}>
+                                {l.fz.nome}
+                                <div style={{fontSize:10.5,fontWeight:400,color:theme.textFaint,marginTop:1}}>
+                                  {l.talhoes} {l.talhoes===1?'talhão':'talhões'}{l.talhoesTocados>0?` · ${l.talhoesTocados} trabalhados`:''}
+                                </div>
+                              </td>
                               <td style={{...td,color:theme.textMuted}}>{l.fz.cliente}</td>
-                              <td style={tdNum}>
-                                {l.talhoes}
-                                {l.talhoesTocados>0 && <span style={{color:'#059669',fontSize:10.5}}> ({l.talhoesTocados})</span>}
-                              </td>
+                              <td style={{...td,color:theme.textMuted}}>{l.modalidade}</td>
                               <td style={tdNum}>{nHa(l.area)}</td>
-                              <td style={{...tdNum,fontWeight:600,color: l.coberto>0?'#059669':theme.textFaint}}>{l.coberto>0?nHa(l.coberto):'—'}</td>
-                              <td style={{...tdNum,color: l.emAberto>0?theme.text:theme.textFaint}}>{l.emAberto>0?nHa(l.emAberto):'—'}</td>
-                              <td style={{...tdNum,fontWeight:700}}>{l.pct==null?'—':`${Math.floor(l.pct)}%`}</td>
+                              <td style={{...tdNum,fontWeight:600}}>{l.drones || '—'}</td>
+                              <td style={{...tdNum,fontWeight:600,color:l.coberto>0?VERDE:theme.textFaint}}>{l.coberto>0?nHa(l.coberto):'—'}</td>
+                              <td style={{...tdNum,color:l.emAberto>0.05?theme.text:theme.textFaint}}>{l.emAberto>0.05?nHa(l.emAberto):'—'}</td>
                               <td style={td}>
-                                <span style={{fontSize:10,fontWeight:700,color:SELO[l.status].cor,background:SELO[l.status].bg,borderRadius:5,padding:'2px 7px',whiteSpace:'nowrap'}}>
-                                  {SELO[l.status].txt}
+                                <div style={{display:'flex',alignItems:'center',gap:9}}>
+                                  {barra(l.pct, e.barra)}
+                                  <span style={{fontSize:12,fontWeight:600,color:theme.textMuted,minWidth:36,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>
+                                    {l.pct==null ? '—' : `${Math.floor(l.pct)}%`}
+                                  </span>
+                                </div>
+                              </td>
+                              <td style={td}>
+                                <span style={{display:'inline-flex',alignItems:'center',gap:6,background:e.fundo,color:e.cor,borderRadius:20,padding:'4px 11px 4px 5px',fontSize:11.5,fontWeight:700}}>
+                                  {icone(e.icone, e.cor, 20)}{ROTULO_STATUS[l.status]}
                                 </span>
                               </td>
                             </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Fazendas fora do relatório, pra montar a sequência ── */}
+              <div style={{...card,overflow:'hidden'}}>
+                <button onClick={()=>setSeqMostrarOutras(v=>!v)}
+                  style={{width:'100%',display:'flex',alignItems:'center',gap:8,background:'none',border:'none',padding:'13px 16px',cursor:'pointer',textAlign:'left'}}>
+                  <span style={{fontSize:13,fontWeight:700,color:theme.text}}>➕ Colocar fazendas na sequência</span>
+                  <span style={{fontSize:11.5,color:theme.textFaint}}>{outras.length} {outras.length===1?'fazenda parada':'fazendas paradas'} no período</span>
+                  {seqSelecionadas.length>0 && (
+                    <span onClick={e=>{ e.stopPropagation(); setSeqSelecionadas([]) }}
+                      style={{fontSize:11.5,color:'#EF4444',fontWeight:600}}>✕ esvaziar sequência ({seqSelecionadas.length})</span>
+                  )}
+                  <span style={{marginLeft:'auto',color:theme.textMuted,fontSize:12}}>{seqMostrarOutras?'▲':'▼'}</span>
+                </button>
+                {seqMostrarOutras && (
+                  outras.length===0 ? (
+                    <div style={{padding:'0 16px 16px',fontSize:12,color:theme.textMuted}}>Todas as fazendas já estão no relatório.</div>
+                  ) : (
+                    <div style={{overflowX:'auto',borderTop:`1px solid ${theme.divider}`}}>
+                      <table style={{width:'100%',borderCollapse:'collapse',minWidth:620}}>
+                        <thead><tr style={{background:theme.bg}}>
+                          <th style={{...th,width:28}}></th>
+                          <th style={th}>Fazenda</th>
+                          <th style={th}>Cliente</th>
+                          <th style={th}>Tratamento</th>
+                          <th style={{...th,textAlign:'right'}}>Talhões</th>
+                          <th style={{...th,textAlign:'right'}}>Área (ha)</th>
+                        </tr></thead>
+                        <tbody>
+                          {outras.map(l => (
+                            <tr key={l.fz.id} onClick={()=>alternarFazenda(l.fz.id)} style={{cursor:'pointer'}}>
+                              <td style={{...td,padding:'9px 4px 9px 12px'}}>
+                                <input type="checkbox" readOnly checked={false} style={{cursor:'pointer',accentColor:VERDE}}/>
+                              </td>
+                              <td style={{...td,fontWeight:600}}>{l.fz.nome}</td>
+                              <td style={{...td,color:theme.textMuted}}>{l.fz.cliente}</td>
+                              <td style={{...td,color:theme.textMuted}}>{l.modalidade}</td>
+                              <td style={tdNum}>{l.talhoes}</td>
+                              <td style={tdNum}>{nHa(l.area)}</td>
+                            </tr>
                           ))}
-                          <tr style={{background:theme.bg}}>
-                            <td style={{...td,borderBottom:'none'}}></td>
-                            <td style={{...td,borderBottom:'none',fontWeight:700}} colSpan={2}>Total {mod}</td>
-                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{g.talhoes}</td>
-                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{nHa(g.area)}</td>
-                            <td style={{...tdNum,borderBottom:'none',fontWeight:700,color:'#059669'}}>{nHa(g.coberto)}</td>
-                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{nHa(g.emAberto)}</td>
-                            <td style={{...tdNum,borderBottom:'none',fontWeight:700}}>{g.area>0?Math.floor(Math.min(100,(g.coberto/g.area)*100)):0}%</td>
-                            <td style={{...td,borderBottom:'none'}}></td>
-                          </tr>
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                )}
+              </div>
             </div>
             )
           })()}
