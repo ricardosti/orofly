@@ -47,3 +47,18 @@ export function classificarClimaParam(key, valor) {
   }
   return null
 }
+
+// Direção do vento em graus — de onde ele VEM (0° = do Norte, 90° = do Leste), como as três
+// APIs mandam — para os 8 pontos cardeais, com L e O como no Brasil (não E e W).
+const CARDEAIS = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO']
+export const NOME_CARDINAL = { N: 'Norte', NE: 'Nordeste', L: 'Leste', SE: 'Sudeste', S: 'Sul', SO: 'Sudoeste', O: 'Oeste', NO: 'Noroeste' }
+export function cardinalDoVento(graus) {
+  const g = parseFloat(graus)
+  if (isNaN(g)) return null
+  return CARDEAIS[Math.round((((g % 360) + 360) % 360) / 45) % 8]
+}
+// Para onde o vento sopra — e a calda deriva: o lado oposto de onde ele vem.
+export function paraOndeSopra(graus) {
+  const g = parseFloat(graus)
+  return isNaN(g) ? null : (g + 180) % 360
+}

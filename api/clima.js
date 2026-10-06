@@ -12,6 +12,11 @@
 // Os 3 provedores são normalizados pro MESMO formato de saída (hourly/daily com os nomes de
 // campo que o Open-Meteo sempre usou), então o resto do app (buscarPrevisao, gráficos,
 // Delta T) funciona igual não importa qual API respondeu.
+//
+// Unidades de saída: vento em km/h e direção em graus (de onde o vento VEM: 0° = do Norte,
+// 90° = do Leste). Meteoblue e Tomorrow.io mandam o vento em m/s — conferido em 05/10/2026
+// contra a resposta real ("windspeed":"ms-1" na Meteoblue; Tomorrow.io dando 7 onde a
+// Open-Meteo dava 22 km/h). Até então o número ia direto pra tela como km/h, 3,6× menor.
 const { createClient } = require('@supabase/supabase-js')
 
 const TIMEOUT_MS = 8000
@@ -63,7 +68,25 @@ async function registrarChamada(sb, provider, sucesso, erro) {
 // Agrupa uma série horária (já em ISO "YYYY-MM-DDTHH:mm") por dia calendário e monta os
 // agregados diários (máx/mín/soma) — mesma lógica pros 3 provedores, já que nenhum deles
 // devolve o resumo diário pronto no formato que o app espera.
-function agregarPorDia(timeIso, temperature, relativehumidity, windspeed, windgusts, precipitation, precipitation_probability) {
+const MS_PARA_KMH = 3.6
+const emKmh = arr => (arr || []).map(v => (v == null ? null : Math.round(v * MS_PARA_KMH * 10) / 10))
+
+// Direção dominante do dia: média vetorial pesada pela velocidade (o mesmo critério do
+// `winddirection_10m_dominant` da Open-Meteo). Média simples de graus erra na virada do
+// Norte — 350° e 10° dariam 180° (Sul), quando o certo é 0°.
+function direcaoDominante(indices, windspeed, winddirection) {
+  let x = 0, y = 0, n = 0
+  for (const i of indices) {
+    const d = winddirection?.[i]
+    if (d == null) continue
+    const peso = windspeed?.[i] > 0 ? windspeed[i] : 1e-6
+    x += peso * Math.sin(d * Math.PI / 180); y += peso * Math.cos(d * Math.PI / 180); n++
+  }
+  if (!n) return null
+  return Math.round((Math.atan2(x, y) * 180 / Math.PI + 360) % 360)
+}
+
+function agregarPorDia(timeIso, temperature, relativehumidity, windspeed, windgusts, precipitation, precipitation_probability, winddirection) {
   const porDia = {}
   timeIso.forEach((t, i) => { const dia = t.slice(0, 10); (porDia[dia] = porDia[dia] || []).push(i) })
   const dias = Object.keys(porDia).sort()
@@ -79,6 +102,7 @@ function agregarPorDia(timeIso, temperature, relativehumidity, windspeed, windgu
     precipitation_sum: dias.map(d => somaDe(precipitation, d)),
     windspeed_10m_max: dias.map(d => maxDe(windspeed, d)),
     windgusts_10m_max: dias.map(d => maxDe(windgusts, d)),
+    winddirection_10m_dominant: dias.map(d => direcaoDominante(porDia[d], windspeed, winddirection)),
   }
 }
 
@@ -111,21 +135,25 @@ async function buscarMeteoblue(lat, lon) {
   // Meteoblue usa "YYYY-MM-DD HH:mm" — troca o espaço por "T" pra ficar no formato
   // ISO-ish que o resto do app já espera (ex: comparações tipo .endsWith('T13:00')).
   const timeIso = h.time.map(t => t.replace(' ', 'T'))
-  const daily = agregarPorDia(timeIso, h.temperature, h.relativehumidity, h.windspeed, h.gust, h.precipitation, h.precipitation_probability)
+  // Vento da Meteoblue vem em m/s (units.windspeed = "ms-1").
+  const windspeed = emKmh(h.windspeed)
+  const windgusts = h.gust ? emKmh(h.gust) : undefined
+  const daily = agregarPorDia(timeIso, h.temperature, h.relativehumidity, windspeed, windgusts, h.precipitation, h.precipitation_probability, h.winddirection)
   const hourly = {
     time: timeIso,
     temperature_2m: h.temperature,
     relativehumidity_2m: h.relativehumidity,
-    windspeed_10m: h.windspeed,
-    windgusts_10m: h.gust,
+    windspeed_10m: windspeed,
+    windgusts_10m: windgusts,
+    winddirection_10m: h.winddirection,
     precipitation_probability: h.precipitation_probability,
   }
   console.log('[Weather API] Meteoblue OK')
   return { hourly, daily }
 }
 
-// Tomorrow.io v4/weather/forecast — `units=metric` já devolve temperatura em °C, vento em
-// km/h e precipitação em mm/h, então não precisa de conversão manual. A timeline diária da
+// Tomorrow.io v4/weather/forecast — `units=metric` devolve temperatura em °C e precipitação
+// em mm/h, mas o VENTO em m/s (não km/h, como se achava): converte aqui. A timeline diária da
 // própria API não é usada — os agregados são recalculados a partir da horária (agregarPorDia),
 // pra garantir consistência com os outros 2 provedores.
 async function buscarTomorrow(lat, lon) {
@@ -163,22 +191,23 @@ async function buscarTomorrow(lat, lon) {
   })
   const temperature = horas.map(h => h.values?.temperature ?? null)
   const relativehumidity = horas.map(h => h.values?.humidity ?? null)
-  const windspeed = horas.map(h => h.values?.windSpeed ?? null)
-  const windgusts = horas.map(h => h.values?.windGust ?? null)
+  const windspeed = emKmh(horas.map(h => h.values?.windSpeed ?? null))
+  const windgusts = emKmh(horas.map(h => h.values?.windGust ?? null))
+  const winddirection = horas.map(h => h.values?.windDirection ?? null)
   const precipitation_probability = horas.map(h => h.values?.precipitationProbability ?? null)
   // Testado direto contra a API real: o campo se chama `rainIntensity`, não
   // `precipitationIntensity` (que não existe na resposta) — evita ficar com chuva sempre 0.
   const precipitation = horas.map(h => h.values?.rainIntensity ?? null)
 
-  const daily = agregarPorDia(timeIso, temperature, relativehumidity, windspeed, windgusts, precipitation, precipitation_probability)
-  const hourly = { time: timeIso, temperature_2m: temperature, relativehumidity_2m: relativehumidity, windspeed_10m: windspeed, windgusts_10m: windgusts, precipitation_probability }
+  const daily = agregarPorDia(timeIso, temperature, relativehumidity, windspeed, windgusts, precipitation, precipitation_probability, winddirection)
+  const hourly = { time: timeIso, temperature_2m: temperature, relativehumidity_2m: relativehumidity, windspeed_10m: windspeed, windgusts_10m: windgusts, winddirection_10m: winddirection, precipitation_probability }
   console.log('[Weather API] Tomorrow.io OK')
   return { hourly, daily }
 }
 
 async function buscarOpenMeteo(lat, lon) {
   console.log('[Weather API] Fetching from Open-Meteo...')
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max,windgusts_10m_max&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,windgusts_10m,precipitation_probability&timezone=auto&forecast_days=8`
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,windspeed_10m_max,windgusts_10m_max,winddirection_10m_dominant&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,windgusts_10m,winddirection_10m,precipitation_probability&timezone=auto&forecast_days=8`
   const r = await fetchComTimeout(url, TIMEOUT_MS)
   if (!r.ok) {
     console.log(`[Weather API] Open-Meteo respondeu HTTP ${r.status}`)
@@ -223,6 +252,7 @@ module.exports = async function handler(req, res) {
           temperatura: r.hourly?.temperature_2m?.[0] ?? null,
           umidade: r.hourly?.relativehumidity_2m?.[0] ?? null,
           vento: r.hourly?.windspeed_10m?.[0] ?? null,
+          direcao: r.hourly?.winddirection_10m?.[0] ?? null,
         }
       } catch (e) {
         resultados[p] = { ok: false, tempoMs: Date.now() - inicio, erro: e.message }

@@ -21,7 +21,7 @@ import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
-import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
+import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 import { App as CapApp } from '@capacitor/app'
@@ -916,6 +916,8 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoLng,setTempoLng] = useState('')
   const [tempoHorario,setTempoHorario] = useState(null)
   const [climaTab,setClimaTab] = useState('temp')
+  // Hora escolhida na aba Direção ('14:00'); null = a de agora (hoje) ou 12h (outros dias).
+  const [climaDirHora,setClimaDirHora] = useState(null)
   const [diaSelecionado,setDiaSelecionado] = useState(null)
   const toastTimer=useRef(null)
   const retryTimer=useRef(null)
@@ -1958,6 +1960,7 @@ export default function PilotApp({onSwitchMode}) {
           umidade: umidMeioDia,
           chuvaProb: data.daily.precipitation_probability_max[i], chuvaMm: data.daily.precipitation_sum[i],
           ventoMax: data.daily.windspeed_10m_max[i], ventoRajadaMax: data.daily.windgusts_10m_max[i],
+          ventoDir: data.daily.winddirection_10m_dominant?.[i] ?? null,
           deltaT, deltaTClass: deltaT!=null?classificarClimaParam('delta_t',deltaT.toFixed(1)):null,
         }
       })
@@ -4256,6 +4259,7 @@ Quando: ${tempoErroDebug.quando}`}
               const chuvaAgora = idxAgora>=0 && tempoHorario.precipitation_probability?.[idxAgora]!=null ? tempoHorario.precipitation_probability[idxAgora] : hoje.chuvaProb
               const umidAgora = idxAgora>=0 && tempoHorario.relativehumidity_2m?.[idxAgora]!=null ? tempoHorario.relativehumidity_2m[idxAgora] : hoje.umidade
               const ventoAgora = idxAgora>=0 && tempoHorario.windspeed_10m?.[idxAgora]!=null ? tempoHorario.windspeed_10m[idxAgora] : hoje.ventoMax
+              const dirAgora = cardinalDoVento(idxAgora>=0 && tempoHorario.winddirection_10m?.[idxAgora]!=null ? tempoHorario.winddirection_10m[idxAgora] : hoje.ventoDir)
               const chuvoso = chuvaAgora>=60, nublado = chuvaAgora>=25
               const WIcon = chuvoso?CloudRain:nublado?Cloud:Sun
               const wc = chuvoso?'#2f6fed':nublado?theme.textFaint:theme.warningText
@@ -4271,7 +4275,7 @@ Quando: ${tempoErroDebug.quando}`}
                   <div style={{display:'flex',flexDirection:'column',gap:10,fontSize:14,color:'#33473d',fontWeight:600}}>
                     <div style={{display:'flex',alignItems:'center',gap:8}}><CloudRain size={17} color="#00A86B" strokeWidth={1.8}/> Chuva: {Math.round(chuvaAgora)}%</div>
                     <div style={{display:'flex',alignItems:'center',gap:8}}><Droplets size={17} color="#00A86B" strokeWidth={1.8}/> Umidade: {umidAgora!=null?`${Math.round(umidAgora)}%`:'—'}</div>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}><Wind size={17} color="#00A86B" strokeWidth={1.8}/> Vento: {Math.round(ventoAgora)} km/h</div>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}><Wind size={17} color="#00A86B" strokeWidth={1.8}/> Vento: {Math.round(ventoAgora)} km/h{dirAgora?` · ${dirAgora}`:''}</div>
                   </div>
                 </div>
               )
@@ -4281,12 +4285,13 @@ Quando: ${tempoErroDebug.quando}`}
             <div style={{display:'flex',background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:4,gap:2}}>
               {[
                 {id:'temp',label:'Temperatura'},
-                {id:'chuva',label:'Precipitação'},
+                {id:'chuva',label:'Chuva'},
                 {id:'vento',label:'Vento'},
+                {id:'direcao',label:'Direção'},
                 {id:'delta',label:'Delta T'},
               ].map(tab=>(
                 <button key={tab.id} onClick={()=>setClimaTab(tab.id)}
-                  style={{flex:1,border:'none',borderRadius:12,padding:'8px 4px',fontSize:12,fontWeight:700,cursor:'pointer',fontFamily:"'Poppins',sans-serif",
+                  style={{flex:'1 1 auto',border:'none',borderRadius:12,padding:'8px 2px',fontSize:12,whiteSpace:'nowrap',fontWeight:700,cursor:'pointer',fontFamily:"'Poppins',sans-serif",
                     background:climaTab===tab.id?theme.successBg:'transparent',color:climaTab===tab.id?'#00A86B':theme.textFaint}}>
                   {tab.label}
                 </button>
@@ -4312,6 +4317,74 @@ Quando: ${tempoErroDebug.quando}`}
               const dSel = tempoDias.find(d=>d.data===diaAtivo) || tempoDias[0]
               const iSel = tempoDias.indexOf(dSel)
               const labelDia = iSel===0?'Hoje':new Date(dSel.data+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'})
+              // Aba Direção: bússola da hora escolhida e o dia de 2 em 2 horas. Direção em
+              // linha de gráfico não serve — 350° e 10° são quase o mesmo vento e ficariam
+              // nas duas pontas do eixo.
+              if (climaTab==='direcao') {
+                const pad2 = n => String(n).padStart(2,'0')
+                const celulas = idxs.filter(i=>Number(tempoHorario.time[i].slice(11,13))%2===0).map(i=>({
+                  hora: tempoHorario.time[i].slice(11,16),
+                  dir: tempoHorario.winddirection_10m?.[i] ?? null,
+                  vel: tempoHorario.windspeed_10m?.[i]!=null ? Math.round(tempoHorario.windspeed_10m[i]) : null,
+                  raj: tempoHorario.windgusts_10m?.[i]!=null ? Math.round(tempoHorario.windgusts_10m[i]) : null,
+                }))
+                const temDirecao = celulas.some(c=>c.dir!=null)
+                // Sem escolha: hoje, a hora cheia de agora — a mesma do resumo lá de cima, mesmo
+                // sendo ímpar e fora da grade de 2 em 2; nos outros dias, meio-dia.
+                const iAgora = iSel===0 ? idxs.find(i=>tempoHorario.time[i].slice(11,13)===pad2(new Date().getHours())) : undefined
+                const agora = iAgora!=null ? {
+                  hora: tempoHorario.time[iAgora].slice(11,16),
+                  dir: tempoHorario.winddirection_10m?.[iAgora] ?? null,
+                  vel: tempoHorario.windspeed_10m?.[iAgora]!=null ? Math.round(tempoHorario.windspeed_10m[iAgora]) : null,
+                  raj: tempoHorario.windgusts_10m?.[iAgora]!=null ? Math.round(tempoHorario.windgusts_10m[iAgora]) : null,
+                } : null
+                const sel = celulas.find(c=>c.hora===climaDirHora) || agora || celulas.find(c=>c.hora==='12:00') || celulas[0]
+                const de = cardinalDoVento(sel?.dir), para = cardinalDoVento(paraOndeSopra(sel?.dir))
+                const classe = sel?.vel!=null ? classificarClimaParam('vento', sel.vel) : null
+                const ehAgora = !!agora && sel===agora
+                return (
+                  <div style={{background:'#f9fbfa',borderRadius:16,padding:'12px 12px 10px',border:`1px solid ${theme.divider}`}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                      <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>DIREÇÃO DO VENTO</div>
+                      <div style={{fontSize:10,fontWeight:700,color:'#00A86B',textTransform:'capitalize'}}>{labelDia}</div>
+                    </div>
+                    {!temDirecao ? (
+                      <div style={{fontSize:12.5,color:theme.textMuted,textAlign:'center',padding:'22px 6px'}}>A previsão deste local veio sem a direção do vento. Tente atualizar.</div>
+                    ) : (<>
+                      <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:12}}>
+                        <BussolaVento graus={sel?.dir} tam={112}/>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:11,color:theme.textMuted,fontWeight:600}}>{ehAgora?`Agora (${sel.hora.slice(0,2)}h)`:`Às ${sel?.hora.slice(0,2)}h`}</div>
+                          <div style={{fontSize:18,fontWeight:800,color:theme.text,fontFamily:"'Poppins',sans-serif",lineHeight:1.2}}>{de?`Vento de ${NOME_CARDINAL[de]}`:'—'}</div>
+                          <div style={{fontSize:12,color:theme.textMuted,marginTop:2}}>
+                            {sel?.dir!=null?`${Math.round(sel.dir)}°`:''}{sel?.vel!=null?` · ${sel.vel} km/h`:''}{sel?.raj!=null?` · rajada ${sel.raj}`:''}
+                          </div>
+                          {para && <div style={{fontSize:12,fontWeight:700,color:'#2f6fed',marginTop:6}}>Deriva para {NOME_CARDINAL[para]}</div>}
+                          {classe && <span style={{display:'inline-block',marginTop:6,fontSize:10.5,fontWeight:700,color:classe.cor,background:classe.bg,borderRadius:20,padding:'2px 8px'}}>{classe.icon} {classe.label}</span>}
+                        </div>
+                      </div>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:5}}>
+                        {celulas.map(cel=>{
+                          const ativo = cel.hora===sel?.hora
+                          return (
+                            <button key={cel.hora} onClick={()=>setClimaDirHora(cel.hora)}
+                              style={{background:ativo?theme.successBg:theme.card,border:`1px solid ${ativo?'#00A86B':theme.cardBorder}`,borderRadius:10,padding:'6px 2px',cursor:'pointer',
+                                display:'flex',flexDirection:'column',alignItems:'center',gap:2,minWidth:0}}>
+                              <span style={{fontSize:10,fontWeight:700,color:ativo?'#00A86B':theme.textMuted}}>{cel.hora.slice(0,2)}h</span>
+                              <SetaVento graus={cel.dir} tam={18}/>
+                              <span style={{fontSize:11,fontWeight:700,color:theme.text}}>{cardinalDoVento(cel.dir)||'—'}</span>
+                              <span style={{fontSize:9.5,color:theme.textMuted,whiteSpace:'nowrap'}}>{cel.vel!=null?`${cel.vel} km/h`:''}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:8,lineHeight:1.4}}>
+                        A seta aponta para onde o vento sopra, o lado para onde a calda deriva. "Vento de Nordeste" quer dizer que ele vem do Nordeste.
+                      </div>
+                    </>)}
+                  </div>
+                )
+              }
               return (
                 <div style={{background:'#f9fbfa',borderRadius:16,padding:'12px 6px 6px',border:`1px solid ${theme.divider}`}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4,paddingLeft:10,paddingRight:10}}>
@@ -4358,13 +4431,18 @@ Quando: ${tempoErroDebug.quando}`}
                 const wc = chuvoso?'#2f6fed':nublado?theme.textFaint:theme.warningText
                 const ativo = (diaSelecionado||tempoDias[0].data)===d.data
                 return (
-                  <div key={d.data} onClick={()=>setDiaSelecionado(d.data)} style={{flex:'1 1 0',minWidth:0,background:ativo?theme.successBg:'#fff',borderRadius:12,border:ativo?'1px solid #00A86B':`1px solid ${theme.cardBorder}`,padding:'8px 2px',textAlign:'center',cursor:'pointer'}}>
+                  <div key={d.data} onClick={()=>{ setDiaSelecionado(d.data); setClimaDirHora(null) }} style={{flex:'1 1 0',minWidth:0,background:ativo?theme.successBg:'#fff',borderRadius:12,border:ativo?'1px solid #00A86B':`1px solid ${theme.cardBorder}`,padding:'8px 2px',textAlign:'center',cursor:'pointer'}}>
                     <div style={{fontSize:9.5,fontWeight:700,textTransform:'capitalize',color:ativo?'#00A86B':theme.textMuted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{diaLabel}</div>
                     <WIcon size={17} color={wc} strokeWidth={1.8} fill={!chuvoso&&!nublado?'#fde68a':'none'} style={{margin:'4px auto',display:'block'}}/>
                     {climaTab==='temp' && <div style={{fontSize:10.5,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif",whiteSpace:'nowrap'}}>{Math.round(d.tempMax)}°<span style={{color:theme.textFaint,fontWeight:600}}>/{Math.round(d.tempMin)}°</span></div>}
                     {climaTab==='chuva' && <div style={{fontSize:11,fontWeight:700,color:'#2f6fed',fontFamily:"'Poppins',sans-serif"}}>{Math.round(d.chuvaProb)}%</div>}
                     {climaTab==='vento' && <div style={{fontSize:10,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif",whiteSpace:'nowrap'}}>{Math.round(d.ventoMax)}km/h</div>}
                     {climaTab==='delta' && <div style={{fontSize:11,fontWeight:700,color:d.deltaTClass?d.deltaTClass.cor:theme.text,fontFamily:"'Poppins',sans-serif"}}>{d.deltaT!=null?d.deltaT.toFixed(1):'—'}</div>}
+                    {climaTab==='direcao' && (
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:2,fontSize:10.5,fontWeight:700,color:theme.text,fontFamily:"'Poppins',sans-serif"}}>
+                        {d.ventoDir!=null ? <><SetaVento graus={d.ventoDir} tam={11}/>{cardinalDoVento(d.ventoDir)}</> : '—'}
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -6382,6 +6460,42 @@ Quando: ${tempoErroDebug.quando}`}
 
       {toast&&<div style={s.toast}>{toast}</div>}
     </div>
+  )
+}
+
+// Seta da direção do vento: aponta para onde ele SOPRA. Desenhada apontando pra baixo (vento
+// que vem do Norte vai pro Sul) e girada pelos graus de onde ele vem.
+function SetaVento({ graus, tam = 18, cor = '#2f6fed' }) {
+  if (graus == null) return <span style={{display:'block',width:tam,height:tam}}/>
+  return (
+    <svg width={tam} height={tam} viewBox="0 0 24 24" style={{display:'block',flexShrink:0,transform:`rotate(${graus}deg)`}}>
+      <path d="M12 3v13" stroke={cor} strokeWidth="2.6" strokeLinecap="round"/>
+      <path d="M6.5 13 12 21l5.5-8z" fill={cor}/>
+    </svg>
+  )
+}
+
+// Bússola da aba Direção: a seta atravessa do lado de onde o vento vem (bolinha) para o
+// lado para onde ele vai (ponta). N em vermelho, como numa bússola de verdade.
+function BussolaVento({ graus, tam = 112 }) {
+  const { theme } = useTheme()
+  const rotulo = (txt, x, y) => (
+    <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize="12" fontWeight="700"
+      fill={txt==='N'?'#e5484d':theme.textMuted} fontFamily="Poppins,sans-serif">{txt}</text>
+  )
+  return (
+    <svg width={tam} height={tam} viewBox="0 0 120 120" style={{flexShrink:0}}>
+      <circle cx="60" cy="60" r="57" fill={theme.card} stroke={theme.cardBorder} strokeWidth="1.5"/>
+      <circle cx="60" cy="60" r="36" fill="none" stroke={theme.divider} strokeWidth="1.2" strokeDasharray="3 3"/>
+      {rotulo('N',60,13)}{rotulo('L',107,60)}{rotulo('S',60,107)}{rotulo('O',13,60)}
+      {graus!=null && (
+        <g transform={`rotate(${graus} 60 60)`}>
+          <circle cx="60" cy="29" r="4.5" fill="#2f6fed"/>
+          <line x1="60" y1="29" x2="60" y2="80" stroke="#2f6fed" strokeWidth="4" strokeLinecap="round"/>
+          <path d="M60 94 L50.5 78 L69.5 78 Z" fill="#2f6fed"/>
+        </g>
+      )}
+    </svg>
   )
 }
 

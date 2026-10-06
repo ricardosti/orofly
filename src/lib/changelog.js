@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.3',
+    data: '2026-10-05',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Direcao do vento na tela Tempo',
+        texto: 'A tela Tempo ganhou a aba Direcao: uma bussola mostra de onde o vento vem e para onde a calda deriva, o dia aparece de 2 em 2 horas (toque numa hora para ver) e os cartoes da semana mostram a direcao de cada dia. O resumo do topo tambem mostra a direcao (ex.: 7 km/h NE). A aba Precipitacao passou a se chamar Chuva, para as cinco caberem na tela.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Velocidade do vento da previsao estava errada',
+        texto: 'Quando a previsao vinha da Meteoblue ou da Tomorrow.io, a tela Tempo mostrava o vento cerca de 3,6 vezes mais fraco do que o real: as duas mandam a velocidade em metros por segundo e o numero aparecia como km/h. Agora tudo sai em km/h. O vento dos relatorios de voo nao foi afetado (vem de outra fonte, ja em km/h).',
+      },
+    ],
+  },
+  {
     versao: '9.2',
     data: '2026-10-04',
     itens: [
