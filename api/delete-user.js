@@ -1,14 +1,15 @@
-const { createClient } = require('@supabase/supabase-js')
+const { cors, exigirPerfil } = require('./_auth')
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  cors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-  const admin = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  const acesso = await exigirPerfil(req, res, ['admin'])
+  if (!acesso) return
+  const { admin, perfil } = acesso
   try {
     const { id } = req.body
     if (!id) return res.status(400).json({ error: 'id obrigatório' })
+    if (id === perfil.id) return res.status(400).json({ error: 'Você não pode excluir a própria conta' })
     // Apaga o perfil primeiro (se houver cascade de auth.users pra profiles, isso já
     // seria feito sozinho no próximo passo, mas não custa garantir dos dois lados)
     await admin.from('profiles').delete().eq('id', id)

@@ -1,14 +1,13 @@
-const { createClient } = require('@supabase/supabase-js')
+const { cors, exigirPerfil } = require('./_auth')
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  cors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
-  const admin = createClient(process.env.REACT_APP_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  const acesso = await exigirPerfil(req, res, ['admin', 'supervisor'])
+  if (!acesso) return
   try {
     const { id, time_id } = req.body
     if (!id) return res.status(400).json({ error: 'id obrigatório' })
-    const { error } = await admin.from('profiles').update({ time_id: time_id || null }).eq('id', id)
+    const { error } = await acesso.admin.from('profiles').update({ time_id: time_id || null }).eq('id', id)
     if (error) throw error
     return res.status(200).json({ success: true })
   } catch (err) { return res.status(400).json({ error: err.message }) }

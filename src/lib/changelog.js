@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.5',
+    data: '2026-10-05',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Perfil Administrativo',
+        texto: 'Novo perfil para o escritorio: entra direto no Financeiro, ve as notas de despesa de todos e confere (aprova) cada uma. Nao altera valor nem categoria e nao apaga nota - isso continua com admin e supervisor. Para usar, troque o perfil do usuario em Usuarios.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Seguranca das funcoes de usuarios',
+        texto: 'As funcoes que listam usuarios, criam, excluem, trocam senha, perfil e time passaram a exigir o login de quem pede, e so atendem admin (listar e mudar de time, tambem supervisor).',
+      },
+    ],
+  },
+  {
     versao: '9.4',
     data: '2026-10-05',
     itens: [

@@ -29,7 +29,9 @@ function AppRouter() {
   // Supervisor cai no AdminPanel por padrão (que se restringe sozinho a Agenda + Equipes),
   // mas continua sendo piloto — precisa poder alternar pro app de voo igual o admin.
   const canSwitchMode = isAdmin || isSupervisor
-  const currentMode = mode || (isAdmin || isSupervisor ? 'admin' : 'piloto')
+  // Administrativo (o escritório) não voa: vai direto pro painel, sem o botão de alternar.
+  const isAdministrativo = profile.role === 'administrativo'
+  const currentMode = mode || (isAdmin || isSupervisor || isAdministrativo ? 'admin' : 'piloto')
 
   return currentMode === 'admin'
     ? <AdminPanel onSwitchMode={canSwitchMode ? () => setMode('piloto') : null} />

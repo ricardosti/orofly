@@ -55,6 +55,17 @@ import { linhasDaSequencia, totaisDaSequencia, ordenarLinhas, periodoUltimosDias
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
 const API_BASE = 'https://orofly.vercel.app'
+// Funções do servidor que usam a chave mestra (usuários, senhas, perfis): vão com o login de
+// quem chama, e o servidor confere o perfil (api/_auth.js). Antes de 05/10/2026 elas não
+// conferiam nada — qualquer um na internet podia trocar senha e virar admin.
+async function apiAdmin(rota, corpo) {
+  const { data } = await supabase.auth.getSession()
+  return fetch(`${API_BASE}/api/${rota}`, {
+    method: corpo ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data?.session?.access_token || ''}` },
+    ...(corpo ? { body: JSON.stringify(corpo) } : {}),
+  })
+}
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
 // Funções (em vez de objeto fixo) porque as cores dependem do tema atual (claro/escuro).
 // Pílulas sóbrias: fundo suave + texto na mesma família de cor (sem preenchimento sólido).
@@ -146,7 +157,7 @@ export default function AdminPanel({ onSwitchMode }) {
     urlAssinada(supabase, profile.avatar_url).then(url => { if (url) setAvatarUrl(url) })
   }, [profile?.avatar_url])
   const isMobile = useIsMobile()
-  const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : 'relatorios')
+  const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : profile?.role==='administrativo' ? 'custos' : 'relatorios')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Sidebar em accordion — {grupoId: true|false}. Grupo sem entrada aqui ainda (nunca
   // clicado) usa o padrão de "aberto se contém a aba ativa", calculado na hora do render.
@@ -371,6 +382,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const [atrSalvando, setAtrSalvando] = useState(false)
   const [equipeClienteAberto, setEquipeClienteAberto] = useState({}) // {`${timeId}-${cliente}`: bool}
   const isSupervisor = profile?.role === 'supervisor'
+  // Administrativo (05/10/2026): o escritório. Entra só no Financeiro, nas notas de
+  // despesa, pra conferir — o banco deixa ele mexer só nos campos de conferência.
+  const isAdministrativo = profile?.role === 'administrativo'
   const [voosPorPiloto, setVoosPorPiloto] = useState({})
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
@@ -958,7 +972,7 @@ export default function AdminPanel({ onSwitchMode }) {
     setLoading(true)
     const [{ data: rels }, usersRes, { data: desp }, { data: agend }, { data: logins }, { data: tms }, { data: fzTimes }, { data: pilFz }, { data: pilTl }, { data: incs }] = await Promise.all([
       supabase.from('relatorios').select('*').order('created_at', { ascending: false }),
-      fetch(`${API_BASE}/api/list-users`),
+      apiAdmin('list-users'),
       supabase.from('despesas').select('*').order('created_at', { ascending: false }),
       supabase.from('agendamentos').select('*').order('data_prevista', { ascending: true }),
       supabase.from('gps_logins').select('*').order('created_at', { ascending: false }).limit(300),
@@ -1422,7 +1436,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
   async function toggleAtivo(piloto) {
     try {
-      const res = await fetch(`${API_BASE}/api/toggle-user`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: piloto.id, ativo: !piloto.ativo }) })
+      const res = await apiAdmin('toggle-user', { id: piloto.id, ativo: !piloto.ativo })
       const d = await res.json(); if (d.error) throw new Error(d.error)
       showToast(piloto.ativo ? '⛔ Desativado' : '✅ Ativado'); fetchAll()
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
@@ -1431,16 +1445,16 @@ export default function AdminPanel({ onSwitchMode }) {
   async function toggleRoleTo(piloto, novoRole) {
     if (piloto.id === profile?.id) { showToast('Você não pode alterar o próprio perfil de acesso — peça a outro admin', 'error'); return }
     try {
-      const res = await fetch(`${API_BASE}/api/toggle-role`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, role: novoRole }) })
+      const res = await apiAdmin('toggle-role', { id: piloto.id, role: novoRole })
       const d = await res.json(); if (d.error) throw new Error(d.error)
-      showToast(novoRole === 'admin' ? '⚙️ Virou Admin' : novoRole==='supervisor' ? '🧑‍🤝‍🧑 Virou Supervisor' : '🚁 Virou Piloto')
+      showToast(novoRole === 'admin' ? '⚙️ Virou Admin' : novoRole==='supervisor' ? '🧑‍🤝‍🧑 Virou Supervisor' : novoRole==='administrativo' ? '💼 Virou Administrativo' : '🚁 Virou Piloto')
       fetchAll()
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
   }
 
   async function setUserTime(piloto, time_id) {
     try {
-      const res = await fetch(`${API_BASE}/api/set-time`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, time_id }) })
+      const res = await apiAdmin('set-time', { id: piloto.id, time_id })
       const d = await res.json(); if (d.error) throw new Error(d.error)
       showToast('✅ Time atualizado'); fetchAll()
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
@@ -1845,7 +1859,7 @@ export default function AdminPanel({ onSwitchMode }) {
     if (!novaSenha) return
     if (novaSenha.length < 6) { showToast('Senha mínima 6 caracteres', 'error'); return }
     try {
-      const res = await fetch(`${API_BASE}/api/reset-password`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id, novaSenha }) })
+      const res = await apiAdmin('reset-password', { id: piloto.id, novaSenha })
       const d = await res.json(); if (d.error) throw new Error(d.error)
       showToast('🔑 Senha redefinida!')
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
@@ -1855,7 +1869,7 @@ export default function AdminPanel({ onSwitchMode }) {
     if (piloto.id === profile?.id) { showToast('Você não pode deletar sua própria conta', 'error'); return }
     if (!window.confirm(`Deletar o usuário ${piloto.nome} (${piloto.email})?\n\nEssa ação NÃO pode ser desfeita — remove o login e o perfil por completo.`)) return
     try {
-      const res = await fetch(`${API_BASE}/api/delete-user`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id: piloto.id }) })
+      const res = await apiAdmin('delete-user', { id: piloto.id })
       const d = await res.json(); if (d.error) throw new Error(d.error)
       showToast('🗑️ Usuário deletado'); fetchAll()
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
@@ -1898,7 +1912,7 @@ export default function AdminPanel({ onSwitchMode }) {
     if (!newUser.nome || !newUser.email || !newUser.senha) { showToast('⚠️ Preencha tudo', 'error'); return }
     setCriandoUser(true)
     try {
-      const res = await fetch(`${API_BASE}/api/create-user`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newUser) })
+      const res = await apiAdmin('create-user', newUser)
       const text = await res.text(); let data
       try { data = JSON.parse(text) } catch { throw new Error('Função não encontrada.') }
       if (data.error) throw new Error(data.error)
@@ -1939,6 +1953,10 @@ export default function AdminPanel({ onSwitchMode }) {
           ]],
           ['cfg', '⚙️ Configurações', [
             ['pilotos', '👥', 'Equipes', pilotos.length],
+          ]],
+        ] : isAdministrativo ? [
+          ['adminfin', '💼 Administrativo & Financeiro', [
+            ['custos', '💰', 'Financeiro', custos.length],
           ]],
         ] : [
           // Reorganizado em grupos com accordion — os ids das abas (1º item de cada linha)
@@ -2089,7 +2107,7 @@ export default function AdminPanel({ onSwitchMode }) {
               {sosAtivos.length > 0 && <span style={{ background:theme.dangerText, color:'#fff', fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:20 }}>🆘 {sosAtivos.length}</span>}
             </div>
             <div style={{ display:'flex', gap:6 }}>
-              {(isSupervisor ? [['agenda','📅'],['pilotos','👥']] : [['relatorios','📋'],['dashboard','📊'],['mapa','🗺️'],['inventario','📦'],['pilotos','👥']]).map(([id,ic]) => (
+              {(isSupervisor ? [['agenda','📅'],['pilotos','👥']] : isAdministrativo ? [['custos','💰']] : [['relatorios','📋'],['dashboard','📊'],['mapa','🗺️'],['inventario','📦'],['pilotos','👥']]).map(([id,ic]) => (
                 <button key={id} style={{ background: tab===id?'#1E293B':'transparent', border:'none', borderRadius:16, padding:'6px 10px', cursor:'pointer', fontSize:16, color: tab===id?'#fff':theme.textFaint2 }} onClick={() => setTab(id)}>{ic}</button>
               ))}
               {onSwitchMode && <button style={{ background:'#D97706', border:'none', borderRadius:16, padding:'5px 10px', fontSize:11, cursor:'pointer', fontWeight:700 }} onClick={onSwitchMode}>🚁</button>}
@@ -5984,10 +6002,10 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                 <div style={{display:'flex',background:theme.divider,borderRadius:16,padding:4,gap:4,marginBottom:16,maxWidth:360}}>
                   <button style={{flex:1,background:custosSubTab==='notas'?'#fff':'transparent',color:custosSubTab==='notas'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='notas'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setCustosSubTab('notas')}>🧾 Notas de Despesa</button>
-                  <button style={{flex:1,background:custosSubTab==='veiculos'?'#fff':'transparent',color:custosSubTab==='veiculos'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='veiculos'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
+                  {!isAdministrativo && (<><button style={{flex:1,background:custosSubTab==='veiculos'?'#fff':'transparent',color:custosSubTab==='veiculos'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='veiculos'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
                     onClick={()=>setCustosSubTab('veiculos')}>🚗 Veículos</button>
                   <button style={{flex:1,background:custosSubTab==='orcamento'?'#fff':'transparent',color:custosSubTab==='orcamento'?theme.text:theme.textMuted,border:'none',borderRadius:12,padding:'9px 8px',fontSize:13,fontWeight:700,cursor:'pointer',boxShadow:custosSubTab==='orcamento'?'0 2px 8px rgba(11,18,16,0.08)':'none'}}
-                    onClick={()=>setCustosSubTab('orcamento')}>🧮 Orçamento</button>
+                    onClick={()=>setCustosSubTab('orcamento')}>🧮 Orçamento</button></>)}
                 </div>
 
                 {custosSubTab==='orcamento' && (
@@ -6252,7 +6270,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                 </td>
                                 <td style={{padding:'11px 14px',borderBottom:`1px solid ${theme.divider}`,whiteSpace:'nowrap'}}>
                                   {rel && <button title="Ir para o voo" style={sG.iconBtn} onClick={()=>{setSelected(rel);setTab('relatorios')}}>➡️</button>}
-                                  <button title="Deletar" style={{...sG.iconBtn,color:theme.dangerText}} onClick={()=>setConfirmDeleteDespesa(c)}>🗑️</button>
+                                  {!isAdministrativo && <button title="Deletar" style={{...sG.iconBtn,color:theme.dangerText}} onClick={()=>setConfirmDeleteDespesa(c)}>🗑️</button>}
                                 </td>
                               </tr>
                             )
@@ -7081,6 +7099,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                   piloto:     { bg:'#dcfce7', cor:'#16a34a', label:'🚁 Piloto' },
                   supervisor: { bg:'#dbeafe', cor:'#2563eb', label:'🧑‍🤝‍🧑 Supervisor' },
                   admin:      { bg:'#fde2e2', cor:'#dc2626', label:'⚙️ Admin' },
+                  administrativo: { bg:'#fef3c7', cor:'#b45309', label:'💼 Administrativo' },
                 }
                 const totalUsuarios = pilotos.length
                 const totalPilotosN = pilotos.filter(p=>(p.role||'piloto')==='piloto').length
@@ -7124,6 +7143,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                       <option value="">Perfil (todos)</option>
                       <option value="piloto">🚁 Piloto</option>
                       <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
+                      <option value="administrativo">💼 Administrativo</option>
                       <option value="admin">⚙️ Admin</option>
                     </select>
                     <select style={{...sG.input, flex:'1 1 140px', width:'auto'}} value={usuariosFiltroStatus} onChange={e=>setUsuariosFiltroStatus(e.target.value)}>
@@ -7140,7 +7160,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                         {pilotosFiltrados.length===0 ? (
                           <tr><td colSpan={5} style={{ ...sG.td, padding:'28px 16px', textAlign:'center', color:theme.textFaint2 }}>Nenhum usuário encontrado com esse filtro.</td></tr>
                         ) : pilotosFiltrados.map((p, i) => {
-                          const re = ROLE_ESTILO[p.role||'piloto']
+                          const re = ROLE_ESTILO[p.role||'piloto'] || ROLE_ESTILO.piloto
                           return (
                           <tr key={p.id} style={{ background: i%2===0?theme.card:'#f7fbf8', opacity: p.ativo?1:.5 }}>
                             <td style={{ ...sG.td, padding:'14px 16px' }}>
@@ -7160,6 +7180,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                   style={{ background:re.bg, color:re.cor, border:'none', borderRadius:20, padding:'4px 11px', fontSize:11, fontWeight:700, cursor:'pointer', appearance:'none', WebkitAppearance:'none' }}>
                                   <option value="piloto">🚁 Piloto</option>
                                   <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
+                                  <option value="administrativo">💼 Administrativo</option>
                                   <option value="admin">⚙️ Admin</option>
                                 </select>
                               )}
@@ -7225,6 +7246,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                         <select style={sG.input} value={newUser.role} onChange={e => setNewUser(u => ({ ...u, role: e.target.value }))}>
                           <option value="piloto">🚁 Piloto</option>
                           <option value="supervisor">🧑‍🤝‍🧑 Supervisor</option>
+                          <option value="administrativo">💼 Administrativo</option>
                           <option value="admin">⚙️ Administrador</option>
                         </select>
                       </div>
