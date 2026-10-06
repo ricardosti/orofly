@@ -590,6 +590,13 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
 
   // 3+4
   const hW=(CW-3)/2, yBase=y
+  // Produtos e condições dividem a altura que sobra até o bloco 5 (Configuração do drone),
+  // preso acima do rodapé. Linha de 7 mm quando cabe; quando não cabe, a linha encolhe (até
+  // 4,6 mm) em vez de a última ficar embaixo do bloco 5 — o que já acontecia com o Delta T
+  // (cortado pela metade) e com o 4º produto, antes até de a direção do vento entrar.
+  const footerY = PH-M-8, alturaSec5 = 8.5+18 // header + box do bloco 5
+  const limiteTabelas = footerY - alturaSec5 - 2 - 3
+  const alturaLinha = (yLinhas, n) => n>0 ? Math.min(7, Math.max(4.6, (limiteTabelas-yLinhas)/n)) : 7
   let yP=yBase
   if (showSec('insumos')) {
   doc.setFillColor(240,248,243);doc.roundedRect(C1,y,hW,7,1.5,1.5,'F')
@@ -601,6 +608,7 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
   doc.text('PRODUTO',C1+3,y+4.5);doc.text('DOSE',C1+hW*0.66,y+4.5,{align:'right'});doc.text('TOTAL',C1+hW-3,y+4.5,{align:'right'})
   y+=7
+  const hP = alturaLinha(y, gastosProdutos.length)
   if(gastosProdutos.length===0){
     doc.setFillColor(255,255,255);doc.rect(C1,y,hW,7,'F')
     doc.setFontSize(8);doc.setFont('helvetica','italic');doc.setTextColor(...GR)
@@ -608,14 +616,15 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
     y+=7
   }
   gastosProdutos.forEach((g,i)=>{
-    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C1,y,hW,7,'F')
+    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C1,y,hW,hP,'F')
     const doseTxt = g.dose!=null ? `${g.dose} ${g.unidade}/ha` : '—'
     const totalTxt = g.total!=null ? `${g.total} ${g.unidade}` : '—'
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,g.nome||g.produto,hW*0.38-2),C1+3,y+5)
-    doc.text(truncFit(doc,doseTxt,hW*0.26-4),C1+hW*0.66,y+5,{align:'right'})
-    doc.text(truncFit(doc,totalTxt,hW*0.3-4),C1+hW-3,y+5,{align:'right'})
-    y+=7
+    const yT = y+hP*0.71
+    doc.text(truncFit(doc,g.nome||g.produto,hW*0.38-2),C1+3,yT)
+    doc.text(truncFit(doc,doseTxt,hW*0.26-4),C1+hW*0.66,yT,{align:'right'})
+    doc.text(truncFit(doc,totalTxt,hW*0.3-4),C1+hW-3,yT,{align:'right'})
+    y+=hP
   })
   yP=y
   }
@@ -631,20 +640,25 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
   doc.text('PARÂMETRO',cx+3,yc+4.5);doc.text('INÍCIO',cx+hW*0.55,yc+4.5);doc.text('FINAL',cx+hW*0.80,yc+4.5)
   yc+=7
-  ;[['Temperatura','temperatura','°C'],['Umid. Relativa','umidade','%'],['Vento','vento','km/h'],['Delta T','delta_t','°C']].forEach(([lbl,key,unit],i)=>{
-    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(cx,yc,hW,7,'F')
+  // Direção do vento (de onde vem, "NE") logo abaixo do Vento. Só aparece se o voo tiver
+  // o dado — relatório antigo segue com as 4 linhas de sempre.
+  const linhasCond = [['Temperatura','temperatura','°C'],['Umid. Relativa','umidade','%'],['Vento','vento','km/h'],
+    ...(rel.direcao_vento_i||rel.direcao_vento_f ? [['Direção do vento','direcao_vento','']] : []),
+    ['Delta T','delta_t','°C']]
+  const hC = alturaLinha(yc, linhasCond.length)
+  linhasCond.forEach(([lbl,key,unit],i)=>{
+    doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(cx,yc,hW,hC,'F')
     doc.setFontSize(7.5);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
-    doc.text(truncFit(doc,lbl,hW*0.5-4),cx+3,yc+5)
-    doc.text(truncFit(doc,rel[key+'_i']?rel[key+'_i']+' '+unit:'—',hW*0.24),cx+hW*0.55,yc+5)
-    doc.text(truncFit(doc,rel[key+'_f']?rel[key+'_f']+' '+unit:'—',hW*0.20),cx+hW*0.80,yc+5)
-    yc+=7
+    const yT = yc+hC*0.71
+    doc.text(truncFit(doc,lbl,hW*0.5-4),cx+3,yT)
+    doc.text(truncFit(doc,rel[key+'_i']?rel[key+'_i']+(unit?' '+unit:''):'—',hW*0.24),cx+hW*0.55,yT)
+    doc.text(truncFit(doc,rel[key+'_f']?rel[key+'_f']+(unit?' '+unit:''):'—',hW*0.20),cx+hW*0.80,yT)
+    yc+=hC
   })
   }
   y=Math.max(yP,yc)+3
 
   // 5 DRONE — ícone em cima, label, valor. Garante que não invade o rodapé.
-  const footerY = PH-M-8
-  const alturaSec5 = 8.5+18 // header + box
   if (y + alturaSec5 > footerY - 2) y = footerY - alturaSec5 - 2
   sec(5,'CONFIGURAÇÃO DO DRONE')
   const dW=CW/4
@@ -868,12 +882,14 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
       doc.setFontSize(7);doc.setFont('helvetica','bold');doc.setTextColor(...G)
       doc.text('PARÂMETRO',C1+3,yL+4.5);doc.text('INÍCIO',C1+CW*0.57,yL+4.5);doc.text('FINAL',C1+CW*0.81,yL+4.5)
       yL+=7
-      ;[['Temperatura','temperatura','°C'],['Umidade Relativa','umidade','%'],['Vento','vento','km/h'],['Delta T','delta_t','°C']].forEach(([lbl,key,unit],i2)=>{
+      ;[['Temperatura','temperatura','°C'],['Umidade Relativa','umidade','%'],['Vento','vento','km/h'],
+        ...(t.direcao_vento_i||t.direcao_vento_f ? [['Direção do vento','direcao_vento','']] : []),
+        ['Delta T','delta_t','°C']].forEach(([lbl,key,unit],i2)=>{
         doc.setFillColor(i2%2===0?255:248,255,i2%2===0?255:248);doc.rect(C1,yL,CW,7,'F')
         doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
         doc.text(lbl,C1+3,yL+5)
-        doc.text(t[key+'_i']?t[key+'_i']+' '+unit:'—',C1+CW*0.57,yL+5)
-        doc.text(t[key+'_f']?t[key+'_f']+' '+unit:'—',C1+CW*0.81,yL+5)
+        doc.text(t[key+'_i']?t[key+'_i']+(unit?' '+unit:''):'—',C1+CW*0.57,yL+5)
+        doc.text(t[key+'_f']?t[key+'_f']+(unit?' '+unit:''):'—',C1+CW*0.81,yL+5)
         yL+=7
       })
 
@@ -1770,7 +1786,9 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
   const areaNetaW = areaLiquida(rel)
   const gastosProdutosW = calcularGastoProdutos(rel.produtos, areaNetaW)
 
-  const condKeys = [['Faixa','faixa'],['Vazão','vazao'],['Vento','vento'],['Umidade','umidade'],['Temperatura','temperatura'],['Delta T','delta_t']]
+  const condKeys = [['Faixa','faixa'],['Vazão','vazao'],['Vento','vento'],
+    ...(rel.direcao_vento_i||rel.direcao_vento_f ? [['Direção do vento','direcao_vento']] : []),
+    ['Umidade','umidade'],['Temperatura','temperatura'],['Delta T','delta_t']]
 
   function addUnit(key,val) {
     if (!val) return '—'

@@ -52,6 +52,7 @@ export function classificarClimaParam(key, valor) {
 // APIs mandam — para os 8 pontos cardeais, com L e O como no Brasil (não E e W).
 const CARDEAIS = ['N', 'NE', 'L', 'SE', 'S', 'SO', 'O', 'NO']
 export const NOME_CARDINAL = { N: 'Norte', NE: 'Nordeste', L: 'Leste', SE: 'Sudeste', S: 'Sul', SO: 'Sudoeste', O: 'Oeste', NO: 'Noroeste' }
+export const GRAUS_CARDINAL = Object.fromEntries(CARDEAIS.map((c, i) => [c, i * 45]))
 export function cardinalDoVento(graus) {
   const g = parseFloat(graus)
   if (isNaN(g)) return null

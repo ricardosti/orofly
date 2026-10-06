@@ -86,6 +86,7 @@ export const MOCK_RELATORIO = {
   altura: '3',
   faixa_i: '5', faixa_f: '5',
   vento_i: '6', vento_f: '9',
+  direcao_vento_i: 'NE', direcao_vento_f: 'L',
   umidade_i: '68', umidade_f: '61',
   temperatura_i: '24', temperatura_f: '27',
   delta_t_i: '4', delta_t_f: '6',
@@ -297,7 +298,9 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
 
   const clima = []
   if (cfg.climaBasico) {
-    clima.push(`Vento: ${fmtDec1(rel.vento_i)} - ${fmtDec1(rel.vento_f)} km/h | UR: ${fmtNum(rel.umidade_i)}% - ${fmtNum(rel.umidade_f)}%`)
+    // Direção (de onde vem) entre parênteses, só quando o voo tem o dado: "(NE - L)".
+    const dir = rel.direcao_vento_i || rel.direcao_vento_f ? ` (${rel.direcao_vento_i || '—'} - ${rel.direcao_vento_f || '—'})` : ''
+    clima.push(`Vento: ${fmtDec1(rel.vento_i)} - ${fmtDec1(rel.vento_f)} km/h${dir} | UR: ${fmtNum(rel.umidade_i)}% - ${fmtNum(rel.umidade_f)}%`)
     clima.push(`Temp: ${fmtDec1(rel.temperatura_i)}°C - ${fmtDec1(rel.temperatura_f)}°C${cfg.deltaT ? ` | ΔT: ${fmtDec1(rel.delta_t_i)}°C - ${fmtDec1(rel.delta_t_f)}°C` : ''}`)
   } else if (cfg.deltaT) {
     clima.push(`ΔT: ${fmtDec1(rel.delta_t_i)}°C - ${fmtDec1(rel.delta_t_f)}°C`)

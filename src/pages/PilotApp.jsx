@@ -21,7 +21,7 @@ import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
-import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, paraOndeSopra } from '../lib/clima'
+import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 import { App as CapApp } from '@capacitor/app'
@@ -73,9 +73,11 @@ const PRODUTOS_DEFAULT = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essen
 // Só o fallback: a lista de verdade vem da tabela `culturas`, administrada em
 // Inventário > Culturas. Isto serve pra primeira abertura sem sinal, antes de existir cache.
 const CULTURAS_PADRAO = ['Cana-de-açúcar','Soja','Milho','Eucalipto','Café','Algodão','Laranja','Citros','Arroz','Trigo','Sorgo','Feijão','Pastagem','Outras']
-const COND_KEYS = ['faixa','vazao','vento','umidade','temperatura','delta_t']
-const COND_LABELS = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
-const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: 65%','Ex: 28°C','Ex: 4']
+// direcao_vento (05/10/2026): de onde o vento vem, em ponto cardeal ("NE") — colunas
+// direcao_vento_i/_f em relatorios E relatorio_trechos, que gravam estas mesmas chaves.
+const COND_KEYS = ['faixa','vazao','vento','direcao_vento','umidade','temperatura','delta_t']
+const COND_LABELS = ['Faixa','Vazão','Vento','Direção do vento','Umidade','Temperatura','Delta T']
+const COND_PH = ['Ex: 5m','Ex: 2 L/ha','Ex: 8 km/h','Ex: NE','Ex: 65%','Ex: 28°C','Ex: 4']
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'🟢 Em operação', pausado:'🟡 Pausado', pausado_dia:'🌙 Finalizado Parcial', finalizado:'Finalizado' }
 // Motivos da área não aplicada — "Bordadura" vem PRIMEIRO por ser de longe o caso mais comum,
 // e é o único que não vira texto de Observação (vai pro campo de bordadura do relatório).
@@ -1551,7 +1553,7 @@ export default function PilotApp({onSwitchMode}) {
     }
     showToast('🌤️ Buscando condições climáticas...')
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&wind_speed_unit=kmh&timezone=auto`
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh&timezone=auto`
       const res = await fetch(url)
       const data = await res.json()
       const c = data.current
@@ -1559,12 +1561,15 @@ export default function PilotApp({onSwitchMode}) {
       const temp = c.temperature_2m?.toFixed(1)
       const umid = c.relative_humidity_2m?.toFixed(0)
       const vento = c.wind_speed_10m?.toFixed(1)
+      const direcao = cardinalDoVento(c.wind_direction_10m)
       const deltaTCalc = calcDeltaT(temp, umid)
       const deltaT = deltaTCalc!=null ? deltaTCalc.toFixed(1) : null
       setForm(f => ({
         ...f,
         [`temperatura_${alvo}`]: temp, [`umidade_${alvo}`]: umid,
         [`vento_${alvo}`]: vento, [`delta_t_${alvo}`]: deltaT,
+        // Sem direção na resposta, mantém o que o piloto já tinha escolhido.
+        ...(direcao ? { [`direcao_vento_${alvo}`]: direcao } : {}),
       }))
       showToast(`✅ Clima do ${alvo==='i'?'início':'fim'} carregado!`)
     } catch(e) {
@@ -5452,6 +5457,27 @@ Quando: ${tempoErroDebug.quando}`}
                         {classifF&&<div style={{fontSize:10,color:classifF.cor,fontWeight:600,marginTop:3}}>{classifF.icon} {classifF.label}</div>}
                       </div>
                     </div>
+                    {/* Direção do vento (de onde ele vem), só no cartão do Vento. O botão de
+                        clima por GPS preenche; dá pra escolher na mão. */}
+                    {key==='vento' && (
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:10}}>
+                        {['i','f'].map(lado=>(
+                          <div key={lado}>
+                            <label style={{...sw.fl,marginBottom:4}}>DIREÇÃO {lado==='i'?'INÍCIO':'FIM'}</label>
+                            <div style={{position:'relative'}}>
+                              <select style={{...sw.fi,background:'rgba(255,255,255,0.85)',appearance:'none',WebkitAppearance:'none',paddingRight:34}}
+                                value={form['direcao_vento_'+lado]||''} onChange={e=>setForm(f=>({...f,['direcao_vento_'+lado]:e.target.value}))}>
+                                <option value="">—</option>
+                                {Object.entries(NOME_CARDINAL).map(([sigla,nome])=><option key={sigla} value={sigla}>{sigla} · {nome}</option>)}
+                              </select>
+                              <span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}>
+                                <SetaVento graus={GRAUS_CARDINAL[form['direcao_vento_'+lado]]} tam={17}/>
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {classifPrincipal && <div style={{fontSize:11,color:classifPrincipal.cor,fontWeight:500,marginTop:8}}>{classifPrincipal.diag}</div>}
                   </div>
                 )

@@ -75,8 +75,8 @@ const doInputLocal = (v) => {
   return isNaN(d.getTime()) ? null : d.toISOString()
 }
 
-const COND_KEYS    = ['faixa','vazao','vento','umidade','temperatura','delta_t']
-const COND_LABELS  = ['Faixa','Vazão','Vento','Umidade','Temperatura','Delta T']
+const COND_KEYS    = ['faixa','vazao','vento','direcao_vento','umidade','temperatura','delta_t']
+const COND_LABELS  = ['Faixa','Vazão','Vento','Direção do vento','Umidade','Temperatura','Delta T']
 const PRODUTOS_LIST = ['Triclon','Triomax','Moddus','Suiker','Roundup','Essenza','Spotlight','Agile','Volt','Mag8','Outros']
 const PRODUTO_FAZENDA_OPTS = ['Inseticida','Herbicida','Fungicida']
 

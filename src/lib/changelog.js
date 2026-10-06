@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.4',
+    data: '2026-10-05',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Direcao do vento no relatorio de voo',
+        texto: 'O passo 3 do voo (Condicoes) ganhou a direcao do vento no inicio e no fim, dentro do cartao do Vento. O botao Clima (GPS) preenche sozinho, junto com vento, umidade e temperatura, e da para escolher na mao. A direcao sai no PDF e no Word do relatorio (inclusive nos trechos), no texto do WhatsApp e no painel.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'PDF cortava o Delta T e o 4o produto',
+        texto: 'No PDF do relatorio, o bloco Configuracao do Drone cobria a ultima linha das condicoes climaticas (o Delta T saia cortado) e o quarto produto, quando havia quatro. Agora as linhas se ajustam ao espaco e tudo aparece.',
+      },
+    ],
+  },
+  {
     versao: '9.3',
     data: '2026-10-05',
     itens: [
