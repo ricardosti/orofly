@@ -5778,6 +5778,58 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                   </div>
                   )
                 })()}
+
+                {/* MODAL CLIENTE — apagado sem querer em 21/09/2026 (v5.2, refação da aba Equipes),
+                    que deixou um ")}" solto na tela e o "+ Novo Cliente" sem abrir nada. */}
+                {clienteModal && (
+                  <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+                    <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:400,padding:24}} onClick={e=>e.stopPropagation()}>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
+                        {clienteModal==='novo'?'🏢 Novo Cliente':'✏️ Editar Cliente'}
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>NOME DO CLIENTE</div>
+                          <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            placeholder="Ex: Raizen - Bonfim" value={clienteForm.nome||''}
+                            onChange={e=>setClienteForm(f=>({...f,nome:e.target.value}))} />
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>OBSERVAÇÕES</div>
+                          <textarea style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',resize:'none',height:60,boxSizing:'border-box'}}
+                            value={clienteForm.obs||''} onChange={e=>setClienteForm(f=>({...f,obs:e.target.value}))} />
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:6}}>PREÇO POR TIPO DE SERVIÇO (R$/ha)</div>
+                          <div style={{display:'flex',gap:8}}>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:10,color:theme.textFaint2,marginBottom:3}}>Catação</div>
+                              <input type="number" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                placeholder="0,00" value={clienteForm.preco_catacao} onChange={e=>setClienteForm(f=>({...f,preco_catacao:e.target.value}))} />
+                            </div>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:10,color:theme.textFaint2,marginBottom:3}}>Área Total</div>
+                              <input type="number" style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                placeholder="0,00" value={clienteForm.preco_area_total} onChange={e=>setClienteForm(f=>({...f,preco_area_total:e.target.value}))} />
+                            </div>
+                          </div>
+                          <div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>Usado pra calcular a receita quando o piloto marca o tipo de serviço no voo.</div>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
+                          <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#059669':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
+                            <div style={{width:14,height:14,borderRadius:7,background:theme.card,position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>
+                          </div>
+                          <span style={{fontSize:13,color:theme.text}}>Cliente ativo</span>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:8,marginTop:20}}>
+                        <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:18,padding:12,fontSize:13,cursor:'pointer'}}
+                          onClick={()=>setClienteModal(null)}>Cancelar</button>
+                        <button style={{flex:2,background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}}
+                          disabled={invSaving} onClick={salvarCliente}>{invSaving?'Salvando...':'💾 Salvar'}</button>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             )

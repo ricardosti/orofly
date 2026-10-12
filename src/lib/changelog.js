@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.7',
+    data: '2026-10-12',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Novo Cliente voltou a funcionar',
+        texto: 'Em Fazendas & Clientes, o botao "+ Novo Cliente" (e o "Editar" de cada cliente) nao abria nada desde 21/09, e aparecia um ")}" solto embaixo dos cartoes. A janela de cadastro tinha sido apagada sem querer junto com a reforma da aba Equipes; voltou como era, com nome, observacoes, precos por tipo de servico e ativo/inativo.',
+      },
+    ],
+  },
+  {
     versao: '9.6',
     data: '2026-10-12',
     itens: [
