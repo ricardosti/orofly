@@ -9,6 +9,27 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.8',
+    data: '2026-10-12',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Dose do produto nao e mais arredondada no relatorio',
+        texto: 'A dose era arredondada para 2 casas antes de calcular o total: 0,035 L/ha de VANTACOR virava 0,04 e o relatorio pedia 14% a mais de produto (0,76 L em vez de 0,66 L em 18,9 ha). Agora a dose aparece como foi digitada e o total e a conta exata, no PDF, no Word, no WhatsApp e na expectativa de gasto do Passo 5.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Areas com 2 casas no app do piloto',
+        texto: 'O talhao de 6,78 ha aparecia como 6,8 no Finalizar voo, no Passo 5 e na selecao de talhoes, e nao batia com a caderneta de campo. Agora toda area aparece com 2 casas.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Finalizar voo com varios talhoes, um por um',
+        texto: 'Cada talhao tem o seu campo de pulverizado e o seu botao Fechar: da para fechar um e deixar o outro para outro voo. Em talhao fechado, o que faltar do pulverizado para completar vira bordadura sozinho. A barra do total soma o que foi digitado (antes mostrava 100% pulverizado mesmo com menos), e o saldo de cada talhao passa a usar o numero digitado nele, nao uma divisao proporcional.',
+      },
+    ],
+  },
+  {
     versao: '9.7',
     data: '2026-10-12',
     itens: [

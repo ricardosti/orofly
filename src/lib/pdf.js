@@ -1,6 +1,7 @@
 // v3.6 — build 2024-06-02
 import jsPDF from 'jspdf'
 import { urlAssinada } from './storageUrl'
+import { formatarDose, formatarTotalProduto, totalProduto } from './calda'
 
 async function toBase64(blob) {
   return new Promise((resolve, reject) => {
@@ -67,18 +68,50 @@ export function areaLiquida(rel) {
   return Math.max(0, +(bruta-bord).toFixed(2))
 }
 
+// Quanto de um voo coube a cada talhão dele: { nome: { area, bordadura } }, com `area` já
+// líquida (sem a bordadura). `areaCadastral` é { nome: área cadastrada }.
+//  - Voo fechado a partir da v9.8: o piloto informa talhão por talhão no "Finalizar voo", e
+//    cada linha do `area_feita_detalhe` traz a marca `fechado`. Vale o que ele digitou.
+//  - Antes disso: a área do voo se divide pelo tamanho cadastrado de cada talhão.
+// A marca existe pra não mexer no passado. Os detalhes antigos foram digitados de outro jeito
+// e, lidos ao pé da letra, reabririam talhão já fechado — a Flecha Azul 064-01 voltaria com
+// 0,95 ha em aberto (conferido no banco em 12/10/2026).
+export function rateioPorTalhao(rel, areaCadastral = {}) {
+  const nomes = (rel.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
+  const out = {}
+  if (!nomes.length) return out
+  const det = Array.isArray(rel.area_feita_detalhe) ? rel.area_feita_detalhe : []
+  if (nomes.length > 1 && det.some(d => typeof d?.fechado === 'boolean')) {
+    const bordDe = {}
+    ;(rel.bordadura_detalhe||[]).forEach(d => { if (d?.talhao) bordDe[d.talhao] = parseFloat(d.bordadura)||0 })
+    nomes.forEach(n => {
+      const feita = Math.max(0, parseFloat(det.find(d => d?.talhao===n)?.area_feita)||0)
+      const bord = Math.min(feita, Math.max(0, bordDe[n]||0))
+      out[n] = { area: +(feita-bord).toFixed(2), bordadura: bord }
+    })
+    return out
+  }
+  const somaCad = nomes.reduce((a,n)=>a+(parseFloat(areaCadastral[n])||0),0)
+  const area = areaLiquida(rel)
+  const bord = parseFloat(rel.bordadura)||0
+  nomes.forEach(n => {
+    const fracao = somaCad>0 ? (parseFloat(areaCadastral[n])||0)/somaCad : 1/nomes.length
+    out[n] = { area: area*fracao, bordadura: bord*fracao }
+  })
+  return out
+}
+
 // Total esperado de cada produto = dose (por ha) x área líquida aplicada
 export function calcularGastoProdutos(produtos, areaHa) {
   // areaHa===0 é válido (talhão ainda sem área aplicada) — não pode cair no `null` só
   // porque 0 é falsy; senão a linha do produto sai sem o "(total)" nenhum.
   const areaValida = areaHa!=null && !isNaN(areaHa) && areaHa>=0
   return (produtos||[]).filter(Boolean).map(p => {
-    const { nome, dose: doseCrua, unidade } = parseDoseProduto(p)
-    // Arredonda a dose ANTES de multiplicar pela área — senão o total sai calculado com
-    // uma dose "crua" (ex: 0.075) diferente da dose arredondada mostrada na tela (0,08),
-    // e a conta manual do piloto (dose exibida × área) não bate com o total impresso.
-    const dose = doseCrua!=null ? Math.round(doseCrua*100)/100 : doseCrua
-    const total = (dose!=null && areaValida) ? +(dose*areaHa).toFixed(2) : null
+    const { nome, dose, unidade } = parseDoseProduto(p)
+    // A dose entra como foi digitada — nada de arredondar antes de multiplicar. Até a v9.7
+    // ela ia pra 2 casas (0,035 → 0,04) e o total de VANTACOR saía 14% maior. A conta de
+    // cabeça bate porque a dose também é exibida inteira (formatarDose, no calda.js).
+    const total = (dose!=null && areaValida) ? totalProduto(dose, areaHa) : null
     return { produto:p, nome, dose, unidade: unidade||'L', total }
   })
 }
@@ -617,8 +650,8 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   }
   gastosProdutos.forEach((g,i)=>{
     doc.setFillColor(i%2===0?255:248,255,i%2===0?255:248);doc.rect(C1,y,hW,hP,'F')
-    const doseTxt = g.dose!=null ? `${g.dose} ${g.unidade}/ha` : '—'
-    const totalTxt = g.total!=null ? `${g.total} ${g.unidade}` : '—'
+    const doseTxt = g.dose!=null ? `${formatarDose(g.dose)} ${g.unidade}/ha` : '—'
+    const totalTxt = g.total!=null ? `${formatarTotalProduto(g.total)} ${g.unidade}` : '—'
     doc.setFontSize(8);doc.setFont('helvetica','normal');doc.setTextColor(...DK)
     const yT = y+hP*0.71
     doc.text(truncFit(doc,g.nome||g.produto,hW*0.38-2),C1+3,yT)
@@ -1871,7 +1904,7 @@ export async function gerarWordCliente(rel, { supabase, localObsFotos, localFoto
 ${gastosProdutosW.length > 0 ? `
 <h2>Produto(s) Aplicado(s)</h2>
 <table>
-  ${gastosProdutosW.map((g,i)=>`<tr><td>Produto ${i+1}</td><td>${g.nome||g.produto}${g.dose!=null?` — ${g.dose} ${g.unidade}/ha`:''}${g.total!=null?` → total ${g.total} ${g.unidade}`:''}</td></tr>`).join('')}
+  ${gastosProdutosW.map((g,i)=>`<tr><td>Produto ${i+1}</td><td>${g.nome||g.produto}${g.dose!=null?` — ${formatarDose(g.dose)} ${g.unidade}/ha`:''}${g.total!=null?` → total ${formatarTotalProduto(g.total)} ${g.unidade}`:''}</td></tr>`).join('')}
   ${rel.tamanho_gota?`<tr><td>Tamanho da Gota</td><td>${rel.tamanho_gota}</td></tr>`:''}
   ${rel.velocidade_drone?`<tr><td>Velocidade do Drone</td><td>${rel.velocidade_drone}</td></tr>`:''}
   ${rel.altura?`<tr><td>Altura</td><td>${rel.altura} m</td></tr>`:''}

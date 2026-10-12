@@ -9,7 +9,7 @@
 // parseDoseProduto). O pdf.js NÃO importa este arquivo; quem chama é o AdminPanel, que passa
 // o resultado pronto pro gerador. Se as duas pontas se importassem, viraria ciclo.
 
-import { areaLiquida, parseDoseProduto } from './pdf'
+import { areaLiquida, parseDoseProduto, rateioPorTalhao } from './pdf'
 
 function minutosEntre(ini, fim) {
   if (!ini || !fim) return 0
@@ -54,14 +54,12 @@ export function agregarConsolidado({
   const parcelas = {}
   nomesListar.forEach(n => { parcelas[n] = [] })
 
+  // Voo fechado talhão por talhão (v9.8+) entra com o que o piloto digitou em cada um; os
+  // anteriores, pelo tamanho cadastrado — ver rateioPorTalhao no pdf.js.
   voosOrd.forEach(r => {
-    const nomesVoo = (r.localizacao || '').split(',').map(s => s.trim()).filter(Boolean)
-    const somaCad = nomesVoo.reduce((a, n) => a + (areaCadastral[n] || 0), 0)
-    const areaVoo = areaLiquida(r)
-    nomesVoo.forEach(n => {
+    Object.entries(rateioPorTalhao(r, areaCadastral)).forEach(([n, p]) => {
       if (!(n in parcelas)) return
-      const fracao = somaCad > 0 ? (areaCadastral[n] || 0) / somaCad : 1 / nomesVoo.length
-      parcelas[n].push({ rel: r, area: areaVoo * fracao, bordadura: (parseFloat(r.bordadura) || 0) * fracao })
+      parcelas[n].push({ rel: r, area: p.area, bordadura: p.bordadura })
     })
   })
 

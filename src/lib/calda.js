@@ -26,3 +26,26 @@ export function areaPossivel(ha) {
 export function formatarHa(ha, casas = 2) {
   return `${num(Number(ha) || 0, casas)} ha`
 }
+
+// Relatórios (PDF, Word, WhatsApp) e a "Expectativa de gasto" do Passo 5.
+//
+// Até a v9.7 a dose era arredondada pra 2 casas ANTES de multiplicar, pra conta de cabeça
+// (dose exibida × área) bater com o total. Só que 0,035 L/ha virava 0,04 — 14% a mais de
+// VANTACOR no relatório (0,76 L em vez de 0,66 L em 18,9 ha). Vídeo do Pastor, 12/10/2026.
+// Agora a dose sai como foi digitada e o total é a conta exata, então a conta de cabeça
+// continua batendo.
+export function formatarDose(dose) {
+  const v = Number(dose)
+  return isNaN(v) ? '—' : num(v, 4)
+}
+// Total de produto (dose × área) em L ou kg, com 3 casas — a precisão do mL / g. Passa
+// por toPrecision antes: 0,035 × 18,9 dá 0,66149999… no ponto flutuante, e sem isso o
+// PDF saía 0,661 e o WhatsApp 0,662 pro mesmo voo.
+export function totalProduto(dose, area) {
+  const v = Number(dose) * Number(area)
+  return isNaN(v) ? null : Math.round(+v.toPrecision(12) * 1000) / 1000
+}
+export function formatarTotalProduto(total) {
+  const v = Number(total)
+  return isNaN(v) ? '—' : num(Math.round(+v.toPrecision(12) * 1000) / 1000, 3)
+}

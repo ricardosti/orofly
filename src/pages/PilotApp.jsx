@@ -3,7 +3,7 @@ import { useTheme } from '../lib/theme'
 import { ComposedChart, BarChart, Line, Area, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFCliente, calcularGastoProdutos, parseDoseProduto, areaLiquida, setEmpresaConfig } from '../lib/pdf'
+import { gerarPDFCliente, calcularGastoProdutos, parseDoseProduto, areaLiquida, rateioPorTalhao, setEmpresaConfig } from '../lib/pdf'
 import { resolverTemplate, montarTextoWhatsapp } from '../lib/reportTemplates'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
@@ -21,7 +21,7 @@ import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
-import { formatarQtd, areaPossivel, formatarHa } from '../lib/calda'
+import { formatarQtd, areaPossivel, formatarHa, formatarDose, formatarTotalProduto } from '../lib/calda'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -124,6 +124,9 @@ function initForm(data) {
       areaAplicadaPorTalhao:{},
       areaNaoAplicadaPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       area_feita_por_talhao:data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,String(d.area_feita)])) : {},
+      // Quais talhões o piloto fechou no "Finalizar voo" (v9.8+). Nulo em voo antigo — aí o
+      // detalhe sai sem a marca e o saldo do talhão segue no rateio proporcional.
+      talhoesFechados: data.area_feita_detalhe?.some(d=>typeof d?.fechado==='boolean') ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,!!d.fechado])) : null,
       evid_meta:data.evidencia_meta||{},
       area_feita:data.area_feita!=null?String(data.area_feita):'',
       area_deduzida:data.area_deduzida!=null?String(data.area_deduzida):'',
@@ -153,7 +156,7 @@ function initForm(data) {
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
     pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},areaNaoAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
-    area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',area_talhao_total:0,saldoPorTalhao:{},
+    area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',area_talhao_total:0,saldoPorTalhao:{},talhoesFechados:null,
     area_feita_anterior:0,area_feita_por_talhao_anterior:{},bordadura_anterior:0,bordaduraPorTalhao_anterior:{},
   }
 }
@@ -189,11 +192,11 @@ function areaFeitaAtual(form) {
   if (talhoesSel.length > 1) return talhoesSel.reduce((a,nome)=>a+(parseFloat(form.area_feita_por_talhao?.[nome])||0),0)
   return parseFloat(form.area_feita)||0
 }
-// Progresso do Finalizado Parcial: quanto já foi feito (líquido) vs a meta líquida (área total
-// menos bordadura) — a meta é sempre o talhão inteiro, não usa areaLiquidaAtual (que agora reflete
-// o que já foi FEITO, não a meta a bater).
+// Progresso do Finalizado Parcial: o percorrido (bordadura dentro) contra o escopo do voo (que
+// também a inclui). Até a v9.7 a meta descontava a bordadura e o feito não — com um talhão
+// fechado com bordadura e outro aberto, a porcentagem saía maior que a real.
 function progressoParcial(form) {
-  const total = Math.max(0, (parseFloat(form.area_ha)||0)-bordaduraAtual(form))
+  const total = Math.max(0, parseFloat(form.area_ha)||0)
   const feita = Math.max(0, areaFeitaAtual(form))
   const pct = total>0 ? Math.min(100, Math.round((feita/total)*100)) : 0
   return {total, feita, pct}
@@ -266,6 +269,20 @@ function limitarArea(v, max) {
   if (max != null && n > max) return String(+max.toFixed(2))
   return v
 }
+// Área com 2 casas, no formato brasileiro (6,78). Com 1 casa um talhão de 6,78 ha aparecia
+// "6.8" e não batia com a caderneta de campo — vídeo do Pastor, 12/10/2026.
+const fmtHa = v => (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+// O que já foi pulverizado em cada talhão neste voo, pro campo do "Finalizar voo" com vários
+// talhões: o percorrido menos a bordadura. Texto cru, como o piloto digita.
+function pulvInicialPorTalhao(form) {
+  const out = {}
+  Object.entries(form.area_feita_por_talhao||{}).forEach(([nome,v])=>{
+    const p = (parseFloat(v)||0) - (parseFloat(form.bordaduraPorTalhao?.[nome])||0)
+    if (p>0.005) out[nome] = String(+p.toFixed(2))
+  })
+  return out
+}
+
 // Barra de três faixas do talhão: PULVERIZADO + BORDADURA + FALTA = área total.
 //
 // Existe por causa de uma confusão real de campo: o piloto não sabia se a bordadura
@@ -639,6 +656,10 @@ export default function PilotApp({onSwitchMode}) {
   // antes eram dois botões e "Finalizado Parcial" ficava escondido num menu ⋮.
   // Marcado por padrão porque fechar o talhão é o caso comum.
   const [fezTudo,setFezTudo] = useState(true)
+  // Com vários talhões: o pulverizado de cada um (texto cru) e quais o piloto marcou como
+  // fechados à mão — talhão sem marca segue o "Fechei todos" lá de cima.
+  const [pulvTalhao,setPulvTalhao] = useState({})
+  const [fechadoTalhao,setFechadoTalhao] = useState({})
   // O que o piloto pulverizou hoje, guardado como texto cru. Não dá pra derivar de
   // `area_feita - bordadura` na hora de exibir: o valor derivado come o ponto enquanto
   // ele digita "2.5" (vira 2, e o ponto nunca entra).
@@ -991,7 +1012,7 @@ export default function PilotApp({onSwitchMode}) {
     // Inclui 'pausado_dia' (Finalizado Parcial) também — senão um voo parcial de outro piloto
     // fica invisível no progresso do talhão até alguém finalizar 100% (status/area_feita são
     // usados por areaLiquida() pra saber quanto desse voo parcial já foi líquido aplicado).
-    supabase.from('relatorios').select('id,cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita,piloto_nome').in('status',['finalizado','pausado_dia'])
+    supabase.from('relatorios').select('id,cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita,piloto_nome,area_feita_detalhe,bordadura_detalhe').in('status',['finalizado','pausado_dia'])
       .then(({data}) => { if(data) setRelatoriosFinalizadosOrg(data) })
     supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
@@ -1322,8 +1343,12 @@ export default function PilotApp({onSwitchMode}) {
     // geradores de relatório (PDF/WhatsApp) só enxergam o total somado, sem saber quanto foi
     // feito em CADA talhão especificamente.
     const areaFeitaDetalhe = talhoesSel.length>1
-      ? talhoesSel.map(nome=>({talhao:nome,area_feita:Math.max(0,parseFloat(form.area_feita_por_talhao?.[nome])||0)})).filter(d=>d.area_feita>0)
+      ? talhoesSel.map(nome=>({talhao:nome,area_feita:Math.max(0,parseFloat(form.area_feita_por_talhao?.[nome])||0),
+          ...(form.talhoesFechados ? {fechado:!!form.talhoesFechados[nome]} : {})})).filter(d=>d.area_feita>0)
       : null
+    // Com vários talhões o total feito é a soma deles. O Passo 5 edita talhão por talhão e não
+    // mexia no `area_feita`, que ficava velho em relação ao detalhe.
+    const feitaSomada = talhoesSel.length>1 ? areaFeitaAtual(form) : 0
     const bordaduraTotal = bordaduraAtual(form)
     // O status pode vir no extraData (executarFinalizacao/executarFinalizacaoDia mandam
     // explícito) ou do estado atual do wizard.
@@ -1336,7 +1361,7 @@ export default function PilotApp({onSwitchMode}) {
       piloto_id:profile.id,
       cultura:form.cultura||null,
       cliente:clienteVal,fazenda:form.fazenda,produto:form.produto||null,area_ha:form.area_ha,qtd_voos:parseInt(form.qtd_voos)||1,tipo_servico:form.tipo_servico||null,
-      area_feita:form.area_feita?parseFloat(form.area_feita):null,
+      area_feita:feitaSomada>0 ? +feitaSomada.toFixed(2) : form.area_feita?parseFloat(form.area_feita):null,
       area_deduzida:form.area_deduzida?parseFloat(form.area_deduzida):null,
       piloto_nome:profile.nome||profile.email,
       // Finalizado Parcial implica compartilhado: o saldo que sobrou vai ser voado por outra
@@ -1368,7 +1393,7 @@ export default function PilotApp({onSwitchMode}) {
       // página inteira, porque essa lista é buscada uma única vez ao abrir o app.
       if (result.data && (result.data.status==='finalizado' || result.data.status==='pausado_dia')) {
         const rd = result.data
-        const entry = {id:rd.id,cliente:rd.cliente,fazenda:rd.fazenda,area_ha:rd.area_ha,bordadura:rd.bordadura,created_at:rd.created_at,localizacao:rd.localizacao,status:rd.status,area_feita:rd.area_feita,piloto_nome:rd.piloto_nome}
+        const entry = {id:rd.id,cliente:rd.cliente,fazenda:rd.fazenda,area_ha:rd.area_ha,bordadura:rd.bordadura,created_at:rd.created_at,localizacao:rd.localizacao,status:rd.status,area_feita:rd.area_feita,piloto_nome:rd.piloto_nome,area_feita_detalhe:rd.area_feita_detalhe,bordadura_detalhe:rd.bordadura_detalhe}
         setRelatoriosFinalizadosOrg(prev => {
           const idx = prev.findIndex(r=>r.id===entry.id)
           if (idx>=0) { const copy=[...prev]; copy[idx]=entry; return copy }
@@ -2787,7 +2812,7 @@ export default function PilotApp({onSwitchMode}) {
                       <div style={{fontSize:9.5,color:theme.textFaint,fontWeight:600,marginTop:3}}>{dt?`${dt.toLocaleDateString('pt-BR')} · ${dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:'—'}</div>
                       <div style={{fontSize:8.7,color:theme.textFaint,fontWeight:600,marginTop:9,textTransform:'uppercase',letterSpacing:.02}}>Área aplicada</div>
                       <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginTop:2}}>
-                        <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:16,color:'#00A86B'}}>{rel.area_ha?`${areaLiquida(rel).toFixed(1)} ha`:'—'}</span>
+                        <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:16,color:'#00A86B'}}>{rel.area_ha?`${fmtHa(areaLiquida(rel))} ha`:'—'}</span>
                         <span style={{width:24,height:24,borderRadius:8,background:theme.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><FileBarChart2 size={13} color="#00A86B"/></span>
                       </div>
                     </div>
@@ -4913,25 +4938,22 @@ Quando: ${tempoErroDebug.quando}`}
             {(()=>{
               const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
               // Progresso de um talhão específico (todos os pilotos) desde o último "zerar" da
-              // fazenda no Admin — quando um voo abrange vários talhões, divide a área proporcional
-              // ao tamanho cadastrado de cada um (não dá pra saber a área exata por talhão nesse caso).
+              // fazenda no Admin. Voo de vários talhões: o que o piloto digitou em cada um (voos
+              // da v9.8 em diante) ou, nos antigos, a área dividida pelo tamanho cadastrado —
+              // ver rateioPorTalhao no pdf.js.
               const progressoTalhao = (fz, t, talhoesDaFazenda) => {
                 const areaTotal = parseFloat(t.area_ha)||0
                 if(areaTotal<=0) return null
+                const cadastro = Object.fromEntries(talhoesDaFazenda.map(x=>[x.nome, x.area_ha]))
                 let areaRealizada = 0
                 let bordaduraRealizada = 0
                 relatoriosFinalizadosOrg.forEach(r=>{
                   if(r.cliente!==fz.cliente || r.fazenda!==fz.nome) return
                   if(fz.campanha_inicio && new Date(r.created_at) < new Date(fz.campanha_inicio)) return
-                  const nomesVoo = (r.localizacao||'').split(',').map(s=>s.trim()).filter(Boolean)
-                  if(!nomesVoo.includes(t.nome)) return
-                  const somaRegistrada = nomesVoo.reduce((a,n)=>{
-                    const tt = talhoesDaFazenda.find(x=>x.nome===n)
-                    return a + (tt?parseFloat(tt.area_ha)||0:0)
-                  },0)
-                  const fracao = somaRegistrada>0 ? areaTotal/somaRegistrada : 1/nomesVoo.length
-                  areaRealizada += areaLiquida(r) * fracao
-                  bordaduraRealizada += (parseFloat(r.bordadura)||0) * fracao
+                  const parte = rateioPorTalhao(r, cadastro)[t.nome]
+                  if(!parte) return
+                  areaRealizada += parte.area
+                  bordaduraRealizada += parte.bordadura
                 })
                 // Bordadura conta como "feito" pro fim de fechamento — ela é área deliberadamente
                 // não pulverizada (faixa de segurança), não trabalho pendente.
@@ -5125,7 +5147,7 @@ Quando: ${tempoErroDebug.quando}`}
                                             Cada um abre o seu voo, e o talhão vale o saldo. */}
                                         {parcial&&(
                                           <div style={{fontSize:10.5,color:theme.warningText2,marginTop:2}}>
-                                            {prog.pct.toFixed(0)}% feito · {feito.toFixed(1)} de {prog.areaTotal.toFixed(1)} ha
+                                            {prog.pct.toFixed(0)}% feito · {fmtHa(feito)} de {fmtHa(prog.areaTotal)} ha
                                           </div>
                                         )}
                                       </div>
@@ -5135,11 +5157,11 @@ Quando: ${tempoErroDebug.quando}`}
                                           perder a referência do todo. */}
                                       {parcial ? (
                                         <span style={{flexShrink:0,textAlign:'right'}}>
-                                          <span style={{fontSize:13,color:theme.warningText2,fontWeight:700,display:'block'}}>{prog.falta.toFixed(2)} ha</span>
-                                          <span style={{fontSize:9.5,color:theme.textFaint2,display:'block'}}>de {prog.areaTotal.toFixed(2)}</span>
+                                          <span style={{fontSize:13,color:theme.warningText2,fontWeight:700,display:'block'}}>{fmtHa(prog.falta)} ha</span>
+                                          <span style={{fontSize:9.5,color:theme.textFaint2,display:'block'}}>de {fmtHa(prog.areaTotal)}</span>
                                         </span>
                                       ) : t.area_ha ? (
-                                        <span style={{fontSize:12,color:'#00A86B',fontWeight:600,flexShrink:0}}>{t.area_ha} ha</span>
+                                        <span style={{fontSize:12,color:'#00A86B',fontWeight:600,flexShrink:0}}>{fmtHa(t.area_ha)} ha</span>
                                       ) : null}
                                     </div>
                                   )
@@ -5165,7 +5187,7 @@ Quando: ${tempoErroDebug.quando}`}
 
                         {selecionados.length>0&&(
                           <div style={{marginTop:6,fontSize:12,color:'#00A86B',fontWeight:600}}>
-                            ✅ {selecionados.length} talhão(ões) · A aplicar: {form.area_ha||'—'} ha{parseFloat(form.area_talhao_total)>parseFloat(form.area_ha||0)?` (talhão tem ${parseFloat(form.area_talhao_total).toFixed(1)} ha)`:''}
+                            ✅ {selecionados.length} talhão(ões) · A aplicar: {form.area_ha?fmtHa(form.area_ha):'—'} ha{parseFloat(form.area_talhao_total)>parseFloat(form.area_ha||0)?` (talhão tem ${fmtHa(form.area_talhao_total)} ha)`:''}
                           </div>
                         )}
                       </div>
@@ -5186,7 +5208,7 @@ Quando: ${tempoErroDebug.quando}`}
               if (totalTalhao<=0 || jaFeito<=0.05) return null
               return (
                 <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:14,fontSize:11.5,color:theme.warningText2}}>
-                  🌙 Aplicação parcial · Talhão tem <strong>{totalTalhao.toFixed(1)} ha</strong> · já aplicados <strong>{jaFeito.toFixed(1)} ha</strong> · <strong>saldo {saldo.toFixed(1)} ha</strong>
+                  🌙 Aplicação parcial · Talhão tem <strong>{fmtHa(totalTalhao)} ha</strong> · já aplicados <strong>{fmtHa(jaFeito)} ha</strong> · <strong>saldo {fmtHa(saldo)} ha</strong>
                 </div>
               )
             })()}
@@ -5600,6 +5622,7 @@ Quando: ${tempoErroDebug.quando}`}
                       // (a maioria) só confere e confirma, sem digitar nada.
                       setFezTudo(true)
                       setPulvHoje(''); setBordHoje('')
+                      setPulvTalhao(pulvInicialPorTalhao(form)); setFechadoTalhao({})
                       setForm(f=>({...f, area_feita: f.area_feita || String(parseFloat(f.area_ha)||'')}))
                       setParcialModalOpen(true)
                     }}>
@@ -5671,7 +5694,7 @@ Quando: ${tempoErroDebug.quando}`}
                 <span style={{width:36,height:36,borderRadius:10,background:theme.successBg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>🌱</span>
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:600,color:theme.text,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{form.cultura&&`${form.cultura} – `}{clienteVal} – {form.fazenda}</div>
-                  <div style={{fontSize:11,color:theme.textFaint2,marginTop:1}}>{form.talhao&&`Talhão ${form.talhao} · `}{form.area_ha&&`${form.area_ha} ha`}</div>
+                  <div style={{fontSize:11,color:theme.textFaint2,marginTop:1}}>{form.talhao&&`Talhão ${form.talhao} · `}{form.area_ha&&`${fmtHa(form.area_ha)} ha`}</div>
                 </div>
               </div>
               <div style={{gridColumn:'1 / -1',background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:'12px 14px'}}>
@@ -5704,7 +5727,7 @@ Quando: ${tempoErroDebug.quando}`}
                 {total>0&&(
                   <div style={{marginBottom:12}}>
                     <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#cddbd2',marginBottom:5}}>
-                      <span>{feita.toFixed(1)} de {total.toFixed(1)} ha aplicados</span>
+                      <span>{fmtHa(feita)} de {fmtHa(total)} ha feitos</span>
                       <span style={{fontWeight:700,color:'#ffb020'}}>{pct}%</span>
                     </div>
                     <div style={{height:8,background:'rgba(255,255,255,.15)',borderRadius:20,overflow:'hidden'}}>
@@ -5717,6 +5740,8 @@ Quando: ${tempoErroDebug.quando}`}
                     onClick={()=>{
                       setFezTudo(false)
                       setPulvHoje(''); setBordHoje('')
+                      // Talhão que já foi fechado num parcial anterior continua fechado.
+                      setPulvTalhao(pulvInicialPorTalhao(form)); setFechadoTalhao(form.talhoesFechados||{})
                       setParcialModalOpen(true)
                     }}>✏️ Editar progresso</button>
                   <button style={{background:'#ffb020',color:theme.text,border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
@@ -5799,7 +5824,7 @@ Quando: ${tempoErroDebug.quando}`}
                   setForm(f=>{
                     const qtd = parseFloat(f.areaNaoAplicadaPorTalhao?.[nome])||0
                     if (motivo==='Bordadura') return {...f, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:String(qtd)}}
-                    const nota = `Área não aplicada em ${nome} (${qtd.toFixed(1)} ha): ${motivo}`
+                    const nota = `Área não aplicada em ${nome} (${fmtHa(qtd)} ha): ${motivo}`
                     return {...f, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:''}, obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}
                   })
                 }
@@ -5824,7 +5849,7 @@ Quando: ${tempoErroDebug.quando}`}
                       return (
                         <div key={nome} style={{marginBottom:12,paddingBottom:10,borderBottom:`1px solid ${theme.divider}`}}>
                           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                            <span style={{fontSize:13,color:theme.text,flex:1}}>{nome}{areaTalhaoN>0?` (${areaTalhaoN} ha${anteriorN>0?` · ${anteriorN.toFixed(1)} já feitos`:''})`:''}</span>
+                            <span style={{fontSize:13,color:theme.text,flex:1}}>{nome}{areaTalhaoN>0?` (${fmtHa(areaTalhaoN)} ha${anteriorN>0?` · ${fmtHa(anteriorN)} já feitos`:''})`:''}</span>
                             <input type="number" style={{...sw.fi,width:90}} placeholder="Aplicado" value={form.areaAplicadaPorTalhao?.[nome]||''}
                               min={0} max={restanteN>0?restanteN:undefined}
                               onChange={e=>{
@@ -5847,7 +5872,7 @@ Quando: ${tempoErroDebug.quando}`}
                           )}
                           {naoAplicadaN>0 && (
                             <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:10}}>
-                              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:7}}>Por que esses {naoAplicadaN.toFixed(1)} ha não foram aplicados?</div>
+                              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:7}}>Por que esses {fmtHa(naoAplicadaN)} ha não foram aplicados?</div>
                               <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                                 {MOTIVOS_NAO_APLICADA.map(m=>{
                                   const ativo = motivoNaoAplicadaPorTalhao[nome]===m
@@ -5859,7 +5884,7 @@ Quando: ${tempoErroDebug.quando}`}
                               </div>
                               {motivoNaoAplicadaPorTalhao[nome] && (
                                 <div style={{fontSize:11.5,color:'#0b1210',marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`}}>
-                                  Não foi aplicado <strong>{naoAplicadaN.toFixed(1)} ha</strong> por causa {motivoNaoAplicadaPorTalhao[nome]==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicadaPorTalhao[nome]}`}.
+                                  Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicadaPorTalhao[nome]==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicadaPorTalhao[nome]}`}.
                                 </div>
                               )}
                             </div>
@@ -5869,7 +5894,7 @@ Quando: ${tempoErroDebug.quando}`}
                     })}
                     {(totalBord>0||totalFeito>0)&&(
                       <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:4,marginBottom:4}}>
-                        Feito: {totalFeito.toFixed(1)} ha · Bordadura: {totalBord.toFixed(1)} ha · Líquido: {Math.max(0,totalFeito-totalBord).toFixed(1)} ha
+                        Feito: {fmtHa(totalFeito)} ha · Bordadura: {fmtHa(totalBord)} ha · Líquido: {fmtHa(Math.max(0,totalFeito-totalBord))} ha
                       </div>
                     )}
                   </div>
@@ -5889,14 +5914,14 @@ Quando: ${tempoErroDebug.quando}`}
                 setForm(f=>{
                   const qtd = parseFloat(f.area_nao_aplicada)||0
                   if (motivo==='Bordadura') return {...f, bordadura:String(qtd)}
-                  const nota = `Área não aplicada (${qtd.toFixed(1)} ha): ${motivo}`
+                  const nota = `Área não aplicada (${fmtHa(qtd)} ha): ${motivo}`
                   return {...f, bordadura:'', obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}
                 })
               }
               return (
                 <>
                   {anteriorUnica>0 && (
-                    <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:8}}>Já feito antes: <strong>{anteriorUnica.toFixed(1)} ha</strong> · saldo do talhão {restanteUnica.toFixed(1)} ha</div>
+                    <div style={{fontSize:11,color:theme.textFaint2,marginTop:-8,marginBottom:8}}>Já feito antes: <strong>{fmtHa(anteriorUnica)} ha</strong> · saldo do talhão {fmtHa(restanteUnica)} ha</div>
                   )}
                   {/* No Finalizado Parcial a área já foi digitada no modal — reabrir como campo
                       editável aqui confundia o piloto (parecia que precisava responder de novo). */}
@@ -5931,7 +5956,7 @@ Quando: ${tempoErroDebug.quando}`}
                       )
                     })()
                   ) : (
-                    <FI label={`ÁREA APLICADA HOJE (Ha)${restanteUnica>0?` — máx. ${restanteUnica.toFixed(1)}`:''}`} ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
+                    <FI label={`ÁREA APLICADA HOJE (Ha)${restanteUnica>0?` — máx. ${fmtHa(restanteUnica)}`:''}`} ph="Ex: 10 — valor do controle da DJI" val={form.area_total_aplicada}
                       min={0} max={restanteUnica>0?restanteUnica:undefined}
                       onChange={e=>{
                         const v = limitarArea(e.target.value, restanteUnica>0?restanteUnica:null)
@@ -5959,7 +5984,7 @@ Quando: ${tempoErroDebug.quando}`}
 
                   {naoAplicadaN>0 && (
                     <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:14,marginTop:-8,marginBottom:14}}>
-                      <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8}}>Por que esses {naoAplicadaN.toFixed(1)} ha não foram aplicados?</div>
+                      <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8}}>Por que esses {fmtHa(naoAplicadaN)} ha não foram aplicados?</div>
                       <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
                         {MOTIVOS_NAO_APLICADA.map(m=>{
                           const ativo = motivoNaoAplicada===m
@@ -5971,7 +5996,7 @@ Quando: ${tempoErroDebug.quando}`}
                       </div>
                       {motivoNaoAplicada && (
                         <div style={{fontSize:12.5,color:'#0b1210',marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
-                          Não foi aplicado <strong>{naoAplicadaN.toFixed(1)} ha</strong> por causa {motivoNaoAplicada==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicada}`}.
+                          Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicada==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicada}`}.
                         </div>
                       )}
                     </div>
@@ -5979,7 +6004,7 @@ Quando: ${tempoErroDebug.quando}`}
 
                   {form.bordadura&&form.area_ha&&(
                     <div style={{fontSize:12,color:'#00A86B',fontWeight:600,marginTop:-8,marginBottom:14}}>
-                      Percorrido: {(areaFeitaAtual(form)>0?areaFeitaAtual(form):(parseFloat(form.area_ha)||0)).toFixed(2)} ha · Bordadura: {bordaduraAtual(form).toFixed(2)} ha · Aplicado: {areaLiquidaAtual(form).toFixed(2)} ha
+                      Percorrido: {fmtHa(areaFeitaAtual(form)>0?areaFeitaAtual(form):(parseFloat(form.area_ha)||0))} ha · Bordadura: {fmtHa(bordaduraAtual(form))} ha · Aplicado: {fmtHa(areaLiquidaAtual(form))} ha
                     </div>
                   )}
                 </>
@@ -6036,7 +6061,7 @@ Quando: ${tempoErroDebug.quando}`}
                   {comDose.map((g,i)=>(
                     <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:13,padding:'4px 0',borderBottom:i<comDose.length-1?'1px solid #e8eee8':'none'}}>
                       <span style={{color:theme.text}}>{g.nome}</span>
-                      <span style={{fontWeight:600,color:'#00A86B'}}>{g.total} {g.unidade}</span>
+                      <span style={{fontWeight:600,color:'#00A86B'}}>{formatarTotalProduto(g.total)} {g.unidade}</span>
                     </div>
                   ))}
                 </div>
@@ -6110,7 +6135,7 @@ Quando: ${tempoErroDebug.quando}`}
               const {total,feita,pct}=progressoParcial(form)
               return total>0 ? (
                 <div style={{background:theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'10px 12px',marginBottom:14,fontSize:12,color:theme.textMuted}}>
-                  🌙 Progresso parcial: <strong style={{color:'#00A86B'}}>{feita.toFixed(1)} de {total.toFixed(1)} ha ({pct}%)</strong>
+                  🌙 Progresso parcial: <strong style={{color:'#00A86B'}}>{fmtHa(feita)} de {fmtHa(total)} ha ({pct}%)</strong>
                 </div>
               ) : null
             })()}
@@ -6193,6 +6218,33 @@ Quando: ${tempoErroDebug.quando}`}
         const fazendaSelP = fazendasDB.find(fz=>normP(fz.cliente)===normP(form.cliente==='Outros'?form.clienteOutro:form.cliente) && normP(fz.nome)===normP(form.fazenda))
         const talhoesFazP = fazendaSelP ? talhoesDB.filter(t=>t.fazenda_id===fazendaSelP.id) : []
         const areaDoTalhaoP = nome => parseFloat(talhoesFazP.find(t=>t.nome===nome)?.area_ha)||0
+        // Vários talhões, cada um por si (v9.8). O campo pergunta o PULVERIZADO — o número da
+        // caderneta e do controle da DJI. Talhão fechado é percorrido inteiro: o que faltar do
+        // pulverizado pra completar é bordadura (sai de dentro). Talhão aberto vale o digitado.
+        // Antes era um campo de "área feita" só e a barra do total ignorava o que se digitava:
+        // o Pastor lançou 5,9 + 13 e ela mostrava 19,78 ha pulverizados, 100%.
+        const linhasP = !multiTalhaoP ? [] : talhoesSelP.map(nome=>{
+          const cadastrado = areaDoTalhaoP(nome)
+          // Escopo = o saldo do talhão quando o voo começou (desconta outros voos); ao reabrir
+          // um voo salvo esse saldo não existe mais, e vale o tamanho cadastrado.
+          const saldoSel = parseFloat(form.saldoPorTalhao?.[nome])
+          const escopo = !isNaN(saldoSel) && saldoSel>0 ? saldoSel : cadastrado
+          const fechado = fechadoTalhao[nome] ?? fezTudo
+          const txt = pulvTalhao[nome] ?? ''
+          // Bordadura lançada à mão no Passo 5 num talhão aberto continua valendo; a que veio de
+          // um fechamento anterior não (ela era só "o que faltava").
+          const bordManual = form.talhoesFechados?.[nome] ? 0 : Math.max(0, parseFloat(form.bordaduraPorTalhao?.[nome])||0)
+          const tetoPulv = escopo>0 ? Math.max(0, +(escopo-(fechado?0:bordManual)).toFixed(2)) : null
+          const digitado = txt==='' ? null : Math.max(0, parseFloat(txt)||0)
+          // Campo vazio num talhão fechado = pulverizou tudo (como no talhão único).
+          const pulv = digitado==null ? (fechado ? (escopo||0) : 0) : (tetoPulv!=null ? Math.min(tetoPulv, digitado) : digitado)
+          const percorrido = fechado && escopo>0 ? escopo : +(pulv+bordManual).toFixed(2)
+          const bord = fechado && escopo>0 ? Math.max(0, +(escopo-pulv).toFixed(2)) : bordManual
+          return { nome, cadastrado, escopo, fechado, txt, tetoPulv, pulv, percorrido, bord }
+        })
+        const todosFechadosP = linhasP.length>0 && linhasP.every(l=>l.fechado)
+        // No talhão único quem decide é o checkbox; com vários, ele vale "todos fechados".
+        const fezTudoEf = multiTalhaoP ? todosFechadosP : fezTudo
         return (
         <div style={s.modalOverlay} onClick={()=>setParcialModalOpen(false)}>
           <div style={s.modal} onClick={e=>e.stopPropagation()}>
@@ -6200,19 +6252,28 @@ Quando: ${tempoErroDebug.quando}`}
 
             {/* A PERGUNTA. Tudo o que aparece abaixo depende dela, então ela vem primeiro,
                 grande e sozinha — o piloto responde uma coisa só e a tela se ajusta. */}
-            <div onClick={()=>setFezTudo(v=>!v)}
+            <div onClick={()=>{
+                // Com vários talhões ele marca/desmarca todos de uma vez e apaga as escolhas
+                // feitas talhão por talhão.
+                if (multiTalhaoP) { setFezTudo(!todosFechadosP); setFechadoTalhao({}) }
+                else setFezTudo(v=>!v)
+              }}
               style={{display:'flex',alignItems:'flex-start',gap:11,padding:'14px 14px',borderRadius:14,cursor:'pointer',marginBottom:14,
-                background: fezTudo?theme.successBg:theme.warningBg,
-                border:`2px solid ${fezTudo?'#00A86B':(theme.warningText||'#c98a1c')}`}}>
+                background: fezTudoEf?theme.successBg:theme.warningBg,
+                border:`2px solid ${fezTudoEf?'#00A86B':(theme.warningText||'#c98a1c')}`}}>
               <div style={{width:26,height:26,borderRadius:8,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',
-                background: fezTudo?'#00A86B':'transparent', border:`2px solid ${fezTudo?'#00A86B':(theme.warningText||'#c98a1c')}`,
-                color:'#fff',fontSize:15,fontWeight:800,lineHeight:1}}>{fezTudo?'✓':''}</div>
+                background: fezTudoEf?'#00A86B':'transparent', border:`2px solid ${fezTudoEf?'#00A86B':(theme.warningText||'#c98a1c')}`,
+                color:'#fff',fontSize:15,fontWeight:800,lineHeight:1}}>{fezTudoEf?'✓':''}</div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:15,fontWeight:800,color: fezTudo?'#00A86B':(theme.warningText2||theme.warningText)}}>
-                  Fiz o talhão todo
+                <div style={{fontSize:15,fontWeight:800,color: fezTudoEf?'#00A86B':(theme.warningText2||theme.warningText)}}>
+                  {multiTalhaoP ? 'Fechei todos os talhões' : 'Fiz o talhão todo'}
                 </div>
                 <div style={{fontSize:12,color:theme.textMuted,marginTop:3,lineHeight:1.5}}>
-                  {fezTudo
+                  {multiTalhaoP
+                    ? (fezTudoEf
+                      ? 'Todos ficam fechados. Digite o pulverizado de cada um — o que faltar vira bordadura.'
+                      : 'Toque em "Fechar" só nos talhões que você terminou. Os outros ficam pra outro voo.')
+                    : fezTudo
                     ? 'O talhão fica fechado. Só informe quanto ficou de bordadura.'
                     : 'Desmarcado: informe quanto você percorreu hoje. O resto fica pra outro voo.'}
                 </div>
@@ -6221,31 +6282,50 @@ Quando: ${tempoErroDebug.quando}`}
 
             {multiTalhaoP ? (
               <div style={{marginBottom:4}}>
-                <label style={sw.fl}>ÁREA FEITA POR TALHÃO (HA)</label>
-                <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,marginTop:-2}}>Digite quanto já foi aplicado em cada talhão até agora.</div>
-                {talhoesSelP.map(nome=>{
-                  const areaTotalN = areaDoTalhaoP(nome)
-                  const aplicadaN = Math.max(0,parseFloat(form.area_feita_por_talhao?.[nome])||0)
-                  const pctN = areaTotalN>0 ? Math.min(100, Math.round((aplicadaN/areaTotalN)*100)) : 0
+                <label style={sw.fl}>QUANTO VOCÊ PULVERIZOU EM CADA TALHÃO (HA)</label>
+                <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,marginTop:-2,lineHeight:1.45}}>
+                  O número do controle da DJI, somando tudo deste voo. Em talhão fechado, o que
+                  faltar pra completar vira bordadura — dá pra trocar o motivo no Passo 5.
+                </div>
+                {linhasP.map(l=>{
+                  const pctN = l.escopo>0 ? Math.min(100, Math.round((l.percorrido/l.escopo)*100)) : 0
+                  const faltaN = l.escopo>0 ? Math.max(0, +(l.escopo-l.percorrido).toFixed(2)) : 0
                   return (
-                    <div key={nome} style={{marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${theme.divider}`}}>
-                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
-                        <span style={{fontSize:13,fontWeight:600,color:theme.text,flex:1}}>{nome}</span>
-                        <span style={{fontSize:11,color:theme.textFaint2}}>{areaTotalN>0?`${areaTotalN.toFixed(1)} ha cadastrados`:'sem área cadastrada'}</span>
+                    <div key={l.nome} style={{marginBottom:14,paddingBottom:12,borderBottom:`1px solid ${theme.divider}`}}>
+                      <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:6}}>
+                        <span style={{fontSize:13,fontWeight:600,color:theme.text,flex:1}}>{l.nome}</span>
+                        <span style={{fontSize:11,color:theme.textFaint2,fontVariantNumeric:'tabular-nums'}}>
+                          {l.escopo<=0 ? 'sem área cadastrada'
+                            : l.cadastrado>0 && l.escopo<l.cadastrado-0.005 ? `faltavam ${fmtHa(l.escopo)} de ${fmtHa(l.cadastrado)} ha`
+                            : `${fmtHa(l.escopo)} ha cadastrados`}
+                        </span>
                       </div>
-                      <input type="number" style={{...sw.fi,marginBottom:8}} placeholder="Ex: 32" value={form.area_feita_por_talhao?.[nome]||''}
-                        min={0} max={areaTotalN>0?areaTotalN:undefined}
-                        onChange={e=>{
-                          const v=limitarArea(e.target.value, areaTotalN>0?areaTotalN:null)
-                          setForm(f=>({...f,area_feita_por_talhao:{...f.area_feita_por_talhao,[nome]:v}}))
-                        }}/>
-                      {areaTotalN>0 && (<>
-                        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:theme.textMuted,marginBottom:4}}>
-                          <span>{aplicadaN.toFixed(1)} de {areaTotalN.toFixed(1)} ha</span>
-                          <span style={{fontWeight:700,color:'#00A86B'}}>{pctN}%</span>
-                        </div>
-                        <div style={{height:6,background:theme.divider,borderRadius:20,overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${pctN}%`,background:'#00A86B',borderRadius:20,transition:'width .3s'}}/>
+                      <div style={{display:'flex',gap:8,marginBottom:8}}>
+                        <input type="number" inputMode="decimal" style={{...sw.fi,flex:1,minWidth:0}}
+                          placeholder={l.fechado && l.escopo>0 ? `${fmtHa(l.escopo)} — tudo` : 'Ex: 3,5'}
+                          value={l.txt} min={0} max={l.tetoPulv>0?l.tetoPulv:undefined}
+                          onChange={e=>{
+                            const v=limitarArea(e.target.value, l.tetoPulv>0?l.tetoPulv:null)
+                            setPulvTalhao(m=>({...m,[l.nome]:v}))
+                          }}/>
+                        <button type="button" onClick={()=>setFechadoTalhao(m=>({...m,[l.nome]:!l.fechado}))}
+                          style={{flexShrink:0,borderRadius:10,padding:'0 13px',fontSize:12.5,fontWeight:700,cursor:'pointer',fontFamily:"'Poppins',sans-serif",
+                            background: l.fechado?theme.successBg:theme.card, color: l.fechado?'#00A86B':theme.textMuted,
+                            border:`1.5px solid ${l.fechado?'#00A86B':(theme.cardBorder2||theme.divider)}`}}>
+                          {l.fechado ? '✓ Fechado' : 'Fechar'}
+                        </button>
+                      </div>
+                      {l.escopo>0 && (<>
+                        <BarraTalhao theme={theme} compacta total={l.escopo} percorrido={l.percorrido} bordadura={l.bord}/>
+                        <div style={{display:'flex',justifyContent:'space-between',gap:8,fontSize:11,color:theme.textMuted,marginTop:5,fontVariantNumeric:'tabular-nums'}}>
+                          <span>
+                            {l.fechado
+                              ? (l.bord>0.005 ? `${fmtHa(l.pulv)} pulverizado + ${fmtHa(l.bord)} bordadura` : `${fmtHa(l.pulv)} ha pulverizados`)
+                              : `${fmtHa(l.percorrido)} de ${fmtHa(l.escopo)} ha${faltaN>0.005?` · faltam ${fmtHa(faltaN)}`:''}`}
+                          </span>
+                          <span style={{fontWeight:700,color:l.fechado||faltaN<=0.05?'#00A86B':(theme.warningText2||theme.warningText),whiteSpace:'nowrap'}}>
+                            {l.fechado ? 'fechado' : `${pctN}%`}
+                          </span>
                         </div>
                       </>)}
                     </div>
@@ -6281,8 +6361,8 @@ Quando: ${tempoErroDebug.quando}`}
                 )}
                 {avisoCorteArea && !fezTudo && (
                   <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:10,padding:'9px 12px',marginTop:-8,marginBottom:12,fontSize:11.5,lineHeight:1.5,color:theme.warningText2||theme.warningText}}>
-                    Este voo só pode registrar até <strong>{avisoCorteArea.teto.toFixed(1)} ha</strong> — é o que falta no talhão
-                    {bordHojeN>0.005 ? `, já descontando ${bordHojeN.toFixed(1)} ha de bordadura` : ''}.
+                    Este voo só pode registrar até <strong>{fmtHa(avisoCorteArea.teto)} ha</strong> — é o que falta no talhão
+                    {bordHojeN>0.005 ? `, já descontando ${fmtHa(bordHojeN)} ha de bordadura` : ''}.
                     {(parseFloat(form.area_feita_anterior)||0) > 0.05 && ' O que foi aplicado antes já está contado.'}
                   </div>
                 )}
@@ -6305,7 +6385,22 @@ Quando: ${tempoErroDebug.quando}`}
 
             {/* O DESENHO. É ele que resolve a dúvida do "a bordadura conta?" — em vez de
                 explicar em texto, mostra as três faixas somando o talhão inteiro. */}
-            {(()=>{
+            {multiTalhaoP && (()=>{
+              const totalM = linhasP.every(l=>l.escopo>0) ? +linhasP.reduce((a,l)=>a+l.escopo,0).toFixed(2) : (parseFloat(form.area_ha)||0)
+              const percorridoM = +linhasP.reduce((a,l)=>a+l.percorrido,0).toFixed(2)
+              const bordM = +linhasP.reduce((a,l)=>a+l.bord,0).toFixed(2)
+              if (totalM<=0) return null
+              return (
+                <div style={{background:theme.bg,borderRadius:14,padding:'13px 14px',marginBottom:16}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:9,gap:8}}>
+                    <span style={{fontSize:11,fontWeight:700,color:theme.textFaint2,letterSpacing:.4}}>TOTAL DA OPERAÇÃO</span>
+                    <span style={{fontSize:11.5,color:theme.textMuted,fontVariantNumeric:'tabular-nums'}}>{fmtHa(totalM)} ha</span>
+                  </div>
+                  <BarraTalhao theme={theme} total={totalM} percorrido={percorridoM} bordadura={bordM}/>
+                </div>
+              )
+            })()}
+            {!multiTalhaoP && (()=>{
               const saldo = restanteVoo
               const talhaoCheio = parseFloat(form.area_talhao_total)||0
               // O que outros voos já fizeram é a diferença entre o talhão e o saldo que sobrou
@@ -6362,7 +6457,43 @@ Quando: ${tempoErroDebug.quando}`}
             {/* UM botão só. O que ele faz depende do checkbox lá em cima: fechou o
                 talhão vira voo finalizado, não fechou vira parcial pra retomar depois.
                 Antes isso eram dois botões, e o parcial ficava escondido num menu. */}
-            <button style={{...s.shareBtn, background: fezTudo ? '#00A86B' : '#1a1a2e'}} onClick={async()=>{
+            <button style={{...s.shareBtn, background: fezTudoEf ? '#00A86B' : '#1a1a2e'}} onClick={async()=>{
+              if (multiTalhaoP) {
+                // Vários talhões: o voo fecha quando todos fecharam; senão vira parcial e os
+                // fechados ficam marcados no detalhe — é a marca que faz o saldo de cada talhão
+                // usar o que foi digitado aqui (rateioPorTalhao), em vez de dividir por tamanho.
+                const fechou = todosFechadosP
+                const percorrido = +linhasP.reduce((a,l)=>a+l.percorrido,0).toFixed(2)
+                const bordTotal = +linhasP.reduce((a,l)=>a+l.bord,0).toFixed(2)
+                const areaFeitaDet = linhasP.filter(l=>l.percorrido>0).map(l=>({talhao:l.nome, area_feita:l.percorrido, fechado:l.fechado}))
+                const bordDet = linhasP.filter(l=>l.bord>0).map(l=>({talhao:l.nome, bordadura:l.bord}))
+                const porTalhao = fn => Object.fromEntries(linhasP.map(l=>[l.nome, fn(l)]))
+                setParcialModalOpen(false)
+                setOpState(fechou ? 'finished' : 'paused_day')
+                const deltaBaixa = Math.max(0, percorrido-(parseFloat(form.area_deduzida)||0))
+                const n=nowParts()
+                // O Passo 5 já abre com tudo preenchido: aplicado de hoje, bordadura e o motivo.
+                setForm(f=>({...f, area_feita:String(percorrido), dt_fim_data:n.data, dt_fim_hh:n.hh, dt_fim_mm:n.mm,
+                  area_feita_por_talhao:{...f.area_feita_por_talhao, ...porTalhao(l=>l.percorrido>0?String(l.percorrido):'')},
+                  bordaduraPorTalhao:{...f.bordaduraPorTalhao, ...porTalhao(l=>l.bord>0?String(l.bord):'')},
+                  areaNaoAplicadaPorTalhao:{...f.areaNaoAplicadaPorTalhao, ...porTalhao(l=>l.bord>0?String(l.bord):'')},
+                  areaAplicadaPorTalhao:{...f.areaAplicadaPorTalhao, ...porTalhao(l=>String(Math.max(0,+(l.percorrido-(parseFloat(f.area_feita_por_talhao_anterior?.[l.nome])||0)).toFixed(2))))},
+                  talhoesFechados: porTalhao(l=>l.fechado)}))
+                setMotivoNaoAplicadaPorTalhao(m=>({...m, ...Object.fromEntries(linhasP.filter(l=>l.bord>0).map(l=>[l.nome,'Bordadura']))}))
+                const relSalvo = await saveToSupabase({status: fechou ? 'finalizado' : 'pausado_dia',
+                  area_feita:percorrido, area_deduzida:percorrido,
+                  bordadura: bordTotal||null, bordadura_detalhe: bordDet.length?bordDet:null,
+                  area_feita_detalhe: areaFeitaDet.length?areaFeitaDet:null, dt_fim:n.iso})
+                if(relSalvo) registrar(fechou?'voo_finalizado':'voo_parcial',
+                  [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
+                  { cliente: clienteVal, meta: { area_feita: percorrido, fechou_talhao: fechou, talhoes_fechados: linhasP.filter(l=>l.fechado).map(l=>l.nome) } })
+                if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
+                setWizardStep(3)
+                showToast(fechou
+                  ? '✅ Talhões fechados! Preencha as condições climáticas do fim'
+                  : '🌙 Voo salvo! Preencha as condições climáticas do fim')
+                return
+              }
               // Fechou o talhão: o percorrido é o escopo inteiro do voo, sem o piloto
               // precisar digitar de novo o número que ele já informou no Passo 1.
               // Não fechou: é o que ele pulverizou MAIS a bordadura — as duas faixas juntas
@@ -6409,7 +6540,9 @@ Quando: ${tempoErroDebug.quando}`}
               showToast(fezTudo
                 ? '✅ Talhão fechado! Preencha as condições climáticas do fim'
                 : '🌙 Voo salvo! Preencha as condições climáticas do fim')
-            }}>{fezTudo ? '✅ Confirmar — talhão fechado' : '🌙 Confirmar — volto pra terminar'}</button>
+            }}>{multiTalhaoP
+                ? (fezTudoEf ? '✅ Confirmar — talhões fechados' : '🌙 Confirmar — volto pra terminar')
+                : (fezTudo ? '✅ Confirmar — talhão fechado' : '🌙 Confirmar — volto pra terminar')}</button>
           </div>
         </div>
         )
@@ -6814,15 +6947,15 @@ function buildTxt(form,clienteVal,droneVal,prodFmt,parcial=false,talhoesCatalogo
         dadosPorTalhao.forEach(({nome,aplicada}, i) => {
           produtosLinhas.push(`Tal. ${nome}:`)
           calcularGastoProdutos(produtosStrings, aplicada ?? 0).filter(g=>g.nome).forEach(g=>{
-            const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
-            produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtHaTxt(g.total)} ${g.unidade})`:''}`)
+            const doseTxt = g.dose!=null ? formatarDose(g.dose) : '—'
+            produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${formatarTotalProduto(g.total)} ${g.unidade})`:''}`)
           })
           if (i<dadosPorTalhao.length-1) produtosLinhas.push('')
         })
       } else {
         calcularGastoProdutos(produtosStrings, areaAplicada).filter(g=>g.nome).forEach(g=>{
-          const doseTxt = g.dose!=null ? fmtN(g.dose) : '—'
-          produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${fmtHaTxt(g.total)} ${g.unidade})`:''}`)
+          const doseTxt = g.dose!=null ? formatarDose(g.dose) : '—'
+          produtosLinhas.push(`${g.nome} ${doseTxt} ${g.unidade}/ha${g.total!=null?` (${formatarTotalProduto(g.total)} ${g.unidade})`:''}`)
         })
       }
       if (produtosLinhas.length) blocos.push(`*Produtos*\n${produtosLinhas.join('\n')}`)

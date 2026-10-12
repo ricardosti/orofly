@@ -5,6 +5,8 @@
 // template usar na hora de gerar um relatório, e (2) o construtor de texto de WhatsApp
 // config-driven usado tanto no editor (preview) quanto no envio real.
 
+import { formatarDose, formatarTotalProduto } from './calda'
+
 // Resolve o template a usar pra um cliente: tenta o padrão específico do cliente, senão
 // qualquer template cadastrado pra esse cliente, senão o padrão global, senão null (nesse
 // caso o app deve manter o comportamento padrão de sempre — sem personalização nenhuma).
@@ -134,7 +136,7 @@ function parseProdutoDose(str, areaAplicada) {
   if (!dose || !areaAplicada) return `${nome}: ${m[2]}${unidade ? ' ' + unidade : ''}`
   const total = dose * areaAplicada
   const unidadeTotal = unidade.replace(/\/\s*ha$/i, '').trim() || 'L'
-  return `${nome}: ${fmtNum(dose)}${unidade ? ' ' + unidade : ''} (Total: ${fmtNum(total)} ${unidadeTotal})`
+  return `${nome}: ${formatarDose(dose)}${unidade ? ' ' + unidade : ''} (Total: ${formatarTotalProduto(total)} ${unidadeTotal})`
 }
 
 // Extrai nome/dose/unidade de "Nome - 0.24 kg/ha" e calcula o total (dose x área) pro
@@ -150,14 +152,12 @@ function formatarProdutoLinha(str, area) {
   // bug: um talhão com 0,00 ha aplicada fazia a linha sair sem o "(total)" e com ponto em
   // vez de vírgula, porque caía direto no `m[2]` cru sem passar pelo formatador).
   if (isNaN(dose)) return `${nome} ${m[2]}${unidade ? ' ' + unidade : ''}`
-  // O total precisa multiplicar pela dose JÁ ARREDONDADA em 2 casas (a mesma que aparece
-  // na linha) — senão o total impresso não bate com "dose exibida × área" na conta manual
-  // (era o bug: multiplicava pela dose crua, ex. 0.075, mas mostrava "0,08 L/ha").
-  const doseArred = Math.round(dose * 100) / 100
+  // Dose como foi digitada e total pela conta exata. Até a v9.7 a dose ia pra 2 casas antes
+  // de multiplicar (0,035 → 0,04) e o total saía 14% maior — ver formatarDose no calda.js.
   const areaNum = parseFloat(area)
   const unidadeTotal = unidade.replace(/\/\s*ha$/i, '').trim() || 'L'
-  const totalTxt = !isNaN(areaNum) ? ` (${fmtHa(doseArred * areaNum)} ${unidadeTotal})` : ''
-  return `${nome} ${fmtNum(doseArred)}${unidade ? ' ' + unidade : ''}${totalTxt}`
+  const totalTxt = !isNaN(areaNum) ? ` (${formatarTotalProduto(dose * areaNum)} ${unidadeTotal})` : ''
+  return `${nome} ${formatarDose(dose)}${unidade ? ' ' + unidade : ''}${totalTxt}`
 }
 
 function fmtNum(v) {
