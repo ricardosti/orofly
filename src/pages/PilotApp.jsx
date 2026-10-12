@@ -21,6 +21,7 @@ import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
+import { formatarQtd, areaPossivel, formatarHa } from '../lib/calda'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -4630,7 +4631,7 @@ Quando: ${tempoErroDebug.quando}`}
             ) : (
               <div style={{background:theme.bg,borderRadius:14,padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span style={{fontSize:12.5,color:theme.textMuted,fontWeight:600}}>{calcModo==='agua'?'Área possível de aplicar':'Água necessária'}</span>
-                <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:19,color:'#00A86B'}}>{calcModo==='agua'?`${area.toFixed(2)} ha`:`${agua.toFixed(2)} L`}</span>
+                <span style={{fontFamily:"'Poppins',sans-serif",fontWeight:800,fontSize:19,color:'#00A86B'}}>{calcModo==='agua' ? formatarHa(areaPossivel(area)) : formatarQtd(agua,'vol')}</span>
               </div>
             )}
           </div>
@@ -4668,7 +4669,7 @@ Quando: ${tempoErroDebug.quando}`}
                     <option value="g/ha">g/ha</option>
                     <option value="kg/ha">kg/ha</option>
                   </select>
-                  <span style={{minWidth:58,textAlign:'right',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#00A86B',flexShrink:0}}>{produtosCalc[i].totalBase.toFixed(2)} {produtosCalc[i].familia==='massa'?'kg':'L'}</span>
+                  <span style={{minWidth:58,textAlign:'right',fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12.5,color:'#00A86B',flexShrink:0}}>{formatarQtd(produtosCalc[i].totalBase, produtosCalc[i].familia)}</span>
                   {calcProdutos.length>1 && <button onClick={()=>removeProduto(i)} style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:8,width:26,height:26,fontSize:13,cursor:'pointer',flexShrink:0}}>✕</button>}
                 </div>
                 {p.custom && <button onClick={()=>updProduto(i,'custom',false)} style={{background:'none',border:'none',color:theme.textFaint2,fontSize:10.5,fontWeight:600,cursor:'pointer',padding:'4px 0 0'}}>‹ Escolher da lista de produtos</button>}
@@ -4679,11 +4680,13 @@ Quando: ${tempoErroDebug.quando}`}
 
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
             {[
-              ['💧 Água total', `${agua.toFixed(1)} L`],
-              ...(totalProdutosVol>0 ? [['🧪 Total líquidos', `${totalProdutosVol.toFixed(2)} L`]] : []),
-              ...(totalProdutosMassa>0 ? [['🧂 Total sólidos', `${totalProdutosMassa.toFixed(2)} kg`]] : []),
-              ['🧴 Total da calda', `${totalCalda.toFixed(2)} L`],
-              ['🌾 Área aplicada', `${area.toFixed(2)} ha`],
+              // Sem arredondar a ponto de perder produto: mL/g abaixo de 1 L/1 kg, 3 casas acima
+              // (ver lib/calda). A área digitada aparece como foi digitada.
+              ['💧 Água total', formatarQtd(agua,'vol')],
+              ...(totalProdutosVol>0 ? [['🧪 Total líquidos', formatarQtd(totalProdutosVol,'vol')]] : []),
+              ...(totalProdutosMassa>0 ? [['🧂 Total sólidos', formatarQtd(totalProdutosMassa,'massa')]] : []),
+              ['🧴 Total da calda', formatarQtd(totalCalda,'vol')],
+              ['🌾 Área aplicada', calcModo==='agua' ? formatarHa(areaPossivel(area)) : formatarHa(area, 4)],
             ].map(([label,val])=>(
               <div key={label} style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:16,padding:'12px 14px'}}>
                 <div style={{fontSize:10,color:theme.textFaint,fontWeight:600}}>{label}</div>

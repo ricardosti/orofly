@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.6',
+    data: '2026-10-12',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Calculadora de calda nao arredonda mais o produto',
+        texto: 'A calculadora mostrava tudo em litros ou quilos com 2 casas: 15 mL/ha em 1,3 ha (19,5 mL) aparecia como 0,02 L. Agora, abaixo de 1 L ou 1 kg o total aparece em mL ou g, e acima disso com ate 3 casas. A area que a agua disponivel cobre passou a ser arredondada para baixo, para a calda nao acabar antes do fim do talhao.',
+      },
+    ],
+  },
+  {
     versao: '9.5',
     data: '2026-10-05',
     itens: [
