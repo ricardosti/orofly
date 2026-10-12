@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '9.9',
+    data: '2026-10-12',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Areas com 2 casas no painel',
+        texto: 'Em Fazendas & Clientes a fazenda de 6,04 + 6,63 ha aparecia com 12,7 ha. Agora o total da fazenda, os talhoes, o avanco de cada fazenda, a atribuicao de talhoes, a agenda e o detalhe do voo mostram a area com 2 casas. Os graficos e medias do inicio seguem com 1 casa.',
+      },
+    ],
+  },
+  {
     versao: '9.8',
     data: '2026-10-12',
     itens: [

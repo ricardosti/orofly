@@ -55,6 +55,10 @@ import { linhasDaSequencia, totaisDaSequencia, ordenarLinhas, periodoUltimosDias
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
 const API_BASE = 'https://orofly.vercel.app'
+// Área com 2 casas, no formato brasileiro. Com 1 casa a fazenda de 6,04 + 6,63 ha aparecia
+// "12.7" e o talhão de 6,78 virava 6,8 — não batia com o cadastro (Pastor, 12/10/2026).
+// Os gráficos e médias do painel seguem com 1 casa: lá é tendência, não conferência.
+const fmtHa = v => (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
 // Funções do servidor que usam a chave mestra (usuários, senhas, perfis): vão com o login de
 // quem chama, e o servidor confere o perfil (api/_auth.js). Antes de 05/10/2026 elas não
 // conferiam nada — qualquer um na internet podia trocar senha e virar admin.
@@ -1200,7 +1204,7 @@ export default function AdminPanel({ onSwitchMode }) {
     t += `${linha}\n`
     t += `✈️ *Voos no período:* ${voosPeriodo.length}\n`
     t += `📏 *Área aplicada:* ${areaAplicada.toFixed(2)} ha\n`
-    if(pct!=null) t += `📊 *Avanço da fazenda:* ${pct.toFixed(0)}% (${areaAplicada.toFixed(1)} / ${areaTotalCadastrada.toFixed(1)} ha)\n`
+    if(pct!=null) t += `📊 *Avanço da fazenda:* ${pct.toFixed(0)}% (${fmtHa(areaAplicada)} / ${fmtHa(areaTotalCadastrada)} ha)\n`
     return t
   }
 
@@ -2330,7 +2334,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <tr>
                                   <td colSpan={10} style={{ background:'#f0f8f4', borderBottom:`2px solid ${theme.cardBorder2}`, padding:0 }}>
                                     <div style={{ display:'flex', gap:20, padding:'16px 20px', flexWrap:'wrap' }}>
-                                      <DetailCol title="Localização" items={[['Local',rel.localizacao],['GPS',rel.gps_lat?`${rel.gps_lat}, ${rel.gps_lng}`:'—'],['Área Total',rel.area_ha?`${rel.area_ha} ha`:null],['Área Aplicada',rel.area_ha?`${areaLiquida(rel)} ha`:null]]} />
+                                      <DetailCol title="Localização" items={[['Local',rel.localizacao],['GPS',rel.gps_lat?`${rel.gps_lat}, ${rel.gps_lng}`:'—'],['Área Total',rel.area_ha?`${fmtHa(rel.area_ha)} ha`:null],['Área Aplicada',rel.area_ha?`${fmtHa(areaLiquida(rel))} ha`:null]]} />
                                       <DetailCol title="Cond. Início" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_i']])} />
                                       <DetailCol title="Cond. Fim" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_f']])} />
                                       <DetailCol title="Horários" items={[['Início',fmt(rel.dt_inicio)],['Fim',fmt(rel.dt_fim)],...(tempo?[['Total',tempo.total],...(tempo.temPausa?[['Efetivo',tempo.efetivo]]:[])]:[] )]} />
@@ -3340,7 +3344,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 <span style={{background:statusBg(theme)[mapaResumo.status]||theme.bg,color:statusColor(theme)[mapaResumo.status]||theme.textMuted,fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:20,display:'inline-block',marginTop:8,marginBottom:14}}>{STATUS_LABEL[mapaResumo.status]||mapaResumo.status}</span>
                 {[
                   ['Talhão', mapaResumo.localizacao],
-                  ['Área', mapaResumo.area_ha ? `${mapaResumo.area_ha} ha${mapaResumo.bordadura?` (bordadura ${mapaResumo.bordadura} ha)`:''}` : null],
+                  ['Área', mapaResumo.area_ha ? `${fmtHa(mapaResumo.area_ha)} ha${mapaResumo.bordadura?` (bordadura ${fmtHa(mapaResumo.bordadura)} ha)`:''}` : null],
                   ['Drone', mapaResumo.drone],
                   ['Produtos', (mapaResumo.produtos||[]).join(', ')],
                   ['Data', mapaResumo.dt_inicio ? new Date(mapaResumo.dt_inicio).toLocaleDateString('pt-BR') : new Date(mapaResumo.created_at).toLocaleDateString('pt-BR')],
@@ -4462,11 +4466,11 @@ export default function AdminPanel({ onSwitchMode }) {
                       </div>
                       <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
                         <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>ÁREA TOTAL CADASTRADA</div>
-                        <div style={{fontSize:20,fontWeight:700,color:theme.text}}>{somaTotal.toFixed(1)} ha</div>
+                        <div style={{fontSize:20,fontWeight:700,color:theme.text}}>{fmtHa(somaTotal)} ha</div>
                       </div>
                       <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
                         <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>ÁREA REALIZADA</div>
-                        <div style={{fontSize:20,fontWeight:700,color:'#059669'}}>{somaRealizada.toFixed(1)} ha</div>
+                        <div style={{fontSize:20,fontWeight:700,color:'#059669'}}>{fmtHa(somaRealizada)} ha</div>
                       </div>
                       <div style={{background:theme.card,borderRadius:12,border:`1px solid ${theme.cardBorder2}`,padding:14}}>
                         <div style={{fontSize:11,fontWeight:700,color:theme.textFaint2,marginBottom:4}}>% CONCLUÍDO (GERAL)</div>
@@ -4601,8 +4605,8 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </td>
                                 <td style={{padding:'9px 12px',textAlign:'right',color:theme.textMuted,whiteSpace:'nowrap'}}>
                                   {fz.pct!==null ? (
-                                    <span title={fz.bordaduraRealizada>0 ? `Aplicada: ${fz.areaRealizada.toFixed(1)} ha + bordadura ${fz.bordaduraRealizada.toFixed(1)} ha` : undefined}>
-                                      {fz.areaCoberta.toFixed(1)} / {fz.areaTotal.toFixed(1)}
+                                    <span title={fz.bordaduraRealizada>0 ? `Aplicada: ${fmtHa(fz.areaRealizada)} ha + bordadura ${fmtHa(fz.bordaduraRealizada)} ha` : undefined}>
+                                      {fmtHa(fz.areaCoberta)} / {fmtHa(fz.areaTotal)}
                                     </span>
                                   ) : '—'}
                                 </td>
@@ -4648,7 +4652,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                   <div style={{width:`${fz.pct}%`,height:'100%',background:fz.pct>=100?theme.primary:theme.warningText,borderRadius:20}}/>
                                 </div>
                                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12}}>
-                                  <span style={{color:theme.textMuted}}>{fz.areaRealizada.toFixed(1)} / {fz.areaTotal.toFixed(1)} ha</span>
+                                  <span style={{color:theme.textMuted}}>{fmtHa(fz.areaRealizada)} / {fmtHa(fz.areaTotal)} ha</span>
                                   <span style={{fontWeight:700,color:theme.primary}}>{fz.pct.toFixed(0)}%</span>
                                 </div>
                                 {fz.campanha_inicio && (
@@ -4667,7 +4671,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                     {fz.rankingPilotos.map(([nome,area])=>(
                                       <div key={nome} style={{display:'flex',justifyContent:'space-between',fontSize:11,color:theme.textMuted,padding:'2px 0'}}>
                                         <span>{nome}</span>
-                                        <span style={{fontWeight:600,color:theme.text}}>{area.toFixed(1)} ha</span>
+                                        <span style={{fontWeight:600,color:theme.text}}>{fmtHa(area)} ha</span>
                                       </div>
                                     ))}
                                   </div>
@@ -4701,7 +4705,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             <div style={{fontSize:12.5,fontWeight:600,color:theme.text}}>
                               {c.inicio?new Date(c.inicio).toLocaleDateString('pt-BR'):'—'} → {c.fim?new Date(c.fim).toLocaleDateString('pt-BR'):'—'}
                             </div>
-                            <div style={{fontSize:11.5,color:theme.textMuted,marginTop:2}}>{c.voos||0} {c.voos===1?'voo':'voos'} · {(c.area_ha||0).toFixed(1)} ha aplicados</div>
+                            <div style={{fontSize:11.5,color:theme.textMuted,marginTop:2}}>{c.voos||0} {c.voos===1?'voo':'voos'} · {fmtHa(c.area_ha)} ha aplicados</div>
                           </div>
                         ))}
                         <div style={{background:theme.successBg||theme.bg,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'10px 12px'}}>
@@ -4807,7 +4811,7 @@ export default function AdminPanel({ onSwitchMode }) {
                               <label key={t.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 0',fontSize:12.5,color:theme.text,cursor:'pointer',borderBottom:`1px solid ${theme.divider}`}}>
                                 <input type="checkbox" checked={talhoesSelAtual.includes(t.nome)} onChange={()=>toggleTalhaoPeriodo(t.nome)} style={{width:15,height:15,accentColor:'#059669'}}/>
                                 <span style={{flex:1}}>{t.nome}</span>
-                                {t.area_ha && <span style={{color:theme.textFaint2,fontSize:11}}>{parseFloat(t.area_ha).toFixed(1)} ha</span>}
+                                {t.area_ha && <span style={{color:theme.textFaint2,fontSize:11}}>{fmtHa(t.area_ha)} ha</span>}
                               </label>
                             ))}
                           </div>
@@ -5031,7 +5035,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                   <span style={{fontWeight:700,fontSize:14,display:'flex',alignItems:'center',gap:8,minWidth:0}}>
                                     🌾 {fz.nome}
                                     {fz.produto && <span style={{background:theme.divider2,color:'#145c38',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20,flexShrink:0}}>{fz.produto}</span>}
-                                    <span style={{fontSize:11,color:theme.textFaint2,fontWeight:500,flexShrink:0}}>{talhoesFz.length} talhão(ões){areaFz>0?` · ${areaFz.toFixed(1)} ha`:''}</span>
+                                    <span style={{fontSize:11,color:theme.textFaint2,fontWeight:500,flexShrink:0}}>{talhoesFz.length} talhão(ões){areaFz>0?` · ${fmtHa(areaFz)} ha`:''}</span>
                                   </span>
                                   <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0}}>
                                     {fz.mapa_pdf_path && (
@@ -5080,7 +5084,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                         </div>
                                       ) : (
                                         <div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:theme.card,border:`1px solid ${theme.divider}`,borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:13}}>
-                                          <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#059669'}}>· {t.area_ha} ha</strong>:''}</span>
+                                          <span>📐 {t.nome} {t.area_ha?<strong style={{color:'#059669'}}>· {fmtHa(t.area_ha)} ha</strong>:''}</span>
                                           <div style={{display:'flex',gap:4,flexShrink:0}}>
                                             <button style={{background:'none',border:'none',color:theme.textMuted,cursor:'pointer',fontSize:13}}
                                               onClick={()=>{setTalhaoEditId(t.id);setTalhaoEditForm({nome:t.nome||'',area_ha:t.area_ha??''})}}>✏️</button>
@@ -5619,7 +5623,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                     <div style={{flex:1,minWidth:0}}>
                                       <div style={{fontSize:12.5,fontWeight: (inteira||nTal>0)?700:600,color:theme.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.nome}</div>
                                       <div style={{fontSize:10.5,color:theme.textFaint,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                                        {f.cliente}{area>0?` · ${area.toFixed(1)} ha`:''}{outros>0?` · +${outros} piloto${outros>1?'s':''}`:''}
+                                        {f.cliente}{area>0?` · ${fmtHa(area)} ha`:''}{outros>0?` · +${outros} piloto${outros>1?'s':''}`:''}
                                       </div>
                                     </div>
                                     {inteira ? <span style={{fontSize:9,fontWeight:800,color:'#fff',background:'#059669',borderRadius:5,padding:'2px 6px',whiteSpace:'nowrap'}}>TODA</span>
@@ -5723,7 +5727,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                             {SELO_TALHAO[statusTalhoes[t.nome]].txt}
                                           </span>
                                         )}
-                                        <span style={{fontSize:11,color:theme.textFaint,whiteSpace:'nowrap'}}>{t.area_ha?`${parseFloat(t.area_ha).toFixed(1)} ha`:'—'}</span>
+                                        <span style={{fontSize:11,color:theme.textFaint,whiteSpace:'nowrap'}}>{t.area_ha?`${fmtHa(t.area_ha)} ha`:'—'}</span>
                                       </label>
                                     )
                                   })}
@@ -5734,7 +5738,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                     {inteiraAtual ? `Fazenda inteira · ${talhoesFaz.length} talhões` : `${marcadosAtual.length} de ${talhoesFaz.length} selecionados`}
                                   </span>
                                   <span style={{fontSize:11.5,fontWeight:700,color:theme.text,whiteSpace:'nowrap'}}>
-                                    {(inteiraAtual ? areaDaFazenda(atrFazendaSel) : areaMarcada).toFixed(1)} ha
+                                    {fmtHa(inteiraAtual ? areaDaFazenda(atrFazendaSel) : areaMarcada)} ha
                                   </span>
                                 </div>
                               </>
@@ -5753,8 +5757,8 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                       {[
                         ['Piloto', pilotoSel ? (pilotoSel.nome||pilotoSel.email) : '—'],
                         ['Fazenda', fazendaSel ? fazendaSel.nome : '—'],
-                        ['Atribuído', !atrFazendaSel ? '—' : inteiraAtual ? `Fazenda inteira · ${areaDaFazenda(atrFazendaSel).toFixed(1)} ha`
-                          : marcadosAtual.length>0 ? `${marcadosAtual.length} ${marcadosAtual.length>1?'talhões':'talhão'} · ${areaMarcada.toFixed(1)} ha` : 'Nada marcado'],
+                        ['Atribuído', !atrFazendaSel ? '—' : inteiraAtual ? `Fazenda inteira · ${fmtHa(areaDaFazenda(atrFazendaSel))} ha`
+                          : marcadosAtual.length>0 ? `${marcadosAtual.length} ${marcadosAtual.length>1?'talhões':'talhão'} · ${fmtHa(areaMarcada)} ha` : 'Nada marcado'],
                       ].map(([lbl,val])=>(
                         <div key={lbl} style={{minWidth:0}}>
                           <div style={{fontSize:9.5,fontWeight:700,color:theme.textFaint,letterSpacing:.5,textTransform:'uppercase'}}>{lbl}</div>
@@ -6252,7 +6256,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                     <div style={{marginTop:10,padding:'9px 11px',borderRadius:10,background:theme.warningBg,
                       color:theme.warningText2||theme.warningText,fontSize:11.5,lineHeight:1.5,fontWeight:600}}>
                       ⚠️ {semPrecoNoPeriodo.semPreco} {semPrecoNoPeriodo.semPreco===1?'voo ficou':'voos ficaram'} de fora do Recebido
-                      ({semPrecoNoPeriodo.areaSemPreco.toFixed(1)} ha) porque o cliente não tem preço por hectare cadastrado.
+                      ({fmtHa(semPrecoNoPeriodo.areaSemPreco)} ha) porque o cliente não tem preço por hectare cadastrado.
                       A barra verde está menor que a realidade — cadastre o preço em Inventário → Clientes.
                     </div>
                   )}
@@ -6555,7 +6559,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                         <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr 1fr':'repeat(4,1fr)',gap:12,marginBottom:14}}>
                           <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>PILOTO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.piloto_nome||'—'}</div></div>
                           <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>DRONE</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.drone||'—'}</div></div>
-                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>ÁREA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.area_ha?`${relEncontrado.area_ha} ha`:'—'}</div></div>
+                          <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>ÁREA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.area_ha?`${fmtHa(relEncontrado.area_ha)} ha`:'—'}</div></div>
                           <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>TEMPO</div><div style={{fontSize:13,fontWeight:600}}>{tempo?.total||'—'}</div></div>
                           <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>DATA</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.dt_inicio?new Date(relEncontrado.dt_inicio).toLocaleDateString('pt-BR'):'—'}</div></div>
                           <div><div style={{fontSize:10,fontWeight:700,color:theme.textFaint2}}>TIPO SERVIÇO</div><div style={{fontSize:13,fontWeight:600}}>{relEncontrado.tipo_servico==='catacao'?'Catação':relEncontrado.tipo_servico==='area_total'?'Área Total':'—'}</div></div>
@@ -6884,7 +6888,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                 {finalizado&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:'#fff',background:'#059669',padding:'1px 6px',borderRadius:20}}>✓ Concluído</span>}
                                 {parcial&&<span style={{marginLeft:6,fontSize:9,fontWeight:700,color:theme.warningText2,background:'#ffe9b8',padding:'1px 6px',borderRadius:20}}>{prog.pct.toFixed(0)}%</span>}
                               </span>
-                              {t.area_ha&&<span style={{color:'#059669',fontWeight:600}}>{t.area_ha} ha</span>}
+                              {t.area_ha&&<span style={{color:'#059669',fontWeight:600}}>{fmtHa(t.area_ha)} ha</span>}
                             </div>
                           )
                         })}
@@ -6899,7 +6903,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                   )}
 
                   {areaEstimadaAgenda>0 && (
-                    <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>📐 Área considerada pra estimativa: {areaEstimadaAgenda.toFixed(1)} ha{talhoesSelecionadosAgenda.length===0&&talhoesDaFazendaAgenda.length>0?' (fazenda inteira — nenhum talhão marcado)':''}</div>
+                    <div style={{fontSize:11,color:theme.textFaint2,marginBottom:6}}>📐 Área considerada pra estimativa: {fmtHa(areaEstimadaAgenda)} ha{talhoesSelecionadosAgenda.length===0&&talhoesDaFazendaAgenda.length>0?' (fazenda inteira — nenhum talhão marcado)':''}</div>
                   )}
                   {agendaForm.produtos.map((p,i)=>{
                     const est = qtdEstimadaProduto(p.produto, p.dose)
