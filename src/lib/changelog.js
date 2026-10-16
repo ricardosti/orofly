@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.0',
+    data: '2026-10-15',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Formulario Nardini (Via de Campo) preenchido',
+        texto: 'Voos da Usina Nardini ganham o botao "Formulario Nardini": gera o Formulario de Aplicacao Aerea - Via de Campo no mesmo layout do papel, ja preenchido com data, codigo da fazenda, O.S., piloto, area de cada talhao (cadastrada e aplicada), diferenca e motivo, produtos com dose e quantidade, temperatura e vento do inicio e espaco para assinatura. Fica no menu de acoes e na janela de edicao do relatorio no painel, e no app do piloto ao finalizar o voo.',
+      },
+    ],
+  },
+  {
     versao: '9.9',
     data: '2026-10-12',
     itens: [

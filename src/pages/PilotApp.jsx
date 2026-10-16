@@ -22,6 +22,7 @@ import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { formatarQtd, areaPossivel, formatarHa, formatarDose, formatarTotalProduto } from '../lib/calda'
+import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -6153,6 +6154,18 @@ Quando: ${tempoErroDebug.quando}`}
                   await salvarOuCompartilharPdf(doc,'relatorio-orofly.pdf');showToast('✅ PDF pronto!')
                 }
               }}>📄 Baixar PDF</button>
+            )}
+            {/* Nardini tem formulário próprio ("Via de Campo"), que o piloto preenchia à mão. */}
+            {(opState==='finished'||opState==='paused_day') && ehClienteNardini(clienteVal) && (
+              <button style={{...s.shareBtn,background:'#111111',marginTop:8}} onClick={async()=>{
+                const rel=await saveToSupabase({status:opState==='paused_day'?'pausado_dia':'finalizado'})
+                if(!rel) return
+                const norm = t => (t||'').trim().toLowerCase().replace(/\s+/g,' ')
+                const fz = fazendasDB.find(f=>norm(f.cliente)===norm(rel.cliente) && norm(f.nome)===norm(rel.fazenda))
+                const talhoesCatalogo = fz ? talhoesDB.filter(t=>t.fazenda_id===fz.id).map(t=>({nome:t.nome, area_ha:t.area_ha})) : []
+                const doc = gerarFormularioNardini(rel, { talhoesCatalogo, idFazenda: fz?.id_fazenda||'' })
+                await salvarOuCompartilharPdf(doc, nomeArquivoFormularioNardini(rel)); showToast('✅ Formulário pronto!')
+              }}>📄 Formulário Nardini</button>
             )}
             <button style={{...s.shareBtn,background:'#25D366',marginTop:8}} onClick={compartilharWhatsApp}>💬 WhatsApp{(fotoMapaFile||storageFotoMapa)?' (com foto do mapa)':''}</button>
           </div>

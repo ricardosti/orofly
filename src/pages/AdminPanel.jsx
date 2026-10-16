@@ -51,6 +51,7 @@ import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima
 import { apiUrl } from '../lib/apiBase'
 import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT_PDF_CONFIG, MOCK_RELATORIO } from '../lib/reportTemplates'
 import { linhasDaSequencia, totaisDaSequencia, ordenarLinhas, periodoUltimosDias, ROTULO_STATUS } from '../lib/sequencia'
+import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -1880,14 +1881,23 @@ export default function AdminPanel({ onSwitchMode }) {
   }
 
   async function gerarPDF(rel, localFotoMapa, localObsFotos, tipo='cliente') {
-    showToast('⏳ Gerando ' + (tipo==='word'?'Word':'PDF Cliente') + '...')
+    const rotuloTipo = tipo==='word' ? 'Word' : tipo==='nardini' ? 'Formulário Nardini' : 'PDF Cliente'
+    showToast('⏳ Gerando ' + rotuloTipo + '...')
     try {
       const { data: relAtual } = await supabase.from('relatorios').select('*').eq('id', rel.id).single()
       const relFinal = relAtual || rel
       const opts = { supabase, localFotoMapa: localFotoMapa||null, localObsFotos: localObsFotos?.some(Boolean)?localObsFotos:null }
       const nomeBase = `${relFinal.cliente?.replace(/\s+/g,'-').toLowerCase()}-${new Date(relFinal.created_at).toLocaleDateString('pt-BR').replace(/\//g,'-')}`
 
-      if (tipo === 'word') {
+      if (tipo === 'nardini') {
+        // Formulário "Via de Campo" da Nardini: precisa do tamanho cadastrado de cada talhão e
+        // do código da fazenda, que estão no cadastro (não no relatório).
+        const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
+        const fz = invFazendas.find(f => norm(f.cliente)===norm(relFinal.cliente) && norm(f.nome)===norm(relFinal.fazenda))
+        const talhoesCatalogo = fz ? invTalhoes.filter(t => t.fazenda_id===fz.id).map(t => ({ nome:t.nome, area_ha:t.area_ha })) : []
+        const doc = gerarFormularioNardini(relFinal, { talhoesCatalogo, idFazenda: fz?.id_fazenda || '' })
+        await salvarOuCompartilharPdf(doc, nomeArquivoFormularioNardini(relFinal))
+      } else if (tipo === 'word') {
         const blob = await gerarWordCliente(relFinal, opts)
         await salvarOuCompartilharBlob(blob, `relatorio-cliente-${nomeBase}.doc`)
       } else {
@@ -1907,7 +1917,7 @@ export default function AdminPanel({ onSwitchMode }) {
         const doc = await gerarPDFCliente(relFinal, { ...opts, trechos, pdfConfig })
         await salvarOuCompartilharPdf(doc, `relatorio-cliente-${nomeBase}.pdf`)
       }
-      showToast('✅ ' + (tipo==='word'?'Word':'PDF Cliente') + ' baixado!')
+      showToast('✅ ' + rotuloTipo + ' baixado!')
     } catch (e) { console.error(e); showToast('Erro ao gerar arquivo', 'error') }
   }
 
@@ -2312,6 +2322,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                           ['Editar', () => setEditModal({...rel})],
                                           ['Enviar no WhatsApp', () => enviarWhatsApp(rel)],
                                           ['PDF Cliente', () => gerarPDF(rel,null,null,'cliente')],
+                                          ...(ehClienteNardini(rel.cliente) ? [['Formulário Nardini', () => gerarPDF(rel,null,null,'nardini')]] : []),
                                           ['Word / Google Docs', () => gerarPDF(rel,null,null,'word')],
                                           ...(rel.gps_lat ? [['Abrir no Maps', () => window.open(`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`,'_blank')]] : []),
                                         ].map(([lbl,fn]) => (
@@ -8430,6 +8441,8 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                 {[
                   ['🟢 PDF Cliente', '#059669', 'cliente'],
                   ['📝 Word / Docs', '#2f6fed', 'word'],
+                  // Só pra cliente que tem formulário próprio (por enquanto, a Nardini).
+                  ...(ehClienteNardini(editModal.cliente) ? [['📄 Formulário Nardini', '#111111', 'nardini']] : []),
                 ].map(([label, bg, tipo]) => (
                   <button key={tipo} style={{ background:bg, color:'#fff', border:'none', borderRadius:16, padding:'7px 14px', fontSize:12, cursor:'pointer', fontWeight:600, opacity:saving?.6:1 }}
                     disabled={saving}
