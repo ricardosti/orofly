@@ -601,13 +601,19 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invSaving, setInvSaving] = useState(false)
 
   function initClienteForm(c={}) {
-    return { nome:c.nome||'', ativo:c.ativo!==false, obs:c.obs||'', preco_catacao:c.preco_catacao??'', preco_area_total:c.preco_area_total??'', params_padrao:c.params_padrao||{} }
+    // padrao_alvo / params_fazendas: o bloco "Preenchimento padrão" do cliente também edita o de
+    // cada fazenda dele (Ricardo, 15/10/2026: "no editar cliente tem que atribuir a cliente e
+    // fazenda"). Não são colunas do cliente — salvarCliente grava nas fazendas.
+    const fazendasDoCliente = c.nome ? invFazendas.filter(f=>f.cliente===c.nome) : []
+    return { nome:c.nome||'', ativo:c.ativo!==false, obs:c.obs||'', preco_catacao:c.preco_catacao??'', preco_area_total:c.preco_area_total??'', params_padrao:c.params_padrao||{},
+      padrao_alvo:'cliente', params_fazendas:Object.fromEntries(fazendasDoCliente.map(f=>[f.id, f.params_padrao||{}])) }
   }
 
   async function salvarCliente() {
     setInvSaving(true)
     try {
-      const payload = { ...clienteForm, preco_catacao: clienteForm.preco_catacao!==''&&clienteForm.preco_catacao!=null?parseFloat(clienteForm.preco_catacao):null, preco_area_total: clienteForm.preco_area_total!==''&&clienteForm.preco_area_total!=null?parseFloat(clienteForm.preco_area_total):null, params_padrao: limparParams(clienteForm.params_padrao) }
+      const { padrao_alvo, params_fazendas, ...dadosCliente } = clienteForm
+      const payload = { ...dadosCliente, preco_catacao: clienteForm.preco_catacao!==''&&clienteForm.preco_catacao!=null?parseFloat(clienteForm.preco_catacao):null, preco_area_total: clienteForm.preco_area_total!==''&&clienteForm.preco_area_total!=null?parseFloat(clienteForm.preco_area_total):null, params_padrao: limparParams(clienteForm.params_padrao) }
       if (clienteModal === 'novo') {
         const { error } = await supabase.from('clientes').insert(payload)
         if (error) throw error
@@ -616,6 +622,14 @@ export default function AdminPanel({ onSwitchMode }) {
         const { error } = await supabase.from('clientes').update(payload).eq('id', clienteModal.id)
         if (error) throw error
         showToast('✅ Cliente atualizado!')
+      }
+      // Padrão por fazenda editado aqui: grava só as fazendas que mudaram.
+      for (const [fzId, params] of Object.entries(params_fazendas || {})) {
+        const fz = invFazendas.find(f=>f.id===fzId)
+        const novo = limparParams(params)
+        if (!fz || JSON.stringify(novo) === JSON.stringify(limparParams(fz.params_padrao))) continue
+        const { error } = await supabase.from('fazendas').update({ params_padrao: novo }).eq('id', fzId)
+        if (error) throw error
       }
       setClienteModal(null); fetchInventario()
     } catch(e) { showToast('Erro: '+e.message,'error') }
@@ -5894,8 +5908,37 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                           </div>
                           <div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>Usado pra calcular a receita quando o piloto marca o tipo de serviço no voo.</div>
                         </div>
-                        <ParamsPadraoCampos valor={clienteForm.params_padrao} onChange={v=>setClienteForm(f=>({...f,params_padrao:v}))}
-                          dica="O piloto já encontra esses valores no formulário ao escolher este cliente. A fazenda pode ter os dela, que valem mais; em branco, vale o do drone." />
+                        {(()=>{
+                          const fazendasDoCliente = invFazendas.filter(f=>f.cliente===clienteForm.nome)
+                          const alvo = clienteForm.padrao_alvo || 'cliente'
+                          const ehCliente = alvo==='cliente'
+                          const temProprio = id => !!limparParams(clienteForm.params_fazendas?.[id])
+                          return (
+                            <div>
+                              <ParamsPadraoCampos
+                                valor={ehCliente ? clienteForm.params_padrao : clienteForm.params_fazendas?.[alvo]}
+                                onChange={v=>setClienteForm(f=> ehCliente ? ({...f,params_padrao:v}) : ({...f,params_fazendas:{...f.params_fazendas,[alvo]:v}}))}
+                                dica={ehCliente
+                                  ? 'Vale para todas as fazendas deste cliente. Fazenda com padrão próprio vale mais; em branco, vale o do drone.'
+                                  : 'Só para esta fazenda — vale mais que o padrão do cliente. Campo em branco usa o do cliente.'}
+                                topo={fazendasDoCliente.length>0 && (
+                                  <div style={{marginBottom:8}}>
+                                    <div style={{fontSize:9.5,fontWeight:700,color:theme.textMuted,letterSpacing:.4,marginBottom:3}}>APLICAR A</div>
+                                    <select style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'7px 9px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                      value={alvo} onChange={e=>setClienteForm(f=>({...f,padrao_alvo:e.target.value}))}>
+                                      <option value="cliente">Cliente — todas as fazendas</option>
+                                      {fazendasDoCliente.map(fz=><option key={fz.id} value={fz.id}>Fazenda {fz.nome}{temProprio(fz.id)?' • padrão próprio':''}</option>)}
+                                    </select>
+                                  </div>
+                                )} />
+                              {fazendasDoCliente.some(fz=>temProprio(fz.id)) && (
+                                <div style={{fontSize:10.5,color:theme.textFaint2,marginTop:6,lineHeight:1.5}}>
+                                  Fazendas com padrão próprio: {fazendasDoCliente.filter(fz=>temProprio(fz.id)).map(fz=>fz.nome).join(' · ')}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                         <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
                           <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#059669':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
                             <div style={{width:14,height:14,borderRadius:7,background:theme.card,position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>

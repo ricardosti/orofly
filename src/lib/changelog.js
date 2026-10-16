@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.2',
+    data: '2026-10-15',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Padrao por fazenda direto no cadastro do cliente',
+        texto: 'No Editar Cliente, o bloco Preenchimento padrao ganhou o campo "Aplicar a": o cliente todo ou uma fazenda dele. Da para definir a vazao, altura, velocidade, faixa e gota de cada fazenda ali mesmo, sem abrir o cadastro da fazenda; as que tem padrao proprio aparecem marcadas.',
+      },
+    ],
+  },
+  {
     versao: '10.1',
     data: '2026-10-15',
     itens: [
