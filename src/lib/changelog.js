@@ -9,6 +9,32 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.1',
+    data: '2026-10-15',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Menu Regulamentacao: planilha do MAPA',
+        texto: 'Em Administrativo & Financeiro > Regulamentacao, a planilha mensal de operacoes do MAPA aparece montada com os voos do mes (UF, municipio, aeronave, prefixo, horas, cultura, tipo de servico, classe, area, produto, volume e dose), com os totais no topo e o botao de exportar o Excel do mes ou do ano (12 abas). A tela avisa o que falta: drone sem prefixo, produto sem tipo, fazenda sem municipio e voo com horario suspeito (mais de 12 h).',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Drone com prefixo e piloto responsavel',
+        texto: 'No Inventario, cada drone ganhou o prefixo (registro da aeronave, que vai para o MAPA) e o piloto responsavel. O app desse piloto ja abre o voo novo com o drone dele escolhido.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Preenchimento padrao por cliente e por fazenda',
+        texto: 'Cliente e fazenda ganharam vazao, altura, velocidade, faixa e gota padrao. No app do piloto vale a fazenda, depois o cliente, depois o drone; o que estiver em branco cai para o proximo, e tudo continua editavel.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Produto com tipo e classe do MAPA; fazenda com municipio',
+        texto: 'Produto ganhou o tipo (agrotoxico, bioinsumo, fertilizante, adjuvante) e a classe da lista oficial do MAPA. Fazenda ganhou municipio e UF, com botao para preencher pelo GPS; a tela de Regulamentacao completa sozinha as que estiverem em branco.',
+      },
+    ],
+  },
+  {
     versao: '10.0',
     data: '2026-10-15',
     itens: [

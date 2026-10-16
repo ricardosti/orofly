@@ -52,6 +52,11 @@ import { apiUrl } from '../lib/apiBase'
 import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT_PDF_CONFIG, MOCK_RELATORIO } from '../lib/reportTemplates'
 import { linhasDaSequencia, totaisDaSequencia, ordenarLinhas, periodoUltimosDias, ROTULO_STATUS } from '../lib/sequencia'
 import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
+import { limparParams } from '../lib/paramsPadrao'
+import { TIPOS_PRODUTO_MAPA, CLASSES_AGROTOXICO, CLASSES_BIOINSUMO } from '../lib/mapa'
+import { reverseGeocode } from '../lib/geocode'
+import ParamsPadraoCampos from '../components/ParamsPadraoCampos'
+import RegulamentacaoMapa from '../components/RegulamentacaoMapa'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -596,13 +601,13 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invSaving, setInvSaving] = useState(false)
 
   function initClienteForm(c={}) {
-    return { nome:c.nome||'', ativo:c.ativo!==false, obs:c.obs||'', preco_catacao:c.preco_catacao??'', preco_area_total:c.preco_area_total??'' }
+    return { nome:c.nome||'', ativo:c.ativo!==false, obs:c.obs||'', preco_catacao:c.preco_catacao??'', preco_area_total:c.preco_area_total??'', params_padrao:c.params_padrao||{} }
   }
 
   async function salvarCliente() {
     setInvSaving(true)
     try {
-      const payload = { ...clienteForm, preco_catacao: clienteForm.preco_catacao!==''&&clienteForm.preco_catacao!=null?parseFloat(clienteForm.preco_catacao):null, preco_area_total: clienteForm.preco_area_total!==''&&clienteForm.preco_area_total!=null?parseFloat(clienteForm.preco_area_total):null }
+      const payload = { ...clienteForm, preco_catacao: clienteForm.preco_catacao!==''&&clienteForm.preco_catacao!=null?parseFloat(clienteForm.preco_catacao):null, preco_area_total: clienteForm.preco_area_total!==''&&clienteForm.preco_area_total!=null?parseFloat(clienteForm.preco_area_total):null, params_padrao: limparParams(clienteForm.params_padrao) }
       if (clienteModal === 'novo') {
         const { error } = await supabase.from('clientes').insert(payload)
         if (error) throw error
@@ -629,10 +634,11 @@ export default function AdminPanel({ onSwitchMode }) {
   // do drone e com a classe do produto. Ao criar coluna nova com campo na tela, acrescente aqui.
   function initDroneForm(d={}) {
     return { nome:d.nome||'', modelo:d.modelo||'', serial:d.serial||'', fabricante:d.fabricante||'DJI', ano_aquisicao:d.ano_aquisicao||'', horas_limite:d.horas_limite||100, ativo:d.ativo!==false, obs:d.obs||'',
-      velocidade_padrao:d.velocidade_padrao||'', altura_padrao:d.altura_padrao||'', faixa_padrao:d.faixa_padrao||'', vazao_padrao:d.vazao_padrao||'', gota_padrao:d.gota_padrao||'' }
+      velocidade_padrao:d.velocidade_padrao||'', altura_padrao:d.altura_padrao||'', faixa_padrao:d.faixa_padrao||'', vazao_padrao:d.vazao_padrao||'', gota_padrao:d.gota_padrao||'',
+      prefixo:d.prefixo||'', piloto_id:d.piloto_id||'' }
   }
   function initProdutoForm(p={}) {
-    return { nome:p.nome||'', classe:p.classe||'', fabricante:p.fabricante||'', unidade:p.unidade||'L', estoque_atual:p.estoque_atual||0, estoque_minimo:p.estoque_minimo||0, validade:p.validade||'', registro_mapa:p.registro_mapa||'', ativo:p.ativo!==false, obs:p.obs||'', dose_padrao:p.dose_padrao??'', dose_auto:p.dose_auto!==false }
+    return { nome:p.nome||'', classe:p.classe||'', fabricante:p.fabricante||'', unidade:p.unidade||'L', estoque_atual:p.estoque_atual||0, estoque_minimo:p.estoque_minimo||0, validade:p.validade||'', registro_mapa:p.registro_mapa||'', tipo_mapa:p.tipo_mapa||'', classe_mapa:p.classe_mapa||'', ativo:p.ativo!==false, obs:p.obs||'', dose_padrao:p.dose_padrao??'', dose_auto:p.dose_auto!==false }
   }
 
   async function fetchInventario() {
@@ -874,7 +880,8 @@ export default function AdminPanel({ onSwitchMode }) {
   async function salvarDrone() {
     setInvSaving(true)
     try {
-      const payload = { ...droneForm, ano_aquisicao: droneForm.ano_aquisicao ? parseInt(droneForm.ano_aquisicao) : null, horas_limite: parseInt(droneForm.horas_limite)||100 }
+      const payload = { ...droneForm, ano_aquisicao: droneForm.ano_aquisicao ? parseInt(droneForm.ano_aquisicao) : null, horas_limite: parseInt(droneForm.horas_limite)||100,
+        prefixo: (droneForm.prefixo||'').trim().toUpperCase() || null, piloto_id: droneForm.piloto_id || null }
       if (droneModal === 'novo') {
         const { error } = await supabase.from('drones').insert(payload)
         if (error) throw error
@@ -1997,6 +2004,7 @@ export default function AdminPanel({ onSwitchMode }) {
             ['relatorios', '📋', 'Relatórios', filtered.length],
             ['custos', '💰', 'Financeiro', custos.length],
             ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
+            ['regulamentacao', '📑', 'Regulamentação', ''],
           ]],
           ['cfg', '⚙️ Configurações', [
             ['pilotos', '👥', 'Usuários', pilotos.length],
@@ -3943,7 +3951,9 @@ export default function AdminPanel({ onSwitchMode }) {
                               {alerta && <span style={{position:'absolute',top:12,right:12,background:theme.dangerText,color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚠️ MANUTENÇÃO</span>}
                               {aviso && !alerta && <span style={{position:'absolute',top:12,right:12,background:theme.warningText,color:'#fff',fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:20}}>⚡ ATENÇÃO</span>}
                               <div style={{fontFamily:"'Syne',sans-serif",fontSize:15,fontWeight:700,color:theme.text,marginBottom:2}}>{d.nome}</div>
-                              <div style={{fontSize:12,color:theme.textMuted,marginBottom:10}}>{d.fabricante} {d.modelo} {d.serial?`· S/N: ${d.serial}`:''}</div>
+                              <div style={{fontSize:12,color:theme.textMuted,marginBottom:10}}>{d.fabricante} {d.modelo} {d.serial?`· S/N: ${d.serial}`:''}
+                                {d.prefixo ? <span> · Prefixo <b>{d.prefixo}</b></span> : <span style={{color:theme.warningText2||theme.warningText}}> · sem prefixo</span>}
+                                {d.piloto_id && <span> · 👤 {pilotos.find(p=>p.id===d.piloto_id)?.nome||'piloto'}</span>}</div>
                               {/* Barra horas */}
                               <div style={{marginBottom:10}}>
                                 <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
@@ -3981,7 +3991,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         <table style={{width:'100%',borderCollapse:'collapse',minWidth:560}}>
                           <thead>
                             <tr style={{background:theme.bg}}>
-                              {['Produto','Fabricante','Estoque','Mínimo','Validade','Registro MAPA',''].map(h=>(
+                              {['Produto','Fabricante','Estoque','Mínimo','Validade','Registro MAPA','Tipo (MAPA)',''].map(h=>(
                                 <th key={h} style={{padding:'8px 12px',textAlign:'left',fontSize:11,fontWeight:700,color:theme.textMuted,fontFamily:"'Syne',sans-serif"}}>{h}</th>
                               ))}
                             </tr>
@@ -4011,6 +4021,9 @@ export default function AdminPanel({ onSwitchMode }) {
                                     </span>
                                   </td>
                                   <td style={{padding:'9px 12px',fontSize:12,color:theme.textMuted}}>{p.registro_mapa||'—'}</td>
+                                  <td style={{padding:'9px 12px',fontSize:12,color:p.tipo_mapa?theme.textMuted:(theme.warningText2||theme.warningText)}}>
+                                    {p.tipo_mapa ? `${TIPOS_PRODUTO_MAPA.find(t=>t.v===p.tipo_mapa)?.l||p.tipo_mapa}${p.classe_mapa?` · ${p.classe_mapa}`:''}` : 'falta'}
+                                  </td>
                                   <td style={{padding:'9px 12px',whiteSpace:'nowrap'}}>
                                     <button style={{background:theme.bg,color:'#059669',border:'none',borderRadius:14,padding:'4px 8px',fontSize:11,cursor:'pointer',marginRight:4}}
                                       onClick={()=>{setProdutoForm(initProdutoForm(p));setProdutoModal(p)}}>✏️</button>
@@ -4071,7 +4084,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         {droneModal==='novo'?'🚁 Novo Drone':'✏️ Editar Drone'}
                       </div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                        {[['NOME / IDENTIFICAÇÃO','nome','text','Ex: OROFLY_01'],['FABRICANTE','fabricante','text','DJI'],['MODELO','modelo','text','T70'],['Nº DE SÉRIE','serial','text',''],['ANO DE AQUISIÇÃO','ano_aquisicao','number','2024'],['LIMITE DE HORAS','horas_limite','number','100']].map(([lbl,key,type,ph])=>(
+                        {[['NOME / IDENTIFICAÇÃO','nome','text','Ex: OROFLY_01'],['FABRICANTE','fabricante','text','DJI'],['MODELO','modelo','text','T70'],['Nº DE SÉRIE','serial','text',''],['PREFIXO (REGISTRO)','prefixo','text','Ex: PR-ABC123'],['ANO DE AQUISIÇÃO','ano_aquisicao','number','2024'],['LIMITE DE HORAS','horas_limite','number','100']].map(([lbl,key,type,ph])=>(
                           <div key={key} style={{gridColumn:key==='nome'?'1/-1':'auto'}}>
                             <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>{lbl}</div>
                             <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
@@ -4079,6 +4092,15 @@ export default function AdminPanel({ onSwitchMode }) {
                               onChange={e=>setDroneForm(f=>({...f,[key]:e.target.value}))} />
                           </div>
                         ))}
+                        {/* Piloto responsável: o app dele já abre o voo novo com este drone escolhido. */}
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>PILOTO RESPONSÁVEL</div>
+                          <select style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                            value={droneForm.piloto_id||''} onChange={e=>setDroneForm(f=>({...f,piloto_id:e.target.value}))}>
+                            <option value="">Nenhum</option>
+                            {pilotos.filter(p=>p.ativo!==false && ['piloto','supervisor','admin'].includes(p.role||'piloto')).sort((a,b)=>(a.nome||'').localeCompare(b.nome||'')).map(p=><option key={p.id} value={p.id}>{p.nome||p.email}</option>)}
+                          </select>
+                        </div>
                         {/* Parametros de aplicacao — chegam preenchidos no Passo 3 do piloto
                             quando ele escolhe este drone. Mais especifico que o padrao global
                             de Configuracoes do Sistema, entao ganha dele. */}
@@ -4138,6 +4160,26 @@ export default function AdminPanel({ onSwitchMode }) {
                               onChange={e=>setProdutoForm(f=>({...f,[key]:e.target.value}))} />
                           </div>
                         ))}
+                        {/* Enquadramento pro relatório do MAPA (menu Regulamentação): o tipo decide a
+                            coluna (agrotóxico, bioinsumo ou fertilizante/adjuvante/outros) e o tipo de
+                            serviço; a classe sai da lista oficial da planilha. */}
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>TIPO (MAPA)</div>
+                          <select style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}} value={produtoForm.tipo_mapa||''}
+                            onChange={e=>setProdutoForm(f=>({...f,tipo_mapa:e.target.value,classe_mapa:['agrotoxico','bioinsumo'].includes(e.target.value)?f.classe_mapa:''}))}>
+                            <option value="">Selecione...</option>
+                            {TIPOS_PRODUTO_MAPA.map(t=><option key={t.v} value={t.v}>{t.l}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>CLASSE (MAPA)</div>
+                          <select style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}} value={produtoForm.classe_mapa||''}
+                            disabled={!['agrotoxico','bioinsumo'].includes(produtoForm.tipo_mapa)}
+                            onChange={e=>setProdutoForm(f=>({...f,classe_mapa:e.target.value}))}>
+                            <option value="">{['agrotoxico','bioinsumo'].includes(produtoForm.tipo_mapa)?'Selecione...':'Não se aplica'}</option>
+                            {(produtoForm.tipo_mapa==='bioinsumo'?CLASSES_BIOINSUMO:produtoForm.tipo_mapa==='agrotoxico'?CLASSES_AGROTOXICO:[]).map(c=><option key={c} value={c}>{c}</option>)}
+                          </select>
+                        </div>
                         <div>
                           <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>ESTOQUE ATUAL</div>
                           <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
@@ -4407,7 +4449,9 @@ export default function AdminPanel({ onSwitchMode }) {
                   mapa_lat_min:fzForm.mapa_lat_min?parseFloat(fzForm.mapa_lat_min):null,
                   mapa_lat_max:fzForm.mapa_lat_max?parseFloat(fzForm.mapa_lat_max):null,
                   mapa_lng_min:fzForm.mapa_lng_min?parseFloat(fzForm.mapa_lng_min):null,
-                  mapa_lng_max:fzForm.mapa_lng_max?parseFloat(fzForm.mapa_lng_max):null}
+                  mapa_lng_max:fzForm.mapa_lng_max?parseFloat(fzForm.mapa_lng_max):null,
+                  municipio:(fzForm.municipio||'').trim()||null, uf:(fzForm.uf||'').trim().toUpperCase()||null,
+                  params_padrao: limparParams(fzForm.params_padrao)}
                 let savedId = fzEditId
                 if(fzEditId){
                   const {error} = await supabase.from('fazendas').update(payload).eq('id',fzEditId)
@@ -4427,7 +4471,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   if(pathErr) throw pathErr
                 }
                 showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
-                setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
+                setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}})
                 setFzEditId(null); setFzMapaFile(null); setFzMapaExistente(null); setFzModal(false); fetchInventario()
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false); setFzMapaUploading(false) }
             }
@@ -4452,7 +4496,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         📤 Importar planilha
                       </button>
                       <button style={{background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
+                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
                         + Nova Fazenda
                       </button>
                     </div>
@@ -5057,7 +5101,8 @@ export default function AdminPanel({ onSwitchMode }) {
                                       onClick={(e)=>{
                                         e.stopPropagation()
                                         setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',produtos_padrao:fz.produtos_padrao||[],cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',
-                                          mapa_lat_min:fz.mapa_lat_min??'',mapa_lat_max:fz.mapa_lat_max??'',mapa_lng_min:fz.mapa_lng_min??'',mapa_lng_max:fz.mapa_lng_max??''})
+                                          mapa_lat_min:fz.mapa_lat_min??'',mapa_lat_max:fz.mapa_lat_max??'',mapa_lng_min:fz.mapa_lng_min??'',mapa_lng_max:fz.mapa_lng_max??'',
+                                          municipio:fz.municipio||'',uf:fz.uf||'',params_padrao:fz.params_padrao||{}})
                                         setFzEditId(fz.id); setFzMapaFile(null); setFzMapaExistente(fz.mapa_pdf_path||null); setFzModal(true)
                                       }}>✏️</button>
                                     <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
@@ -5214,6 +5259,25 @@ export default function AdminPanel({ onSwitchMode }) {
                                   type="number" placeholder="Ex: -43.1729" value={fzForm.lng} onChange={e=>setFzForm(f=>({...f,lng:e.target.value}))}/>
                               </div>
                             </div>
+
+                            {/* Município/UF: vão na planilha do MAPA (Regulamentação). Em branco, a tela
+                                de Regulamentação descobre pelo GPS e grava aqui. */}
+                            <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+                              <div style={{flex:1}}>
+                                <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>MUNICÍPIO</div>
+                                <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}} placeholder="Ex: Taquaritinga" value={fzForm.municipio||''} onChange={e=>setFzForm(f=>({...f,municipio:e.target.value}))}/>
+                              </div>
+                              <div style={{width:64}}>
+                                <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>UF</div>
+                                <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}} placeholder="SP" maxLength={2} value={fzForm.uf||''} onChange={e=>setFzForm(f=>({...f,uf:e.target.value.toUpperCase()}))}/>
+                              </div>
+                              <button style={{background:theme.successBg,color:'#059669',border:'none',borderRadius:8,padding:'9px 10px',fontSize:11,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}
+                                disabled={!fzForm.lat||!fzForm.lng}
+                                title={!fzForm.lat||!fzForm.lng?'Preencha latitude e longitude primeiro':''}
+                                onClick={async()=>{ const r = await reverseGeocode(fzForm.lat, fzForm.lng); if(r?.cidade){ setFzForm(f=>({...f,municipio:r.cidade,uf:r.uf||f.uf})) } else showToast('Não achei o município por essa coordenada','error') }}>📍 Pelo GPS</button>
+                            </div>
+                            <ParamsPadraoCampos valor={fzForm.params_padrao} onChange={v=>setFzForm(f=>({...f,params_padrao:v}))}
+                              dica="Vale mais que o padrão do cliente e o do drone. Em branco, vale o do cliente." />
 
                             <div style={{borderTop:`1px solid ${theme.divider}`,paddingTop:12}}>
                               <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>🗺️ MAPA DA FAZENDA (OPCIONAL)</div>
@@ -5798,7 +5862,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                     que deixou um ")}" solto na tela e o "+ Novo Cliente" sem abrir nada. */}
                 {clienteModal && (
                   <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-                    <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:400,padding:24}} onClick={e=>e.stopPropagation()}>
+                    <div style={{background:theme.card,borderRadius:16,width:'100%',maxWidth:460,maxHeight:'90vh',overflowY:'auto',padding:24}} onClick={e=>e.stopPropagation()}>
                       <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:16}}>
                         {clienteModal==='novo'?'🏢 Novo Cliente':'✏️ Editar Cliente'}
                       </div>
@@ -5830,6 +5894,8 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                           </div>
                           <div style={{fontSize:11,color:theme.textFaint2,marginTop:4}}>Usado pra calcular a receita quando o piloto marca o tipo de serviço no voo.</div>
                         </div>
+                        <ParamsPadraoCampos valor={clienteForm.params_padrao} onChange={v=>setClienteForm(f=>({...f,params_padrao:v}))}
+                          dica="O piloto já encontra esses valores no formulário ao escolher este cliente. A fazenda pode ter os dela, que valem mais; em branco, vale o do drone." />
                         <div style={{display:'flex',alignItems:'center',gap:10,cursor:'pointer'}} onClick={()=>setClienteForm(f=>({...f,ativo:!f.ativo}))}>
                           <div style={{width:36,height:20,borderRadius:10,background:clienteForm.ativo?'#059669':theme.cardBorder2,position:'relative',transition:'all .2s',flexShrink:0}}>
                             <div style={{width:14,height:14,borderRadius:7,background:theme.card,position:'absolute',top:3,left:clienteForm.ativo?19:3,transition:'all .2s'}}/>
@@ -7526,6 +7592,12 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                 isMobile={isMobile}
               />
             </ArquivosErrorBoundary>
+          )}
+
+          {tab === 'regulamentacao' && (
+            <RegulamentacaoMapa relatorios={relatorios} drones={invDrones} produtos={invProdutos} fazendas={invFazendas}
+              empresa={configGeral.empresa} supabase={supabase} showToast={showToast} isMobile={isMobile}
+              onIrPara={id => setTab(id)} />
           )}
 
           {tab === 'novidades' && (

@@ -23,6 +23,7 @@ import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombu
 import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { formatarQtd, areaPossivel, formatarHa, formatarDose, formatarTotalProduto } from '../lib/calda'
 import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
+import { paramsEfetivos, camposDoFormulario } from '../lib/paramsPadrao'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -964,7 +965,7 @@ export default function PilotApp({onSwitchMode}) {
     setFazendasDB(loadCache('orofly_cache_fazendas'))
     setTalhoesDB(loadCache('orofly_cache_talhoes'))
 
-    supabase.from('drones').select('nome,horas_limite,ativo,velocidade_padrao,altura_padrao,faixa_padrao,vazao_padrao,gota_padrao').eq('ativo',true).order('nome')
+    supabase.from('drones').select('nome,horas_limite,ativo,velocidade_padrao,altura_padrao,faixa_padrao,vazao_padrao,gota_padrao,prefixo,piloto_id').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setDronesDB(data); saveCache('orofly_cache_drones',data) } })
     // Drones em voo ativo agora (de qualquer piloto) — mostra "em uso" no seletor pra evitar
     // que dois pilotos peguem o mesmo drone sem saber.
@@ -976,9 +977,9 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setProdutosDB(data); saveCache('orofly_cache_produtos',data) } })
     supabase.from('culturas').select('nome,ordem,ativo').eq('ativo',true).order('ordem').order('nome')
       .then(({data}) => { if(data?.length){ setCulturasDB(data); saveCache('orofly_cache_culturas',data) } })
-    supabase.from('clientes').select('nome,ativo').eq('ativo',true).order('nome')
+    supabase.from('clientes').select('nome,ativo,params_padrao').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_versao,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_versao,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max,params_padrao').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada em
     // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.
@@ -1214,6 +1215,24 @@ export default function PilotApp({onSwitchMode}) {
   },[opState])
 
   const clienteVal=form.cliente==='Outros'?form.clienteOutro:form.cliente
+
+  // Campos do Passo 3 a partir dos cadastros escolhidos no formulário (fazenda > cliente > drone).
+  function padroesDoFormulario(f) {
+    const norm = t => (t||'').trim().toLowerCase().replace(/\s+/g,' ')
+    const drone = dronesDB.find(x=>x.nome===f.drone)
+    const cliente = clientesDB.find(c=>norm(c.nome)===norm(f.cliente))
+    const fazenda = f.fazenda ? fazendasDB.find(fz=>norm(fz.cliente)===norm(f.cliente) && norm(fz.nome)===norm(f.fazenda)) : null
+    return camposDoFormulario(paramsEfetivos({ drone, cliente, fazenda }))
+  }
+
+  // Voo novo, formulário em branco: já vem com o drone do piloto (Inventário → Piloto
+  // responsável) e os padrões dele. Só no formulário limpo — não mexe em voo em andamento nem
+  // troca o que o piloto já escolheu.
+  const meuDrone = dronesDB.find(d=>d.piloto_id && d.piloto_id===profile?.id)
+  useEffect(() => {
+    if (!meuDrone || relId || opState!=='idle' || form.drone || form.cliente) return
+    setForm(f => (f.drone || f.cliente) ? f : ({...f, drone: meuDrone.nome, ...padroesDoFormulario({...f, drone: meuDrone.nome})}))
+  }, [meuDrone?.nome, relId, opState, form.drone, form.cliente])
   const droneVal=form.drone==='Outros'?form.droneOutro:form.drone
 
   // Compartilha o relatório resumido no WhatsApp — tenta ir junto com a foto do mapa de
@@ -4928,7 +4947,7 @@ Quando: ${tempoErroDebug.quando}`}
             </FS>
 
             <FS label="CLIENTE" val={form.cliente} onChange={e=>{
-              setForm(f=>({...f,cliente:e.target.value,fazenda:'',produto:'',produtos:[''],talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
+              setForm(f=>{ const n={...f,cliente:e.target.value,fazenda:'',produto:'',produtos:[''],talhao:'',localizacao:'',area_ha:''}; return {...n, ...padroesDoFormulario(n)} });setTalhaoSearch('');autoGPS()
             }}>
               <option value="">Selecione o Cliente...</option>
               {CLIENTES.map(c=><option key={c}>{c}</option>)}
@@ -5019,7 +5038,7 @@ Quando: ${tempoErroDebug.quando}`}
                         const produtosPadrao = padrao.length
                           ? padrao.map(p=>p.nome + (p.dose ? ` - ${p.dose}` : ''))
                           : ['']
-                        setForm(f=>({...f,fazenda:v,produto:fzEscolhida?.produto||'',produtos:produtosPadrao,talhao:'',localizacao:'',area_ha:''}));setTalhaoSearch('');autoGPS()
+                        setForm(f=>{ const n={...f,fazenda:v,produto:fzEscolhida?.produto||'',produtos:produtosPadrao,talhao:'',localizacao:'',area_ha:''}; return {...n, ...padroesDoFormulario(n)} });setTalhaoSearch('');autoGPS()
                       }}>
                         <option value="">Selecione a Fazenda...</option>
                         {fazendasCliente.map(fz=><option key={fz.id}>{fz.nome}</option>)}
@@ -5266,21 +5285,10 @@ Quando: ${tempoErroDebug.quando}`}
 
             <FS label="DRONE" val={form.drone} onChange={e=>{
               const nomeDrone = e.target.value
-              const d = dronesDB.find(x=>x.nome===nomeDrone)
-              // Parâmetros do drone escolhido preenchem os campos do Passo 3. O drone é
-              // mais específico que o padrão global de Configurações, então ganha dele;
-              // campo em branco no cadastro do drone deixa o que já estava no formulário.
-              // Tudo continua editável — é ponto de partida, não trava.
-              const ou = (doDrone, atual) => (doDrone!=null && String(doDrone).trim()!=='') ? String(doDrone) : atual
-              setForm(f=>({...f, drone:nomeDrone,
-                velocidade_drone: ou(d?.velocidade_padrao, f.velocidade_drone),
-                altura:           ou(d?.altura_padrao,     f.altura),
-                faixa_i:          ou(d?.faixa_padrao,      f.faixa_i),
-                faixa_f:          ou(d?.faixa_padrao,      f.faixa_f),
-                vazao_i:          ou(d?.vazao_padrao,      f.vazao_i),
-                vazao_f:          ou(d?.vazao_padrao,      f.vazao_f),
-                tamanho_gota:     ou(d?.gota_padrao,       f.tamanho_gota),
-              }));autoGPS()
+              // Parâmetros do Passo 3 (vazão, altura, velocidade, faixa, gota) seguem a ordem
+              // fazenda > cliente > drone — ver paramsPadrao.js. Campo que nenhum dos três
+              // define fica como estava. Tudo continua editável.
+              setForm(f=>({...f, drone:nomeDrone, ...padroesDoFormulario({...f, drone:nomeDrone})}));autoGPS()
             }}>
               <option value="">Selecione o Drone...</option>
               {DRONES.map(d=><option key={d} value={d}>{dronesEmUsoAgora.includes(d)&&d!==form.drone?`${d} — em uso`:d}</option>)}
