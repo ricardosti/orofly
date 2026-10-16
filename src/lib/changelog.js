@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.3',
+    data: '2026-10-15',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Drone do piloto no topo da lista',
+        texto: 'No Passo 1, o drone atribuido ao piloto aparece primeiro e marcado como "seu drone" (alem de ja vir escolhido). Os outros drones continuam na lista para quando ele precisar trocar.',
+      },
+    ],
+  },
+  {
     versao: '10.2',
     data: '2026-10-15',
     itens: [

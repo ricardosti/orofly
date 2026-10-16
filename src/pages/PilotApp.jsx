@@ -5291,7 +5291,13 @@ Quando: ${tempoErroDebug.quando}`}
               setForm(f=>({...f, drone:nomeDrone, ...padroesDoFormulario({...f, drone:nomeDrone})}));autoGPS()
             }}>
               <option value="">Selecione o Drone...</option>
-              {DRONES.map(d=><option key={d} value={d}>{dronesEmUsoAgora.includes(d)&&d!==form.drone?`${d} — em uso`:d}</option>)}
+              {/* O drone atribuído ao piloto (Inventário → Piloto responsável) vem no topo e marcado,
+                  mas os outros continuam na lista: no campo ele troca de drone (manutenção, drone
+                  emprestado). Pedido do Pastor, 15/10/2026. */}
+              {[...DRONES].sort((a,b)=>(b===meuDrone?.nome)-(a===meuDrone?.nome)).map(d=>{
+                const rotulo = [d, d===meuDrone?.nome ? 'seu drone' : null, dronesEmUsoAgora.includes(d)&&d!==form.drone ? 'em uso' : null].filter(Boolean).join(' — ')
+                return <option key={d} value={d}>{rotulo}</option>
+              })}
             </FS>
             {form.drone==='Outros'&&<FI label="NOME DO DRONE" ph="..." val={form.droneOutro} onChange={e=>setForm(f=>({...f,droneOutro:e.target.value}))}/>}
 
