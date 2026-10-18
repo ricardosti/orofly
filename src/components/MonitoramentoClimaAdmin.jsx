@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTheme } from '../lib/theme'
 import FichaClimaEditor from './FichaClimaEditor'
-import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha } from '../lib/monitoramentoClima'
+import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO } from '../lib/monitoramentoClima'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 
 // Gestão → Monitoramento Climático (Beta). Junta as fichas lançadas pelos pilotos nos voos
@@ -13,7 +13,7 @@ const dataIso = iso => iso ? new Date(iso).toLocaleDateString('en-CA', { timeZon
 const dataBR = d => d ? new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR') : '—'
 const primeiroDoMes = () => { const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), 1).toLocaleDateString('en-CA') }
 
-export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, fazendas, clientes, supabase, showToast, isMobile }) {
+export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, fazendas, clientes, supabase, showToast, isMobile, config }) {
   const { theme } = useTheme()
   const [manuais, setManuais] = useState([])
   const [de, setDe] = useState(primeiroDoMes())
@@ -22,6 +22,11 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
   const [marcadas, setMarcadas] = useState({})
   const [editor, setEditor] = useState(null) // { tipo:'voo'|'manual', id?, relId?, cab:{...}, dados:{...} }
   const [salvando, setSalvando] = useState(false)
+  // Na hora de emitir: agrupar as leituras a cada X min (vazio = como foram lançadas) e quantas
+  // colunas cada operação tem. Começa no padrão de Configurações do Sistema.
+  const [agruparMin, setAgruparMin] = useState('')
+  const [colunas, setColunas] = useState(config?.colunas || MONITORAMENTO_PADRAO.colunas)
+  useEffect(() => { if (config?.colunas) setColunas(config.colunas) }, [config?.colunas])
 
   async function carregarManuais() {
     const { data, error } = await supabase.from('fichas_clima').select('*').order('data', { ascending: false })
@@ -93,13 +98,14 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
     const escolhidas = lista.some(x => marcadas[x.chave]) ? lista.filter(x => marcadas[x.chave]) : lista
     if (!escolhidas.length) { showToast('Nenhuma ficha no período', 'error'); return }
     // Ordem cronológica na ficha impressa (a lista na tela é da mais nova pra mais antiga).
+    const intervaloMin = parseInt(agruparMin, 10) || 0
     const fichas = [...escolhidas].reverse().map(x => x.tipo === 'voo'
-      ? fichaParaExportar({ rel: x.rel, fazendaCodigo: codigoDaFazenda(x.rel) })
-      : fichaParaExportar({ manual: x.manual }))
+      ? fichaParaExportar({ rel: x.rel, fazendaCodigo: codigoDaFazenda(x.rel), intervaloMin })
+      : fichaParaExportar({ manual: x.manual, intervaloMin }))
     const nome = `monitoramento-climatico-${de || 'inicio'}-a-${ate || 'hoje'}`
     try {
-      if (tipo === 'pdf') await salvarOuCompartilharPdf(gerarPdfFichas(fichas), `${nome}.pdf`)
-      else await salvarOuCompartilharBlob(planilhaFichasBlob(fichas), `${nome}.xlsx`)
+      if (tipo === 'pdf') await salvarOuCompartilharPdf(gerarPdfFichas(fichas, { colunas }), `${nome}.pdf`)
+      else await salvarOuCompartilharBlob(planilhaFichasBlob(fichas, { colunas }), `${nome}.xlsx`)
       showToast('✅ Exportado!')
     } catch (e) { showToast('Erro ao exportar: ' + e.message, 'error') }
   }
@@ -127,6 +133,8 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
             {clientes.filter(c => c.ativo !== false).map(c => <option key={c.id || c.nome} value={c.nome}>{c.nome}</option>)}
           </select>
         </div>
+        <div><div style={rot}>AGRUPAR A CADA (min)</div><input type="number" min={5} max={240} style={{ ...campo, width: 120 }} placeholder="como lançado" value={agruparMin} onChange={e => setAgruparMin(e.target.value)} title={`Ex.: ${config?.intervaloMin || 30} — junta as leituras em períodos desse tamanho (área somada, clima da última). Vazio: uma coluna por leitura.`} /></div>
+        <div><div style={rot}>COLUNAS / OPERAÇÃO</div><input type="number" min={4} max={15} style={{ ...campo, width: 90 }} value={colunas} onChange={e => setColunas(e.target.value)} /></div>
         <div style={{ flex: 1 }} />
         <button style={btn('#059669')} onClick={abrirNova}>+ Nova ficha</button>
         <button style={btn('#111111')} onClick={() => exportar('pdf')}>⬇️ PDF{nMarcadas ? ` (${nMarcadas})` : ''}</button>

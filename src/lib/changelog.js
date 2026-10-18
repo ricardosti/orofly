@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.6',
+    data: '2026-10-18',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Intervalo das leituras de clima configuravel',
+        texto: 'Configuracoes do Sistema ganhou o bloco Monitoramento Climatico: intervalo entre leituras (padrao 30 min) e colunas por operacao na ficha (padrao 10). O piloto pode trocar o intervalo em cada voo, no cartao do Passo 4. Na hora de exportar a ficha, da para agrupar as leituras a cada X min (area somada, clima da ultima leitura do periodo) e escolher quantas colunas cada operacao tem (4 a 15).',
+      },
+    ],
+  },
+  {
     versao: '10.5',
     data: '2026-10-18',
     itens: [

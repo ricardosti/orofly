@@ -24,7 +24,7 @@ import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { formatarQtd, areaPossivel, formatarHa, formatarDose, formatarTotalProduto } from '../lib/calda'
 import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
 import { paramsEfetivos, camposDoFormulario } from '../lib/paramsPadrao'
-import { limparFicha, sugerirProximoVoo, referenciaUltimaLeitura, climaAgora, INTERVALO_LEITURA_MIN } from '../lib/monitoramentoClima'
+import { limparFicha, sugerirProximoVoo, referenciaUltimaLeitura, climaAgora, INTERVALO_LEITURA_MIN, intervaloValido } from '../lib/monitoramentoClima'
 import { agendarLocal, cancelarLocal } from '../lib/localNotify'
 import FichaClimaEditor from '../components/FichaClimaEditor'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
@@ -502,6 +502,7 @@ export default function PilotApp({onSwitchMode}) {
   // climático (vento/Delta T) e valores padrão do wizard de voo. Carrega uma vez ao abrir
   // o app — sem linha configurada ainda, os módulos já têm seus próprios padrões internos.
   const [wizardDefaults, setWizardDefaults] = useState({ velocidadeDrone:'', altura:'', faixa:'' })
+  const [intervaloLeituraPadrao, setIntervaloLeituraPadrao] = useState(INTERVALO_LEITURA_MIN)
   useEffect(() => {
     supabase.from('app_settings').select('valor').eq('chave','config_geral').maybeSingle()
       .then(({data}) => {
@@ -510,6 +511,7 @@ export default function PilotApp({onSwitchMode}) {
         if (cfg.empresa) setEmpresaConfig(cfg.empresa)
         if (cfg.limitesClima) setLimitesClima(cfg.limitesClima)
         if (cfg.wizardDefaults) setWizardDefaults(d => ({ ...d, ...cfg.wizardDefaults }))
+        if (cfg.monitoramento?.intervaloMin) setIntervaloLeituraPadrao(intervaloValido(cfg.monitoramento.intervaloMin))
       }).catch(() => {})
   }, []) // eslint-disable-line
   useEffect(() => {
@@ -1243,7 +1245,9 @@ export default function PilotApp({onSwitchMode}) {
   const lembreteLeitura = form.monitoramento_clima?.lembrete ?? /bracell/i.test(clienteVal||'')
   const inicioVooIso = fmtDt(form,'dt_inicio')
   const refLeitura = referenciaUltimaLeitura(form.monitoramento_clima, inicioVooIso)
-  const proximaLeitura = refLeitura ? new Date(Math.max(refLeitura.getTime() + INTERVALO_LEITURA_MIN*60000, leituraAdiadaAte)) : null
+  // Intervalo: o do voo (o piloto troca no cartão) ou o padrão de Configurações do Sistema.
+  const intervaloLeitura = intervaloValido(form.monitoramento_clima?.intervalo_min, intervaloLeituraPadrao)
+  const proximaLeitura = refLeitura ? new Date(Math.max(refLeitura.getTime() + intervaloLeitura*60000, leituraAdiadaAte)) : null
   const horaBR = d => d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'})
 
   async function abrirLeitura() {
@@ -1272,7 +1276,7 @@ export default function PilotApp({onSwitchMode}) {
     setForm(f=>({...f, monitoramento_clima: ficha}))
     setLeitura(null); setLeituraAdiadaAte(0)
     saveToSupabase({ status: statusAtual(), monitoramento_clima: limparFicha(ficha) })
-    showToast(`✅ Leitura registrada — próxima às ${horaBR(new Date(Date.now()+INTERVALO_LEITURA_MIN*60000))}`)
+    showToast(`✅ Leitura registrada — próxima às ${horaBR(new Date(Date.now()+intervaloLeitura*60000))}`)
   }
 
   // Relógio: confere a cada 30 s se já passou a hora da leitura.
@@ -1289,7 +1293,7 @@ export default function PilotApp({onSwitchMode}) {
   // Notificação agendada no Android: toca mesmo com a tela apagada (timer de JS para no fundo).
   useEffect(() => {
     if (opState==='running' && lembreteLeitura && proximaLeitura) {
-      agendarLocal({ id: 7300, titulo: '🌡️ Leitura do clima', corpo: 'Passaram 30 min — registre temperatura, umidade, vento e área no Orofly.',
+      agendarLocal({ id: 7300, titulo: '🌡️ Leitura do clima', corpo: `Passaram ${intervaloLeitura} min — registre temperatura, umidade, vento e área no Orofly.`,
         em: new Date(Math.max(proximaLeitura.getTime(), Date.now()+60000)) })
     } else cancelarLocal(7300)
   }, [opState, lembreteLeitura, proximaLeitura?.getTime()])
@@ -5810,13 +5814,18 @@ Quando: ${tempoErroDebug.quando}`}
               </div>
               {monitAberto && (
                 <div style={{marginTop:12}}>
-                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,lineHeight:1.5}}>Lance cada voo (bateria) ou uma leitura a cada 30 min: início, fim, altura, área e o clima medido na hora.</div>
+                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,lineHeight:1.5}}>Lance cada voo (bateria) ou uma leitura a cada {intervaloLeitura} min: início, fim, altura, área e o clima medido na hora.</div>
                   <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:theme.bg,borderRadius:10,padding:'9px 11px',marginBottom:10}}>
                     <label style={{display:'flex',alignItems:'center',gap:7,fontSize:12.5,color:theme.text,fontWeight:600,cursor:'pointer',flex:1,minWidth:180}}>
                       <input type="checkbox" checked={!!lembreteLeitura} style={{width:16,height:16,accentColor:'#00A86B'}}
                         onChange={e=>setForm(f=>({...f,monitoramento_clima:{...(f.monitoramento_clima||{}),lembrete:e.target.checked}}))}/>
-                      ⏰ Lembrar a cada 30 min
+                      ⏰ Lembrar a cada
                     </label>
+                    <input type="number" min={5} max={240} inputMode="numeric"
+                      style={{width:58,border:'1px solid #e0ece5',borderRadius:8,padding:'5px 6px',fontSize:13,textAlign:'center',color:theme.text,background:'#fff'}}
+                      value={form.monitoramento_clima?.intervalo_min ?? intervaloLeituraPadrao}
+                      onChange={e=>setForm(f=>({...f,monitoramento_clima:{...(f.monitoramento_clima||{}),intervalo_min:e.target.value}}))}/>
+                    <span style={{fontSize:12.5,color:theme.text,fontWeight:600}}>min</span>
                     {lembreteLeitura && proximaLeitura && opState==='running' && (
                       <span style={{fontSize:11.5,color:theme.textMuted}}>próxima às <b>{horaBR(proximaLeitura)}</b></span>
                     )}

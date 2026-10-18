@@ -23,7 +23,9 @@ export const CAMPOS_VOO = [
 ]
 export const CABECALHO = ['Fazenda (ID)', 'Talhão', 'Data da aplicação', 'Piloto', 'Auxiliar', 'Técnico Regional',
   'Supervisor Operacional', 'Volume de produto consumido (L)', 'Recomendação Agronômica (L/ha)']
-const VOOS_POR_BLOCO = 10
+// Padrões — o admin troca em Configurações do Sistema (Monitoramento Climático): o intervalo
+// entre leituras no voo e quantas colunas cada operação tem na ficha (o papel tem 10).
+export const MONITORAMENTO_PADRAO = { intervaloMin: 30, colunas: 10 }
 
 const temValor = v => v != null && String(v).trim() !== ''
 const num = v => parseFloat(String(v ?? '').replace(',', '.'))
@@ -51,8 +53,43 @@ export function sugerirProximoVoo(voos = [], { altura = '', temperatura = '', um
   }
 }
 
-// ── Leitura a cada 30 min durante o voo ────────────────────────────────────────────
-export const INTERVALO_LEITURA_MIN = 30
+// ── Leitura a cada X min durante o voo ─────────────────────────────────────────────
+export const INTERVALO_LEITURA_MIN = MONITORAMENTO_PADRAO.intervaloMin
+// Intervalo válido em minutos (5 a 240); fora disso, o padrão.
+export function intervaloValido(v, padrao = INTERVALO_LEITURA_MIN) {
+  const n = parseInt(v, 10)
+  return n >= 5 && n <= 240 ? n : padrao
+}
+
+// Agrupa as leituras em períodos de pelo menos `intervaloMin` minutos, pra ficha sair com o
+// intervalo pedido na hora de emitir (ex.: lançado voo a voo, ficha de 30 em 30 min). Cada
+// período: início da primeira leitura, fim da última, área somada e altura/clima da última
+// (a medição mais recente do período). Sem intervalo, devolve as leituras como foram lançadas.
+// 2 min de folga: leituras de "30 min" costumam fechar com 29.
+export function agruparLeituras(voos = [], intervaloMin) {
+  const iv = parseInt(intervaloMin, 10)
+  if (!iv || iv <= 0) return voos
+  const minutos = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null }
+  const out = []
+  let atual = null
+  const fechar = () => { if (atual) out.push(atual.voo); atual = null }
+  for (const v of voos) {
+    if (!atual) atual = { ini: minutos(v.inicio), area: num(v.area), temArea: temValor(v.area), obs: v.obs ? [v.obs] : [], voo: { ...v } }
+    else {
+      atual.voo = { ...atual.voo, fim: v.fim || atual.voo.fim,
+        altura: v.altura || atual.voo.altura, temperatura: v.temperatura || atual.voo.temperatura,
+        umidade: v.umidade || atual.voo.umidade, vento: v.vento || atual.voo.vento }
+      if (temValor(v.area)) { atual.area = (isNaN(atual.area) ? 0 : atual.area) + num(v.area); atual.temArea = true }
+      if (v.obs) atual.obs.push(v.obs)
+    }
+    atual.voo.area = atual.temArea ? fmt(atual.area) : ''
+    atual.voo.obs = atual.obs.join('; ')
+    const fim = minutos(atual.voo.fim)
+    if (atual.ini != null && fim != null && fim - atual.ini >= iv - 2) fechar()
+  }
+  fechar()
+  return out
+}
 
 // Hora (Date) da última leitura registrada no voo; sem nenhuma, o início do voo.
 export function referenciaUltimaLeitura(ficha, inicioVoo) {
@@ -77,9 +114,9 @@ export async function climaAgora(lat, lng) {
 const dataBR = iso => iso ? new Date(String(iso).length === 10 ? `${iso}T12:00:00` : iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : ''
 
 // Ficha pronta pra exportar, a partir de um voo registrado (relatório) ou de uma ficha manual.
-export function fichaParaExportar({ rel, manual, fazendaCodigo = '' }) {
+export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMin = 0 }) {
   const d = (rel ? rel.monitoramento_clima : manual?.dados) || {}
-  const voos = (d.voos || []).filter(v => v && Object.values(v).some(temValor))
+  const voos = agruparLeituras((d.voos || []).filter(v => v && Object.values(v).some(temValor)), intervaloMin)
   const fazenda = rel ? rel.fazenda : manual?.fazenda
   const codigo = rel ? fazendaCodigo : manual?.fazenda_codigo
   const vazao = rel ? num(rel.vazao_i || rel.vazao_f) : NaN
@@ -101,13 +138,14 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '' }) {
   }
 }
 
-// Divide em blocos de até 10 voos (o papel tem 10 colunas).
-function blocos(fichas) {
+// Divide em blocos de até `colunas` voos (o papel tem 10).
+const colunasValidas = c => { const n = parseInt(c, 10); return n >= 4 && n <= 15 ? n : MONITORAMENTO_PADRAO.colunas }
+function blocos(fichas, colunas) {
   const out = []
   fichas.forEach((f, i) => {
-    const n = Math.max(1, Math.ceil(f.voos.length / VOOS_POR_BLOCO))
+    const n = Math.max(1, Math.ceil(f.voos.length / colunas))
     for (let b = 0; b < n; b++) {
-      out.push({ ...f, numero: i + 1, continuacao: b > 0, voos: f.voos.slice(b * VOOS_POR_BLOCO, (b + 1) * VOOS_POR_BLOCO), offset: b * VOOS_POR_BLOCO })
+      out.push({ ...f, numero: i + 1, continuacao: b > 0, voos: f.voos.slice(b * colunas, (b + 1) * colunas), offset: b * colunas })
     }
   })
   return out
@@ -128,14 +166,15 @@ function marcaOrofly(doc, x, y) {
   doc.setFillColor(...PRETO); doc.circle(cx, cy, 1.1, 'F')
 }
 
-export function gerarPdfFichas(fichas) {
+export function gerarPdfFichas(fichas, { colunas } = {}) {
+  const N = colunasValidas(colunas)
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
   const M = 8, W = 297 - 2 * M
   const larg = [38, 20, 24, 30, 24, 30, 34, 39, 42]
-  const colDet = 46, colVoo = (W - colDet) / VOOS_POR_BLOCO
+  const colDet = 46, colVoo = (W - colDet) / N
   const R = { titulo: 5, rot: 4.6, val: 5.6, grade: 4.6, linha: 4.4, obs: 5.2 }
   const altBloco = R.titulo + R.rot + R.val + R.grade + R.linha * CAMPOS_VOO.length + R.obs
-  const lista = blocos(fichas)
+  const lista = blocos(fichas, N)
 
   const cabecalhoPagina = () => {
     marcaOrofly(doc, M, 6)
@@ -171,11 +210,11 @@ export function gerarPdfFichas(fichas) {
     y += R.val
     // Grade dos voos
     celula(M, y, colDet, R.grade, 'Detalhamento Operacional', { negrito: true, tam: 6 })
-    for (let k = 0; k < VOOS_POR_BLOCO; k++) celula(M + colDet + k * colVoo, y, colVoo, R.grade, `Voo ${String(b.offset + k + 1).padStart(2, '0')}`, { negrito: true, tam: 6.5 })
+    for (let k = 0; k < N; k++) celula(M + colDet + k * colVoo, y, colVoo, R.grade, `Voo ${String(b.offset + k + 1).padStart(2, '0')}`, { negrito: true, tam: 6.5 })
     y += R.grade
     CAMPOS_VOO.forEach(([chave, rotulo]) => {
       celula(M, y, colDet, R.linha, rotulo, { negrito: true, tam: 5.6, centro: false })
-      for (let k = 0; k < VOOS_POR_BLOCO; k++) celula(M + colDet + k * colVoo, y, colVoo, R.linha, b.voos[k]?.[chave] ?? '', { tam: 7, cor: TINTA })
+      for (let k = 0; k < N; k++) celula(M + colDet + k * colVoo, y, colVoo, R.linha, b.voos[k]?.[chave] ?? '', { tam: 7, cor: TINTA })
       y += R.linha
     })
     celula(M, y, colDet, R.obs, 'Observações', { negrito: true, tam: 6 })
@@ -186,17 +225,18 @@ export function gerarPdfFichas(fichas) {
 }
 
 // ── Excel com a mesma grade ────────────────────────────────────────────────────────
-export function planilhaFichasBlob(fichas) {
+export function planilhaFichasBlob(fichas, { colunas } = {}) {
+  const N = colunasValidas(colunas)
   const linhas = [['MONITORAMENTO CLIMÁTICO — FICHA DE APLICAÇÃO — DRONE'], ['OROFLY'], []]
   const merges = []
-  blocos(fichas).forEach(b => {
+  blocos(fichas, N).forEach(b => {
     linhas.push([`OPERAÇÃO ${String(b.numero).padStart(2, '0')}${b.continuacao ? ' (cont.)' : ''}`])
     linhas.push(CABECALHO)
     linhas.push(b.cabecalho)
-    linhas.push(['Detalhamento Operacional', ...Array.from({ length: VOOS_POR_BLOCO }, (_, k) => `Voo ${String(b.offset + k + 1).padStart(2, '0')}`)])
-    CAMPOS_VOO.forEach(([chave, rotulo]) => linhas.push([rotulo, ...Array.from({ length: VOOS_POR_BLOCO }, (_, k) => b.voos[k]?.[chave] ?? '')]))
+    linhas.push(['Detalhamento Operacional', ...Array.from({ length: N }, (_, k) => `Voo ${String(b.offset + k + 1).padStart(2, '0')}`)])
+    CAMPOS_VOO.forEach(([chave, rotulo]) => linhas.push([rotulo, ...Array.from({ length: N }, (_, k) => b.voos[k]?.[chave] ?? '')]))
     linhas.push(['Observações', b.continuacao ? '' : b.observacoes])
-    merges.push({ s: { r: linhas.length - 1, c: 1 }, e: { r: linhas.length - 1, c: VOOS_POR_BLOCO } })
+    merges.push({ s: { r: linhas.length - 1, c: 1 }, e: { r: linhas.length - 1, c: N } })
     linhas.push([])
   })
   const ws = XLSX.utils.aoa_to_sheet(linhas)

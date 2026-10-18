@@ -262,7 +262,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const EMPRESA_CFG_PADRAO = { nome: 'Orofly', telefone: '(16) 98262-3711', site: 'www.orofly.com.br', email: 'contato@orofly.com.br', logo_url: '', razao_social: '', cnpj: '', cidade_uf: '', registro_mapa: '', registro_anac: '' }
   const LIMITES_CFG_PADRAO = { ventoMin: 3, ventoMax: 15, deltaTMin: 2, deltaTIdealMax: 7, deltaTAlertaMax: 8 }
   const WIZARD_CFG_PADRAO = { velocidadeDrone: '', altura: '', faixa: '' }
-  const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO })
+  // Monitoramento Climático: intervalo das leituras no voo e colunas por operação na ficha.
+  const MONIT_CFG_PADRAO = { intervaloMin: 30, colunas: 10 }
+  const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO, monitoramento: MONIT_CFG_PADRAO })
   const [configGeralSaving, setConfigGeralSaving] = useState(false)
   const [configGeralLoaded, setConfigGeralLoaded] = useState(false)
   async function carregarConfigGeral() {
@@ -273,6 +275,7 @@ export default function AdminPanel({ onSwitchMode }) {
         empresa: { ...EMPRESA_CFG_PADRAO, ...cfg.empresa },
         limitesClima: { ...LIMITES_CFG_PADRAO, ...cfg.limitesClima },
         wizardDefaults: { ...WIZARD_CFG_PADRAO, ...cfg.wizardDefaults },
+        monitoramento: { ...MONIT_CFG_PADRAO, ...cfg.monitoramento },
       }
       setConfigGeral(nova)
       setEmpresaConfig(nova.empresa)
@@ -7641,7 +7644,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
 
           {tab === 'monitclima' && (
             <MonitoramentoClimaAdmin relatorios={relatorios} setRelatorios={setRelatorios} fazendas={invFazendas} clientes={invClientes}
-              supabase={supabase} showToast={showToast} isMobile={isMobile} />
+              supabase={supabase} showToast={showToast} isMobile={isMobile} config={configGeral.monitoramento} />
           )}
 
           {tab === 'regulamentacao' && (
@@ -9115,6 +9118,15 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
           <div><label style={labelSt}>VELOCIDADE (km/h)</label><input style={inputSt} placeholder="Ex: 25" value={draft.wizardDefaults.velocidadeDrone} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,velocidadeDrone:e.target.value}}))}/></div>
           <div><label style={labelSt}>ALTURA (m)</label><input style={inputSt} placeholder="Ex: 3" value={draft.wizardDefaults.altura} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,altura:e.target.value}}))}/></div>
           <div><label style={labelSt}>FAIXA (m)</label><input style={inputSt} placeholder="Ex: 5" value={draft.wizardDefaults.faixa} onChange={e=>setDraft(d=>({...d,wizardDefaults:{...d.wizardDefaults,faixa:e.target.value}}))}/></div>
+        </div>
+      </div>
+
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
+        <SecTitle>🌡️ Monitoramento Climático</SecTitle>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Leitura do clima durante o voo e a ficha de aplicação (Gestão → Monitoramento Climático). O piloto pode trocar o intervalo em cada voo, e dá pra mudar de novo na hora de exportar.</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <div><label style={labelSt}>INTERVALO ENTRE LEITURAS (min)</label><input type="number" min={5} max={240} style={inputSt} placeholder="30" value={draft.monitoramento?.intervaloMin ?? ''} onChange={e=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),intervaloMin:parseInt(e.target.value,10)||''}}))}/></div>
+          <div><label style={labelSt}>COLUNAS POR OPERAÇÃO NA FICHA</label><input type="number" min={4} max={15} style={inputSt} placeholder="10" value={draft.monitoramento?.colunas ?? ''} onChange={e=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),colunas:parseInt(e.target.value,10)||''}}))}/></div>
         </div>
       </div>
 
