@@ -24,6 +24,8 @@ import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { formatarQtd, areaPossivel, formatarHa, formatarDose, formatarTotalProduto } from '../lib/calda'
 import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
 import { paramsEfetivos, camposDoFormulario } from '../lib/paramsPadrao'
+import { limparFicha } from '../lib/monitoramentoClima'
+import FichaClimaEditor from '../components/FichaClimaEditor'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -126,6 +128,7 @@ function initForm(data) {
       areaAplicadaPorTalhao:{},
       areaNaoAplicadaPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       area_feita_por_talhao:data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,String(d.area_feita)])) : {},
+      monitoramento_clima: data.monitoramento_clima || null,
       // Quais talhões o piloto fechou no "Finalizar voo" (v9.8+). Nulo em voo antigo — aí o
       // detalhe sai sem a marca e o saldo do talhão segue no rateio proporcional.
       talhoesFechados: data.area_feita_detalhe?.some(d=>typeof d?.fechado==='boolean') ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,!!d.fechado])) : null,
@@ -158,7 +161,7 @@ function initForm(data) {
     dt_inicio_data:'',dt_inicio_hh:'',dt_inicio_mm:'',
     dt_fim_data:'',dt_fim_hh:'',dt_fim_mm:'',
     pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},areaNaoAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
-    area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',area_talhao_total:0,saldoPorTalhao:{},talhoesFechados:null,
+    area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',area_talhao_total:0,saldoPorTalhao:{},talhoesFechados:null,monitoramento_clima:null,
     area_feita_anterior:0,area_feita_por_talhao_anterior:{},bordadura_anterior:0,bordaduraPorTalhao_anterior:{},
   }
 }
@@ -660,6 +663,7 @@ export default function PilotApp({onSwitchMode}) {
   const [fezTudo,setFezTudo] = useState(true)
   // Com vários talhões: o pulverizado de cada um (texto cru) e quais o piloto marcou como
   // fechados à mão — talhão sem marca segue o "Fechei todos" lá de cima.
+  const [monitAberto,setMonitAberto] = useState(false)
   const [pulvTalhao,setPulvTalhao] = useState({})
   const [fechadoTalhao,setFechadoTalhao] = useState({})
   // O que o piloto pulverizou hoje, guardado como texto cru. Não dá pra derivar de
@@ -1397,6 +1401,7 @@ export default function PilotApp({onSwitchMode}) {
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
       ordem_servico: osAtual || gerarOrdemServico(),
       teste: !!form.teste,
+      monitoramento_clima: limparFicha(form.monitoramento_clima),
       ...extraData
     }
     setSaveStatus('saving')
@@ -5725,6 +5730,26 @@ Quando: ${tempoErroDebug.quando}`}
                     onClick={()=>setForm(f=>({...f,qtd_voos:(parseInt(f.qtd_voos)||1)+1}))}>+</button>
                 </div>
               </div>
+            </div>
+
+            {/* Monitoramento Climático (Beta) — ficha voo a voo pedida pela Bracell: início, fim,
+                altura, área e clima de cada bateria. Manual por enquanto; depois vem da telemetria.
+                Fica no form e sobe junto com o relatório (funciona sem sinal). */}
+            <div style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:'12px 14px',marginBottom:16}}>
+              <div onClick={()=>setMonitAberto(v=>!v)} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+                <span style={{fontSize:16}}>🌡️</span>
+                <span style={{flex:1,fontSize:13,fontWeight:700,color:theme.text}}>Monitoramento Climático
+                  <span style={{fontSize:10,fontWeight:700,background:theme.warningBg,color:theme.warningText2||theme.warningText,padding:'2px 7px',borderRadius:10,marginLeft:6}}>BETA</span></span>
+                <span style={{fontSize:11,color:theme.textMuted}}>{(form.monitoramento_clima?.voos||[]).length} voo(s)</span>
+                <span style={{color:'#aaa',fontSize:11}}>{monitAberto?'▲':'▼'}</span>
+              </div>
+              {monitAberto && (
+                <div style={{marginTop:12}}>
+                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,lineHeight:1.5}}>Lance cada voo (bateria) ou uma leitura a cada 30 min: início, fim, altura, área e o clima medido na hora.</div>
+                  <FichaClimaEditor valor={form.monitoramento_clima} onChange={v=>setForm(f=>({...f,monitoramento_clima:v}))}
+                    sugestao={{altura:form.altura||'',temperatura:form.temperatura_i||'',umidade:form.umidade_i||'',vento:form.vento_i||''}}/>
+                </div>
+              )}
             </div>
 
             {/* Editar Horário — abre popup em vez de ficar sempre visível */}

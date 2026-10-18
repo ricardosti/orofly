@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.4',
+    data: '2026-10-18',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Monitoramento Climatico (Beta)',
+        texto: 'Ficha de aplicacao voo a voo (pedido da Bracell): no app, o Passo 4 ganhou o cartao Monitoramento Climatico, onde o piloto lanca cada voo com inicio, fim, altura, area, temperatura, umidade e vento, mais auxiliar, tecnico regional e supervisor. No painel, Gestao > Monitoramento Climatico (Beta) junta as fichas dos voos e as digitadas a mao (ligadas ou nao a um voo) e exporta em PDF e Excel no layout da ficha. Por enquanto e manual; a ideia e depois puxar da telemetria do drone.',
+      },
+    ],
+  },
+  {
     versao: '10.3',
     data: '2026-10-15',
     itens: [

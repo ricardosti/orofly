@@ -57,6 +57,7 @@ import { TIPOS_PRODUTO_MAPA, CLASSES_AGROTOXICO, CLASSES_BIOINSUMO } from '../li
 import { reverseGeocode } from '../lib/geocode'
 import ParamsPadraoCampos from '../components/ParamsPadraoCampos'
 import RegulamentacaoMapa from '../components/RegulamentacaoMapa'
+import MonitoramentoClimaAdmin from '../components/MonitoramentoClimaAdmin'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -2013,6 +2014,7 @@ export default function AdminPanel({ onSwitchMode }) {
             ['fazendas', '🌾', 'Fazendas & Clientes', invFazendas.length],
             ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
             ['arquivos', '🗂️', 'Arquivos', ''],
+            ['monitclima', '🌡️', 'Monitoramento Climático (Beta)', ''],
           ]],
           ['adminfin', '💼 Administrativo & Financeiro', [
             ['relatorios', '📋', 'Relatórios', filtered.length],
@@ -7635,6 +7637,11 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                 isMobile={isMobile}
               />
             </ArquivosErrorBoundary>
+          )}
+
+          {tab === 'monitclima' && (
+            <MonitoramentoClimaAdmin relatorios={relatorios} setRelatorios={setRelatorios} fazendas={invFazendas} clientes={invClientes}
+              supabase={supabase} showToast={showToast} isMobile={isMobile} />
           )}
 
           {tab === 'regulamentacao' && (
