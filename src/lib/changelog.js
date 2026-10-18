@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.5',
+    data: '2026-10-18',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Leitura do clima a cada 30 minutos no voo',
+        texto: 'Com o voo rodando, a cada 30 min o app abre a Leitura do clima (e o celular avisa, mesmo bloqueado): temperatura, umidade e vento ja vem da previsao pelo GPS, e o piloto confere e completa inicio, fim, altura e area. Da para informar o total do controle DJI que o app calcula a area do periodo. Ligado por padrao nos voos da Bracell e liga/desliga no cartao Monitoramento Climatico do Passo 4. As leituras entram na ficha do Monitoramento Climatico (Beta).',
+      },
+    ],
+  },
+  {
     versao: '10.4',
     data: '2026-10-18',
     itens: [

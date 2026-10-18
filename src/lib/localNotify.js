@@ -16,6 +16,26 @@ export async function pedirPermissaoNotificacaoLocal() {
 
 let proximoId = Math.floor(Date.now() / 1000) % 1000000
 
+// Agendada pra uma hora certa (ex.: leitura de clima a cada 30 min no voo). Agendar no Android
+// é o que faz tocar com a tela apagada — timer de JavaScript para quando o app vai pro fundo.
+// O `id` fixo deixa reagendar (o novo substitui o anterior) e cancelar.
+export async function agendarLocal({ id, titulo, corpo, em }) {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications')
+    await LocalNotifications.cancel({ notifications: [{ id }] }).catch(() => {})
+    await LocalNotifications.schedule({ notifications: [{ id, title: titulo, body: corpo, schedule: { at: em, allowWhileIdle: true } }] })
+  } catch (e) { console.warn('Notificação agendada falhou:', e) }
+}
+
+export async function cancelarLocal(id) {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const { LocalNotifications } = await import('@capacitor/local-notifications')
+    await LocalNotifications.cancel({ notifications: [{ id }] })
+  } catch (e) { console.warn('Cancelar notificação falhou:', e) }
+}
+
 export async function notificarLocal({ titulo, corpo }) {
   if (!Capacitor.isNativePlatform()) return
   try {

@@ -46,7 +46,32 @@ export function sugerirProximoVoo(voos = [], { altura = '', temperatura = '', um
   return {
     inicio: ult?.fim || agora, fim: '', altura: ult?.altura || altura, area: '',
     temperatura: ult?.temperatura || temperatura, umidade: ult?.umidade || umidade, vento: ult?.vento || vento, obs: '',
+    // Quando foi lançado — é o que zera o relógio da próxima leitura de 30 min (não sai na ficha).
+    registrado_em: new Date().toISOString(),
   }
+}
+
+// ── Leitura a cada 30 min durante o voo ────────────────────────────────────────────
+export const INTERVALO_LEITURA_MIN = 30
+
+// Hora (Date) da última leitura registrada no voo; sem nenhuma, o início do voo.
+export function referenciaUltimaLeitura(ficha, inicioVoo) {
+  const tempos = (ficha?.voos || []).map(v => v.registrado_em && new Date(v.registrado_em)).filter(d => d && !isNaN(d))
+  const ult = tempos.length ? new Date(Math.max(...tempos)) : null
+  return ult || (inicioVoo ? new Date(inicioVoo) : null)
+}
+
+// Clima de agora pelo GPS (mesma fonte do "Clima início/fim" do Passo 3): temperatura, umidade e
+// vento em km/h. Volta null sem sinal — aí o piloto digita.
+export async function climaAgora(lat, lng) {
+  if (lat == null || lng == null) return null
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,wind_speed_10m&wind_speed_unit=kmh&timezone=auto`
+    const c = (await (await fetch(url)).json())?.current
+    if (!c) return null
+    const pt = (v, casas) => v == null ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: casas })
+    return { temperatura: pt(c.temperature_2m, 1), umidade: pt(c.relative_humidity_2m, 0), vento: pt(c.wind_speed_10m, 1) }
+  } catch { return null }
 }
 
 const dataBR = iso => iso ? new Date(String(iso).length === 10 ? `${iso}T12:00:00` : iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : ''
