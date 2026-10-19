@@ -9,6 +9,68 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.8',
+    data: '2026-10-18',
+    itens: [
+      {
+        tipo: 'novo',
+        titulo: 'Retomar voo parcial sem sinal',
+        texto: 'Os voos em aberto e os ultimos 30 do historico ficam guardados no aparelho, inteiros. O piloto retoma no talhao, sem sinal, o Finalizado Parcial do dia anterior; antes a lista vinha vazia e abrir dizia "Voo nao encontrado".',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Agenda, historico e previsao do tempo sem sinal',
+        texto: 'Mostram o que foi baixado da ultima vez com sinal. A previsao avisa de quando e ("previsao de 18/10, 21:23").',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Incidente sem sinal fica guardado',
+        texto: 'Registrado sem internet, o incidente (com as fotos) fica no aparelho e sobe sozinho quando o sinal volta, como as notas de despesa. Aparece na tela inicial e no atalho Incidente ("1 sem sinal, a enviar"). Antes dava "Failed to fetch" e se perdia.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Log de atividades feitas sem sinal',
+        texto: 'As acoes feitas sem internet ficam guardadas e entram no Log de Atividades depois, com a hora em que aconteceram.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Aba Voos com voo em aberto',
+        texto: 'Na tela inicial, tocar em Voos com voo em aberto nao mostrava nada (com ou sem sinal). Agora abre o "Qual voo continuar?".',
+      },
+    ],
+  },
+  {
+    versao: '10.7',
+    data: '2026-10-18',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Voo finalizado sem sinal nao se perde mais',
+        texto: 'Tocar em "Novo voo" com um voo que ainda nao tinha subido apagava esse voo. Agora ele vai para a fila do aparelho e sobe sozinho quando o sinal volta, com aviso na tela inicial e o botao "Enviar agora".',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Sincronizacao subia versao antiga do voo',
+        texto: 'Ao voltar o sinal, o app podia enviar o formulario de um momento anterior (ex.: o voo pausado em vez do finalizado). Agora envia sempre o atual, com o status certo.',
+      },
+      {
+        tipo: 'novo',
+        titulo: 'Fotos guardadas no aparelho',
+        texto: 'Foto do mapa, de observacao e evidencias do clima ficam guardadas na hora em que sao tiradas: voltam ao reabrir o app e sobem sozinhas quando o sinal volta. Antes ficavam so na memoria e se perdiam ao fechar o app.',
+      },
+      {
+        tipo: 'correcao',
+        titulo: 'Baixa de estoque de voo sem sinal e de parcial retomado',
+        texto: 'Voo finalizado sem sinal nunca descontava o estoque; agora a baixa fica pendente e e feita uma unica vez quando o voo sobe. E o parcial retomado descontava o estoque de novo, porque o salvamento seguinte apagava o quanto ja tinha sido descontado (area_deduzida).',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Login e PDF sem sinal',
+        texto: 'O app abre na hora com o login guardado; sem sinal e com o token vencido ficava 25 s no carregamento e depois caia no login. O PDF e o Formulario Nardini saem sem internet, do que esta no aparelho. Envios com sinal fraco desistem em 20 s em vez de ficar em "Aguarde..." para sempre.',
+      },
+    ],
+  },
+  {
     versao: '10.6',
     data: '2026-10-18',
     itens: [
