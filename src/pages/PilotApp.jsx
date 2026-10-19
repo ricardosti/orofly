@@ -17,6 +17,7 @@ import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
 import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente } from '../lib/filaDespesas'
+import { listarVoosNaFila, enfileirarVoo, removerVooDaFila, guardarFoto, apagarFoto, fotosDoVoo, apagarFotosDoVoo, enviarFotosGuardadas, enviarLinhaDoVoo } from '../lib/filaVoos'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
@@ -169,6 +170,11 @@ function initForm(data) {
 
 // Cache local de listas de referência (drones/produtos/clientes/fazendas/talhões),
 // pra funcionar offline com o último cadastro conhecido em vez de ficar vazio
+// Um campo do rascunho do voo guardado no aparelho (LS_KEY).
+function doRascunho(chave, padrao) {
+  try { const d = localStorage.getItem(LS_KEY); if (d) { const v = JSON.parse(d)[chave]; if (v != null) return v } } catch {}
+  return padrao
+}
 function loadCache(key) {
   try { const c = localStorage.getItem(key); return c ? JSON.parse(c) : [] } catch { return [] }
 }
@@ -504,14 +510,21 @@ export default function PilotApp({onSwitchMode}) {
   const [wizardDefaults, setWizardDefaults] = useState({ velocidadeDrone:'', altura:'', faixa:'' })
   const [intervaloLeituraPadrao, setIntervaloLeituraPadrao] = useState(INTERVALO_LEITURA_MIN)
   useEffect(() => {
+    // Fica guardada no aparelho: sem sinal, o PDF saía sem os dados da empresa, e os limites
+    // do clima e o intervalo das leituras voltavam pro padrão.
+    const aplicar = valor => {
+      const cfg = typeof valor === 'string' ? JSON.parse(valor) : valor
+      if (cfg.empresa) setEmpresaConfig(cfg.empresa)
+      if (cfg.limitesClima) setLimitesClima(cfg.limitesClima)
+      if (cfg.wizardDefaults) setWizardDefaults(d => ({ ...d, ...cfg.wizardDefaults }))
+      if (cfg.monitoramento?.intervaloMin) setIntervaloLeituraPadrao(intervaloValido(cfg.monitoramento.intervaloMin))
+    }
+    try { const c = localStorage.getItem('orofly_cache_config'); if (c) aplicar(c) } catch {}
     supabase.from('app_settings').select('valor').eq('chave','config_geral').maybeSingle()
       .then(({data}) => {
         if (!data?.valor) return
-        const cfg = JSON.parse(data.valor)
-        if (cfg.empresa) setEmpresaConfig(cfg.empresa)
-        if (cfg.limitesClima) setLimitesClima(cfg.limitesClima)
-        if (cfg.wizardDefaults) setWizardDefaults(d => ({ ...d, ...cfg.wizardDefaults }))
-        if (cfg.monitoramento?.intervaloMin) setIntervaloLeituraPadrao(intervaloValido(cfg.monitoramento.intervaloMin))
+        try { localStorage.setItem('orofly_cache_config', typeof data.valor === 'string' ? data.valor : JSON.stringify(data.valor)) } catch {}
+        aplicar(data.valor)
       }).catch(() => {})
   }, []) // eslint-disable-line
   useEffect(() => {
@@ -640,7 +653,8 @@ export default function PilotApp({onSwitchMode}) {
   const [culturasDB, setCulturasDB] = useState(() => loadCache('orofly_cache_culturas'))
   const [permissoesConhecidas, setPermissoesConhecidas] = useState(!!permCacheInicial)
   const [dronesEmUsoAgora, setDronesEmUsoAgora] = useState([])
-  const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState([])
+  // Guardado no aparelho: sem sinal, o saldo do talhão (o que falta) saía do tamanho cheio.
+  const [relatoriosFinalizadosOrg, setRelatoriosFinalizadosOrg] = useState(()=>loadCache('orofly_cache_relorg'))
   const [talhoesDB, setTalhoesDB] = useState([])
   const [veiculosDB, setVeiculosDB] = useState([])
   const [voosFrotaDrone, setVoosFrotaDrone] = useState([])
@@ -697,8 +711,8 @@ export default function PilotApp({onSwitchMode}) {
   const [obsFotoFiles,setObsFotoFiles] = useState([null,null,null])
   const [fotoMapa,setFotoMapa] = useState(null)
   const [fotoMapaFile,setFotoMapaFile] = useState(null)
-  const [storageFotoMapa,setStorageFotoMapa] = useState(null)
-  const [storageObsFotos,setStorageObsFotos] = useState([null,null,null])
+  const [storageFotoMapa,setStorageFotoMapa] = useState(()=>doRascunho('storageFotoMapa',null))
+  const [storageObsFotos,setStorageObsFotos] = useState(()=>doRascunho('storageObsFotos',[null,null,null]))
   const [fotoPickerOpen, setFotoPickerOpen] = useState(null)
   const [wizardStep, setWizardStep] = useState(1)
   const [talhaoSearch, setTalhaoSearch] = useState('')
@@ -846,6 +860,7 @@ export default function PilotApp({onSwitchMode}) {
           leitor.onload = ev2 => setObsFotos(a => { const n=[...a]; n[0]=ev2.target.result; return n })
           leitor.readAsDataURL(blob)
           setObsFotoFiles(a => { const n=[...a]; n[0]=arquivo; return n })
+          guardarFotoNoAparelho(0, arquivo)
         }
       })
     }
@@ -863,6 +878,7 @@ export default function PilotApp({onSwitchMode}) {
           leitor.onload = ev2 => setFotoMapa(ev2.target.result)
           leitor.readAsDataURL(blob)
           setFotoMapaFile(arquivo)
+          guardarFotoNoAparelho('mapa', arquivo)
         }
       })
     }
@@ -960,6 +976,29 @@ export default function PilotApp({onSwitchMode}) {
   const toastTimer=useRef(null)
   const retryTimer=useRef(null)
   const pendingPayload=useRef(null)
+
+  // ── Modo offline ──
+  // Listeners e intervalos criados num render enxergam o estado DAQUELE render. A sincronização
+  // do voo era assim: ligava quando o pendingSync virava true e, dali pra frente, subia o
+  // formulário daquele momento (ex.: finalizou sem sinal depois de pausar → subia o voo
+  // pausado). Estas refs apontam sempre pro render atual.
+  const relIdRef = useRef(relId); relIdRef.current = relId
+  const pendingSyncRef = useRef(pendingSync); pendingSyncRef.current = pendingSync
+  const produtosDBRef = useRef(produtosDB); produtosDBRef.current = produtosDB
+  const atual = useRef({})
+  atual.current = { salvar: saveToSupabase, sincronizarVoos, processarBaixas }
+  const sincronizandoVooRef = useRef(false)
+  // Voos que saíram da tela sem subir (ver lib/filaVoos)
+  const [voosNaFila,setVoosNaFila] = useState(()=>listarVoosNaFila())
+  const sincronizandoVoosRef = useRef(false)
+  // true se o aparelho não conseguiu guardar alguma foto (aí ela só existe na memória)
+  const fotosSoNaMemoria = useRef(false)
+  const subindoFotos = useRef(null)
+  // Baixas de estoque a fazer: [{id, relId, area, produtos}]. Entram ANTES de ir pro banco e
+  // saem quando o banco confirmou — sem sinal, esperam o voo subir.
+  const baixasPendentes = useRef((()=>{ try { return JSON.parse(localStorage.getItem('orofly_baixas_pendentes')||'[]') } catch { return [] } })())
+  const processandoBaixas = useRef(false)
+  const baixasDeNovo = useRef(false)
 
   const showToast=useCallback((msg)=>{
     setToast(msg)
@@ -1168,8 +1207,30 @@ export default function PilotApp({onSwitchMode}) {
   }, [relId]) // eslint-disable-line
   useEffect(()=>{
     if(opState==='idle') return
-    try { localStorage.setItem(LS_KEY,JSON.stringify({form,opState,relId,osAtual,pendingSync,lastExtraData:lastExtraData.current})) } catch{}
-  },[form,opState,relId,osAtual,pendingSync])
+    try { localStorage.setItem(LS_KEY,JSON.stringify({form,opState,relId,osAtual,pendingSync,lastExtraData:lastExtraData.current,storageObsFotos,storageFotoMapa})) } catch{}
+  },[form,opState,relId,osAtual,pendingSync,storageObsFotos,storageFotoMapa])
+  useEffect(()=>{ saveCache('orofly_cache_relorg',relatoriosFinalizadosOrg) },[relatoriosFinalizadosOrg])
+
+  // Fotos guardadas no aparelho voltam pra tela: o app pode ter sido fechado (ou o Android
+  // encerrado ele) entre tirar a foto e ter sinal pra subir. Só preenche slot vazio.
+  useEffect(()=>{
+    if(!relId) return
+    let vivo = true
+    fotosDoVoo(relId).then(async fotos=>{
+      for (const f of fotos) {
+        const url = f.tipo==='application/pdf' ? 'pdf:'+f.nome
+          : await new Promise(ok=>{ const r=new FileReader(); r.onload=()=>ok(r.result); r.onerror=()=>ok(null); r.readAsDataURL(f.arquivo) })
+        if(!vivo || !url) continue
+        if(f.slot==='mapa'){ setFotoMapaFile(a=>a||f.arquivo); setFotoMapa(a=>a||url) }
+        else {
+          const i=+f.slot
+          setObsFotoFiles(a=>{ if(a[i]) return a; const n=[...a]; n[i]=f.arquivo; return n })
+          setObsFotos(a=>{ if(a[i]) return a; const n=[...a]; n[i]=url; return n })
+        }
+      }
+    })
+    return ()=>{ vivo=false }
+  },[relId])
 
   // Sincronização automática: assim que o app fica online (ou ao reabrir com pendência),
   // reenvia o último salvamento que tinha falhado. Nada de dados perdidos por falta de sinal.
@@ -1177,8 +1238,9 @@ export default function PilotApp({onSwitchMode}) {
   // do app nativo (Android às vezes não dispara, principalmente vindo de background).
   useEffect(()=>{
     function tentarSincronizar(){
-      if(!pendingSync || !navigator.onLine) return
-      saveToSupabase(lastExtraData.current||{},false)
+      if(!pendingSyncRef.current || !navigator.onLine || sincronizandoVooRef.current) return
+      sincronizandoVooRef.current = true
+      atual.current.salvar(lastExtraData.current||{},false).finally(()=>{ sincronizandoVooRef.current=false })
     }
     tentarSincronizar()
     window.addEventListener('online',tentarSincronizar)
@@ -1200,8 +1262,14 @@ export default function PilotApp({onSwitchMode}) {
     if(!profile?.id) return
     pedirArmazenamentoPersistente()
     atualizarFila().then(()=>sincronizarFila())
-    const aoVoltar = () => { if(document.visibilityState!=='hidden') sincronizarFila() }
-    const periodico = () => { if(filaTamanhoRef.current>0) sincronizarFila() }
+    const offline = () => { atual.current.sincronizarVoos(); atual.current.processarBaixas() }
+    offline()
+    const aoVoltar = () => { if(document.visibilityState!=='hidden'){ sincronizarFila(); offline() } }
+    const periodico = () => {
+      if(filaTamanhoRef.current>0) sincronizarFila()
+      if(listarVoosNaFila().length) atual.current.sincronizarVoos()
+      if(baixasPendentes.current.length) atual.current.processarBaixas()
+    }
     window.addEventListener('online',aoVoltar)
     document.addEventListener('visibilitychange',aoVoltar)
     window.addEventListener('focus',aoVoltar)
@@ -1390,6 +1458,7 @@ export default function PilotApp({onSwitchMode}) {
     if(isPdf){
       setObsFotos(a=>{const n=[...a];n[slot]='pdf:'+f.name;return n})
       setObsFotoFiles(a=>{const n=[...a];n[slot]=f;return n})
+      guardarFotoNoAparelho(slot, f)
       await gravarMetaEvid(slot,lbl,f,true)
       return
     }
@@ -1403,6 +1472,7 @@ export default function PilotApp({onSwitchMode}) {
           leitor.onload = ev2 => setObsFotos(a=>{const n=[...a];n[slot]=ev2.target.result;return n})
           leitor.readAsDataURL(blob)
           setObsFotoFiles(a=>{const n=[...a];n[slot]=arquivo;return n})
+          guardarFotoNoAparelho(slot, arquivo)
           await gravarMetaEvid(slot,lbl,f,false)
         }
       })
@@ -1426,8 +1496,9 @@ export default function PilotApp({onSwitchMode}) {
     return s
   }
 
-  async function saveToSupabase(extraData={},retry=true) {
-    lastExtraData.current = extraData
+  // O registro do voo como vai pro banco, a partir do formulário atual. Separado do envio pra
+  // dar pra guardar o voo na fila do aparelho e gerar o PDF sem sinal.
+  function montarPayload(extraData={}) {
     const talhoesSel = (form.talhao||'').split(',').map(s=>s.trim()).filter(Boolean)
     const bordaduraDetalhe = talhoesSel.length>1
       ? talhoesSel.map(nome=>({talhao:nome,bordadura:parseFloat(form.bordaduraPorTalhao?.[nome])||0})).filter(d=>d.bordadura>0)
@@ -1448,8 +1519,8 @@ export default function PilotApp({onSwitchMode}) {
     const statusSalvando = extraData.status || statusAtual()
     // Fallback defensivo: relId deveria sempre existir (gerado em opIniciar), mas se por algum
     // motivo ainda estiver nulo aqui, gera agora em vez de deixar o registro órfão.
-    const idAtual = relId || crypto.randomUUID()
-    const payload={
+    const idAtual = relIdRef.current || relId || crypto.randomUUID()
+    return {
       id:idAtual,
       piloto_id:profile.id,
       cultura:form.cultura||null,
@@ -1471,36 +1542,137 @@ export default function PilotApp({onSwitchMode}) {
       ordem_servico: osAtual || gerarOrdemServico(),
       teste: !!form.teste,
       monitoramento_clima: limparFicha(form.monitoramento_clima),
+      // Status do estado atual do voo, salvo se a chamada mandar outro. O 💾 do Passo 5 salvava
+      // sem status: se fosse o último envio antes de perder o sinal, a sincronização subia o voo
+      // sem o "finalizado".
+      status: statusAtual(),
       ...extraData
     }
+  }
+
+  // Atualiza o progresso "de todos os pilotos" em memória (e no cache do aparelho) — sem isso,
+  // um voo recém-salvo (ex: Finalizado Parcial) só aparecia no progresso do talhão depois de
+  // recarregar a página inteira, porque essa lista é buscada uma única vez ao abrir o app. Vale
+  // também pro voo salvo só no aparelho: o próximo voo no mesmo talhão já pega o saldo certo.
+  function atualizarProgressoOrg(rd){
+    if (!rd || (rd.status!=='finalizado' && rd.status!=='pausado_dia')) return
+    setRelatoriosFinalizadosOrg(prev => {
+      const idx = prev.findIndex(r=>r.id===rd.id)
+      const entry = {id:rd.id,cliente:rd.cliente,fazenda:rd.fazenda,area_ha:rd.area_ha,bordadura:rd.bordadura,created_at:rd.created_at||prev[idx]?.created_at||new Date().toISOString(),localizacao:rd.localizacao,status:rd.status,area_feita:rd.area_feita,piloto_nome:rd.piloto_nome,area_feita_detalhe:rd.area_feita_detalhe,bordadura_detalhe:rd.bordadura_detalhe}
+      if (idx>=0) { const copy=[...prev]; copy[idx]=entry; return copy }
+      return [...prev, entry]
+    })
+  }
+
+  async function saveToSupabase(extraData={},retry=true) {
+    lastExtraData.current = extraData
+    const payload = montarPayload(extraData)
+    const idAtual = payload.id
+    // O id fica fixo desde o primeiro salvamento, mesmo sem sinal: as fotos guardadas no
+    // aparelho e a fila de voos usam ele como chave.
+    if(!relIdRef.current){ relIdRef.current=idAtual; setRelId(idAtual) }
+    const eraPendente = pendingSync
     setSaveStatus('saving')
     try {
-      const result = await supabase.from('relatorios').upsert(payload,{onConflict:'id'}).select().single()
+      // Prazo: com sinal fraco a requisição não falha nem volta, e o botão ficava em
+      // "Aguarde..." pra sempre. Se ela chegar depois, o upsert pelo id não duplica.
+      const result = await comPrazo(supabase.from('relatorios').upsert(payload,{onConflict:'id'}).select().single(), 20000)
       if(result.error) throw result.error
       if(!relId) setRelId(idAtual)
       if(result.data && !osAtual) setOsAtual(result.data.ordem_servico||null)
       setSaveStatus('saved');pendingPayload.current=null
       if(pendingSync){setPendingSync(false);showToast('✅ Sincronizado com sucesso!')}
+      pendingSyncRef.current=false
       if(retryTimer.current) clearTimeout(retryTimer.current)
-      // Atualiza o progresso "de todos os pilotos" em memória — sem isso, um voo recém-salvo
-      // (ex: Finalizado Parcial) só aparecia no progresso do talhão depois de recarregar a
-      // página inteira, porque essa lista é buscada uma única vez ao abrir o app.
-      if (result.data && (result.data.status==='finalizado' || result.data.status==='pausado_dia')) {
-        const rd = result.data
-        const entry = {id:rd.id,cliente:rd.cliente,fazenda:rd.fazenda,area_ha:rd.area_ha,bordadura:rd.bordadura,created_at:rd.created_at,localizacao:rd.localizacao,status:rd.status,area_feita:rd.area_feita,piloto_nome:rd.piloto_nome,area_feita_detalhe:rd.area_feita_detalhe,bordadura_detalhe:rd.bordadura_detalhe}
-        setRelatoriosFinalizadosOrg(prev => {
-          const idx = prev.findIndex(r=>r.id===entry.id)
-          if (idx>=0) { const copy=[...prev]; copy[idx]=entry; return copy }
-          return [...prev, entry]
-        })
-      }
+      atualizarProgressoOrg(result.data)
+      // Voo que estava sem sinal: as fotos tiradas nesse meio tempo sobem agora (antes ficavam
+      // esperando o piloto gerar o relatório de novo). E a baixa de estoque que esperava o voo.
+      if(eraPendente && result.data) subirFotosDoVoo(result.data).catch(()=>{})
+      processarBaixas()
       return result.data
     } catch(err){
       setSaveStatus('error');pendingPayload.current={extraData};setPendingSync(true)
-      if(retry){if(retryTimer.current)clearTimeout(retryTimer.current);retryTimer.current=setTimeout(()=>{if(pendingPayload.current){saveToSupabase(pendingPayload.current.extraData,false)}},10000)}
+      atualizarProgressoOrg(payload)
+      if(retry){if(retryTimer.current)clearTimeout(retryTimer.current);retryTimer.current=setTimeout(()=>{if(pendingPayload.current){atual.current.salvar(pendingPayload.current.extraData,false)}},10000)}
       return null
     }
   }
+
+  // Sobe as fotos do voo guardadas no aparelho (uma subida por vez: o salvamento e o "Gerar
+  // relatório" podem pedir juntos).
+  function subirFotosDoVoo(rel){
+    if(subindoFotos.current) return subindoFotos.current
+    const p = enviarFotosGuardadas(supabase, { relId:rel.id, pilotoId:rel.piloto_id||profile.id, obsBase:rel.obs_fotos_urls, mapaBase:rel.foto_mapa_url })
+      .then(r=>{
+        if(r){
+          r.caminhos.forEach(esquecerUrl) // upsert no mesmo caminho: sem isso o cache serve a foto antiga
+          if(rel.id===relIdRef.current){ setStorageObsFotos(r.obs); setStorageFotoMapa(r.mapa) }
+        }
+        return r
+      })
+      .finally(()=>{ subindoFotos.current=null })
+    subindoFotos.current = p
+    return p
+  }
+
+  // Foto tirada: guarda no aparelho na hora, com o id do voo (gera o id se ainda não tem).
+  function guardarFotoNoAparelho(slot, arquivo){
+    let rid = relIdRef.current
+    if(!rid){ rid=crypto.randomUUID(); relIdRef.current=rid; setRelId(rid) }
+    guardarFoto(rid, slot, arquivo).then(ok=>{ if(!ok) fotosSoNaMemoria.current=true })
+  }
+
+  // Antes de trocar de voo: se o atual ainda não subiu (sem sinal), ou tem foto que não subiu,
+  // ele vai pra fila do aparelho e sobe sozinho. Antes o "Novo voo" simplesmente apagava — e um
+  // voo finalizado sem sinal só existia ali. Devolve false se não conseguiu guardar.
+  function guardarVooAtualNaFila(){
+    if(!relId || !profile?.id || opState==='idle') return true
+    const temFoto = obsFotoFiles.some(Boolean) || !!fotoMapaFile
+    if(!pendingSync && !temFoto) return true
+    try {
+      enfileirarVoo(pendingSync
+        ? { id:relId, payload:montarPayload(lastExtraData.current||{}), criado_em:new Date().toISOString() }
+        : { id:relId, soFotos:true, piloto_id:profile.id, fazenda:form.fazenda, localizacao:form.talhao||form.localizacao, criado_em:new Date().toISOString() })
+      setVoosNaFila(listarVoosNaFila())
+      if(pendingSync) showToast('📥 Voo anterior guardado no aparelho — sobe sozinho quando tiver sinal')
+      return true
+    } catch(e) {
+      showToast('⚠️ Não deu pra guardar o voo no aparelho: '+(e?.message||e))
+      return false
+    }
+  }
+
+  // Sobe os voos da fila: a linha do relatório e as fotos. Sem sinal, para e tenta depois;
+  // erro do banco fica marcado no voo, que continua na fila.
+  async function sincronizarVoos(manual=false){
+    if(sincronizandoVoosRef.current || !profile?.id) return
+    const fila = listarVoosNaFila()
+    if(!fila.length) return
+    sincronizandoVoosRef.current = true
+    let subiram = 0, semSinal = false
+    try {
+      for (const item of fila) {
+        const pilotoId = item.payload?.piloto_id || item.piloto_id
+        if (pilotoId !== profile.id) continue // de outro login neste aparelho: espera ele entrar
+        try {
+          const linha = await enviarLinhaDoVoo(item, supabase)
+          if (linha) await enviarFotosGuardadas(supabase, { relId:item.id, pilotoId, obsBase:linha.obs_fotos_urls, mapaBase:linha.foto_mapa_url })
+          else await apagarFotosDoVoo(item.id) // voo excluído do banco: as fotos não têm pra onde ir
+          removerVooDaFila(item.id, item.criado_em)
+          if (!item.soFotos) subiram++
+        } catch(e) {
+          if (ehFalhaDeRede(e)) { semSinal = true; break }
+          try { enfileirarVoo({ ...item, erro: e?.message||String(e) }) } catch {}
+        }
+      }
+    } finally {
+      sincronizandoVoosRef.current = false
+      setVoosNaFila(listarVoosNaFila())
+      if (subiram) { showToast(subiram===1 ? '✅ O voo guardado sem sinal subiu' : `✅ ${subiram} voos guardados sem sinal subiram`); processarBaixas() }
+      else if (manual && semSinal) showToast('📴 Ainda sem sinal — tenta de novo sozinho')
+    }
+  }
+
 
   // ---- SOS ----
   async function acionarSOS() {
@@ -1579,9 +1751,13 @@ export default function PilotApp({onSwitchMode}) {
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:nf[k+'_i'],[k+'_f']:nf[k+'_f']}),{}),
       status:'em_operacao'
     }
+    // Uma retentativa agendada antes (ex.: o "Próximo" do Passo 3 sem sinal) reenviaria o voo
+    // com o status daquela hora — "rascunho" — por cima do voo já iniciado.
+    if(retryTimer.current) clearTimeout(retryTimer.current)
+    pendingPayload.current=null
     setSaveStatus('saving')
     try {
-      const {data,error}=await supabase.from('relatorios').upsert(payload,{onConflict:'id'}).select().single()
+      const {data,error}=await comPrazo(supabase.from('relatorios').upsert(payload,{onConflict:'id'}).select().single(), 20000)
       if(error) throw error
       setRelId(data.id); setSaveStatus('saved')
 
@@ -1707,23 +1883,62 @@ export default function PilotApp({onSwitchMode}) {
   // (ex: função registrar_movimento_estoque ainda não criada no banco, ou produto não cadastrado no inventário).
   // `area` é a quantidade de hectares a considerar NESSA baixa — no Finalizado Parcial é só o incremento
   // desde a última baixa (evita descontar o produto duas vezes quando o voo é retomado e finalizado depois).
-  async function darBaixaEstoque(relIdAlvo, area) {
-    try {
-      if (!relIdAlvo || !(area>0)) return
-      const produtosFinal = form.produtos.filter(Boolean).map(produtoComUnidade)
-      for (const p of produtosFinal) {
-        const { nome, dose, unidade } = parseDoseProduto(p)
+  // Devolve os produtos que ficaram sem baixa por falta de rede (pra tentar de novo só esses —
+  // a função do banco não é idempotente, repetir um que já foi descontaria duas vezes).
+  async function darBaixaEstoque(relIdAlvo, area, produtos) {
+    const lista = (produtos||[]).filter(Boolean)
+    if (!relIdAlvo || !(area>0)) return []
+    // Cadastro de produtos ainda não carregado: sem ele não dá pra saber o que é do inventário.
+    if (!produtosDBRef.current.length) return lista
+    const faltam = []
+    for (const p0 of lista) {
+      try {
+        const { nome, dose, unidade } = parseDoseProduto(produtoComUnidade(p0))
         if (dose==null || !nome) continue
-        const existe = produtosDB.find(pd=>pd.nome===nome)
+        const existe = produtosDBRef.current.find(pd=>pd.nome===nome)
         if (!existe) continue // produto "Outros" digitado à mão não está no inventário — nada a baixar
         const consumo = +(dose*area).toFixed(2)
         if (consumo<=0) continue
-        await supabase.rpc('registrar_movimento_estoque', {
+        const { error } = await supabase.rpc('registrar_movimento_estoque', {
           p_produto_nome: nome, p_quantidade: -consumo, p_tipo: 'baixa_relatorio',
           p_unidade: unidade||existe.unidade||null, p_relatorio_id: relIdAlvo, p_criado_por: profile.nome||profile.email
         })
+        if (error && ehFalhaDeRede(error)) faltam.push(p0)
+        else if (error) console.warn('Baixa de estoque não aplicada:', error)
+      } catch(e) {
+        if (ehFalhaDeRede(e)) faltam.push(p0); else console.warn('Baixa de estoque não aplicada:', e)
       }
-    } catch(e) { console.warn('Baixa de estoque não aplicada:', e) }
+    }
+    return faltam
+  }
+  function gravarBaixas(lista){
+    baixasPendentes.current = lista
+    try { localStorage.setItem('orofly_baixas_pendentes', JSON.stringify(lista)) } catch {}
+  }
+  // Põe a baixa na lista do aparelho. Antes, sem sinal, ela simplesmente não acontecia — e o
+  // banco gravava area_deduzida como se tivesse descontado.
+  function agendarBaixa(rid, area){
+    if(!rid || !(area>0)) return
+    gravarBaixas([...baixasPendentes.current, { id:crypto.randomUUID(), relId:rid, area, produtos:form.produtos.filter(Boolean), criado_em:new Date().toISOString() }])
+  }
+  async function processarBaixas(){
+    if(!profile?.id || !baixasPendentes.current.length) return
+    if(processandoBaixas.current){ baixasDeNovo.current=true; return }
+    processandoBaixas.current = true
+    try {
+      do {
+        baixasDeNovo.current = false
+        const fila = listarVoosNaFila()
+        for (const b of [...baixasPendentes.current]) {
+          // O movimento aponta pro relatório: espera o voo estar no banco.
+          if (b.relId===relIdRef.current && pendingSyncRef.current) continue
+          if (fila.some(v=>v.id===b.relId && !v.soFotos)) continue
+          const faltam = await darBaixaEstoque(b.relId, b.area, b.produtos)
+          if (faltam.length) { gravarBaixas(baixasPendentes.current.map(x=>x.id===b.id?{...x,produtos:faltam}:x)); return }
+          gravarBaixas(baixasPendentes.current.filter(x=>x.id!==b.id))
+        }
+      } while (baixasDeNovo.current)
+    } finally { processandoBaixas.current=false }
   }
 
   async function executarFinalizacao() {
@@ -1735,12 +1950,17 @@ export default function PilotApp({onSwitchMode}) {
     // já foi descontado do estoque — aqui desconta só a diferença até a área total.
     const areaTotal = areaLiquidaAtual(form)
     const deltaBaixa = Math.max(0, areaTotal-(parseFloat(form.area_deduzida)||0))
+    // A baixa entra na lista do aparelho antes do envio: sem sinal, espera o voo subir.
+    agendarBaixa(relIdRef.current, deltaBaixa)
+    // O quanto já foi descontado fica no formulário. Só ia no envio da finalização, e o
+    // salvamento seguinte (clima do fim, 💾, PDF) gravava null por cima — 18 de 19 parciais
+    // estavam assim em 18/10/2026, e o parcial retomado descontava o estoque de novo.
+    setForm(f=>({...f,area_deduzida:String(areaTotal)}))
     // Só salva o voo — PDF gerado separadamente no Step 5
     const relSalvo = await saveToSupabase({status:'finalizado',dt_fim:n.iso,area_deduzida:areaTotal})
     if (relSalvo) {
       registrar('voo_finalizado', [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
         { cliente: clienteVal, meta: { area_ha: form.area_ha, area_liquida: areaTotal } })
-      await darBaixaEstoque(relSalvo.id, deltaBaixa)
       try{localStorage.removeItem(LS_KEY)}catch{}
       setSaving(false)
       showToast('✅ Voo salvo! Adicione fotos e gere o relatório.')
@@ -1760,7 +1980,7 @@ export default function PilotApp({onSwitchMode}) {
     // falha de rede aqui não virar um "Erro: Failed to fetch" genérico lá embaixo.
     let rel = null
     try {
-      const {data} = await supabase.from('relatorios').select('*').eq('id',relId).maybeSingle()
+      const {data} = await comPrazo(supabase.from('relatorios').select('*').eq('id',relId).maybeSingle(), 10000)
       rel = data
     } catch {}
     if(!rel){
@@ -1775,9 +1995,13 @@ export default function PilotApp({onSwitchMode}) {
       return
     }
     try {
-      const [obsUrls,mapaUrl]=await Promise.all([uploadFotos(rel.id),uploadFotoMapa(rel.id)])
-      if(obsUrls.some(Boolean)||mapaUrl) await supabase.from('relatorios').update({obs_fotos_urls:obsUrls,foto_mapa_url:mapaUrl}).eq('id',rel.id)
-    } catch(e) { console.error(e) }
+      if(fotosSoNaMemoria.current){
+        // O aparelho não guardou alguma foto: sobe da memória, como antes.
+        const [obsUrls,mapaUrl]=await Promise.all([uploadFotos(rel.id),uploadFotoMapa(rel.id)])
+        const obs=[0,1,2].map(i=>obsUrls[i]||rel.obs_fotos_urls?.[i]||null)
+        if(obsUrls.some(Boolean)||mapaUrl) await supabase.from('relatorios').update({obs_fotos_urls:obs,foto_mapa_url:mapaUrl||rel.foto_mapa_url||null}).eq('id',rel.id)
+      } else await subirFotosDoVoo(rel)
+    } catch(e) { console.warn('Fotos ficam no aparelho e sobem com o sinal:', e) }
     registrar('relatorio_gerado', [form.fazenda, form.localizacao].filter(Boolean).join(' · '), { cliente: clienteVal })
     setSaving(false)
     setModalOpen(true)
@@ -1899,7 +2123,7 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   function iniciarVooAgendado(a){
-    limpar()
+    if(!limpar()) return
     const produtosAgendados = a.produtos?.length ? a.produtos.map(p=>p.dose?`${p.produto} - ${p.dose}`:p.produto) : (a.produto?[a.produto]:[''])
     setForm(f=>({...f,cliente:a.cliente,fazenda:a.fazenda,produtos:produtosAgendados}))
     if(a.ordem_servico) setOsAtual(a.ordem_servico)
@@ -2346,6 +2570,16 @@ export default function PilotApp({onSwitchMode}) {
   }
 
   function openFlight(rel){
+    if(rel.id!==relId && !guardarVooAtualNaFila()) return
+    // Voo que está na fila do aparelho: a versão guardada é mais nova que a do banco. Ele volta
+    // a ser o voo atual, pendente — a sincronização normal sobe.
+    const naFila = listarVoosNaFila().find(v=>v.id===rel.id && v.payload)
+    if(naFila){
+      rel = {...rel, ...naFila.payload}
+      removerVooDaFila(rel.id); setVoosNaFila(listarVoosNaFila())
+      lastExtraData.current = {status:naFila.payload.status}; setPendingSync(true)
+    }
+    relIdRef.current = rel.id
     setForm(initForm(rel)); setRelId(rel.id); setOsAtual(rel.ordem_servico||null)
     // Bordadura salva > 0 só acontece quando o motivo escolhido foi "Bordadura" — reconstrói a
     // seleção pra o piloto reabrir o voo já vendo o motivo marcado, não em branco.
@@ -2447,7 +2681,8 @@ export default function PilotApp({onSwitchMode}) {
       const { error } = await supabase.from('relatorios').delete().eq('id', rel.id)
       if (error) throw error
       setFlights(fs=>fs.filter(f=>f.id!==rel.id))
-      if (relId===rel.id) limpar(true)
+      removerVooDaFila(rel.id); setVoosNaFila(listarVoosNaFila())
+      if (relId===rel.id) limpar(true,{descartar:true})
       showToast('🗑️ Rascunho excluído')
     } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
   }
@@ -2459,7 +2694,8 @@ export default function PilotApp({onSwitchMode}) {
       const { error } = await supabase.from('relatorios').delete().in('id', ids)
       if (error) throw error
       setFlights(fs=>fs.filter(f=>!ids.includes(f.id)))
-      if (ids.includes(relId)) limpar(true)
+      ids.forEach(id=>removerVooDaFila(id)); setVoosNaFila(listarVoosNaFila())
+      if (ids.includes(relId)) limpar(true,{descartar:true})
       showToast(`🗑️ ${ids.length} rascunho(s) excluído(s)`)
     } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
   }
@@ -2473,7 +2709,8 @@ export default function PilotApp({onSwitchMode}) {
       const { error } = await supabase.from('relatorios').delete().in('id', ids)
       if (error) throw error
       setFlights(fs=>fs.filter(f=>!ids.includes(f.id)))
-      if (ids.includes(relId)) limpar(true)
+      ids.forEach(id=>removerVooDaFila(id)); setVoosNaFila(listarVoosNaFila())
+      if (ids.includes(relId)) limpar(true,{descartar:true})
       showToast(`🧪 ${ids.length} voo(s) de teste excluído(s)`)
     } catch(e) { showToast('Erro ao excluir: '+e.message,'error') }
   }
@@ -2539,7 +2776,12 @@ export default function PilotApp({onSwitchMode}) {
     <button type="button" style={{...sw.btnG,background:theme.bg,color:theme.textMuted,flex:'0 0 42px',padding:'11px 4px',fontSize:16}} onClick={sairDoFluxoVoo}>🏠</button>
   )
 
-  function limpar(silent=false){
+  // `descartar`: o voo foi excluído — não vai pra fila, e as fotos guardadas saem do aparelho.
+  function limpar(silent=false,{descartar=false}={}){
+    if(descartar) apagarFotosDoVoo(relId)
+    else if(!guardarVooAtualNaFila()) return
+    else if(opState==='idle') apagarFotosDoVoo(relId) // rascunho que nem começou
+    relIdRef.current=null
     try{localStorage.removeItem(LS_KEY)}catch{}
     setForm({...initForm(), velocidade_drone:wizardDefaults.velocidadeDrone, altura:wizardDefaults.altura, faixa_i:wizardDefaults.faixa, faixa_f:wizardDefaults.faixa})
     setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
@@ -2549,11 +2791,19 @@ export default function PilotApp({onSwitchMode}) {
     setKmlFiles([])
     setWizardStep(1)
     if(!silent) showToast('🗑️ Formulário limpo')
+    return true
   }
 
   const opLabel={idle:'Nova operação',running:'🟢 Em operação',paused:'🟡 Pausado',paused_day:'🌙 Finalizado Parcial',finished:'🔴 Finalizado'}[opState]
   // Status correto para salvar sem rebaixar voo finalizado para rascunho
   const statusAtual = () => opState==='finished'?'finalizado':opState==='running'?'em_operacao':opState==='paused'?'pausado':opState==='paused_day'?'pausado_dia':'rascunho'
+
+  const vooAtualPendente = pendingSync && !!relId && (opState==='finished'||opState==='paused_day')
+
+  // O voo como está no aparelho, no formato da linha do banco — pro PDF e o formulário Nardini
+  // saírem sem sinal.
+  const relDoAparelho = (extra) => ({ ...montarPayload(extra), created_at:new Date().toISOString(),
+    obs_fotos_urls:storageObsFotos, foto_mapa_url:storageFotoMapa })
 
   // VIEW VOOS ANTERIORES
   // Labels e ícones dos steps
@@ -2824,6 +3074,34 @@ export default function PilotApp({onSwitchMode}) {
               <div style={{fontSize:12,opacity:.9,marginTop:6,display:'flex',alignItems:'center',gap:6}}>▶️ Continuar voo <span style={{marginLeft:'auto'}}>›</span></div>
             </div>
           )}
+
+          {/* Voos que não subiram (sem sinal): ficam no aparelho e sobem sozinhos. O voo atual
+              finalizado também entra — rodando ou pausado ele já tem o cartão verde acima, mas
+              finalizado e com o app reaberto ele não aparecia em lugar nenhum. */}
+          {(voosNaFila.length>0 || vooAtualPendente) && (()=>{
+            const total = voosNaFila.length + (vooAtualPendente?1:0)
+            return (
+            <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:16,padding:'12px 14px'}}>
+              <div style={{fontSize:11,fontWeight:800,letterSpacing:.3,color:theme.warningText2||theme.warningText}}>
+                📥 {total===1 ? '1 VOO GUARDADO NO APARELHO' : `${total} VOOS GUARDADOS NO APARELHO`}
+              </div>
+              <div style={{fontSize:11,color:theme.textMuted,marginTop:3,lineHeight:1.45}}>
+                {vooAtualPendente && (
+                  <div style={{cursor:'pointer'}} onClick={()=>{setView('form');setWizardStep(5)}}>
+                    🚁 {[form.fazenda, form.talhao||form.localizacao].filter(Boolean).join(' · ')||'Voo atual'} <span style={{color:'#00A86B',fontWeight:700}}>· abrir ›</span>
+                  </div>
+                )}
+                {voosNaFila.map(v=>{
+                  const nome=[v.payload?.fazenda||v.fazenda, v.payload?.localizacao||v.localizacao].filter(Boolean).join(' · ')||'Voo'
+                  return <div key={v.id}>{v.soFotos?'📷 Fotos — ':'🚁 '}{nome}{v.erro?<span style={{color:theme.dangerText}}> · ⚠️ {v.erro}</span>:null}</div>
+                })}
+                Sobem sozinhos quando a internet voltar. Não desinstale o app antes disso.
+              </div>
+              <button style={{marginTop:8,background:theme.card,color:theme.text,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                onClick={()=>{ sincronizarVoos(true); if(vooAtualPendente) saveToSupabase(lastExtraData.current||{},false) }}>🔄 Enviar agora</button>
+            </div>
+            )
+          })()}
 
           {/* Ações rápidas — 6 atalhos compactos (estilo DJI) */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'12px 5px'}}>
@@ -5652,7 +5930,7 @@ Quando: ${tempoErroDebug.quando}`}
                       })()}
                       {(obsFotos[slot]||storageObsFotos[slot])&&(
                         <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:14,padding:'3px',fontSize:10,cursor:'pointer',width:'100%',marginTop:4}}
-                          onClick={()=>{const a=[...obsFotos];a[slot]=null;setObsFotos(a);const b=[...obsFotoFiles];b[slot]=null;setObsFotoFiles(b);const chave=slot===1?'inicio':'fim';setForm(fm=>{const em={...(fm.evid_meta||{})};delete em[chave];return {...fm,evid_meta:em}})}}>🗑️ Remover</button>
+                          onClick={()=>{const a=[...obsFotos];a[slot]=null;setObsFotos(a);const b=[...obsFotoFiles];b[slot]=null;setObsFotoFiles(b);apagarFoto(relIdRef.current,slot);const chave=slot===1?'inicio':'fim';setForm(fm=>{const em={...(fm.evid_meta||{})};delete em[chave];return {...fm,evid_meta:em}})}}>🗑️ Remover</button>
                       )}
                     </div>
                   ))}
@@ -6169,7 +6447,7 @@ Quando: ${tempoErroDebug.quando}`}
                 </div>
                 {(obsFotos[0]||storageObsFotos[0])&&(
                   <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:14,padding:'3px',fontSize:10,cursor:'pointer'}}
-                    onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[0]=null;setObsFotos(a);const b=[...obsFotoFiles];b[0]=null;setObsFotoFiles(b)}}>🗑️</button>
+                    onClick={async e=>{e.stopPropagation();const a=[...obsFotos];a[0]=null;setObsFotos(a);const b=[...obsFotoFiles];b[0]=null;setObsFotoFiles(b);apagarFoto(relIdRef.current,0)}}>🗑️</button>
                 )}
                 <input id="obs-galeria-0" type="file" accept="image/*" style={{display:'none'}} onChange={e=>handleObsFoto(e.target.files[0])}/>
                 <input id="obs-camera-0" type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handleObsFoto(e.target.files[0])}/>
@@ -6268,7 +6546,9 @@ Quando: ${tempoErroDebug.quando}`}
             <ReportView form={{...form, piloto_nome: form.piloto_nome||profile?.nome||profile?.email||''}} clienteVal={clienteVal} droneVal={droneVal} kmlFiles={kmlFiles} prodFmt={produtoComUnidade}/>
             {opState==='finished'&&(
               <button style={{...s.shareBtn,background:theme.text,marginTop:12}} onClick={async()=>{
-                const rel=await saveToSupabase({status:'finalizado'})
+                showToast('⏳ Gerando PDF...')
+                // Sem sinal, sai do que está no aparelho (antes o botão não fazia nada).
+                const rel=(await saveToSupabase({status:'finalizado'})) || relDoAparelho({status:'finalizado'})
                 if(rel){
                   let pdfConfig
                   try {
@@ -6283,8 +6563,8 @@ Quando: ${tempoErroDebug.quando}`}
             {/* Nardini tem formulário próprio ("Via de Campo"), que o piloto preenchia à mão. */}
             {(opState==='finished'||opState==='paused_day') && ehClienteNardini(clienteVal) && (
               <button style={{...s.shareBtn,background:'#111111',marginTop:8}} onClick={async()=>{
-                const rel=await saveToSupabase({status:opState==='paused_day'?'pausado_dia':'finalizado'})
-                if(!rel) return
+                const extra={status:opState==='paused_day'?'pausado_dia':'finalizado'}
+                const rel=(await saveToSupabase(extra)) || relDoAparelho(extra)
                 const norm = t => (t||'').trim().toLowerCase().replace(/\s+/g,' ')
                 const fz = fazendasDB.find(f=>norm(f.cliente)===norm(rel.cliente) && norm(f.nome)===norm(rel.fazenda))
                 const talhoesCatalogo = fz ? talhoesDB.filter(t=>t.fazenda_id===fz.id).map(t=>({nome:t.nome, area_ha:t.area_ha})) : []
@@ -6611,13 +6891,14 @@ Quando: ${tempoErroDebug.quando}`}
                 const deltaBaixa = Math.max(0, percorrido-(parseFloat(form.area_deduzida)||0))
                 const n=nowParts()
                 // O Passo 5 já abre com tudo preenchido: aplicado de hoje, bordadura e o motivo.
-                setForm(f=>({...f, area_feita:String(percorrido), dt_fim_data:n.data, dt_fim_hh:n.hh, dt_fim_mm:n.mm,
+                setForm(f=>({...f, area_feita:String(percorrido), area_deduzida:String(percorrido), dt_fim_data:n.data, dt_fim_hh:n.hh, dt_fim_mm:n.mm,
                   area_feita_por_talhao:{...f.area_feita_por_talhao, ...porTalhao(l=>l.percorrido>0?String(l.percorrido):'')},
                   bordaduraPorTalhao:{...f.bordaduraPorTalhao, ...porTalhao(l=>l.bord>0?String(l.bord):'')},
                   areaNaoAplicadaPorTalhao:{...f.areaNaoAplicadaPorTalhao, ...porTalhao(l=>l.bord>0?String(l.bord):'')},
                   areaAplicadaPorTalhao:{...f.areaAplicadaPorTalhao, ...porTalhao(l=>String(Math.max(0,+(l.percorrido-(parseFloat(f.area_feita_por_talhao_anterior?.[l.nome])||0)).toFixed(2))))},
                   talhoesFechados: porTalhao(l=>l.fechado)}))
                 setMotivoNaoAplicadaPorTalhao(m=>({...m, ...Object.fromEntries(linhasP.filter(l=>l.bord>0).map(l=>[l.nome,'Bordadura']))}))
+                agendarBaixa(relIdRef.current, deltaBaixa)
                 const relSalvo = await saveToSupabase({status: fechou ? 'finalizado' : 'pausado_dia',
                   area_feita:percorrido, area_deduzida:percorrido,
                   bordadura: bordTotal||null, bordadura_detalhe: bordDet.length?bordDet:null,
@@ -6625,7 +6906,6 @@ Quando: ${tempoErroDebug.quando}`}
                 if(relSalvo) registrar(fechou?'voo_finalizado':'voo_parcial',
                   [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
                   { cliente: clienteVal, meta: { area_feita: percorrido, fechou_talhao: fechou, talhoes_fechados: linhasP.filter(l=>l.fechado).map(l=>l.nome) } })
-                if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
                 setWizardStep(3)
                 showToast(fechou
                   ? '✅ Talhões fechados! Preencha as condições climáticas do fim'
@@ -6655,7 +6935,7 @@ Quando: ${tempoErroDebug.quando}`}
               // Pré-preenche o Passo 5 com o que já foi digitado aqui (a diferença entre o que já
               // tinha antes desta sessão e o total agora) — assim o piloto não responde a mesma
               // pergunta duas vezes; ele só precisa ajustar se a leitura real da DJI for diferente.
-              setForm(f=>({...f,area_feita:String(percorrido),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm,
+              setForm(f=>({...f,area_feita:String(percorrido),area_deduzida:String(percorrido),dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm,
                 area_total_aplicada: multiTalhaoP ? f.area_total_aplicada : String(Math.max(0,percorrido-(parseFloat(f.area_feita_anterior)||0))),
                 // A bordadura também desce pro Passo 5, já com o motivo escolhido: ele acabou
                 // de digitar esse número aqui, não faz sentido a tela seguinte pedir de novo.
@@ -6666,12 +6946,12 @@ Quando: ${tempoErroDebug.quando}`}
                   : f.areaAplicadaPorTalhao}))
               if (!multiTalhaoP && bordTotalVoo>0) setMotivoNaoAplicada('Bordadura')
               const novoStatus = fezTudo ? 'finalizado' : 'pausado_dia'
+              agendarBaixa(relIdRef.current, deltaBaixa)
               const relSalvo = await saveToSupabase({status:novoStatus,area_feita:percorrido,area_deduzida:percorrido,
                 ...(multiTalhaoP ? {} : { bordadura: bordTotalVoo||null }), dt_fim:n.iso})
               if(relSalvo) registrar(fezTudo?'voo_finalizado':'voo_parcial',
                 [form.fazenda, form.localizacao].filter(Boolean).join(' · '),
                 { cliente: clienteVal, meta: { area_feita: percorrido, fechou_talhao: fezTudo } })
-              if(relSalvo && deltaBaixa>0) await darBaixaEstoque(relSalvo.id, deltaBaixa)
               // O voo já está salvo no servidor. Antes de sair, registra as condições
               // climáticas do fim — vale pros dois casos.
               setWizardStep(3)

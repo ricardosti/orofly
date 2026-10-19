@@ -8,42 +8,56 @@ const AuthContext = createContext({})
 // não serve pra isso: ele também dispara na renovação automática do token.
 let loginDeliberado = false
 
+// Login guardado no aparelho: a sessão do Supabase ainda no armazenamento e o último perfil
+// carregado. O piloto abre o app no campo, sem sinal e com o token de acesso vencido (dura
+// ~1h). Nesse caso o getSession passa ~25 s tentando renovar e volta SEM sessão, e o
+// INITIAL_SESSION chega antes, também vazio: o app ficava no splash e depois caía no login,
+// e com sinal fraco (navigator.onLine = true) ficava preso nele. A sessão continua guardada
+// e renova sozinha quando o sinal voltar. Medido no Node em 18/10/2026.
+function loginGuardado() {
+  try {
+    const temSessao = Object.keys(localStorage).some(k => /^sb-.+-auth-token$/.test(k))
+    const u = JSON.parse(localStorage.getItem('orofly_session_cache') || 'null')
+    const p = JSON.parse(localStorage.getItem('orofly_profile_cache') || 'null')
+    if (temSessao && u && p && p.id === u.id) return { u, p }
+  } catch {}
+  return null
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(true)
+  // Com login guardado, o app abre na hora com ele, sem esperar a renovação do token.
+  const [guardado] = useState(loginGuardado)
+  const [user, setUser] = useState(guardado?.u ?? null)
+  const [profile, setProfile] = useState(guardado?.p ?? null)
+  const [loading, setLoading] = useState(!guardado)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    if (guardado) definirUsuario(guardado.p)
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (session?.user) {
         setUser(session.user)
         try { localStorage.setItem('orofly_session_cache', JSON.stringify({ id: session.user.id, email: session.user.email })) } catch {}
         fetchProfile(session.user.id)
         return
       }
-      // Sem sessão válida localmente — normalmente é porque o token de acesso expirou
-      // (dura ~1h) e a renovação automática precisa de internet pra acontecer. Se estiver
-      // offline e já existir um login anterior salvo, deixa continuar em vez de barrar no
-      // login (o piloto não tem como digitar a senha sem sinal de qualquer forma).
-      if (!navigator.onLine) {
-        try {
-          const cachedUser = JSON.parse(localStorage.getItem('orofly_session_cache') || 'null')
-          const cachedProfile = JSON.parse(localStorage.getItem('orofly_profile_cache') || 'null')
-          if (cachedUser && cachedProfile && cachedProfile.id === cachedUser.id) {
-            setUser(cachedUser); setProfile(cachedProfile); definirUsuario(cachedProfile); setLoading(false)
-            return
-          }
-        } catch {}
-      }
-      setUser(null); setLoading(false)
+      // Sem sessão: ou não tem login (vai pro login), ou a renovação do token falhou por falta
+      // de rede. AuthRetryableFetchError é o Supabase dizendo "não alcancei o servidor" — o
+      // navigator.onLine sozinho não basta, porque com sinal fraco ele diz que está online.
+      const semRede = error?.name === 'AuthRetryableFetchError' || !navigator.onLine
+      const g = semRede && loginGuardado()
+      if (g) { setUser(g.u); setProfile(g.p); definirUsuario(g.p); setLoading(false); return }
+      setUser(null); setProfile(null); setLoading(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evento, session) => {
+      // O estado inicial é do getSession acima: sem sinal, o INITIAL_SESSION vem vazio e
+      // derrubaria o login guardado.
+      if (evento === 'INITIAL_SESSION') return
       setUser(session?.user ?? null)
       if (session?.user) fetchProfile(session.user.id)
       else { setProfile(null); setLoading(false) }
     })
     return () => subscription.unsubscribe()
-  }, [])
+  }, []) // eslint-disable-line
 
   async function fetchProfile(userId) {
     try {
