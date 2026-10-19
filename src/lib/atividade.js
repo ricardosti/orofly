@@ -11,6 +11,7 @@
 // custaria mais complexidade do que vale pra uma métrica de uso.
 
 import { supabase } from './supabase'
+import { ehFalhaDeRede } from './filaDespesas'
 
 // Catálogo das ações. O slug é o que vai pro banco; o resto é só pra tela.
 export const ACOES = {
@@ -67,21 +68,50 @@ export function definirUsuario(perfil) {
  */
 export function registrar(acao, detalhe = null, extras = {}) {
   if (!ctx?.id) return // sem usuário identificado o RLS recusaria de qualquer jeito
+  // id e hora saem do aparelho: sem sinal a linha fica guardada e sobe depois com a hora em
+  // que a ação aconteceu (e o id impede que ela entre duas vezes).
+  const linha = {
+    id: crypto.randomUUID(),
+    created_at: new Date().toISOString(),
+    user_id: ctx.id,
+    user_nome: ctx.nome,
+    papel: ctx.papel,
+    acao,
+    detalhe: detalhe ? String(detalhe).slice(0, 300) : null,
+    cliente: extras.cliente || null,
+    meta: extras.meta || null,
+  }
   try {
-    supabase.from('atividades').insert({
-      user_id: ctx.id,
-      user_nome: ctx.nome,
-      papel: ctx.papel,
-      acao,
-      detalhe: detalhe ? String(detalhe).slice(0, 300) : null,
-      cliente: extras.cliente || null,
-      meta: extras.meta || null,
-    }).then(({ error }) => {
+    supabase.from('atividades').insert(linha).then(({ error }) => {
       // O cliente do Supabase devolve o erro em vez de lançar (seção 8 do CLAUDE.md).
-      // Aqui a falha é mesmo pra ser ignorada, mas fica visível no console.
-      if (error) console.warn('[atividade] não registrou:', acao, error.message)
+      if (!error) { enviarAtividadesGuardadas(); return }
+      if (ehFalhaDeRede(error)) guardarAtividade(linha)
+      else console.warn('[atividade] não registrou:', acao, error.message)
     })
   } catch (e) {
     console.warn('[atividade] não registrou:', acao, e?.message)
   }
+}
+
+// Ações feitas sem sinal (no campo é a maioria). Até 200, as mais recentes.
+const FILA = 'orofly_fila_atividades'
+function lerFila() { try { return JSON.parse(localStorage.getItem(FILA) || '[]') } catch { return [] } }
+function guardarAtividade(linha) {
+  try { localStorage.setItem(FILA, JSON.stringify([...lerFila(), linha].slice(-200))) } catch {}
+}
+let enviando = false
+export async function enviarAtividadesGuardadas() {
+  if (enviando || !ctx?.id) return
+  const minhas = lerFila().filter(l => l.user_id === ctx.id)
+  if (!minhas.length) return
+  enviando = true
+  try {
+    const subiram = []
+    for (const l of minhas) {
+      const { error } = await supabase.from('atividades').insert(l)
+      if (error && error.code !== '23505') { if (ehFalhaDeRede(error)) break; console.warn('[atividade] descartada:', l.acao, error.message) }
+      subiram.push(l.id)
+    }
+    if (subiram.length) try { localStorage.setItem(FILA, JSON.stringify(lerFila().filter(l => !subiram.includes(l.id)))) } catch {}
+  } finally { enviando = false }
 }

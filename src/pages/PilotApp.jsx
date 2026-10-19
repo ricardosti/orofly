@@ -11,12 +11,12 @@ import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
-import { registrar } from '../lib/atividade'
+import { registrar, enviarAtividadesGuardadas } from '../lib/atividade'
 import { ordenarPorNome, ordenarNomes } from '../lib/ordenar'
 import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
-import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente } from '../lib/filaDespesas'
+import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente, guardarIncidenteNaFila, removerIncidenteDaFila, listarIncidentesNaFila, enviarIncidente } from '../lib/filaDespesas'
 import { listarVoosNaFila, enfileirarVoo, removerVooDaFila, guardarFoto, apagarFoto, fotosDoVoo, apagarFotosDoVoo, enviarFotosGuardadas, enviarLinhaDoVoo } from '../lib/filaVoos'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
@@ -842,6 +842,10 @@ export default function PilotApp({onSwitchMode}) {
   const [incidenteSaving,setIncidenteSaving] = useState(false)
   const [incidenteCompartilharLoc,setIncidenteCompartilharLoc] = useState(false)
   const [meusIncidentes,setMeusIncidentes] = useState([])
+  // Incidentes registrados sem sinal (ver lib/filaDespesas)
+  const [filaIncidentes,setFilaIncidentes] = useState([])
+  const filaIncidentesRef = useRef(0)
+  const sincronizandoIncRef = useRef(false)
 
   // Editor de marcação (lápis) — abre sobre a foto antes de aceitar, tanto na foto de
   // observação do Passo 5 quanto nas fotos de Incidentes. `aplicar(blob)` é chamado com o
@@ -904,9 +908,32 @@ export default function PilotApp({onSwitchMode}) {
 
   async function loadMeusIncidentes(){
     try {
-      const {data} = await supabase.from('incidentes').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
-      setMeusIncidentes(data||[])
+      const {data,error} = await supabase.from('incidentes').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
+      if(!error) setMeusIncidentes(data||[]) // sem sinal: mantém a lista que já estava na tela
     } catch {}
+  }
+  async function atualizarFilaIncidentes(){
+    try {
+      const minhas = (await listarIncidentesNaFila()).filter(i=>i.incidente?.piloto_id===profile?.id)
+      filaIncidentesRef.current = minhas.length
+      setFilaIncidentes(minhas)
+    } catch { /* aparelho sem IndexedDB */ }
+  }
+  async function sincronizarIncidentes(){
+    if(sincronizandoIncRef.current || !profile?.id) return
+    sincronizandoIncRef.current = true
+    let subiram = 0
+    try {
+      for (const item of (await listarIncidentesNaFila()).filter(i=>i.incidente?.piloto_id===profile.id)) {
+        try { await comPrazo(enviarIncidente(item, supabase), 30000); await removerIncidenteDaFila(item.id); subiram++ }
+        catch(e){ if(ehFalhaDeRede(e)) break; await guardarIncidenteNaFila({...item, erro:e?.message||String(e)}) }
+      }
+    } catch { /* aparelho sem IndexedDB */ }
+    finally {
+      sincronizandoIncRef.current = false
+      await atualizarFilaIncidentes()
+      if(subiram){ showToast(subiram===1?'✅ O incidente guardado sem sinal subiu':`✅ ${subiram} incidentes guardados sem sinal subiram`); loadMeusIncidentes() }
+    }
   }
 
   async function salvarIncidente(){
@@ -914,15 +941,6 @@ export default function PilotApp({onSwitchMode}) {
     if(!incidenteForm.descricao.trim()){ showToast('Descreva o que aconteceu','error'); return }
     setIncidenteSaving(true)
     try {
-      const fotoUrls = [null,null]
-      for(let i=0;i<2;i++){
-        if(incidenteFotoFiles[i]){
-          const path = `${profile.id}/incidentes/${Date.now()}_${i}.jpg`
-          const {error:upErr} = await supabase.storage.from('relatorios').upload(path,incidenteFotoFiles[i],{upsert:true})
-          esquecerUrl(path)
-          if(!upErr) fotoUrls[i]=path
-        }
-      }
       // Só pede GPS se o piloto marcou o checkbox — não coleta localização por padrão.
       let gps_lat = null, gps_lng = null
       if(incidenteCompartilharLoc && navigator.geolocation){
@@ -931,16 +949,22 @@ export default function PilotApp({onSwitchMode}) {
           gps_lat = pos.coords.latitude; gps_lng = pos.coords.longitude
         } catch { showToast('Não deu pra pegar sua localização — incidente será salvo sem ela','error') }
       }
-      const {error} = await supabase.from('incidentes').insert({
-        piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
-        tipo:incidenteForm.tipo, descricao:incidenteForm.descricao.trim(),
-        ordem_servico:incidenteForm.ordem_servico||null,
-        foto1_url:fotoUrls[0], foto2_url:fotoUrls[1], status:'aberto',
-        gps_lat, gps_lng,
-      })
-      if(error) throw error
+      const item = { id:crypto.randomUUID(), criado_em:new Date().toISOString(), fotos:[...incidenteFotoFiles],
+        incidente:{ piloto_id:profile.id, piloto_nome:profile.nome||profile.email,
+          tipo:incidenteForm.tipo, descricao:incidenteForm.descricao.trim(),
+          ordem_servico:incidenteForm.ordem_servico||null, status:'aberto',
+          gps_lat, gps_lng, created_at:new Date().toISOString() } }
+      try {
+        await comPrazo(enviarIncidente(item, supabase), 30000)
+        showToast('⚠️ Incidente registrado')
+      } catch(e) {
+        if(!ehFalhaDeRede(e)) throw e
+        // Sem sinal: fica no aparelho e sobe sozinho.
+        await guardarIncidenteNaFila(item)
+        await atualizarFilaIncidentes()
+        showToast('📥 Sem sinal — incidente guardado no aparelho, sobe sozinho quando tiver sinal')
+      }
       registrar('incidente_aberto', incidenteForm.tipo)
-      showToast('⚠️ Incidente registrado')
       setIncidenteForm({tipo:'',descricao:'',ordem_servico:''}); setIncidenteFotos([null,null]); setIncidenteFotoFiles([null,null]); setIncidenteCompartilharLoc(false)
       setView('home')
     } catch(e){ showToast('Erro: '+e.message,'error') } finally { setIncidenteSaving(false) }
@@ -965,6 +989,8 @@ export default function PilotApp({onSwitchMode}) {
   const [tempoErroDebugAberto,setTempoErroDebugAberto] = useState(false)
   const [tempoLocal,setTempoLocal] = useState('')
   const [tempoProvedor,setTempoProvedor] = useState('')
+  // Hora da previsão guardada no aparelho que está na tela (sem sinal); null = previsão ao vivo
+  const [tempoGuardadaEm,setTempoGuardadaEm] = useState(null)
   const [tempoBusca,setTempoBusca] = useState('')
   const [tempoLat,setTempoLat] = useState('')
   const [tempoLng,setTempoLng] = useState('')
@@ -986,7 +1012,7 @@ export default function PilotApp({onSwitchMode}) {
   const pendingSyncRef = useRef(pendingSync); pendingSyncRef.current = pendingSync
   const produtosDBRef = useRef(produtosDB); produtosDBRef.current = produtosDB
   const atual = useRef({})
-  atual.current = { salvar: saveToSupabase, sincronizarVoos, processarBaixas }
+  atual.current = { salvar: saveToSupabase, sincronizarVoos, processarBaixas, sincronizarIncidentes }
   const sincronizandoVooRef = useRef(false)
   // Voos que saíram da tela sem subir (ver lib/filaVoos)
   const [voosNaFila,setVoosNaFila] = useState(()=>listarVoosNaFila())
@@ -1262,13 +1288,15 @@ export default function PilotApp({onSwitchMode}) {
     if(!profile?.id) return
     pedirArmazenamentoPersistente()
     atualizarFila().then(()=>sincronizarFila())
-    const offline = () => { atual.current.sincronizarVoos(); atual.current.processarBaixas() }
+    const offline = () => { atual.current.sincronizarVoos(); atual.current.processarBaixas(); atual.current.sincronizarIncidentes(); enviarAtividadesGuardadas() }
     offline()
     const aoVoltar = () => { if(document.visibilityState!=='hidden'){ sincronizarFila(); offline() } }
     const periodico = () => {
       if(filaTamanhoRef.current>0) sincronizarFila()
       if(listarVoosNaFila().length) atual.current.sincronizarVoos()
       if(baixasPendentes.current.length) atual.current.processarBaixas()
+      if(filaIncidentesRef.current>0) atual.current.sincronizarIncidentes()
+      enviarAtividadesGuardadas()
     }
     window.addEventListener('online',aoVoltar)
     document.addEventListener('visibilitychange',aoVoltar)
@@ -2040,12 +2068,33 @@ export default function PilotApp({onSwitchMode}) {
     },()=>showToast('GPS: permissão negada'),{enableHighAccuracy:true,timeout:10000})
   }
 
+  // Os voos da fila do aparelho por cima de uma lista do banco: a versão guardada é a mais nova,
+  // e um voo que nunca subiu também aparece.
+  function comVoosDoAparelho(lista){
+    // Objeto, e não Map: `Map` aqui é o ícone do lucide-react importado lá em cima.
+    const porId = Object.fromEntries(lista.map(r=>[r.id,r]))
+    for (const v of listarVoosNaFila()) {
+      if (!v.payload || v.payload.piloto_id!==profile.id) continue
+      porId[v.id] = {...(porId[v.id]||{created_at:v.criado_em}), ...v.payload}
+    }
+    return Object.values(porId).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))
+  }
+  // Voo inteiro guardado no aparelho (lista de abertos ou histórico) — pra abrir sem sinal.
+  function vooGuardado(id){
+    return comVoosDoAparelho([...loadCache('orofly_cache_voos_abertos'), ...loadCache('orofly_cache_voos')]
+      .filter(r=>r.piloto_id===profile.id)).find(r=>r.id===id) || null
+  }
+
   async function loadFlights(){
     setLoadingFlights(true)
     try {
-      const {data}=await supabase.from('relatorios').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30)
-      setFlights(data||[])
-    } catch {} finally { setLoadingFlights(false) }
+      const {data,error}=await comPrazo(supabase.from('relatorios').select('*').eq('piloto_id',profile.id).order('created_at',{ascending:false}).limit(30), 15000)
+      if(error) throw error
+      setFlights(comVoosDoAparelho(data||[])); saveCache('orofly_cache_voos',data||[])
+    } catch {
+      // Sem sinal: os últimos voos baixados neste aparelho (antes a lista ficava vazia)
+      setFlights(comVoosDoAparelho(loadCache('orofly_cache_voos').filter(r=>r.piloto_id===profile.id)))
+    } finally { setLoadingFlights(false) }
   }
 
   // Opções pro seletor de OS no Cadastro de Notas — pilotos veem só os próprios voos;
@@ -2117,9 +2166,13 @@ export default function PilotApp({onSwitchMode}) {
   async function loadAgenda(){
     setLoadingAgenda(true)
     try {
-      const {data}=await supabase.from('agendamentos').select('*').eq('piloto_id',profile.id).order('data_prevista',{ascending:true})
-      setMinhaAgenda(data||[])
-    } catch {} finally { setLoadingAgenda(false) }
+      const {data,error}=await comPrazo(supabase.from('agendamentos').select('*').eq('piloto_id',profile.id).order('data_prevista',{ascending:true}), 15000)
+      if(error) throw error
+      setMinhaAgenda(data||[]); saveCache('orofly_cache_agenda',data||[])
+    } catch {
+      // Sem sinal: a última agenda baixada neste aparelho (antes ficava vazia)
+      setMinhaAgenda(loadCache('orofly_cache_agenda').filter(a=>a.piloto_id===profile.id))
+    } finally { setLoadingAgenda(false) }
   }
 
   function iniciarVooAgendado(a){
@@ -2293,10 +2346,22 @@ export default function PilotApp({onSwitchMode}) {
     // não tem essa rota, e falharia mesmo com internet OK.
     const url = apiUrl(`/api/clima?lat=${lat}&lon=${lon}`)
     try {
-      const res = await fetch(url)
-      let data = null, textoResp = ''
-      try { data = await res.json() } catch(eJson) { try { textoResp = await res.text() } catch {} }
-      if(!res.ok) throw Object.assign(new Error(data?.error || `HTTP ${res.status}${res.statusText?' '+res.statusText:''}`), { status: res.status, url, respostaTexto: textoResp })
+      let data = null, guardadaEm = null
+      try {
+        const res = await comPrazo(fetch(url), 20000)
+        let textoResp = ''
+        try { data = await res.json() } catch(eJson) { try { textoResp = await res.text() } catch {} }
+        if(!res.ok) throw Object.assign(new Error(data?.error || `HTTP ${res.status}${res.statusText?' '+res.statusText:''}`), { status: res.status, url, respostaTexto: textoResp })
+        try { localStorage.setItem('orofly_cache_previsao', JSON.stringify({lat,lon,local,data,em:Date.now()})) } catch {}
+      } catch(eBusca) {
+        // Sem sinal: a última previsão baixada, com a hora dela na tela (antes ficava em
+        // "Buscando previsão do tempo..." pra sempre).
+        let c = null
+        try { c = JSON.parse(localStorage.getItem('orofly_cache_previsao')||'null') } catch {}
+        if(!c?.data) throw eBusca
+        data = c.data; lat = c.lat; lon = c.lon; local = c.local; guardadaEm = c.em
+      }
+      setTempoGuardadaEm(guardadaEm)
       const dias = (data.daily?.time||[]).map((dataStr,i)=>{
         // Pega temperatura/umidade por volta das 13h (janela típica de aplicação) pra estimar o Delta T do dia
         const idxHora = (data.hourly?.time||[]).findIndex(t=>t.startsWith(dataStr)&&t.endsWith('T13:00'))
@@ -2603,12 +2668,20 @@ export default function PilotApp({onSwitchMode}) {
   // e o estado local só sabe do último que passou por esse aparelho.
   async function carregarFlightsAbertos(){
     if(!profile?.id) return
+    // O voo inteiro (e não só as colunas da lista): guardado no aparelho, ele abre sem sinal —
+    // é o parcial de ontem que o piloto retoma no talhão, onde quase nunca tem sinal.
+    const ABERTOS = ['em_operacao','pausado','pausado_dia']
     try {
-      const {data,error} = await supabase.from('relatorios').select('id,cliente,fazenda,localizacao,status,dt_inicio,created_at')
-        .eq('piloto_id',profile.id).in('status',['em_operacao','pausado','pausado_dia']).order('created_at',{ascending:false})
+      const {data,error} = await comPrazo(supabase.from('relatorios').select('*')
+        .eq('piloto_id',profile.id).in('status',ABERTOS).order('created_at',{ascending:false}), 15000)
       if(error) throw error
-      setFlightsAbertos(data||[])
-    } catch(e) { console.error('Erro ao carregar voos abertos:',e) }
+      setFlightsAbertos(data||[]); saveCache('orofly_cache_voos_abertos',data||[])
+    } catch(e) {
+      // Sem sinal: os abertos guardados, com o que mudou no aparelho por cima (um parcial
+      // retomado e finalizado aqui já não está em aberto).
+      setFlightsAbertos(comVoosDoAparelho(loadCache('orofly_cache_voos_abertos').filter(r=>r.piloto_id===profile.id))
+        .filter(r=>ABERTOS.includes(r.id===relId ? statusAtual() : r.status)))
+    }
   }
   useEffect(()=>{ carregarFlightsAbertos() },[profile?.id,opState]) // eslint-disable-line
 
@@ -2669,10 +2742,15 @@ export default function PilotApp({onSwitchMode}) {
       // Sem ler o `error` aqui, qualquer falha (RLS, rede, linha apagada) virava clique morto —
       // nada acontecia na tela e o piloto ficava clicando sem entender. Agora sempre há resposta.
       showToast('⏳ Abrindo voo...')
-      const {data,error} = await supabase.from('relatorios').select('*').eq('id',id).maybeSingle()
-      if(error){ showToast('Não consegui abrir o voo: '+error.message,'error'); return }
-      if(!data){ showToast('Voo não encontrado — pode ter sido excluído.','error'); return }
-      setContinuarModalOpen(false); openFlight(data)
+      let data=null, error=null
+      try { ({data,error} = await comPrazo(supabase.from('relatorios').select('*').eq('id',id).maybeSingle(), 15000)) } catch(e) { error=e }
+      if(error && !ehFalhaDeRede(error)){ showToast('Não consegui abrir o voo: '+error.message,'error'); return }
+      // Sem sinal: abre a cópia guardada no aparelho.
+      const local = error ? vooGuardado(id) : null
+      const voo = data || local
+      if(!voo){ showToast(error ? '📴 Sem sinal, e esse voo não está guardado no aparelho.' : 'Voo não encontrado — pode ter sido excluído.','error'); return }
+      setContinuarModalOpen(false); openFlight(voo)
+      if(local) showToast('📴 Sem sinal — voo aberto da cópia guardada no aparelho')
     } catch(e){ showToast('Erro ao abrir voo: '+(e?.message||e),'error') }
   }
 
@@ -2720,9 +2798,7 @@ export default function PilotApp({onSwitchMode}) {
     // por trás, pra ficar previsível: clicou, aparece a pergunta "qual voo?".
     setContinuarLoading(true)
     setContinuarModalOpen(true)
-    const {data} = await supabase.from('relatorios').select('id,cliente,fazenda,localizacao,status,dt_inicio,created_at')
-      .eq('piloto_id',profile.id).in('status',['em_operacao','pausado','pausado_dia']).order('created_at',{ascending:false})
-    setFlightsAbertos(data||[])
+    await carregarFlightsAbertos()
     setContinuarLoading(false)
   }
 
@@ -2892,6 +2968,35 @@ export default function PilotApp({onSwitchMode}) {
     </div>
   )
 
+  // "Qual voo continuar?" — usado na Home (aba Voos com voo em aberto) e no formulário. Antes
+  // só existia na tela do formulário: na Home, tocar em Voos com voo em aberto não mostrava nada.
+  const ModalContinuarVoo = () => !continuarModalOpen ? null : (
+      <div style={s.modalOverlay} onClick={()=>setContinuarModalOpen(false)}>
+        <div style={s.modal} onClick={e=>e.stopPropagation()}>
+          <div style={s.modalTitle}>Qual voo continuar? <button style={s.modalClose} onClick={()=>setContinuarModalOpen(false)}>✕</button></div>
+          {continuarLoading ? (
+            <p style={{fontSize:13,color:theme.textFaint2,textAlign:'center',padding:'20px 0'}}>⏳ Buscando voos em aberto...</p>
+          ) : flightsAbertos.length===0 ? (
+            <p style={{fontSize:13,color:theme.textFaint2,textAlign:'center',padding:'20px 0'}}>Nenhum voo em aberto no momento.</p>
+          ) : (
+            <>
+              <p style={{fontSize:13,color:theme.textMuted,marginBottom:14,lineHeight:1.5}}>Você tem {flightsAbertos.length} voo{flightsAbertos.length>1?'s':''} em aberto.</p>
+              {flightsAbertos.map(rel=>(
+                <div key={rel.id} onClick={()=>abrirVooAberto(rel.id)} style={{background:'#f7fbf8',borderRadius:14,padding:'12px 14px',marginBottom:8,cursor:'pointer',border:'1px solid #e8eee8'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                    <div style={{fontSize:14,fontWeight:700,color:theme.text}}>{rel.cliente||'—'} — {rel.fazenda||'—'}</div>
+                    <span style={{fontSize:10,fontWeight:700,color:'#00A86B',background:theme.successBg,borderRadius:20,padding:'3px 9px',whiteSpace:'nowrap',marginLeft:8}}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                  </div>
+                  {rel.localizacao&&<div style={{fontSize:12,color:theme.textFaint2,marginTop:2}}>Talhão {rel.localizacao}</div>}
+                  <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>{new Date(rel.dt_inicio||rel.created_at).toLocaleDateString('pt-BR')}</div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </div>
+  )
+
   const BottomNav = () => {
     const temVooAberto = flightsAbertos.length>0
     return (
@@ -3004,7 +3109,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
           {tempoLocal && (
             <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11,color:theme.textFaint2,fontWeight:600,marginTop:14}}>
-              <MapPin size={12}/> {tempoLocal}
+              <MapPin size={12}/> {tempoLocal}{tempoGuardadaEm && <span style={{fontWeight:500}}> · 📴 previsão de {new Date(tempoGuardadaEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>}
             </div>
           )}
           <div style={{position:'relative',display:'flex',alignItems:'stretch',marginTop:8,border:`1px solid ${theme.divider2}`,borderRadius:18,overflow:'hidden',minHeight:106}}>
@@ -3078,12 +3183,14 @@ export default function PilotApp({onSwitchMode}) {
           {/* Voos que não subiram (sem sinal): ficam no aparelho e sobem sozinhos. O voo atual
               finalizado também entra — rodando ou pausado ele já tem o cartão verde acima, mas
               finalizado e com o app reaberto ele não aparecia em lugar nenhum. */}
-          {(voosNaFila.length>0 || vooAtualPendente) && (()=>{
-            const total = voosNaFila.length + (vooAtualPendente?1:0)
+          {(voosNaFila.length>0 || vooAtualPendente || filaIncidentes.length>0) && (()=>{
+            const voos = voosNaFila.length + (vooAtualPendente?1:0)
+            const total = voos + filaIncidentes.length
             return (
             <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:16,padding:'12px 14px'}}>
               <div style={{fontSize:11,fontWeight:800,letterSpacing:.3,color:theme.warningText2||theme.warningText}}>
-                📥 {total===1 ? '1 VOO GUARDADO NO APARELHO' : `${total} VOOS GUARDADOS NO APARELHO`}
+                📥 {total===voos ? (total===1 ? '1 VOO GUARDADO NO APARELHO' : `${total} VOOS GUARDADOS NO APARELHO`)
+                  : (total===1 ? '1 REGISTRO GUARDADO NO APARELHO' : `${total} REGISTROS GUARDADOS NO APARELHO`)}
               </div>
               <div style={{fontSize:11,color:theme.textMuted,marginTop:3,lineHeight:1.45}}>
                 {vooAtualPendente && (
@@ -3095,10 +3202,13 @@ export default function PilotApp({onSwitchMode}) {
                   const nome=[v.payload?.fazenda||v.fazenda, v.payload?.localizacao||v.localizacao].filter(Boolean).join(' · ')||'Voo'
                   return <div key={v.id}>{v.soFotos?'📷 Fotos — ':'🚁 '}{nome}{v.erro?<span style={{color:theme.dangerText}}> · ⚠️ {v.erro}</span>:null}</div>
                 })}
+                {filaIncidentes.map(i=>(
+                  <div key={i.id}>⚠️ Incidente — {i.incidente?.descricao?.slice(0,40)}{i.erro?<span style={{color:theme.dangerText}}> · ⚠️ {i.erro}</span>:null}</div>
+                ))}
                 Sobem sozinhos quando a internet voltar. Não desinstale o app antes disso.
               </div>
               <button style={{marginTop:8,background:theme.card,color:theme.text,border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'6px 12px',fontSize:12,fontWeight:600,cursor:'pointer'}}
-                onClick={()=>{ sincronizarVoos(true); if(vooAtualPendente) saveToSupabase(lastExtraData.current||{},false) }}>🔄 Enviar agora</button>
+                onClick={()=>{ sincronizarVoos(true); sincronizarIncidentes(); if(vooAtualPendente) saveToSupabase(lastExtraData.current||{},false) }}>🔄 Enviar agora</button>
             </div>
             )
           })()}
@@ -3109,7 +3219,7 @@ export default function PilotApp({onSwitchMode}) {
               [null,'icon-novo-voo.png',theme.successBg,'Novo voo','Iniciar operação',()=>{ limpar(true); setView('form') }],
               ['📋',null,'#e0ecfb','Notas',filaNotas.length?`${filaNotas.length} sem sinal, a enviar`:'Ver registros',()=>{loadNotas();loadOsOpcoes();setNotasAba('lancadas');setView('notas')}],
               ['🌤️',null,'#f3ecfb','Tempo','Previsão detalhada',()=>setView('tempo')],
-              ['⚠️',null,theme.dangerBg,'Incidente','Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
+              ['⚠️',null,theme.dangerBg,'Incidente',filaIncidentes.length?`${filaIncidentes.length} sem sinal, a enviar`:'Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
               [null,'icon-relatorios.png',theme.successBg,'Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
               ['🧪',null,'#f3ecfb','Calculadora','Calda e produtos',()=>setView('calculadora')],
             ].map(([emoji,img,bg,label,sub,onClick])=>(
@@ -3260,6 +3370,7 @@ export default function PilotApp({onSwitchMode}) {
           </div>
         )}
 
+        <ModalContinuarVoo/>
         <BottomNav/>
         {toast&&<div style={s.toast}>{toast}</div>}
         {showPerfil&&<ProfileModal profile={profile} onClose={()=>setShowPerfil(false)} onSaved={async()=>{await refreshProfile();setShowPerfil(false);showToast('✅ Perfil atualizado!')}}/>}
@@ -4534,6 +4645,21 @@ export default function PilotApp({onSwitchMode}) {
           <button style={{...s.shareBtn,background:theme.dangerText,width:'100%',opacity:incidenteSaving?.7:1}} disabled={incidenteSaving} onClick={salvarIncidente}>{incidenteSaving?'Enviando...':'⚠️ Registrar Incidente'}</button>
         </div>
 
+        {filaIncidentes.length>0 && (
+          <div style={{background:theme.warningBg,border:`1px solid ${theme.warningText||'#c98a1c'}`,borderRadius:16,padding:'12px 14px',marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:800,letterSpacing:.3,color:theme.warningText2||theme.warningText}}>
+              📥 {filaIncidentes.length===1 ? '1 INCIDENTE GUARDADO NO APARELHO' : `${filaIncidentes.length} INCIDENTES GUARDADOS NO APARELHO`}
+            </div>
+            {filaIncidentes.map(i=>(
+              <div key={i.id} style={{fontSize:12,color:theme.textMuted,marginTop:4}}>
+                {{drone:'🚁 Drone',veiculo:'🚗 Veículo',pessoal:'🤕 Pessoal',outro:'❓ Outro'}[i.incidente?.tipo]||i.incidente?.tipo} — {i.incidente?.descricao?.slice(0,60)}
+                {i.erro && <span style={{color:theme.dangerText}}> · ⚠️ {i.erro}</span>}
+              </div>
+            ))}
+            <div style={{fontSize:11,color:theme.textMuted,marginTop:4}}>Sobem sozinhos quando a internet voltar. Não desinstale o app antes disso.</div>
+          </div>
+        )}
+
         {meusIncidentes.length>0 && (
           <div>
             <div style={{fontSize:12,fontWeight:700,color:theme.textMuted,marginBottom:8,fontFamily:"'Poppins',sans-serif"}}>MEUS INCIDENTES RECENTES</div>
@@ -4649,6 +4775,7 @@ Quando: ${tempoErroDebug.quando}`}
           <>
             <div style={{fontSize:13,color:theme.textMuted,display:'flex',alignItems:'center',gap:6}}>
               📍 {tempoLocal}{tempoLoading && <span style={{fontSize:11,color:theme.textFaint2}}>· atualizando...</span>}
+              {tempoGuardadaEm && <span style={{fontSize:11,color:theme.textFaint2}}>· 📴 sem sinal, previsão de {new Date(tempoGuardadaEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>}
             </div>
 
             {/* Card resumo — leitura atual (não a média do dia) */}
@@ -6591,32 +6718,7 @@ Quando: ${tempoErroDebug.quando}`}
       )}
 
       {/* CONTINUAR VOO — sempre pergunta qual, mesmo com 1 só */}
-      {continuarModalOpen&&(
-        <div style={s.modalOverlay} onClick={()=>setContinuarModalOpen(false)}>
-          <div style={s.modal} onClick={e=>e.stopPropagation()}>
-            <div style={s.modalTitle}>Qual voo continuar? <button style={s.modalClose} onClick={()=>setContinuarModalOpen(false)}>✕</button></div>
-            {continuarLoading ? (
-              <p style={{fontSize:13,color:theme.textFaint2,textAlign:'center',padding:'20px 0'}}>⏳ Buscando voos em aberto...</p>
-            ) : flightsAbertos.length===0 ? (
-              <p style={{fontSize:13,color:theme.textFaint2,textAlign:'center',padding:'20px 0'}}>Nenhum voo em aberto no momento.</p>
-            ) : (
-              <>
-                <p style={{fontSize:13,color:theme.textMuted,marginBottom:14,lineHeight:1.5}}>Você tem {flightsAbertos.length} voo{flightsAbertos.length>1?'s':''} em aberto.</p>
-                {flightsAbertos.map(rel=>(
-                  <div key={rel.id} onClick={()=>abrirVooAberto(rel.id)} style={{background:'#f7fbf8',borderRadius:14,padding:'12px 14px',marginBottom:8,cursor:'pointer',border:'1px solid #e8eee8'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <div style={{fontSize:14,fontWeight:700,color:theme.text}}>{rel.cliente||'—'} — {rel.fazenda||'—'}</div>
-                      <span style={{fontSize:10,fontWeight:700,color:'#00A86B',background:theme.successBg,borderRadius:20,padding:'3px 9px',whiteSpace:'nowrap',marginLeft:8}}>{STATUS_LABEL[rel.status]||rel.status}</span>
-                    </div>
-                    {rel.localizacao&&<div style={{fontSize:12,color:theme.textFaint2,marginTop:2}}>Talhão {rel.localizacao}</div>}
-                    <div style={{fontSize:11,color:theme.textFaint2,marginTop:2}}>{new Date(rel.dt_inicio||rel.created_at).toLocaleDateString('pt-BR')}</div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      <ModalContinuarVoo/>
 
       {/* FINALIZADO PARCIAL — marcar progresso */}
       {parcialModalOpen&&(()=>{

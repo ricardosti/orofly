@@ -15,26 +15,29 @@
 // enviada, em vez de entrar duas vezes. A foto vai pra um caminho que é o próprio id, então
 // reenviar só sobrescreve o mesmo arquivo.
 
-const BANCO = 'orofly-fila', VERSAO = 1, LOJA = 'despesas'
+// Versão 2 (18/10/2026): ganhou a loja dos incidentes registrados sem sinal.
+const BANCO = 'orofly-fila', VERSAO = 2, LOJA = 'despesas', LOJA_INCIDENTES = 'incidentes'
 
 function abrir() {
   return new Promise((ok, falha) => {
     if (typeof indexedDB === 'undefined') return falha(new Error('este aparelho não guarda dados offline'))
     const req = indexedDB.open(BANCO, VERSAO)
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(LOJA)) req.result.createObjectStore(LOJA, { keyPath: 'id' })
+      for (const loja of [LOJA, LOJA_INCIDENTES]) {
+        if (!req.result.objectStoreNames.contains(loja)) req.result.createObjectStore(loja, { keyPath: 'id' })
+      }
     }
     req.onsuccess = () => ok(req.result)
     req.onerror = () => falha(req.error)
   })
 }
 
-async function naLoja(modo, fazer) {
+async function naLoja(modo, fazer, loja = LOJA) {
   const db = await abrir()
   try {
     return await new Promise((ok, falha) => {
-      const tx = db.transaction(LOJA, modo)
-      const req = fazer(tx.objectStore(LOJA))
+      const tx = db.transaction(loja, modo)
+      const req = fazer(tx.objectStore(loja))
       tx.oncomplete = () => ok(req?.result)
       tx.onerror = () => falha(tx.error)
       tx.onabort = () => falha(tx.error)
@@ -107,4 +110,32 @@ export async function enviarDespesa(item, sb) {
     throw error
   }
   return { foto_url, relatorio_id }
+}
+
+// ── Incidentes registrados sem sinal ───────────────────────────────────────────────────
+// Antes davam "Erro: Failed to fetch" e, saindo da tela, o incidente e as fotos sumiam.
+// Mesma ideia das despesas: id gerado no aparelho (23505 = um envio anterior já chegou) e a
+// foto num caminho que é o próprio id, então reenviar só sobrescreve.
+export const guardarIncidenteNaFila = (item) => naLoja('readwrite', l => l.put(item), LOJA_INCIDENTES)
+export const removerIncidenteDaFila = (id) => naLoja('readwrite', l => l.delete(id), LOJA_INCIDENTES)
+export async function listarIncidentesNaFila() {
+  const itens = (await naLoja('readonly', l => l.getAll(), LOJA_INCIDENTES)) || []
+  return itens.sort((a, b) => String(a.criado_em).localeCompare(String(b.criado_em)))
+}
+export async function enviarIncidente(item, sb) {
+  const fotos = [null, null]
+  for (let i = 0; i < 2; i++) {
+    const f = item.fotos?.[i]
+    if (!f) continue
+    const path = `${item.incidente.piloto_id}/incidentes/${item.id}_${i}.jpg`
+    const { error } = await sb.storage.from('relatorios').upload(path, f, { upsert: true, contentType: f.type || 'image/jpeg' })
+    if (error && ehFalhaDeRede(error)) throw new SemSinal(error.message)
+    if (!error) fotos[i] = path
+  }
+  const { error } = await sb.from('incidentes').insert({ ...item.incidente, id: item.id, foto1_url: fotos[0], foto2_url: fotos[1] })
+  if (error && error.code !== '23505') {
+    if (ehFalhaDeRede(error)) throw new SemSinal(error.message)
+    throw error
+  }
+  return fotos
 }
