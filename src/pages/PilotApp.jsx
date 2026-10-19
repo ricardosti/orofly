@@ -1558,15 +1558,15 @@ export default function PilotApp({onSwitchMode}) {
     // Com vários talhões o total feito é a soma deles. O Passo 5 edita talhão por talhão e não
     // mexia no `area_feita`, que ficava velho em relação ao detalhe.
     const feitaSomada = talhoesSel.length>1 ? areaFeitaAtual(form) : 0
-    // Área não aplicada por motivo que não é bordadura (obstáculo, vento…). Antes só existia
-    // como texto na Observação, e sumia do campo ao reabrir o voo. "Outro" fica de fora: é
-    // zerado (conta como aplicado, sem diferença e sem texto — pedido do Pastor, 19/10/2026).
+    // Área não aplicada por motivo que não é bordadura (obstáculo, vento, outro…). Antes só
+    // existia como texto na Observação, e sumia do campo ao reabrir o voo. O "Outro" não
+    // escreve texto nenhum, então é só aqui que a área dele fica guardada.
     // Sempre um array (mesmo vazio): é o que diz ao formulário Nardini pra usar este campo
     // e não o texto da Observação.
     const naoAplicadaDetalhe = (talhoesSel.length>1
       ? talhoesSel.map(nome=>({talhao:nome, area:parseFloat(form.areaNaoAplicadaPorTalhao?.[nome])||0, motivo:motivoNaoAplicadaPorTalhao[nome]||''}))
       : [{talhao:talhoesSel[0]||null, area:parseFloat(form.area_nao_aplicada)||0, motivo:motivoNaoAplicada||''}])
-      .filter(d=>d.area>0 && d.motivo && d.motivo!=='Bordadura' && d.motivo!=='Outro')
+      .filter(d=>d.area>0 && d.motivo && d.motivo!=='Bordadura')
     const bordaduraTotal = bordaduraAtual(form)
     // O status pode vir no extraData (executarFinalizacao/executarFinalizacaoDia mandam
     // explícito) ou do estado atual do wizard.
@@ -6382,8 +6382,9 @@ Quando: ${tempoErroDebug.quando}`}
                 const areaDoTalhao = nome => parseFloat(talhoesFaz5.find(t=>t.nome===nome)?.area_ha)||0
                 // Mesma regra do talhão único: Bordadura alimenta o campo do relatório; os demais
                 // motivos viram ocorrência na Observação e zeram a bordadura daquele talhão.
-                // "Outro" é zerado (pedido do Pastor, 19/10/2026): não vira bordadura, não escreve
-                // nada na Observação e a área conta como aplicada — sem diferença no relatório.
+                // "Outro" (pedido do Pastor, 19/10/2026): não vira bordadura e não escreve nada na
+                // Observação — a área fica no nao_aplicada_detalhe e sai da área aplicada no
+                // formulário da Nardini, com a observação do talhão em branco.
                 function escolherMotivoTalhao(nome, motivo) {
                   setMotivoNaoAplicadaPorTalhao(c=>({...c,[nome]:motivo}))
                   setForm(f=>{
@@ -6451,7 +6452,7 @@ Quando: ${tempoErroDebug.quando}`}
                               {motivoNaoAplicadaPorTalhao[nome] && (
                                 <div style={{fontSize:11.5,color:'#0b1210',marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`}}>
                                   {motivoNaoAplicadaPorTalhao[nome]==='Outro'
-                                    ? <>Outro: esses <strong>{fmtHa(naoAplicadaN)} ha</strong> contam como aplicados — sem diferença no relatório e nada na Observação.</>
+                                    ? <>Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> (Outro) — sai da área aplicada, sem texto na Observação.</>
                                     : <>Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicadaPorTalhao[nome]==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicadaPorTalhao[nome]}`}.</>}
                                 </div>
                               )}
@@ -6567,7 +6568,7 @@ Quando: ${tempoErroDebug.quando}`}
                       {motivoNaoAplicada && (
                         <div style={{fontSize:12.5,color:'#0b1210',marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
                           {motivoNaoAplicada==='Outro'
-                            ? <>Outro: esses <strong>{fmtHa(naoAplicadaN)} ha</strong> contam como aplicados — sem diferença no relatório e nada na Observação.</>
+                            ? <>Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> (Outro) — sai da área aplicada, sem texto na Observação.</>
                             : <>Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicada==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicada}`}.</>}
                         </div>
                       )}

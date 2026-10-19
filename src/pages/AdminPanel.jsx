@@ -1773,7 +1773,7 @@ export default function AdminPanel({ onSwitchMode }) {
     const q = busca.trim().toLowerCase()
     const fazendasFiltradas = invFazendas.filter(fz =>
       (!filtroCliente || fz.cliente === filtroCliente) &&
-      (!q || fz.nome.toLowerCase().includes(q) || fz.cliente.toLowerCase().includes(q))
+      (!q || fz.nome.toLowerCase().includes(q) || fz.cliente.toLowerCase().includes(q) || String(fz.id_fazenda||'').toLowerCase().includes(q))
     )
     const mudancas = Object.keys(pendentes).filter(fid => pendentes[fid] !== estadoAtual(fid))
     const atribuidas = fazendasFiltradas.filter(fz => colunaDe(fz.id)).length
@@ -1863,7 +1863,7 @@ export default function AdminPanel({ onSwitchMode }) {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-              <input style={{ ...sG.input, flex: '1 1 200px', width: 'auto' }} placeholder="🔍 Buscar fazenda..." value={busca} onChange={e => setBusca(e.target.value)} />
+              <input style={{ ...sG.input, flex: '1 1 200px', width: 'auto' }} placeholder="🔍 Buscar fazenda ou código..." value={busca} onChange={e => setBusca(e.target.value)} />
               <select style={{ ...sG.input, flex: '0 1 180px', width: 'auto' }} value={filtroCliente} onChange={e => setFiltroCliente(e.target.value)}>
                 <option value="">Cliente (todos)</option>
                 {invClientes.filter(c => c.ativo).map(c => <option key={c.id} value={c.nome}>{c.nome}</option>)}
@@ -4260,7 +4260,7 @@ export default function AdminPanel({ onSwitchMode }) {
           {tab === 'fazendas' && (() => {
             const q = fzSearch.trim().toLowerCase()
             const fazendasFiltradas = invFazendas
-              .filter(f=>!q || f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q))
+              .filter(f=>!q || f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q)||String(f.id_fazenda||'').toLowerCase().includes(q))
               .filter(f=>!fzProdutoFiltro || f.produto===fzProdutoFiltro)
               .filter(f=>!fzClienteFiltro || f.cliente===fzClienteFiltro)
 
@@ -4573,7 +4573,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
                     <div style={{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap'}}>
                       <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:12,padding:'8px 12px',fontSize:13,outline:'none',flex:'1 1 220px',boxSizing:'border-box'}}
-                        placeholder="🔍 Buscar por cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                        placeholder="🔍 Buscar por cliente, fazenda ou código..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
                       <div style={{flex:'0 0 200px'}}>
                         <MultiSelectDropdown label="Produto" options={['Inseticida','Herbicida','Fungicida']}
                           selected={fzProdutoFiltro?[fzProdutoFiltro]:[]}
@@ -5065,7 +5065,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         <div style={{flex:'2 1 220px'}}>
                           <div style={{fontSize:10,fontWeight:700,color:theme.textFaint2,marginBottom:3}}>BUSCAR</div>
                           <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
-                            placeholder="🔍 Cliente ou fazenda..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
+                            placeholder="🔍 Cliente, fazenda ou código..." value={fzSearch} onChange={e=>setFzSearch(e.target.value)}/>
                         </div>
                         <div style={{flex:'1 1 180px'}}>
                           <MultiSelectDropdown label="Cliente" options={[...new Set(invFazendas.map(f=>f.cliente).filter(Boolean))].sort()}
@@ -5544,8 +5544,10 @@ export default function AdminPanel({ onSwitchMode }) {
                   // Busca + filtro de situação. "Só deste piloto" serve pra revisar o que
                   // alguém já tem sem rolar 60 fazendas; "sem piloto" acha o que ficou de fora,
                   // que é a pergunta que ninguém consegue responder olhando a lista inteira.
+                  // O código da fazenda (id_fazenda) também entra: pelo nome é ruim, tem várias
+                  // "SITIO NOSSA SENHORA APARECIDA" — pedido do Pastor, 19/10/2026.
                   const fazendasBusca = fFaz
-                    ? fazendasOrd.filter(f=>nb(f.nome).includes(fFaz) || nb(f.cliente).includes(fFaz))
+                    ? fazendasOrd.filter(f=>nb(f.nome).includes(fFaz) || nb(f.cliente).includes(fFaz) || nb(String(f.id_fazenda||'')).includes(fFaz))
                     : fazendasOrd
                   const fazendasFiltradas = fazendasBusca.filter(f=>{
                     if (atrFiltroFaz==='deste') return atrPilotoSel && (temFazendaInteira(atrPilotoSel,f.id) || talhoesDoPiloto(atrPilotoSel,f.id).length>0)
@@ -5689,7 +5691,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                         ) : (
                           <>
                             <div style={{padding:'9px 11px',borderBottom:`1px solid ${theme.divider}`}}>
-                              <input style={buscaInput} placeholder="Buscar fazenda ou cliente..." value={atrBusca} onChange={e=>setAtrBusca(e.target.value)}/>
+                              <input style={buscaInput} placeholder="Buscar fazenda, cliente ou código..." value={atrBusca} onChange={e=>setAtrBusca(e.target.value)}/>
                               <div style={{display:'flex',gap:4,marginTop:7}}>
                                 {[['todas','Todas',null],['deste','Deste piloto',null],['sem','Sem piloto',qtdSemPiloto]].map(([v,lbl,cnt])=>(
                                   <button key={v} onClick={()=>setAtrFiltroFaz(v)}
@@ -5717,7 +5719,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                     <div style={{flex:1,minWidth:0}}>
                                       <div style={{fontSize:12.5,fontWeight: (inteira||nTal>0)?700:600,color:theme.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.nome}</div>
                                       <div style={{fontSize:10.5,color:theme.textFaint,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                                        {f.cliente}{area>0?` · ${fmtHa(area)} ha`:''}{outros>0?` · +${outros} piloto${outros>1?'s':''}`:''}
+                                        {f.cliente}{f.id_fazenda?` · cód. ${f.id_fazenda}`:''}{area>0?` · ${fmtHa(area)} ha`:''}{outros>0?` · +${outros} piloto${outros>1?'s':''}`:''}
                                       </div>
                                     </div>
                                     {inteira ? <span style={{fontSize:9,fontWeight:800,color:'#fff',background:'#059669',borderRadius:5,padding:'2px 6px',whiteSpace:'nowrap'}}>TODA</span>

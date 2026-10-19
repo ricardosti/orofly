@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.0',
+    data: '2026-10-19',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Motivo "Outro": desconta da area aplicada, sem texto',
+        texto: 'Correcao da 10.9: o "Outro" estava contando a area como aplicada. Agora ele funciona como a bordadura nos numeros (a area aplicada do talhao cai e a diferenca aparece no Formulario Nardini), mas sem o nome Bordadura e com a observacao do talhao em branco. Quem marcou Outro na 10.9 precisa redigitar a area nao aplicada e salvar de novo.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Buscar fazenda pelo codigo',
+        texto: 'Nas buscas de fazenda do painel (Equipes, Fazendas e Clientes, distribuicao por piloto) da para digitar o codigo da fazenda (ex.: 5698). Em Equipes, o codigo aparece embaixo do nome, o que separa as fazendas com o mesmo nome.',
+      },
+    ],
+  },
+  {
     versao: '10.9',
     data: '2026-10-19',
     itens: [

@@ -59,13 +59,14 @@ export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = 
   const talhoes = nomes.map(nome => {
     const parte = rateio[nome] || { area: 0, bordadura: 0 }
     const bord = +(parte.bordadura || 0).toFixed(2)
-    // "Outro" é zerado (pedido do Pastor, 19/10/2026): a área conta como aplicada, sem
-    // diferença e sem texto no talhão. Vale também pras linhas "…: Outro" de voos antigos.
+    // "Outro" (pedido do Pastor, 19/10/2026): a área sai do aplicado e entra na diferença,
+    // como a bordadura, mas a observação do talhão fica em branco. Vale também pras linhas
+    // "…: Outro" de voos antigos.
     const outros = (detalhe
       ? detalhe.filter(d => d.talhao === nome || (!d.talhao && nomes.length === 1))
           .map(d => ({ motivo: d.motivo, qtd: parseFloat(d.area) || 0 }))
       : obs.motivos.filter(m => m.talhao === nome || (!m.talhao && nomes.length === 1)))
-      .filter(m => m.motivo !== 'Outro')
+      .map(m => m.motivo === 'Outro' ? { ...m, motivo: '' } : m)
     // Motivo que não é bordadura (obstáculo, vento…) o app guarda só como texto, e a área
     // continua dentro do aplicado no relatório normal. No formulário ela SAI do aplicado: é
     // a "Diferença" que a Nardini quer ver explicada, como o piloto fazia no papel.
