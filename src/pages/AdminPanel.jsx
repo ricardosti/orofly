@@ -419,7 +419,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [confirmDeleteDespesa, setConfirmDeleteDespesa] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
-  const [filters, setFilters] = useState({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })
+  const [filters, setFilters] = useState({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })
   // Ordenação da lista de voos. Começa pela data decrescente — é a ordem que a lista
   // já tinha na prática, e o voo mais recente é o que se procura na maioria das vezes.
   const [relOrdem, setRelOrdem] = useState({ campo:'data', dir:'desc' })
@@ -1029,9 +1029,20 @@ export default function AdminPanel({ onSwitchMode }) {
     setLoading(false)
   }
 
+  // Código da fazenda (id_fazenda) de cada voo, pelo cliente + nome da fazenda do cadastro.
+  // Com 300+ voos e várias fazendas de nome igual, o código é o que acha o voo certo.
+  // O voo guarda só o nome: fazendas de nome igual mostram os códigos juntos ("1422/1759").
+  const codigoFazendaPorChave = {}
+  invFazendas.forEach(f => {
+    if (!f.id_fazenda) return
+    const k = `${(f.cliente||'').trim().toLowerCase()}|${(f.nome||'').trim().toLowerCase()}`
+    codigoFazendaPorChave[k] = [...(codigoFazendaPorChave[k]||[]), String(f.id_fazenda)]
+  })
+  const codigoFazendaDoRel = r => (codigoFazendaPorChave[`${(r.cliente||'').trim().toLowerCase()}|${(r.fazenda||'').trim().toLowerCase()}`] || []).join('/')
   const filtered = relatorios.filter(r => {
     if (filters.cliente && !r.cliente?.toLowerCase().includes(filters.cliente.toLowerCase())) return false
     if (filters.fazenda && !r.fazenda?.toLowerCase().includes(filters.fazenda.toLowerCase())) return false
+    if (filters.codigo && !codigoFazendaDoRel(r).toLowerCase().includes(filters.codigo.trim().toLowerCase())) return false
     if (filters.piloto && !r.piloto_nome?.toLowerCase().includes(filters.piloto.toLowerCase())) return false
     if (filters.drone && !r.drone?.toLowerCase().includes(filters.drone.toLowerCase())) return false
     // Um voo pode cobrir vários talhões, gravados numa string só ("002-01, 005-01").
@@ -1055,10 +1066,10 @@ export default function AdminPanel({ onSwitchMode }) {
       return va === null ? 1 : -1
     }
     const cmp = typeof va === 'string' ? compararNomes(va, vb) : va - vb
-    // Empate desempata pela data, senão a lista dança a cada redesenho: há muitos voos
-    // do mesmo cliente, do mesmo piloto e no mesmo status.
+    // Empate desempata pelo lançamento (data e hora de criação), o mais novo primeiro:
+    // há muitos voos no mesmo dia, do mesmo cliente e do mesmo piloto.
     return (relOrdem.dir === 'asc' ? cmp : -cmp)
-      || (new Date(b.dt_inicio || b.created_at) - new Date(a.dt_inicio || a.created_at))
+      || (new Date(b.created_at || 0) - new Date(a.created_at || 0))
   })
 
   // Valor de cada coluna para ordenar. Devolve null quando a linha não tem o dado.
@@ -1075,9 +1086,11 @@ export default function AdminPanel({ onSwitchMode }) {
         const nomes = (rel.localizacao || '').split(',').map(s => s.trim()).filter(Boolean)
         return nomes.length ? nomes[0] : null
       }
+      // Pelo DIA do voo; dentro do mesmo dia, o desempate acima põe o lançado por último no
+      // topo. Antes ia pela hora de início, e no mesmo dia a lista parecia embaralhada.
       case 'data': {
         const d = new Date(rel.dt_inicio || rel.created_at)
-        return isNaN(d.getTime()) ? null : d.getTime()
+        return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
       }
       case 'tempo': {
         // calcTempo devolve texto formatado ("1h22m"), que ordenaria errado. Recalcula os
@@ -2213,7 +2226,7 @@ export default function AdminPanel({ onSwitchMode }) {
               )}
 
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#F8FAFC', padding:12, borderRadius:theme.radius||8, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
-                {[['Cliente','cliente'],['Fazenda','fazenda'],['Talhão','talhao'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
+                {[['Cliente','cliente'],['Fazenda','fazenda'],['Cód. fazenda','codigo'],['Talhão','talhao'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
                 <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
@@ -2234,7 +2247,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -2303,9 +2316,10 @@ export default function AdminPanel({ onSwitchMode }) {
                                 <td style={{ ...sG.td, fontWeight:600 }}>{rel.cliente||'—'}</td>
                                 <td style={sG.td}>
                                   {rel.fazenda||'—'}
-                                  {rel.ordem_servico && (
-                                    <div>
-                                      <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>OS {rel.ordem_servico}</span>
+                                  {(rel.ordem_servico || codigoFazendaDoRel(rel)) && (
+                                    <div style={{display:'flex',gap:4,flexWrap:'wrap'}}>
+                                      {rel.ordem_servico && <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>OS {rel.ordem_servico}</span>}
+                                      {codigoFazendaDoRel(rel) && <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>cód. {codigoFazendaDoRel(rel)}</span>}
                                     </div>
                                   )}
                                   {(rel.tipo_servico||(rel.qtd_voos&&rel.qtd_voos>1)) && (
@@ -3329,7 +3343,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -3431,7 +3445,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                   </div>
                   {Object.values(filters).some(Boolean) && (
-                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                   )}
                 </div>
 

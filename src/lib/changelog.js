@@ -9,6 +9,17 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.1',
+    data: '2026-10-19',
+    itens: [
+      {
+        tipo: 'melhoria',
+        titulo: 'Relatorios de Voo: mais recentes primeiro e filtro por codigo da fazenda',
+        texto: 'A lista abre pelos voos mais recentes e, no mesmo dia, o ultimo lancado fica no topo (antes a ordem do dia parecia embaralhada). Ganhou o filtro "Cod. fazenda" e o codigo aparece ao lado da OS de cada voo. Fazendas de nome repetido mostram os dois codigos (ex.: 1422/1759).',
+      },
+    ],
+  },
+  {
     versao: '11.0',
     data: '2026-10-19',
     itens: [
