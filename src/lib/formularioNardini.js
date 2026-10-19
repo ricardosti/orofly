@@ -49,13 +49,23 @@ export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = 
   const rateio = rateioPorTalhao(rel, cadastro)
   const obs = motivosDaObservacao(rel.obs1)
   const parcial = rel.status === 'pausado_dia'
+  // Voo salvo a partir da v10.9 traz a área não aplicada por motivo num campo próprio (sempre
+  // array, mesmo vazio). Aí ele vale, e as linhas "Área não aplicada…" da Observação são só
+  // texto. Voo antigo (nulo): o motivo continua vindo do texto, como antes.
+  const detalhe = Array.isArray(rel.nao_aplicada_detalhe) ? rel.nao_aplicada_detalhe : null
   const fechados = {}
   ;(rel.area_feita_detalhe || []).forEach(d => { if (typeof d?.fechado === 'boolean') fechados[d.talhao] = d.fechado })
 
   const talhoes = nomes.map(nome => {
     const parte = rateio[nome] || { area: 0, bordadura: 0 }
     const bord = +(parte.bordadura || 0).toFixed(2)
-    const outros = obs.motivos.filter(m => m.talhao === nome || (!m.talhao && nomes.length === 1))
+    // "Outro" é zerado (pedido do Pastor, 19/10/2026): a área conta como aplicada, sem
+    // diferença e sem texto no talhão. Vale também pras linhas "…: Outro" de voos antigos.
+    const outros = (detalhe
+      ? detalhe.filter(d => d.talhao === nome || (!d.talhao && nomes.length === 1))
+          .map(d => ({ motivo: d.motivo, qtd: parseFloat(d.area) || 0 }))
+      : obs.motivos.filter(m => m.talhao === nome || (!m.talhao && nomes.length === 1)))
+      .filter(m => m.motivo !== 'Outro')
     // Motivo que não é bordadura (obstáculo, vento…) o app guarda só como texto, e a área
     // continua dentro do aplicado no relatório normal. No formulário ela SAI do aplicado: é
     // a "Diferença" que a Nardini quer ver explicada, como o piloto fazia no papel.
@@ -70,8 +80,9 @@ export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = 
     const explicado = motivos.reduce((a, m) => a + m.qtd, 0)
     const sobra = +(diferenca - explicado).toFixed(2)
     if (sobra > 0.05 && (parcial || fechados[nome] === false)) motivos.push({ motivo: 'Restante fica para outro voo', qtd: sobra })
-    const observacao = motivos.map(m => motivos.length > 1 || m.qtd > 0 ? `${m.motivo} (${ha(m.qtd)} ha)` : m.motivo).join(' · ')
-    return { nome, areaTalhao, aplicada, diferenca, observacao, motivos: motivos.map(m => m.motivo) }
+    const comTexto = motivos.filter(m => m.motivo)
+    const observacao = comTexto.map(m => comTexto.length > 1 || m.qtd > 0 ? `${m.motivo} (${ha(m.qtd)} ha)` : m.motivo).join(' · ')
+    return { nome, areaTalhao, aplicada, diferenca, observacao, motivos: comTexto.map(m => m.motivo) }
   })
 
   const soma = k => +talhoes.reduce((a, t) => a + t[k], 0).toFixed(2)

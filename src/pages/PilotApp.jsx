@@ -128,7 +128,10 @@ function initForm(data) {
       area_total_aplicada:data.area_total_aplicada!=null?String(data.area_total_aplicada):'',
       bordaduraPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
       areaAplicadaPorTalhao:{},
-      areaNaoAplicadaPorTalhao:data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {},
+      areaNaoAplicadaPorTalhao:{
+        ...(data.bordadura_detalhe?.length ? Object.fromEntries(data.bordadura_detalhe.map(d=>[d.talhao,String(d.bordadura)])) : {}),
+        ...Object.fromEntries((data.nao_aplicada_detalhe||[]).filter(d=>d?.talhao).map(d=>[d.talhao,String(d.area)])),
+      },
       area_feita_por_talhao:data.area_feita_detalhe?.length ? Object.fromEntries(data.area_feita_detalhe.map(d=>[d.talhao,String(d.area_feita)])) : {},
       monitoramento_clima: data.monitoramento_clima || null,
       // Quais talhões o piloto fechou no "Finalizar voo" (v9.8+). Nulo em voo antigo — aí o
@@ -145,7 +148,8 @@ function initForm(data) {
       // Área não aplicada é campo de tela: no banco ela só existe como `bordadura` (quando o
       // motivo foi Bordadura) ou como texto na Observação (demais motivos). Ao reabrir um voo,
       // reconstrói a partir da bordadura salva — o único valor que dá pra recuperar com certeza.
-      area_nao_aplicada: data.bordadura!=null&&data.bordadura!=='' ? String(data.bordadura) : '',
+      area_nao_aplicada: data.bordadura!=null&&data.bordadura!=='' ? String(data.bordadura)
+        : (data.nao_aplicada_detalhe?.[0]?.area!=null ? String(data.nao_aplicada_detalhe[0].area) : ''),
       // Só existem em sessão (vêm da seleção de talhão no Passo 1) — ao reabrir um voo salvo,
       // area_ha já é o saldo gravado na criação, então não há o que reconstruir aqui.
       area_talhao_total:0, saldoPorTalhao:{},
@@ -170,6 +174,13 @@ function initForm(data) {
 
 // Cache local de listas de referência (drones/produtos/clientes/fazendas/talhões),
 // pra funcionar offline com o último cadastro conhecido em vez de ficar vazio
+// Tira da Observação a linha automática de área não aplicada daquele talhão (ou do voo, com
+// talhão único) — escolher outro motivo troca a linha em vez de empilhar uma nova.
+function semLinhaNaoAplicada(obs, talhao) {
+  const prefixo = talhao ? `Área não aplicada em ${talhao} (` : 'Área não aplicada ('
+  return String(obs||'').split('\n').filter(l => !l.trim().startsWith(prefixo)).join('\n').trim()
+}
+
 // Um campo do rascunho do voo guardado no aparelho (LS_KEY).
 function doRascunho(chave, padrao) {
   try { const d = localStorage.getItem(LS_KEY); if (d) { const v = JSON.parse(d)[chave]; if (v != null) return v } } catch {}
@@ -576,8 +587,14 @@ export default function PilotApp({onSwitchMode}) {
   // Passo 5 — motivo da ÁREA NÃO APLICADA. "Bordadura" é um motivo como os outros, mas com
   // destino diferente: vai pro campo `bordadura` do relatório (aparece como "Bord" no PDF/zap)
   // e NÃO escreve nada na Observação. Qualquer outro motivo é ocorrência: vira texto em obs1.
-  const [motivoNaoAplicada,setMotivoNaoAplicada] = useState('')
-  const [motivoNaoAplicadaPorTalhao,setMotivoNaoAplicadaPorTalhao] = useState({})
+  // Os motivos também ficam no formulário (motivo_nao_aplicada / motivos_nao_aplicada): é de lá
+  // que sai o nao_aplicada_detalhe, e assim eles voltam com o rascunho quando o app reabre.
+  const [motivoNaoAplicada,setMotivoNaoAplicada] = useState(()=>doRascunho('form',{}).motivo_nao_aplicada||'')
+  const [motivoNaoAplicadaPorTalhao,setMotivoNaoAplicadaPorTalhao] = useState(()=>doRascunho('form',{}).motivos_nao_aplicada||{})
+  useEffect(()=>{
+    setForm(f=>(f.motivo_nao_aplicada===motivoNaoAplicada && f.motivos_nao_aplicada===motivoNaoAplicadaPorTalhao) ? f
+      : {...f, motivo_nao_aplicada:motivoNaoAplicada, motivos_nao_aplicada:motivoNaoAplicadaPorTalhao})
+  },[motivoNaoAplicada,motivoNaoAplicadaPorTalhao])
   const [opState,setOpState] = useState(()=>{
     try { const d=localStorage.getItem(LS_KEY); if(d) return JSON.parse(d).opState||'idle' } catch{}
     return 'idle'
@@ -1541,6 +1558,15 @@ export default function PilotApp({onSwitchMode}) {
     // Com vários talhões o total feito é a soma deles. O Passo 5 edita talhão por talhão e não
     // mexia no `area_feita`, que ficava velho em relação ao detalhe.
     const feitaSomada = talhoesSel.length>1 ? areaFeitaAtual(form) : 0
+    // Área não aplicada por motivo que não é bordadura (obstáculo, vento…). Antes só existia
+    // como texto na Observação, e sumia do campo ao reabrir o voo. "Outro" fica de fora: é
+    // zerado (conta como aplicado, sem diferença e sem texto — pedido do Pastor, 19/10/2026).
+    // Sempre um array (mesmo vazio): é o que diz ao formulário Nardini pra usar este campo
+    // e não o texto da Observação.
+    const naoAplicadaDetalhe = (talhoesSel.length>1
+      ? talhoesSel.map(nome=>({talhao:nome, area:parseFloat(form.areaNaoAplicadaPorTalhao?.[nome])||0, motivo:motivoNaoAplicadaPorTalhao[nome]||''}))
+      : [{talhao:talhoesSel[0]||null, area:parseFloat(form.area_nao_aplicada)||0, motivo:motivoNaoAplicada||''}])
+      .filter(d=>d.area>0 && d.motivo && d.motivo!=='Bordadura' && d.motivo!=='Outro')
     const bordaduraTotal = bordaduraAtual(form)
     // O status pode vir no extraData (executarFinalizacao/executarFinalizacaoDia mandam
     // explícito) ou do estado atual do wizard.
@@ -1570,6 +1596,7 @@ export default function PilotApp({onSwitchMode}) {
       ordem_servico: osAtual || gerarOrdemServico(),
       teste: !!form.teste,
       monitoramento_clima: limparFicha(form.monitoramento_clima),
+      nao_aplicada_detalhe: naoAplicadaDetalhe,
       // Status do estado atual do voo, salvo se a chamada mandar outro. O 💾 do Passo 5 salvava
       // sem status: se fosse o último envio antes de perder o sinal, a sincronização subia o voo
       // sem o "finalizado".
@@ -2648,8 +2675,12 @@ export default function PilotApp({onSwitchMode}) {
     setForm(initForm(rel)); setRelId(rel.id); setOsAtual(rel.ordem_servico||null)
     // Bordadura salva > 0 só acontece quando o motivo escolhido foi "Bordadura" — reconstrói a
     // seleção pra o piloto reabrir o voo já vendo o motivo marcado, não em branco.
-    setMotivoNaoAplicada(parseFloat(rel.bordadura)>0 ? 'Bordadura' : '')
-    setMotivoNaoAplicadaPorTalhao(Object.fromEntries((rel.bordadura_detalhe||[]).filter(d=>parseFloat(d?.bordadura)>0).map(d=>[d.talhao,'Bordadura'])))
+    const naoAplicDet = Array.isArray(rel.nao_aplicada_detalhe) ? rel.nao_aplicada_detalhe : []
+    setMotivoNaoAplicada(parseFloat(rel.bordadura)>0 ? 'Bordadura' : (naoAplicDet[0]?.motivo||''))
+    setMotivoNaoAplicadaPorTalhao({
+      ...Object.fromEntries((rel.bordadura_detalhe||[]).filter(d=>parseFloat(d?.bordadura)>0).map(d=>[d.talhao,'Bordadura'])),
+      ...Object.fromEntries(naoAplicDet.filter(d=>d?.talhao).map(d=>[d.talhao,d.motivo])),
+    })
     const st = rel.status==='finalizado'?'finished':rel.status==='em_operacao'?'running':rel.status==='pausado'?'paused':rel.status==='pausado_dia'?'paused_day':'idle'
     setOpState(st)
     setObsFotos([null,null,null]); setObsFotoFiles([null,null,null])
@@ -2861,6 +2892,7 @@ export default function PilotApp({onSwitchMode}) {
     try{localStorage.removeItem(LS_KEY)}catch{}
     setForm({...initForm(), velocidade_drone:wizardDefaults.velocidadeDrone, altura:wizardDefaults.altura, faixa_i:wizardDefaults.faixa, faixa_f:wizardDefaults.faixa})
     setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
+    setMotivoNaoAplicada('');setMotivoNaoAplicadaPorTalhao({})
     setObsFotos([null,null,null]);setObsFotoFiles([null,null,null])
     setFotoMapa(null);setFotoMapaFile(null)
     setStorageFotoMapa(null);setStorageObsFotos([null,null,null])
@@ -6350,13 +6382,16 @@ Quando: ${tempoErroDebug.quando}`}
                 const areaDoTalhao = nome => parseFloat(talhoesFaz5.find(t=>t.nome===nome)?.area_ha)||0
                 // Mesma regra do talhão único: Bordadura alimenta o campo do relatório; os demais
                 // motivos viram ocorrência na Observação e zeram a bordadura daquele talhão.
+                // "Outro" é zerado (pedido do Pastor, 19/10/2026): não vira bordadura, não escreve
+                // nada na Observação e a área conta como aplicada — sem diferença no relatório.
                 function escolherMotivoTalhao(nome, motivo) {
                   setMotivoNaoAplicadaPorTalhao(c=>({...c,[nome]:motivo}))
                   setForm(f=>{
                     const qtd = parseFloat(f.areaNaoAplicadaPorTalhao?.[nome])||0
-                    if (motivo==='Bordadura') return {...f, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:String(qtd)}}
-                    const nota = `Área não aplicada em ${nome} (${fmtHa(qtd)} ha): ${motivo}`
-                    return {...f, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:''}, obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}
+                    const obs = semLinhaNaoAplicada(f.obs1, nome)
+                    if (motivo==='Bordadura') return {...f, obs1:obs, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:String(qtd)}}
+                    const nota = motivo==='Outro' ? '' : `Área não aplicada em ${nome} (${fmtHa(qtd)} ha): ${motivo}`
+                    return {...f, bordaduraPorTalhao:{...f.bordaduraPorTalhao,[nome]:''}, obs1: [obs, nota].filter(Boolean).join('\n')}
                   })
                 }
                 const totalBord = talhoesSel.reduce((a,nome)=>a+(parseFloat(form.bordaduraPorTalhao?.[nome])||0),0)
@@ -6415,7 +6450,9 @@ Quando: ${tempoErroDebug.quando}`}
                               </div>
                               {motivoNaoAplicadaPorTalhao[nome] && (
                                 <div style={{fontSize:11.5,color:'#0b1210',marginTop:8,paddingTop:8,borderTop:`1px solid ${theme.cardBorder2}`}}>
-                                  Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicadaPorTalhao[nome]==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicadaPorTalhao[nome]}`}.
+                                  {motivoNaoAplicadaPorTalhao[nome]==='Outro'
+                                    ? <>Outro: esses <strong>{fmtHa(naoAplicadaN)} ha</strong> contam como aplicados — sem diferença no relatório e nada na Observação.</>
+                                    : <>Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicadaPorTalhao[nome]==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicadaPorTalhao[nome]}`}.</>}
                                 </div>
                               )}
                             </div>
@@ -6440,13 +6477,15 @@ Quando: ${tempoErroDebug.quando}`}
               // Escolher o motivo é o que decide o destino do valor: "Bordadura" alimenta o campo
               // `bordadura` (sai como "Bord" no relatório, sem escrever nada na Observação);
               // qualquer outro motivo é ocorrência e vira texto em obs1, zerando a bordadura.
+              // "Outro" não escreve nada na Observação — ver escolherMotivoTalhao.
               function escolherMotivo(motivo) {
                 setMotivoNaoAplicada(motivo)
                 setForm(f=>{
                   const qtd = parseFloat(f.area_nao_aplicada)||0
-                  if (motivo==='Bordadura') return {...f, bordadura:String(qtd)}
-                  const nota = `Área não aplicada (${fmtHa(qtd)} ha): ${motivo}`
-                  return {...f, bordadura:'', obs1: f.obs1 ? `${f.obs1}\n${nota}` : nota}
+                  const obs = semLinhaNaoAplicada(f.obs1, null)
+                  if (motivo==='Bordadura') return {...f, obs1:obs, bordadura:String(qtd)}
+                  const nota = motivo==='Outro' ? '' : `Área não aplicada (${fmtHa(qtd)} ha): ${motivo}`
+                  return {...f, bordadura:'', obs1: [obs, nota].filter(Boolean).join('\n')}
                 })
               }
               return (
@@ -6527,7 +6566,9 @@ Quando: ${tempoErroDebug.quando}`}
                       </div>
                       {motivoNaoAplicada && (
                         <div style={{fontSize:12.5,color:'#0b1210',marginTop:10,paddingTop:10,borderTop:`1px solid ${theme.cardBorder2}`}}>
-                          Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicada==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicada}`}.
+                          {motivoNaoAplicada==='Outro'
+                            ? <>Outro: esses <strong>{fmtHa(naoAplicadaN)} ha</strong> contam como aplicados — sem diferença no relatório e nada na Observação.</>
+                            : <>Não foi aplicado <strong>{fmtHa(naoAplicadaN)} ha</strong> por causa {motivoNaoAplicada==='Bordadura'?'da bordadura':`de: ${motivoNaoAplicada}`}.</>}
                         </div>
                       )}
                     </div>

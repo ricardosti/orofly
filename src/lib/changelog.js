@@ -9,6 +9,22 @@
 
 export const NOVIDADES = [
   {
+    versao: '10.9',
+    data: '2026-10-19',
+    itens: [
+      {
+        tipo: 'correcao',
+        titulo: 'Motivo "Outro" da area nao aplicada fica zerado',
+        texto: 'Escolher Outro nao escreve mais "Area nao aplicada (...): Outro" na Observacao e nao conta como bordadura: a area conta como aplicada, sem diferenca no Formulario Nardini e com a observacao do talhao em branco. Se quiser explicar, e so escrever na Observacao. Vale para todos os clientes (pedido do Pastor). Depois de trocar o motivo, salve o voo antes de gerar o relatorio.',
+      },
+      {
+        tipo: 'melhoria',
+        titulo: 'Motivo da area nao aplicada fica salvo no voo',
+        texto: 'Obstaculo, vento, fim de insumo e problema tecnico agora ficam guardados no voo (antes so como texto na Observacao) e voltam marcados ao reabrir. Trocar de motivo troca a linha da Observacao em vez de empilhar outra.',
+      },
+    ],
+  },
+  {
     versao: '10.8',
     data: '2026-10-18',
     itens: [
