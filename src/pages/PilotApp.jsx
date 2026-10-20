@@ -25,9 +25,8 @@ import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { formatarQtd, areaPossivel, formatarHa, formatarDose, formatarTotalProduto } from '../lib/calda'
 import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
 import { paramsEfetivos, camposDoFormulario } from '../lib/paramsPadrao'
-import { limparFicha, sugerirProximoVoo, referenciaUltimaLeitura, climaAgora, INTERVALO_LEITURA_MIN, intervaloValido } from '../lib/monitoramentoClima'
-import { agendarLocal, cancelarLocal } from '../lib/localNotify'
-import FichaClimaEditor from '../components/FichaClimaEditor'
+import { limparFicha, referenciaUltimaLeitura, INTERVALO_LEITURA_MIN, intervaloValido, climaSerie, leiturasFaltando } from '../lib/monitoramentoClima'
+import { cancelarLocal } from '../lib/localNotify'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
@@ -271,6 +270,32 @@ function DtRow({prefix,form,setForm,label}) {
   )
 }
 
+// Voo lançado depois (retroativo): o piloto ajusta o início em "Editar Horário" ANTES de
+// iniciar. O Iniciar carimbava a hora atual por cima e o relatório (ex.: formulário Nardini)
+// saía com a data de hoje (pedido do Pastor, 19/10/2026). Só conta se estiver no passado.
+function inicioAjustado(form) {
+  const iso = fmtDt(form, 'dt_inicio')
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  return !isNaN(t) && t < Date.now() - 5*60000 ? t : null
+}
+function partesDe(d) {
+  return {
+    data:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
+    hh:String(d.getHours()).padStart(2,'0'), mm:String(d.getMinutes()).padStart(2,'0'), iso:d.toISOString(),
+  }
+}
+// Fim do voo: agora; no voo retroativo, o fim que o piloto ajustou ou o início + o tempo que o
+// voo levou de verdade no app.
+function fimDoVoo(form) {
+  if (!form.inicio_retroativo) return nowParts()
+  const ini = new Date(fmtDt(form, 'dt_inicio') || Date.now()).getTime()
+  const fimAjust = fmtDt(form, 'dt_fim')
+  if (fimAjust && new Date(fimAjust).getTime() >= ini && new Date(fimAjust).getTime() < Date.now() - 5*60000) return partesDe(new Date(fimAjust))
+  const decorrido = form.inicio_real_ms ? Math.max(0, Date.now() - form.inicio_real_ms) : 0
+  return partesDe(new Date(ini + decorrido))
+}
+
 // Componentes de campo — fora do PilotApp para não perder foco a cada render
 function FI({label,ph,val,onChange,type='text',styles,disabled,min,max}) {
   const { theme } = useTheme()
@@ -297,6 +322,12 @@ function limitarArea(v, max) {
 const fmtHa = v => (Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
 // O que já foi pulverizado em cada talhão neste voo, pro campo do "Finalizar voo" com vários
 // talhões: o percorrido menos a bordadura. Texto cru, como o piloto digita.
+// Bordadura já lançada por talhão — o que o modal de vários talhões pergunta em talhão fechado.
+function bordInicialPorTalhao(form) {
+  const out = {}
+  Object.entries(form.bordaduraPorTalhao||{}).forEach(([nome,v])=>{ const b=parseFloat(v)||0; if (b>0.005) out[nome]=String(+b.toFixed(2)) })
+  return out
+}
 function pulvInicialPorTalhao(form) {
   const out = {}
   Object.entries(form.area_feita_por_talhao||{}).forEach(([nome,v])=>{
@@ -700,11 +731,9 @@ export default function PilotApp({onSwitchMode}) {
   const [monitAberto,setMonitAberto] = useState(false)
   // Leitura de clima a cada 30 min durante o voo (Monitoramento Climático): rascunho aberto na
   // janela, "lembrar em 5 min" e o estado da busca do clima pela API.
-  const [leitura,setLeitura] = useState(null)
-  const [leituraAdiadaAte,setLeituraAdiadaAte] = useState(0)
-  const [leituraClima,setLeituraClima] = useState('')
   const [pulvTalhao,setPulvTalhao] = useState({})
   const [fechadoTalhao,setFechadoTalhao] = useState({})
+  const [bordTalhao,setBordTalhao] = useState({})
   // O que o piloto pulverizou hoje, guardado como texto cru. Não dá pra derivar de
   // `area_feita - bordadura` na hora de exibir: o valor derivado come o ponto enquanto
   // ele digita "2.5" (vira 2, e o ponto nunca entra).
@@ -1350,66 +1379,59 @@ export default function PilotApp({onSwitchMode}) {
     return camposDoFormulario(paramsEfetivos({ drone, cliente, fazenda }))
   }
 
-  // ── Leitura de clima a cada 30 min (Monitoramento Climático Beta) ─────────────────────
-  // Com o voo rodando, a cada 30 min desde a última leitura (ou do início do voo) abre a janela
-  // de leitura: temperatura, umidade e vento vêm da API pelo GPS na hora; início, fim, altura e
-  // área o piloto confirma. Ligado por padrão nos voos da Bracell (pedido do Pastor, 18/10/2026)
-  // e liga/desliga no cartão do Passo 4 pra qualquer cliente.
+  // ── Leituras automáticas do clima (Monitoramento Climático) ───────────────────────────
+  // Com o voo em andamento, a cada X min (10 por padrão; o admin troca em Configurações) o app
+  // grava sozinho temperatura, umidade e vento da internet — o piloto não preenche nada e não
+  // edita; quem corrige é o admin no Monitoramento Climático (pedido do Pastor, 19/10/2026).
+  // Antes abria uma janela a cada 30 min pro piloto preencher. Leitura perdida (sem sinal, app
+  // em segundo plano) é preenchida quando der, com o clima daquele horário (ver climaSerie).
+  // Ligado por padrão nos voos da Bracell e liga/desliga no cartão do Passo 4. Voo lançado
+  // depois (retroativo) não tem leitura automática: o horário real não é o do app.
   const lembreteLeitura = form.monitoramento_clima?.lembrete ?? /bracell/i.test(clienteVal||'')
   const inicioVooIso = fmtDt(form,'dt_inicio')
   const refLeitura = referenciaUltimaLeitura(form.monitoramento_clima, inicioVooIso)
-  // Intervalo: o do voo (o piloto troca no cartão) ou o padrão de Configurações do Sistema.
-  const intervaloLeitura = intervaloValido(form.monitoramento_clima?.intervalo_min, intervaloLeituraPadrao)
-  const proximaLeitura = refLeitura ? new Date(Math.max(refLeitura.getTime() + intervaloLeitura*60000, leituraAdiadaAte)) : null
+  const intervaloLeitura = intervaloValido(intervaloLeituraPadrao)
+  const proximaLeitura = refLeitura ? new Date(refLeitura.getTime() + intervaloLeitura*60000) : null
   const horaBR = d => d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'})
+  const leituraAutoAtiva = (opState==='running'||opState==='paused') && lembreteLeitura && !form.inicio_retroativo
 
-  async function abrirLeitura() {
-    const voos = form.monitoramento_clima?.voos || []
-    const base = sugerirProximoVoo(voos, { altura: form.altura||'' })
-    // Primeira leitura do voo: a janela começa no início do voo.
-    if (!voos.length && inicioVooIso) base.inicio = horaBR(new Date(inicioVooIso))
-    base.fim = horaBR(new Date())
-    setLeitura({ ...base, totalAteAgora: '' }); setLeituraClima('buscando')
-    let lat = form.gps_lat, lng = form.gps_lng
-    if ((!lat || !lng) && navigator.geolocation) {
-      try {
-        const pos = await new Promise((ok,erro)=>navigator.geolocation.getCurrentPosition(ok,erro,{enableHighAccuracy:false,timeout:8000}))
-        lat = pos.coords.latitude.toFixed(6); lng = pos.coords.longitude.toFixed(6)
-      } catch {}
-    }
-    const c = await climaAgora(lat, lng)
-    if (c) { setLeitura(l => l ? { ...l, ...c } : l); setLeituraClima('ok') } else setLeituraClima('falhou')
+  const buscandoLeituraRef = useRef(false)
+  async function registrarLeiturasAutomaticas() {
+    if (buscandoLeituraRef.current || !refLeitura) return
+    const agora = Date.now()
+    if (agora - refLeitura.getTime() < intervaloLeitura*60000) return
+    buscandoLeituraRef.current = true
+    try {
+      let lat = form.gps_lat, lng = form.gps_lng
+      if ((!lat || !lng) && navigator.geolocation) {
+        try {
+          const pos = await new Promise((ok,erro)=>navigator.geolocation.getCurrentPosition(ok,erro,{enableHighAccuracy:false,timeout:8000}))
+          lat = pos.coords.latitude.toFixed(6); lng = pos.coords.longitude.toFixed(6)
+        } catch {}
+      }
+      const serie = await climaSerie(lat, lng, (agora - refLeitura.getTime())/3600000 + 1)
+      if (!serie) return // sem sinal: tenta de novo no próximo minuto
+      const novas = leiturasFaltando({ refMs: refLeitura.getTime(), agoraMs: agora, intervaloMin: intervaloLeitura, serie, altura: form.altura||'' })
+      if (!novas.length) return
+      const ficha = { ...(form.monitoramento_clima||{}), voos: [...(form.monitoramento_clima?.voos||[]), ...novas] }
+      setForm(f=>({...f, monitoramento_clima: { ...(f.monitoramento_clima||{}), voos: [...(f.monitoramento_clima?.voos||[]), ...novas] }}))
+      atual.current.salvar({ status: statusAtual(), monitoramento_clima: limparFicha(ficha) })
+    } finally { buscandoLeituraRef.current = false }
   }
-  const abrirLeituraRef = useRef(abrirLeitura)
-  abrirLeituraRef.current = abrirLeitura
+  const leituraAutoRef = useRef(registrarLeiturasAutomaticas)
+  leituraAutoRef.current = registrarLeiturasAutomaticas
 
-  function salvarLeitura() {
-    const { totalAteAgora, ...voo } = leitura
-    const ficha = { ...(form.monitoramento_clima||{}), voos: [...(form.monitoramento_clima?.voos||[]), { ...voo, registrado_em: new Date().toISOString() }] }
-    setForm(f=>({...f, monitoramento_clima: ficha}))
-    setLeitura(null); setLeituraAdiadaAte(0)
-    saveToSupabase({ status: statusAtual(), monitoramento_clima: limparFicha(ficha) })
-    showToast(`✅ Leitura registrada — próxima às ${horaBR(new Date(Date.now()+intervaloLeitura*60000))}`)
-  }
-
-  // Relógio: confere a cada 30 s se já passou a hora da leitura.
+  // Confere a cada minuto e quando o app volta pra frente (timer de JS para em segundo plano).
   useEffect(() => {
-    if (opState!=='running' || !lembreteLeitura || !proximaLeitura || leitura) return
-    const conferir = () => {
-      if (Date.now() >= proximaLeitura.getTime()) { abrirLeituraRef.current(); try { navigator.vibrate?.([300,150,300]) } catch {} }
-    }
+    if (!leituraAutoAtiva) return
+    const conferir = () => { if (document.visibilityState !== 'hidden') leituraAutoRef.current() }
     conferir()
-    const id = setInterval(conferir, 30000)
-    return () => clearInterval(id)
-  }, [opState, lembreteLeitura, proximaLeitura?.getTime(), !!leitura])
-
-  // Notificação agendada no Android: toca mesmo com a tela apagada (timer de JS para no fundo).
-  useEffect(() => {
-    if (opState==='running' && lembreteLeitura && proximaLeitura) {
-      agendarLocal({ id: 7300, titulo: '🌡️ Leitura do clima', corpo: `Passaram ${intervaloLeitura} min — registre temperatura, umidade, vento e área no Orofly.`,
-        em: new Date(Math.max(proximaLeitura.getTime(), Date.now()+60000)) })
-    } else cancelarLocal(7300)
-  }, [opState, lembreteLeitura, proximaLeitura?.getTime()])
+    const id = setInterval(conferir, 60000)
+    document.addEventListener('visibilitychange', conferir)
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', conferir) }
+  }, [leituraAutoAtiva])
+  // A notificação "registre a leitura" da versão anterior não existe mais.
+  useEffect(() => { cancelarLocal(7300) }, [])
 
   // Voo novo, formulário em branco: já vem com o drone do piloto (Inventário → Piloto
   // responsável) e os padrões dele. Só no formulário limpo — não mexe em voo em andamento nem
@@ -1781,8 +1803,9 @@ export default function PilotApp({onSwitchMode}) {
   // ---- INICIAR VOO + PUSH ----
   async function opIniciar() {
     setSaving(true)
-    const n=nowParts()
-    const nf={...form,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}
+    const ajustado = inicioAjustado(form)
+    const n = ajustado ? partesDe(new Date(ajustado)) : nowParts()
+    const nf={...form,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm,inicio_retroativo:!!ajustado,inicio_real_ms:Date.now()}
     setForm(nf); setOpState('running')
     // Gera o id do relatório localmente (antes de qualquer chamada de rede) — assim ele
     // nunca fica nulo, mesmo sem sinal, e todo salvamento seguinte sabe em qual linha gravar.
@@ -1998,7 +2021,7 @@ export default function PilotApp({onSwitchMode}) {
 
   async function executarFinalizacao() {
     setFinalizeConfirm(null);setSaving(true)
-    const n=nowParts()
+    const n=fimDoVoo(form)
     setForm(f=>({...f,dt_fim_data:n.data,dt_fim_hh:n.hh,dt_fim_mm:n.mm}))
     setOpState('finished')
     // Baixa só o que falta: se já teve Finalizado Parcial antes, area_deduzida guarda quanto
@@ -6126,8 +6149,8 @@ Quando: ${tempoErroDebug.quando}`}
                   disabled={saving}
                   onClick={()=>{
                     if(opState==='idle'){
-                      const n=nowParts()
-                      setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm}))
+                      // Início ajustado à mão (voo retroativo) fica; senão, agora.
+                      if(!inicioAjustado(form)){ const n=nowParts(); setForm(f=>({...f,dt_inicio_data:n.data,dt_inicio_hh:n.hh,dt_inicio_mm:n.mm})) }
                       setChecklistItems({bateria:false,calibracao:false,area:false,clima:false,equipamento:false,comunicacao:false})
                       setChecklistOpen(true)
                     } else {
@@ -6148,7 +6171,7 @@ Quando: ${tempoErroDebug.quando}`}
                       // (a maioria) só confere e confirma, sem digitar nada.
                       setFezTudo(true)
                       setPulvHoje(''); setBordHoje('')
-                      setPulvTalhao(pulvInicialPorTalhao(form)); setFechadoTalhao({})
+                      setPulvTalhao(pulvInicialPorTalhao(form)); setBordTalhao(bordInicialPorTalhao(form)); setFechadoTalhao({})
                       setForm(f=>({...f, area_feita: f.area_feita || String(parseFloat(f.area_ha)||'')}))
                       setParcialModalOpen(true)
                     }}>
@@ -6251,26 +6274,32 @@ Quando: ${tempoErroDebug.quando}`}
               </div>
               {monitAberto && (
                 <div style={{marginTop:12}}>
-                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,lineHeight:1.5}}>Lance cada voo (bateria) ou uma leitura a cada {intervaloLeitura} min: início, fim, altura, área e o clima medido na hora.</div>
+                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,lineHeight:1.5}}>O app registra sozinho, a cada {intervaloLeitura} min, a temperatura, a umidade e o vento da internet — você não precisa preencher nada. As condições de início e fim continuam no Passo 3. Correções nas leituras são feitas pelo escritório.</div>
                   <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:theme.bg,borderRadius:10,padding:'9px 11px',marginBottom:10}}>
                     <label style={{display:'flex',alignItems:'center',gap:7,fontSize:12.5,color:theme.text,fontWeight:600,cursor:'pointer',flex:1,minWidth:180}}>
                       <input type="checkbox" checked={!!lembreteLeitura} style={{width:16,height:16,accentColor:'#00A86B'}}
                         onChange={e=>setForm(f=>({...f,monitoramento_clima:{...(f.monitoramento_clima||{}),lembrete:e.target.checked}}))}/>
-                      ⏰ Lembrar a cada
+                      🌡️ Registrar o clima automaticamente
                     </label>
-                    <input type="number" min={5} max={240} inputMode="numeric"
-                      style={{width:58,border:'1px solid #e0ece5',borderRadius:8,padding:'5px 6px',fontSize:13,textAlign:'center',color:theme.text,background:'#fff'}}
-                      value={form.monitoramento_clima?.intervalo_min ?? intervaloLeituraPadrao}
-                      onChange={e=>setForm(f=>({...f,monitoramento_clima:{...(f.monitoramento_clima||{}),intervalo_min:e.target.value}}))}/>
-                    <span style={{fontSize:12.5,color:theme.text,fontWeight:600}}>min</span>
-                    {lembreteLeitura && proximaLeitura && opState==='running' && (
+                    {leituraAutoAtiva && proximaLeitura && (
                       <span style={{fontSize:11.5,color:theme.textMuted}}>próxima às <b>{horaBR(proximaLeitura)}</b></span>
                     )}
-                    <button type="button" onClick={()=>abrirLeitura()}
-                      style={{background:'#00A86B',color:'#fff',border:'none',borderRadius:16,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>🌤️ Registrar leitura agora</button>
+                    {form.inicio_retroativo && <span style={{fontSize:11.5,color:theme.textMuted}}>voo lançado depois: sem leitura automática</span>}
                   </div>
-                  <FichaClimaEditor valor={form.monitoramento_clima} onChange={v=>setForm(f=>({...f,monitoramento_clima:v}))}
-                    sugestao={{altura:form.altura||'',temperatura:form.temperatura_i||'',umidade:form.umidade_i||'',vento:form.vento_i||''}}/>
+                  {(form.monitoramento_clima?.voos||[]).length===0 ? (
+                    <div style={{fontSize:12,color:theme.textFaint2,padding:'6px 2px'}}>Nenhuma leitura ainda.</div>
+                  ) : (
+                    <div style={{border:`1px solid ${theme.divider}`,borderRadius:10,overflow:'hidden'}}>
+                      <div style={{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr 1fr',fontSize:10,fontWeight:700,color:theme.textFaint2,background:theme.bg,padding:'6px 8px'}}>
+                        <span>HORÁRIO</span><span>TEMP. (°C)</span><span>UMID. (%)</span><span>VENTO (km/h)</span>
+                      </div>
+                      {(form.monitoramento_clima?.voos||[]).map((v,i)=>(
+                        <div key={i} style={{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr 1fr',fontSize:12,color:theme.text,padding:'6px 8px',borderTop:`1px solid ${theme.divider}`}}>
+                          <span>{v.inicio||'—'}–{v.fim||'—'}</span><span>{v.temperatura||'—'}</span><span>{v.umidade||'—'}</span><span>{v.vento||'—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -6304,7 +6333,7 @@ Quando: ${tempoErroDebug.quando}`}
                       setFezTudo(false)
                       setPulvHoje(''); setBordHoje('')
                       // Talhão que já foi fechado num parcial anterior continua fechado.
-                      setPulvTalhao(pulvInicialPorTalhao(form)); setFechadoTalhao(form.talhoesFechados||{})
+                      setPulvTalhao(pulvInicialPorTalhao(form)); setBordTalhao(bordInicialPorTalhao(form)); setFechadoTalhao(form.talhoesFechados||{})
                       setParcialModalOpen(true)
                     }}>✏️ Editar progresso</button>
                   <button style={{background:'#ffb020',color:theme.text,border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
@@ -6799,10 +6828,19 @@ Quando: ${tempoErroDebug.quando}`}
           const tetoPulv = escopo>0 ? Math.max(0, +(escopo-(fechado?0:bordManual)).toFixed(2)) : null
           const digitado = txt==='' ? null : Math.max(0, parseFloat(txt)||0)
           // Campo vazio num talhão fechado = pulverizou tudo (como no talhão único).
-          const pulv = digitado==null ? (fechado ? (escopo||0) : 0) : (tetoPulv!=null ? Math.min(tetoPulv, digitado) : digitado)
-          const percorrido = fechado && escopo>0 ? escopo : +(pulv+bordManual).toFixed(2)
-          const bord = fechado && escopo>0 ? Math.max(0, +(escopo-pulv).toFixed(2)) : bordManual
-          return { nome, cadastrado, escopo, fechado, txt, tetoPulv, pulv, percorrido, bord }
+          // Talhão FECHADO pergunta a BORDADURA, igual ao talhão único (pedido do Pastor,
+          // 19/10/2026): digitar 5 virava "5 pulverizado + 95 bordadura", o inverso do que ele
+          // queria. Vazio = sem bordadura, tudo pulverizado. Talhão aberto segue pedindo o
+          // pulverizado de hoje.
+          if (fechado && escopo>0) {
+            const bordTxt = bordTalhao[nome] ?? ''
+            const bordF = Math.min(escopo, Math.max(0, parseFloat(bordTxt)||0))
+            return { nome, cadastrado, escopo, fechado, txt:bordTxt, perguntaBord:true, tetoCampo:escopo,
+              pulv:+(escopo-bordF).toFixed(2), percorrido:escopo, bord:+bordF.toFixed(2) }
+          }
+          const pulv = digitado==null ? 0 : (tetoPulv!=null ? Math.min(tetoPulv, digitado) : digitado)
+          const percorrido = +(pulv+bordManual).toFixed(2)
+          return { nome, cadastrado, escopo, fechado, txt, perguntaBord:false, tetoCampo:tetoPulv, pulv, percorrido, bord:bordManual }
         })
         const todosFechadosP = linhasP.length>0 && linhasP.every(l=>l.fechado)
         // No talhão único quem decide é o checkbox; com vários, ele vale "todos fechados".
@@ -6833,7 +6871,7 @@ Quando: ${tempoErroDebug.quando}`}
                 <div style={{fontSize:12,color:theme.textMuted,marginTop:3,lineHeight:1.5}}>
                   {multiTalhaoP
                     ? (fezTudoEf
-                      ? 'Todos ficam fechados. Digite o pulverizado de cada um — o que faltar vira bordadura.'
+                      ? 'Todos ficam fechados. Só informe quanto ficou de bordadura em cada um.'
                       : 'Toque em "Fechar" só nos talhões que você terminou. Os outros ficam pra outro voo.')
                     : fezTudo
                     ? 'O talhão fica fechado. Só informe quanto ficou de bordadura.'
@@ -6844,10 +6882,10 @@ Quando: ${tempoErroDebug.quando}`}
 
             {multiTalhaoP ? (
               <div style={{marginBottom:4}}>
-                <label style={sw.fl}>QUANTO VOCÊ PULVERIZOU EM CADA TALHÃO (HA)</label>
+                <label style={sw.fl}>CADA TALHÃO (HA)</label>
                 <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,marginTop:-2,lineHeight:1.45}}>
-                  O número do controle da DJI, somando tudo deste voo. Em talhão fechado, o que
-                  faltar pra completar vira bordadura — dá pra trocar o motivo no Passo 5.
+                  Talhão <strong>fechado</strong>: informe só quanto ficou de <strong>bordadura</strong> (vazio = sem
+                  bordadura). Talhão <strong>aberto</strong>: quanto você pulverizou hoje. O motivo dá pra trocar no Passo 5.
                 </div>
                 {linhasP.map(l=>{
                   const pctN = l.escopo>0 ? Math.min(100, Math.round((l.percorrido/l.escopo)*100)) : 0
@@ -6864,11 +6902,12 @@ Quando: ${tempoErroDebug.quando}`}
                       </div>
                       <div style={{display:'flex',gap:8,marginBottom:8}}>
                         <input type="number" inputMode="decimal" style={{...sw.fi,flex:1,minWidth:0}}
-                          placeholder={l.fechado && l.escopo>0 ? `${fmtHa(l.escopo)} — tudo` : 'Ex: 3,5'}
-                          value={l.txt} min={0} max={l.tetoPulv>0?l.tetoPulv:undefined}
+                          placeholder={l.perguntaBord ? 'Bordadura (ha) — 0' : 'Pulverizado hoje — ex: 3,5'}
+                          value={l.txt} min={0} max={l.tetoCampo>0?l.tetoCampo:undefined}
                           onChange={e=>{
-                            const v=limitarArea(e.target.value, l.tetoPulv>0?l.tetoPulv:null)
-                            setPulvTalhao(m=>({...m,[l.nome]:v}))
+                            const v=limitarArea(e.target.value, l.tetoCampo>0?l.tetoCampo:null)
+                            if (l.perguntaBord) setBordTalhao(m=>({...m,[l.nome]:v}))
+                            else setPulvTalhao(m=>({...m,[l.nome]:v}))
                           }}/>
                         <button type="button" onClick={()=>setFechadoTalhao(m=>({...m,[l.nome]:!l.fechado}))}
                           style={{flexShrink:0,borderRadius:10,padding:'0 13px',fontSize:12.5,fontWeight:700,cursor:'pointer',fontFamily:"'Poppins',sans-serif",
@@ -7033,7 +7072,7 @@ Quando: ${tempoErroDebug.quando}`}
                 setParcialModalOpen(false)
                 setOpState(fechou ? 'finished' : 'paused_day')
                 const deltaBaixa = Math.max(0, percorrido-(parseFloat(form.area_deduzida)||0))
-                const n=nowParts()
+                const n=fimDoVoo(form)
                 // O Passo 5 já abre com tudo preenchido: aplicado de hoje, bordadura e o motivo.
                 setForm(f=>({...f, area_feita:String(percorrido), area_deduzida:String(percorrido), dt_fim_data:n.data, dt_fim_hh:n.hh, dt_fim_mm:n.mm,
                   area_feita_por_talhao:{...f.area_feita_por_talhao, ...porTalhao(l=>l.percorrido>0?String(l.percorrido):'')},
@@ -7075,7 +7114,7 @@ Quando: ${tempoErroDebug.quando}`}
               // ex: já tinha baixado 20ha, agora tá em 32ha → desconta só os 12ha novos.
               const jaDeduzido = parseFloat(form.area_deduzida)||0
               const deltaBaixa = Math.max(0, percorrido-jaDeduzido)
-              const n=nowParts()
+              const n=fimDoVoo(form)
               // Pré-preenche o Passo 5 com o que já foi digitado aqui (a diferença entre o que já
               // tinha antes desta sessão e o total agora) — assim o piloto não responde a mesma
               // pergunta duas vezes; ele só precisa ajustar se a leitura real da DJI for diferente.
@@ -7107,49 +7146,6 @@ Quando: ${tempoErroDebug.quando}`}
                 : (fezTudo ? '✅ Confirmar — talhão fechado' : '🌙 Confirmar — volto pra terminar')}</button>
           </div>
         </div>
-        )
-      })()}
-
-      {/* LEITURA DE 30 MIN — Monitoramento Climático (Beta) */}
-      {leitura && (()=>{
-        const set = (k,v) => setLeitura(l=>({...l,[k]:v}))
-        const voosAntes = form.monitoramento_clima?.voos || []
-        const somaAntes = voosAntes.reduce((a,v)=>a+(parseFloat(String(v.area||'').replace(',','.'))||0),0)
-        const inp = {width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'10px 11px',fontSize:14,color:theme.text,outline:'none',boxSizing:'border-box',background:'#fff',fontFamily:"'Poppins',sans-serif"}
-        const rot = {fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:4,display:'block'}
-        const daApi = leituraClima==='ok'
-        return (
-          <div style={s.modalOverlay}>
-            <div style={s.modal} onClick={e=>e.stopPropagation()}>
-              <div style={s.modalTitle}>🌡️ Leitura do clima <button style={s.modalClose} onClick={()=>{ setLeitura(null); setLeituraAdiadaAte(Date.now()+5*60000) }}>✕</button></div>
-              <div style={{fontSize:12,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>
-                Leitura {String(voosAntes.length+1).padStart(2,'0')} do voo. {leituraClima==='buscando' ? '🌤️ Buscando o clima pelo GPS…' : daApi ? '🌤️ Clima preenchido pela previsão (GPS) — confira com o seu medidor.' : '⚠️ Sem clima da internet agora — digite o que medir.'}
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                <div><label style={rot}>INÍCIO</label><input type="time" style={inp} value={leitura.inicio||''} onChange={e=>set('inicio',e.target.value)}/></div>
-                <div><label style={rot}>FIM</label><input type="time" style={inp} value={leitura.fim||''} onChange={e=>set('fim',e.target.value)}/></div>
-                <div><label style={rot}>ALTURA (m)</label><input inputMode="decimal" style={inp} value={leitura.altura||''} onChange={e=>set('altura',e.target.value)}/></div>
-                <div><label style={rot}>ÁREA NESTE PERÍODO (ha)</label><input inputMode="decimal" style={inp} value={leitura.area||''} onChange={e=>set('area',e.target.value)}/></div>
-                <div style={{gridColumn:'1/-1',marginTop:-4}}>
-                  <label style={{...rot,fontWeight:500}}>ou o TOTAL do controle até agora (o app calcula a área do período)</label>
-                  <input inputMode="decimal" style={inp} placeholder={somaAntes>0?`já lançado: ${somaAntes.toLocaleString('pt-BR',{maximumFractionDigits:2})} ha`:'Ex: 12,5'} value={leitura.totalAteAgora||''}
-                    onChange={e=>{ const tot=parseFloat(e.target.value.replace(',','.')); setLeitura(l=>({...l,totalAteAgora:e.target.value, ...(isNaN(tot)?{}:{area:String(Math.max(0,+(tot-somaAntes).toFixed(2))).replace('.',',')})})) }}/>
-                </div>
-                <div><label style={rot}>TEMPERATURA (°C)</label><input inputMode="decimal" style={{...inp,background:daApi?theme.successBg:'#fff'}} value={leitura.temperatura||''} onChange={e=>set('temperatura',e.target.value)}/></div>
-                <div><label style={rot}>UMIDADE (%)</label><input inputMode="decimal" style={{...inp,background:daApi?theme.successBg:'#fff'}} value={leitura.umidade||''} onChange={e=>set('umidade',e.target.value)}/></div>
-                <div><label style={rot}>VENTO (km/h)</label><input inputMode="decimal" style={{...inp,background:daApi?theme.successBg:'#fff'}} value={leitura.vento||''} onChange={e=>set('vento',e.target.value)}/></div>
-                <div style={{display:'flex',alignItems:'flex-end'}}>
-                  <button type="button" onClick={()=>abrirLeituraRef.current && (async()=>{ setLeituraClima('buscando'); const c=await climaAgora(form.gps_lat,form.gps_lng); if(c){ setLeitura(l=>l?{...l,...c}:l); setLeituraClima('ok') } else setLeituraClima('falhou') })()}
-                    style={{width:'100%',background:theme.bg,color:theme.text,border:'none',borderRadius:10,padding:'10px 6px',fontSize:12,fontWeight:600,cursor:'pointer'}}>🔄 Clima de novo</button>
-                </div>
-                <div style={{gridColumn:'1/-1'}}><label style={rot}>OBSERVAÇÃO (opcional)</label><input style={inp} value={leitura.obs||''} onChange={e=>set('obs',e.target.value)}/></div>
-              </div>
-              <div style={{display:'flex',gap:8,marginTop:16}}>
-                <button style={{...s.shareBtn,background:theme.bg,color:theme.textMuted,flex:1,marginTop:0}} onClick={()=>{ setLeitura(null); setLeituraAdiadaAte(Date.now()+5*60000); showToast('⏰ Lembro de novo em 5 min') }}>Lembrar em 5 min</button>
-                <button style={{...s.shareBtn,background:'#00A86B',flex:2,marginTop:0}} onClick={salvarLeitura}>✅ Salvar leitura</button>
-              </div>
-            </div>
-          </div>
         )
       })()}
 

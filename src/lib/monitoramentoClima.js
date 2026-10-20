@@ -25,7 +25,8 @@ export const CABECALHO = ['Fazenda (ID)', 'Talhão', 'Data da aplicação', 'Pil
   'Supervisor Operacional', 'Volume de produto consumido (L)', 'Recomendação Agronômica (L/ha)']
 // Padrões — o admin troca em Configurações do Sistema (Monitoramento Climático): o intervalo
 // entre leituras no voo e quantas colunas cada operação tem na ficha (o papel tem 10).
-export const MONITORAMENTO_PADRAO = { intervaloMin: 30, colunas: 10 }
+// Intervalo padrão de 10 min desde 19/10/2026 (leituras automáticas, pedido do Pastor).
+export const MONITORAMENTO_PADRAO = { intervaloMin: 10, colunas: 10 }
 
 const temValor = v => v != null && String(v).trim() !== ''
 const num = v => parseFloat(String(v ?? '').replace(',', '.'))
@@ -109,6 +110,41 @@ export async function climaAgora(lat, lng) {
     const pt = (v, casas) => v == null ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: casas })
     return { temperatura: pt(c.temperature_2m, 1), umidade: pt(c.relative_humidity_2m, 0), vento: pt(c.wind_speed_10m, 1) }
   } catch { return null }
+}
+
+// ── Leituras automáticas (19/10/2026) ──────────────────────────────────────────────────
+// Durante o voo o app registra sozinho, a cada X min, temperatura, umidade e vento — o piloto
+// não preenche nada; quem corrige é o admin no Monitoramento Climático. A série vem de 15 em
+// 15 min (Open-Meteo, com as horas que já passaram), então leitura que faltou porque o app
+// estava sem sinal ou em segundo plano é preenchida depois com o clima daquele horário.
+export async function climaSerie(lat, lng, horasAtras = 2) {
+  if (lat == null || lng == null || lat === '' || lng === '') return null
+  try {
+    const passos = Math.min(672, Math.ceil(Math.max(1, horasAtras) * 4) + 2)
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&minutely_15=temperature_2m,relative_humidity_2m,wind_speed_10m&past_minutely_15=${passos}&forecast_minutely_15=2&wind_speed_unit=kmh&timezone=GMT`
+    const m = (await (await fetch(url)).json())?.minutely_15
+    if (!m?.time?.length) return null
+    return m.time.map((t, i) => ({ ms: Date.parse(`${t}:00Z`), temperatura: m.temperature_2m?.[i], umidade: m.relative_humidity_2m?.[i], vento: m.wind_speed_10m?.[i] }))
+      .filter(p => !isNaN(p.ms) && p.temperatura != null)
+  } catch { return null }
+}
+
+// As leituras que faltam desde `refMs` (última leitura ou início do voo) até `agoraMs`, uma a
+// cada `intervaloMin`, cada uma com o ponto da série mais perto do seu horário. Horários
+// alinhados ao início do voo, então reprocessar não duplica.
+export function leiturasFaltando({ refMs, agoraMs, intervaloMin, serie = [], altura = '', max = 60 }) {
+  const iv = intervaloValido(intervaloMin) * 60000
+  const hora = ms => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+  const pt = (v, casas) => v == null ? '' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: casas })
+  const out = []
+  for (let t = refMs + iv; t <= agoraMs && out.length < max; t += iv) {
+    let p = null
+    for (const x of serie) if (!p || Math.abs(x.ms - t) < Math.abs(p.ms - t)) p = x
+    if (!p || Math.abs(p.ms - t) > 30 * 60000) continue
+    out.push({ inicio: hora(t - iv), fim: hora(t), altura, area: '', temperatura: pt(p.temperatura, 1), umidade: pt(p.umidade, 0),
+      vento: pt(p.vento, 1), obs: '', registrado_em: new Date(t).toISOString(), origem: 'auto' })
+  }
+  return out
 }
 
 const dataBR = iso => iso ? new Date(String(iso).length === 10 ? `${iso}T12:00:00` : iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : ''

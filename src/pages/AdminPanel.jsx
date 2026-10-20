@@ -263,7 +263,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const LIMITES_CFG_PADRAO = { ventoMin: 3, ventoMax: 15, deltaTMin: 2, deltaTIdealMax: 7, deltaTAlertaMax: 8 }
   const WIZARD_CFG_PADRAO = { velocidadeDrone: '', altura: '', faixa: '' }
   // Monitoramento Climático: intervalo das leituras no voo e colunas por operação na ficha.
-  const MONIT_CFG_PADRAO = { intervaloMin: 30, colunas: 10 }
+  const MONIT_CFG_PADRAO = { intervaloMin: 10, colunas: 10 }
   const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO, monitoramento: MONIT_CFG_PADRAO })
   const [configGeralSaving, setConfigGeralSaving] = useState(false)
   const [configGeralLoaded, setConfigGeralLoaded] = useState(false)
@@ -501,6 +501,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const [talhaoEditId, setTalhaoEditId] = useState(null)
   const [talhaoEditForm, setTalhaoEditForm] = useState({nome:'',area_ha:''})
   const [fzSearch, setFzSearch] = useState('')
+  // Lista de fazendas: mais recentes primeiro (pedido do Pastor — o admin se perdia procurando
+  // a que acabou de cadastrar). Dá pra voltar pra ordem alfabética.
+  const [fzListaOrdem, setFzListaOrdem] = useState('recentes')
   const [fzProdutoFiltro, setFzProdutoFiltro] = useState('')
   const [fzClienteFiltro, setFzClienteFiltro] = useState('')
   const [fzStatusFiltro, setFzStatusFiltro] = useState('') // '' | 'concluida' | 'parcial' | 'nao_iniciada'
@@ -596,6 +599,9 @@ export default function AdminPanel({ onSwitchMode }) {
   const [culturaModal, setCulturaModal] = useState(null)   // 'novo' | registro
   const [culturaForm, setCulturaForm] = useState({ nome:'', ativo:true, ordem:0 })
   const [fzTab, setFzTab] = useState('visao')
+  // Sub-abas de Gestão → Fazendas & Clientes. "Relatórios" é a aba 'relatorios' (Relatórios de
+  // Voo), mostrada com esta mesma barra no topo.
+  const SUBABAS_FAZENDAS = [['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes'],['equipes','🧑‍🤝‍🧑 Equipes'],['relatorios','📋 Relatórios']]
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
   const [clienteModal, setClienteModal] = useState(null)
@@ -1039,6 +1045,14 @@ export default function AdminPanel({ onSwitchMode }) {
     codigoFazendaPorChave[k] = [...(codigoFazendaPorChave[k]||[]), String(f.id_fazenda)]
   })
   const codigoFazendaDoRel = r => (codigoFazendaPorChave[`${(r.cliente||'').trim().toLowerCase()}|${(r.fazenda||'').trim().toLowerCase()}`] || []).join('/')
+  // Ficha do Monitoramento Climático do voo: automática (leituras do app), editada pelo admin
+  // ou inexistente — o selo na lista de Relatórios.
+  const fichaClimaDoRel = r => {
+    const m = r.monitoramento_clima
+    if (!m || !(m.voos||[]).length) return { txt:'sem ficha clima', cor:theme.textFaint, bg:theme.divider }
+    if (m.editado_admin) return { txt:'clima editado', cor:'#1d4ed8', bg:'#dbeafe' }
+    return { txt:'clima automático', cor:'#047857', bg:'#d1fae5' }
+  }
   const filtered = relatorios.filter(r => {
     if (filters.cliente && !r.cliente?.toLowerCase().includes(filters.cliente.toLowerCase())) return false
     if (filters.fazenda && !r.fazenda?.toLowerCase().includes(filters.fazenda.toLowerCase())) return false
@@ -2032,8 +2046,9 @@ export default function AdminPanel({ onSwitchMode }) {
             ['arquivos', '🗂️', 'Arquivos', ''],
             ['monitclima', '🌡️', 'Monitoramento Climático (Beta)', ''],
           ]],
+          // "Relatórios" (de voo) foi pra Gestão → Fazendas & Clientes → aba Relatórios
+          // (pedido do Pastor, 19/10/2026). O id da aba continua 'relatorios'.
           ['adminfin', '💼 Administrativo & Financeiro', [
-            ['relatorios', '📋', 'Relatórios', filtered.length],
             ['custos', '💰', 'Financeiro', custos.length],
             ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
             ['regulamentacao', '📑', 'Regulamentação', ''],
@@ -2058,7 +2073,8 @@ export default function AdminPanel({ onSwitchMode }) {
         })
         .filter(([,,itensFiltrados]) => itensFiltrados.length > 0)
         .map(([grupoId, secao, itens]) => {
-          const contemAtivo = itens.some(([id]) => id === tab)
+          const tabMenu = tab === 'relatorios' ? 'fazendas' : tab
+          const contemAtivo = itens.some(([id]) => id === tabMenu)
           const aberto = sidebarBusca.trim() ? true : (sidebarGruposAbertos[grupoId] ?? contemAtivo)
           return (
             <div key={grupoId} style={{marginBottom:1}}>
@@ -2071,11 +2087,11 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div style={{overflow:'hidden', minHeight:0}}>
                   <div style={{display:'flex', flexDirection:'column', gap:2, margin:'4px 0 6px 16px', paddingLeft:10, borderLeft:'2px solid rgba(255,255,255,0.15)'}}>
                     {itens.map(([id, icon, lbl, cnt]) => (
-                      <button key={id} style={{ display:'flex', alignItems:'center', gap:8, width:'100%', background: tab===id?'#059669':'transparent', border:'none', borderRadius:6, padding:'6px 9px', cursor:'pointer', color: tab===id?'#fff':'#CBD5E1', fontSize:12.5, fontFamily:"'DM Sans',sans-serif", fontWeight: tab===id?600:500, transition:'all .12s', boxSizing:'border-box' }}
+                      <button key={id} style={{ display:'flex', alignItems:'center', gap:8, width:'100%', background: tabMenu===id?'#059669':'transparent', border:'none', borderRadius:6, padding:'6px 9px', cursor:'pointer', color: tabMenu===id?'#fff':'#CBD5E1', fontSize:12.5, fontFamily:"'DM Sans',sans-serif", fontWeight: tabMenu===id?600:500, transition:'all .12s', boxSizing:'border-box' }}
                         onClick={() => { setTab(id); setSidebarOpen(false) }}>
                         <span style={{width:18,height:18,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,flexShrink:0,opacity:.9}}>{icon}</span>
                         <span style={{ flex:1, textAlign:'left' }}>{lbl}</span>
-                        {cnt!==''&&<span style={{ background: tab===id?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.1)', color: tab===id?'#fff':'#94A3B8', fontSize:10.5, fontWeight:600, padding:'1px 6px', borderRadius:10 }}>{cnt}</span>}
+                        {cnt!==''&&<span style={{ background: tabMenu===id?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.1)', color: tabMenu===id?'#fff':'#94A3B8', fontSize:10.5, fontWeight:600, padding:'1px 6px', borderRadius:10 }}>{cnt}</span>}
                       </button>
                     ))}
                   </div>
@@ -2179,6 +2195,13 @@ export default function AdminPanel({ onSwitchMode }) {
           {/* ===== RELATÓRIOS ===== */}
           {tab === 'relatorios' && (
             <div>
+              <div style={{fontSize:12,color:theme.textMuted,marginBottom:8}}>🌾 Fazendas & Clientes</div>
+              <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+                {SUBABAS_FAZENDAS.map(([id,lbl])=>(
+                  <button key={id} style={{background:id==='relatorios'?'#059669':theme.bg,color:id==='relatorios'?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
+                    onClick={()=>{ if(id!=='relatorios'){ setFzTab(id); setTab('fazendas') } }}>{lbl}</button>
+                ))}
+              </div>
               <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-end', flexWrap:'wrap', gap:10 }}>
                 <div>
                   <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>Relatórios de Voo</div>
@@ -2266,7 +2289,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             <span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
                           </div>
                           <div style={{ fontSize:12, color:theme.textMuted }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}{rel.ordem_servico?` · OS ${rel.ordem_servico}`:''}</div>
-                          <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}</div>
+                          <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''} · 🌡️ {fichaClimaDoRel(rel).txt}</div>
                         </div>
                         {isSel && (
                           <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
@@ -2322,6 +2345,9 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {codigoFazendaDoRel(rel) && <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>cód. {codigoFazendaDoRel(rel)}</span>}
                                     </div>
                                   )}
+                                  {(()=>{ const fc=fichaClimaDoRel(rel); return (
+                                    <div><span title="Ficha do Monitoramento Climático" style={{fontSize:9.5,fontWeight:700,color:fc.cor,background:fc.bg,padding:'1px 7px',borderRadius:20,whiteSpace:'nowrap'}}>🌡️ {fc.txt}</span></div>
+                                  )})()}
                                   {(rel.tipo_servico||(rel.qtd_voos&&rel.qtd_voos>1)) && (
                                     <div style={{fontSize:10,color:theme.textFaint2,marginTop:1}}>
                                       {rel.tipo_servico&&(rel.tipo_servico==='catacao'?'Catação':'Área Total')}
@@ -4277,6 +4303,9 @@ export default function AdminPanel({ onSwitchMode }) {
               .filter(f=>!q || f.cliente?.toLowerCase().includes(q)||f.nome?.toLowerCase().includes(q)||String(f.id_fazenda||'').toLowerCase().includes(q))
               .filter(f=>!fzProdutoFiltro || f.produto===fzProdutoFiltro)
               .filter(f=>!fzClienteFiltro || f.cliente===fzClienteFiltro)
+              .sort((a,b)=> fzListaOrdem==='recentes'
+                ? (String(b.created_at||'').localeCompare(String(a.created_at||'')) || compararNomes(a.nome,b.nome))
+                : compararNomes(a.nome,b.nome))
 
             const fazendasBI = fazendasFiltradas.map(fz => {
               const talhoesFz = invTalhoes.filter(t=>t.fazenda_id===fz.id)
@@ -4494,6 +4523,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   if(error) throw error
                   savedId = data.id
                 }
+                const novaFazenda = !fzEditId
                 // Sobe o PDF do mapa (se um novo arquivo foi escolhido) — só depois de ter o id da fazenda
                 if(fzMapaFile && savedId){
                   setFzMapaUploading(true)
@@ -4506,6 +4536,13 @@ export default function AdminPanel({ onSwitchMode }) {
                 showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
                 setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}})
                 setFzEditId(null); setFzMapaFile(null); setFzMapaExistente(null); setFzModal(false); fetchInventario()
+                // Fazenda nova já abre com o campo de talhão, no topo da lista (mais recentes).
+                if (novaFazenda && savedId) {
+                  setFzTab('fazendas'); setFzListaOrdem('recentes'); setFzSearch(''); setFzClienteFiltro(''); setFzProdutoFiltro('')
+                  setFzExpandido(s=>({...s,[savedId]:true}))
+                  setTimeout(()=>{ const el=document.getElementById(`novo-talhao-${savedId}`); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus() } }, 700)
+                  showToast('✅ Fazenda cadastrada! Agora adicione os talhões.')
+                }
               } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false); setFzMapaUploading(false) }
             }
 
@@ -4538,9 +4575,9 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* Sub-tabs */}
                 <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-                  {[['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes'],['equipes','🧑‍🤝‍🧑 Equipes']].map(([id,lbl])=>(
+                  {SUBABAS_FAZENDAS.map(([id,lbl])=>(
                     <button key={id} style={{background:fzTab===id?'#059669':theme.bg,color:fzTab===id?'#fff':theme.textMuted,border:'none',borderRadius:16,padding:'7px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                      onClick={()=>setFzTab(id)}>{lbl}</button>
+                      onClick={()=>id==='relatorios' ? setTab('relatorios') : setFzTab(id)}>{lbl}</button>
                   ))}
                 </div>
 
@@ -5091,6 +5128,11 @@ export default function AdminPanel({ onSwitchMode }) {
                             selected={fzProdutoFiltro?[fzProdutoFiltro]:[]}
                             onChange={arr=>setFzProdutoFiltro(arr.length?arr[arr.length-1]:'')}/>
                         </div>
+                        <select value={fzListaOrdem} onChange={e=>setFzListaOrdem(e.target.value)}
+                          style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:10,padding:'8px 10px',fontSize:12,background:theme.card,color:theme.text,cursor:'pointer'}}>
+                          <option value="recentes">Mais recentes primeiro</option>
+                          <option value="nome">Ordem alfabética</option>
+                        </select>
                         {(fzSearch||fzClienteFiltro||fzProdutoFiltro) && (
                           <button style={{background:'none',border:'1px solid #e0b0a8',color:theme.dangerText,borderRadius:12,padding:'8px 12px',fontSize:12,cursor:'pointer'}}
                             onClick={()=>{setFzSearch('');setFzClienteFiltro('');setFzProdutoFiltro('')}}>✕ Limpar</button>
@@ -5184,7 +5226,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                       ))}
                                       <div style={{display:'flex',gap:6,marginTop:8}}>
                                         <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:2}}
-                                          placeholder="Novo talhão..." value={tf.nome}
+                                          id={`novo-talhao-${fz.id}`} placeholder="Novo talhão..." value={tf.nome}
                                           onChange={e=>setTlForm(s=>({...s,[fz.id]:{...tf,nome:e.target.value}}))}/>
                                         <input style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:7,padding:'6px 8px',fontSize:12,outline:'none',flex:1}}
                                           placeholder="Área (ha)" type="number" value={tf.area_ha}

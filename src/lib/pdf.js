@@ -1419,7 +1419,7 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   })
   if (linhasTalhoes.length > limiteTalhoes) {
     doc.setFontSize(6); doc.setFont('helvetica', 'italic'); doc.setTextColor(...GR)
-    doc.text(`+ ${linhasTalhoes.length - limiteTalhoes} talhão(ões) na listagem completa`, M + 2.5, y1 + 3.6); y1 += 5.6
+    doc.text(`+ ${linhasTalhoes.length - limiteTalhoes} talhão(ões) — lista completa na página seguinte`, M + 2.5, y1 + 3.6); y1 += 5.6
   }
   doc.setDrawColor(...G); doc.setLineWidth(0.4); doc.line(M, y1 + 0.5, M + COLW, y1 + 0.5); y1 += 1
   doc.setFillColor(240, 248, 243); doc.rect(M, y1, COLW, 6.5, 'F')
@@ -1453,13 +1453,20 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   doc.text('TEMPO', C2X + COLW - 2.5, y2 + 3.8, { align: 'right' })
   y2 += 5.5
   cons.pilotos.slice(0, 10).forEach((p, i) => {
-    const alt = p.drones.length > 1 ? 8.4 : 5.6
+    // A altura sai das LINHAS do texto do drone, não da quantidade de drones: um nome longo
+    // ("Raptor T25P, Raptor T25P") quebrava em duas linhas numa linha de altura simples e
+    // invadia a de baixo. Até 2 linhas; o que passar disso termina em "…". A coluna vai até
+    // pouco antes da área (alinhada à direita em 0,70), que tem no máximo "999,99 ha".
+    doc.setFontSize(5.8); doc.setFont('helvetica', 'normal')
+    const larguraDrone = COLW * 0.20
+    let dr = doc.splitTextToSize(p.drones.length ? p.drones.join(', ') : '—', larguraDrone)
+    if (dr.length > 2) dr = [dr[0], truncFit(doc, dr.slice(1).join(' '), larguraDrone)]
+    const alt = dr.length > 1 ? 8.4 : 5.6
     if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(C2X, y2, COLW, alt, 'F') }
     doc.setFontSize(6.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
     doc.text(truncFit(doc, nomeCurto(p.piloto), COLW * 0.33), C2X + 2.5, y2 + 3.9)
     doc.setFontSize(5.8); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
-    const dr = doc.splitTextToSize(p.drones.length ? p.drones.join(', ') : '—', COLW * 0.32)
-    doc.text(dr.slice(0, 2), C2X + COLW * 0.36, y2 + 3.6)
+    doc.text(dr, C2X + COLW * 0.36, y2 + 3.6)
     doc.setFontSize(6.6); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
     doc.text(`${nHa(p.area)} ha`, C2X + COLW * 0.70, y2 + 3.9, { align: 'right' })
     doc.setTextColor(...G)
@@ -1590,6 +1597,52 @@ export async function gerarPDFFazendaPeriodo({ fazenda, voos, cons, incluirPende
   doc.text(contato, PW - M, rodY + 4.5, { align: 'right' })
   doc.setTextColor(...G)
   doc.text('Tecnologia que protege, resultados que voam.', PW - M, rodY + 8.5, { align: 'right' })
+
+  // ── Balanço COMPLETO dos talhões, quando não coube na página 1 ──
+  // A capa mostra só o que cabe e avisava "+ N na listagem completa", que não existia.
+  if (linhasTalhoes.length > limiteTalhoes) {
+    const W = PW - 2 * M
+    const col = { nome: M + W * 0.12, total: M + W * 0.34, aplic: M + W * 0.52, bord: M + W * 0.68, status: M + W * 0.86 }
+    let yc = 0
+    const cabecalho = () => {
+      doc.addPage([297, 210], 'l')
+      doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+      doc.text('BALANÇO COMPLETO DE TALHÕES', M, M + 6)
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+      doc.text(`${fazenda?.nome || ''} · ${periodoTxt} · ${linhasTalhoes.length} talhões`, M, M + 11)
+      yc = M + 15
+      doc.setFillColor(238, 246, 241); doc.rect(M, yc, W, 6, 'F')
+      doc.setFontSize(6.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...GR)
+      ;[['TALHÃO', col.nome], ['ÁREA TOTAL', col.total], ['APLICADA', col.aplic], ['BORD.', col.bord], ['STATUS', col.status]]
+        .forEach(([t, x]) => doc.text(t, x, yc + 4.1, { align: 'center' }))
+      yc += 6
+    }
+    cabecalho()
+    linhasTalhoes.forEach((t, i) => {
+      if (yc > 210 - M - 8) cabecalho()
+      if (i % 2 === 1) { doc.setFillColor(250, 252, 251); doc.rect(M, yc, W, 5.6, 'F') }
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(...DK)
+      doc.text(String(t.nome), col.nome, yc + 3.9, { align: 'center' })
+      doc.setTextColor(...GR); doc.text(nHa(t.cadastrado), col.total, yc + 3.9, { align: 'center' })
+      doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK); doc.text(nHa(t.area), col.aplic, yc + 3.9, { align: 'center' })
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR); doc.text(t.bordadura > 0 ? nHa(t.bordadura) : '—', col.bord, yc + 3.9, { align: 'center' })
+      const txt = t.status === 'PARCIAL' ? 'PARCIAL' : t.status === 'PENDENTE' ? 'NÃO INICIADO' : 'FINALIZADO'
+      doc.setFontSize(6.5); doc.setTextColor(...(t.status === 'PARCIAL' ? [176, 112, 20] : t.status === 'PENDENTE' ? [130, 130, 120] : G))
+      doc.text(txt, col.status, yc + 3.9, { align: 'center' })
+      yc += 5.6
+    })
+    if (yc > 210 - M - 10) cabecalho()
+    doc.setDrawColor(...G); doc.setLineWidth(0.4); doc.line(M, yc + 0.5, M + W, yc + 0.5); yc += 1
+    doc.setFillColor(240, 248, 243); doc.rect(M, yc, W, 6.5, 'F')
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold'); doc.setTextColor(...DK)
+    doc.text('Total', col.nome, yc + 4.4, { align: 'center' })
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.cadastrado, 0)), col.total, yc + 4.4, { align: 'center' })
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...G); doc.text(nHa(kp.areaAplicada), col.aplic, yc + 4.4, { align: 'center' })
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(...GR)
+    doc.text(nHa(linhasTalhoes.reduce((a, t) => a + t.bordadura, 0)), col.bord, yc + 4.4, { align: 'center' })
+    doc.text(`${cons.aplicados.length} de ${cons.totalTalhoesCatalogo}`, col.status, yc + 4.4, { align: 'center' })
+  }
 
 
   // ═══════════════════════════════════════════════════════════════════════════════════

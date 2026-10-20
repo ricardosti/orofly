@@ -9,6 +9,24 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.2',
+    data: '2026-10-19',
+    itens: [
+      { tipo: 'novo', titulo: 'Leituras do clima automaticas a cada 10 min',
+        texto: 'Com o voo em andamento, o app grava sozinho temperatura, umidade e vento da internet a cada 10 min (o admin troca em Configuracoes). O piloto nao preenche nem edita nada: so ve a lista; quem corrige e o admin no Monitoramento Climatico. Leitura perdida (sem sinal, app em segundo plano) e preenchida depois com o clima daquele horario. Inicio e fim continuam como antes, no Passo 3.' },
+      { tipo: 'correcao', titulo: 'Finalizar com varios talhoes pergunta a bordadura',
+        texto: 'Em talhao fechado o campo agora e a bordadura, igual ao talhao unico. Antes perguntava o pulverizado e digitar 5 virava "5 pulverizado + 95 bordadura".' },
+      { tipo: 'correcao', titulo: 'Voo lancado depois (data retroativa)',
+        texto: 'O inicio ajustado em "Editar Horario" antes de iniciar nao e mais trocado pela hora atual, e o fim acompanha. O Formulario Nardini sai com a data certa.' },
+      { tipo: 'melhoria', titulo: 'Relatorios dentro de Fazendas & Clientes',
+        texto: 'Relatorios de Voo saiu de Administrativo & Financeiro e virou a aba "Relatorios" em Gestao > Fazendas & Clientes. Cada voo mostra o selo do Monitoramento Climatico: automatico, editado pelo admin ou sem ficha.' },
+      { tipo: 'melhoria', titulo: 'Fazendas: mais recentes primeiro e talhao logo apos cadastrar',
+        texto: 'A lista de fazendas abre pelas mais recentes (da para voltar a ordem alfabetica). Fazenda nova ja abre com o campo de talhao.' },
+      { tipo: 'correcao', titulo: 'Relatorio por fazenda (PDF)',
+        texto: 'Quando os talhoes nao cabem na capa, a lista completa sai na pagina seguinte (antes so dizia "+N talhoes"). O nome do drone nao invade mais a linha de baixo no Rendimento por piloto.' },
+    ],
+  },
+  {
     versao: '11.1',
     data: '2026-10-19',
     itens: [

@@ -62,9 +62,12 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
   async function salvar() {
     setSalvando(true)
     try {
-      const dados = limparFicha(editor.dados)
-      // Ficha nova ligada a um voo registrado vai pro próprio relatório (igual o piloto faz).
       const relId = editor.tipo === 'voo' ? editor.relId : editor.vincular
+      // Ficha de voo salva aqui fica marcada como editada pelo admin (selo na lista de
+      // Relatórios: automático × editado × sem ficha).
+      const limpa = limparFicha(editor.dados)
+      const dados = limpa && relId ? { ...limpa, editado_admin: new Date().toISOString() } : limpa
+      // Ficha nova ligada a um voo registrado vai pro próprio relatório (igual o piloto faz).
       if (relId) {
         const { error } = await supabase.from('relatorios').update({ monitoramento_clima: dados }).eq('id', relId)
         if (error) throw error
