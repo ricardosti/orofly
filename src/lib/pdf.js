@@ -23,6 +23,30 @@ async function fetchImageBase64(supabase, bucket, path) {
   } catch { return null }
 }
 
+// ── Assinatura do piloto (Meu Perfil → Assinatura, pedido de 20/10/2026) ──
+// PNG transparente num caminho fixo do Storage, na pasta do próprio piloto: ele e o admin já
+// leem essa pasta pelas regras do Storage, sem depender do cadastro (profiles só é lido pelo
+// dono). Sem assinatura, o PDF segue com o nome escrito, como sempre.
+export const caminhoAssinatura = pilotoId => `${pilotoId}/assinatura.png`
+const cacheAssinatura = {}
+export function esquecerAssinatura(pilotoId) { delete cacheAssinatura[pilotoId] }
+export async function assinaturaDoPiloto(supabase, pilotoId) {
+  if (!supabase || !pilotoId) return null
+  if (!(pilotoId in cacheAssinatura)) cacheAssinatura[pilotoId] = await fetchImageBase64(supabase, 'relatorios', caminhoAssinatura(pilotoId))
+  return cacheAssinatura[pilotoId] || null
+}
+// Desenha a assinatura cabendo na caixa (centralizada, apoiada na base). Devolve true se desenhou.
+export function desenharAssinatura(doc, img, xMeio, yBase, largMax, altMax) {
+  if (!img) return false
+  try {
+    const p = doc.getImageProperties(img)
+    const esc = Math.min(largMax / p.width, altMax / p.height)
+    const w = p.width * esc, h = p.height * esc
+    doc.addImage(img, 'PNG', xMeio - w / 2, yBase - h, w, h)
+    return true
+  } catch (e) { console.warn('Assinatura não pôde ser desenhada:', e); return false }
+}
+
 function addUnit(key, val) {
   if (!val || val === '—') return val || '—'
   const units = { faixa:'m', vazao:'L/ha', vento:'km/h', umidade:'%', temperatura:'°C', delta_t:'' }
@@ -837,9 +861,13 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
   const sigX=C2+CW-55
   const sigMidX=sigX+27.5
   doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',sigMidX,y2+4,{align:'center'})
+  // Com a assinatura do piloto cadastrada, ela vai em cima da linha; senão, o nome em itálico.
   // Nome longo encolhe pra caber na faixa em vez de vazar por cima do que está ao lado.
-  doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK)
-  fontFit(doc,rel.piloto_nome||'',51,10);doc.text(rel.piloto_nome||'',sigMidX,y2+12,{align:'center'})
+  const sigImg = await assinaturaDoPiloto(supabase, rel.piloto_id)
+  if (!desenharAssinatura(doc, sigImg, sigMidX, y2+13, 51, 8.5)) {
+    doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK)
+    fontFit(doc,rel.piloto_nome||'',51,10);doc.text(rel.piloto_nome||'',sigMidX,y2+12,{align:'center'})
+  }
   doc.setDrawColor(...GR);doc.setLineWidth(0.3);doc.line(sigX,y2+13.5,C2+CW,y2+13.5)
   doc.setFont('helvetica','bold');doc.setTextColor(...DK)
   fontFit(doc,rel.piloto_nome||'',51,8);doc.text(rel.piloto_nome||'',sigMidX,y2+19,{align:'center'})
@@ -972,8 +1000,11 @@ export async function gerarPDFCliente(rel, { supabase, localObsFotos, localFotoM
       const tSigX=C2+CW-55
       const tSigMidX=tSigX+27.5
       doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(...GR);doc.text('PILOTO RESPONSÁVEL',tSigMidX,yR+4,{align:'center'})
-      doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK)
-      fontFit(doc,t.piloto_nome||'',51,10);doc.text(t.piloto_nome||'',tSigMidX,yR+12,{align:'center'})
+      const tSigImg = await assinaturaDoPiloto(supabase, t.piloto_id)
+      if (!desenharAssinatura(doc, tSigImg, tSigMidX, yR+13, 51, 8.5)) {
+        doc.setFont('helvetica','bolditalic');doc.setTextColor(...DK)
+        fontFit(doc,t.piloto_nome||'',51,10);doc.text(t.piloto_nome||'',tSigMidX,yR+12,{align:'center'})
+      }
       doc.setDrawColor(...GR);doc.setLineWidth(0.3);doc.line(tSigX,yR+13.5,C2+CW,yR+13.5)
       doc.setFont('helvetica','bold');doc.setTextColor(...DK)
       fontFit(doc,t.piloto_nome||'',51,8);doc.text(t.piloto_nome||'',tSigMidX,yR+19,{align:'center'})

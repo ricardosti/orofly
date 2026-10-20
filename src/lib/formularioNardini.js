@@ -9,7 +9,7 @@
 // 0,438 L) e `gerarFormularioNardini` só desenha.
 
 import jsPDF from 'jspdf'
-import { rateioPorTalhao, calcularGastoProdutos, areaLiquida, LOGO_B64, empresaAtual } from './pdf'
+import { rateioPorTalhao, calcularGastoProdutos, areaLiquida, LOGO_B64, empresaAtual, desenharAssinatura } from './pdf'
 import { formatarDose, formatarTotalProduto } from './calda'
 
 export function ehClienteNardini(cliente) {
@@ -112,7 +112,9 @@ export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = 
     data: dataLocal(rel.dt_inicio || rel.created_at),
     codigoFazenda: idFazenda || '',
     fazenda: rel.fazenda || '',
-    os: [rel.ordem_servico ? rel.ordem_servico.toUpperCase() : '', rel.tipo_servico === 'catacao' ? 'Catação' : 'Área Total'].filter(Boolean).join(' · '),
+    // "Nº da O.S. e Operação" é campo da Usina: sai em branco pra eles preencherem (pedido de
+    // 20/10/2026). A OS do Orofly continua no rodapé ("Preenchido pelo Orofly… (OS …)").
+    os: '',
     piloto: rel.piloto_nome || '',
     talhoes,
     totalTalhoes: { areaTalhao: programada, aplicada: areaAplicadaTotal, diferenca },
@@ -283,6 +285,8 @@ export function gerarFormularioNardini(rel, opts = {}) {
   const altAss = 20
   doc.rect(M, y, W, altAss)
   rotulo('Assinatura:', M + 10, y + 12)
+  // Assinatura do piloto (Meu Perfil), quando cadastrada — quem chama passa em opts.assinatura.
+  desenharAssinatura(doc, opts.assinatura, M + 75, y + 12, 80, 10)
   linhaBase(M + 30, M + 120, y + 12.5)
   doc.setTextColor(...TINTA); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
   doc.text(d.piloto, M + 75, y + 16.5, { align: 'center' })

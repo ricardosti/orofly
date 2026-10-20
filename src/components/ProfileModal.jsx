@@ -1,8 +1,34 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
+import { caminhoAssinatura, esquecerAssinatura } from '../lib/pdf'
 import { supabase } from '../lib/supabase'
 import { useTheme } from '../lib/theme'
 import { useLanguage } from '../lib/i18n'
+
+// Assinatura limpa: tira o fundo claro (papel fotografado), deixa o traço escuro e corta as
+// sobras. Sai um PNG transparente, que assenta em cima da linha dos PDFs.
+function assinaturaLimpa(canvas) {
+  const ctx = canvas.getContext('2d')
+  const { width: w, height: h } = canvas
+  const img = ctx.getImageData(0, 0, w, h), d = img.data
+  let x0 = w, y0 = h, x1 = -1, y1 = -1
+  for (let i = 0; i < d.length; i += 4) {
+    const lum = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+    if (d[i + 3] < 20 || lum > 170) { d[i + 3] = 0; continue }
+    d[i] = 20; d[i + 1] = 45; d[i + 2] = 110; d[i + 3] = 255 // tinta azul-escura, como caneta
+    const p = i / 4, x = p % w, y = Math.floor(p / w)
+    if (x < x0) x0 = x
+    if (x > x1) x1 = x
+    if (y < y0) y0 = y
+    if (y > y1) y1 = y
+  }
+  if (x1 < 0) return null
+  ctx.putImageData(img, 0, 0)
+  const m = 4, cw = Math.min(w, x1 - x0 + 1 + 2 * m), ch = Math.min(h, y1 - y0 + 1 + 2 * m)
+  const out = document.createElement('canvas'); out.width = cw; out.height = ch
+  out.getContext('2d').drawImage(canvas, Math.max(0, x0 - m), Math.max(0, y0 - m), cw, ch, 0, 0, cw, ch)
+  return out
+}
 
 export default function ProfileModal({ profile, onClose, onSaved }) {
   const { theme, themeName, toggleTheme } = useTheme()
@@ -15,6 +41,61 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
   const [confirmaSenha, setConfirmaSenha] = useState('')
   const [saving, setSaving] = useState(false)
   const [erro, setErro] = useState('')
+  // Assinatura (vai nos relatórios PDF, pedido de 20/10/2026). `assinNova`: null = sem
+  // mudança; Blob = nova; 'remover' = apagar.
+  const [assinPreview, setAssinPreview] = useState(null)
+  const [assinNova, setAssinNova] = useState(null)
+  const [desenhando, setDesenhando] = useState(false)
+  const padRef = useRef(null)
+  const tracando = useRef(false)
+
+  useEffect(() => {
+    if (!profile?.id) return
+    urlAssinada(supabase, caminhoAssinatura(profile.id)).then(url => { if (url) setAssinPreview(url) })
+  }, [profile?.id])
+
+  function usarCanvas(canvas) {
+    const limpo = assinaturaLimpa(canvas)
+    if (!limpo) { setErro('Não achei a assinatura na imagem — tente com fundo branco e caneta escura.'); return }
+    setErro('')
+    // Blob na hora, a partir do dataURL: o toBlob é assíncrono e pode levar mais de 1 s —
+    // quem tocava em Salvar logo depois gravava sem a assinatura.
+    const dataUrl = limpo.toDataURL('image/png')
+    const bin = atob(dataUrl.split(',')[1]), bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    setAssinPreview(dataUrl)
+    setAssinNova(new Blob([bytes], { type: 'image/png' }))
+    setDesenhando(false)
+  }
+  function handleAssinFile(f) {
+    if (!f) return
+    const img = new Image()
+    img.onload = () => {
+      const esc = Math.min(1, 900 / img.width)
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * esc); c.height = Math.round(img.height * esc)
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      usarCanvas(c)
+      URL.revokeObjectURL(img.src)
+    }
+    img.src = URL.createObjectURL(f)
+  }
+  const ptPad = e => {
+    const r = padRef.current.getBoundingClientRect()
+    return [(e.clientX - r.left) * padRef.current.width / r.width, (e.clientY - r.top) * padRef.current.height / r.height]
+  }
+  function padDown(e) {
+    tracando.current = true
+    const ctx = padRef.current.getContext('2d'); const [x, y] = ptPad(e)
+    ctx.beginPath(); ctx.moveTo(x, y)
+    if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  function padMove(e) {
+    if (!tracando.current) return
+    const ctx = padRef.current.getContext('2d')
+    ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#142d6e'
+    const [x, y] = ptPad(e); ctx.lineTo(x, y); ctx.stroke()
+  }
+  function padUp() { tracando.current = false }
 
   useEffect(() => {
     if (!profile?.avatar_url) return
@@ -48,6 +129,14 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
       // nenhum). Forçando o single(), 0 linhas vira um erro de verdade em vez de falhar em silêncio.
       const { error: profErr } = await supabase.from('profiles').update({ nome, telefone: telefone || null, avatar_url }).eq('id', profile.id).select().single()
       if (profErr) throw profErr
+      if (assinNova) {
+        const path = caminhoAssinatura(profile.id)
+        const { error: e } = assinNova === 'remover'
+          ? await supabase.storage.from('relatorios').remove([path])
+          : await supabase.storage.from('relatorios').upload(path, assinNova, { upsert: true, contentType: 'image/png' })
+        if (e) throw e
+        esquecerUrl(path); esquecerAssinatura(profile.id)
+      }
       if (novaSenha) {
         const { error: passErr } = await supabase.auth.updateUser({ password: novaSenha })
         if (passErr) throw passErr
@@ -88,6 +177,46 @@ export default function ProfileModal({ profile, onClose, onSaved }) {
         <div style={{ marginBottom: 12 }}>
           <div style={labelStyle}>{t('E-MAIL')}</div>
           <input style={{ ...inputStyle, color: theme.textFaint2, background: theme.divider }} value={profile?.email || ''} disabled />
+        </div>
+
+        <div style={{ borderTop: `1px solid ${theme.divider}`, margin: '16px 0', paddingTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, marginBottom: 4, fontFamily: "'Syne',sans-serif" }}>✍️ Assinatura</div>
+          <div style={{ fontSize: 11, color: theme.textFaint2, marginBottom: 10, lineHeight: 1.4 }}>Vai no campo de assinatura dos relatórios em PDF. Tire foto da assinatura em papel branco ou desenhe aqui.</div>
+          {desenhando ? (
+            <div>
+              <canvas ref={padRef} width={600} height={220} onPointerDown={padDown} onPointerMove={padMove} onPointerUp={padUp} onPointerLeave={padUp}
+                style={{ width: '100%', height: 130, background: '#fff', border: `1px dashed ${theme.cardBorder2 || theme.cardBorder}`, borderRadius: 12, touchAction: 'none', display: 'block' }} />
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button style={{ flex: 1, background: theme.bg, color: theme.textMuted, border: 'none', borderRadius: 100, padding: 9, fontSize: 12.5, cursor: 'pointer' }}
+                  onClick={() => { const c = padRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height) }}>Limpar</button>
+                <button style={{ flex: 1, background: theme.bg, color: theme.textMuted, border: 'none', borderRadius: 100, padding: 9, fontSize: 12.5, cursor: 'pointer' }}
+                  onClick={() => setDesenhando(false)}>Cancelar</button>
+                <button style={{ flex: 1.4, background: theme.primary, color: '#fff', border: 'none', borderRadius: 100, padding: 9, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                  onClick={() => usarCanvas(padRef.current)}>Usar esta</button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div style={{ background: '#fff', border: `1px solid ${theme.cardBorder}`, borderRadius: 12, height: 90, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {assinPreview
+                  ? <img src={assinPreview} alt="assinatura" style={{ maxWidth: '90%', maxHeight: 78, objectFit: 'contain' }} />
+                  : <span style={{ fontSize: 12, color: '#9aa8a0' }}>Sem assinatura — o PDF sai com o nome escrito</span>}
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <label style={{ flex: 1, textAlign: 'center', background: theme.bg, color: theme.text, borderRadius: 100, padding: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+                  📷 Enviar foto
+                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { handleAssinFile(e.target.files[0]); e.target.value = '' }} />
+                </label>
+                <button style={{ flex: 1, background: theme.bg, color: theme.text, border: 'none', borderRadius: 100, padding: 9, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => setDesenhando(true)}>✍️ Desenhar</button>
+                {assinPreview && (
+                  <button style={{ background: theme.dangerBg, color: theme.dangerText, border: 'none', borderRadius: 100, padding: '9px 12px', fontSize: 12.5, cursor: 'pointer' }}
+                    onClick={() => { setAssinPreview(null); setAssinNova('remover') }}>🗑️</button>
+                )}
+              </div>
+              {assinNova && <div style={{ fontSize: 11, color: theme.textFaint2, marginTop: 6 }}>Toque em Salvar pra gravar.</div>}
+            </div>
+          )}
         </div>
 
         <div style={{ borderTop: `1px solid ${theme.divider}`, margin: '16px 0', paddingTop: 16 }}>

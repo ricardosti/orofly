@@ -9,6 +9,16 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.4',
+    data: '2026-10-20',
+    itens: [
+      { tipo: 'novo', titulo: 'Assinatura no Meu Perfil, nos relatorios em PDF',
+        texto: 'Em Meu Perfil da para enviar a foto da assinatura (papel branco, o fundo some sozinho) ou desenhar com o dedo. Ela sai no campo de assinatura do Relatorio do voo, dos trechos compartilhados e do Formulario Nardini. Sem assinatura, segue o nome escrito.' },
+      { tipo: 'melhoria', titulo: 'Formulario Nardini: O.S. em branco pra Usina',
+        texto: 'O campo "N da O.S. e Operacao" sai em branco, pra Usina preencher. A OS do Orofly continua no rodape.' },
+    ],
+  },
+  {
     versao: '11.3',
     data: '2026-10-20',
     itens: [
