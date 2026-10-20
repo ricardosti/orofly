@@ -109,6 +109,25 @@ const linhaDiv16 = '┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄'
 // ela sai de dentro pra chegar no que foi pulverizado. Sem area_feita (registro antigo) o escopo
 // do voo faz o mesmo papel. Mesma regra de `areaLiquida` em lib/pdf.js, duplicada de propósito
 // pra este builder de WhatsApp não depender do módulo de PDF.
+// Área não aplicada por motivo que não é bordadura (obstáculo, vento, outro…), por talhão.
+// Voo salvo a partir da v10.9 traz o campo nao_aplicada_detalhe; antes, só a linha de texto
+// "Área não aplicada em X (1,45 ha): Motivo" na Observação. Mesma regra do formulário Nardini:
+// sai da área aplicada. Pedido do Rodolfo (20/10/2026): o WhatsApp não mostrava o obstáculo.
+const RE_NAO_APLICADA = /^Área não aplicada(?: em (.+?))? \(([\d.,]+) ha\): (.+)$/
+export function naoAplicadaDoRel(rel) {
+  if (Array.isArray(rel.nao_aplicada_detalhe)) {
+    return rel.nao_aplicada_detalhe.filter(d => d && parseFloat(d.area) > 0)
+      .map(d => ({ talhao: d.talhao || null, qtd: parseFloat(d.area) || 0, motivo: d.motivo || '' }))
+  }
+  const out = []
+  String(rel.obs1 || '').split('\n').forEach(l => {
+    const m = l.trim().match(RE_NAO_APLICADA)
+    if (m) out.push({ talhao: m[1] ? m[1].trim() : null, qtd: parseFloat(m[2].replace(',', '.')) || 0, motivo: m[3].trim() })
+  })
+  return out
+}
+const rotuloNaoAplicada = m => m.motivo && m.motivo !== 'Outro' ? m.motivo : 'Não aplic.'
+
 function areaLiquidaLocal(rel) {
   const feita = parseFloat(rel.area_feita)
   if (!isNaN(feita) && feita > 0) return Math.max(0, +(feita - (parseFloat(rel.bordadura) || 0)).toFixed(2))
@@ -227,7 +246,17 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
       dadosPorTalhao.forEach(d => { if (d.total != null) d.aplicada = Math.max(0, +(areaFeitaRel * (d.total / somaTotais) - d.bord).toFixed(2)) })
     }
   }
-  const areaAplicadaGeral = areaLiquidaLocal(rel)
+  // Não aplicada por outros motivos: sai da aplicada de cada talhão (e da geral).
+  const naoAplicada = naoAplicadaDoRel(rel)
+  const naoAplicadaDoTalhao = nome => naoAplicada.filter(m => m.talhao === nome || (!m.talhao && talhoes.length === 1))
+  dadosPorTalhao.forEach(d => {
+    d.outros = naoAplicadaDoTalhao(d.nome)
+    const q = d.outros.reduce((a, m) => a + m.qtd, 0)
+    if (q > 0 && d.aplicada != null) d.aplicada = Math.max(0, +(d.aplicada - q).toFixed(2))
+  })
+  const outrosGeral = naoAplicada.reduce((a, m) => a + m.qtd, 0)
+  const areaAplicadaGeral = Math.max(0, +(areaLiquidaLocal(rel) - outrosGeral).toFixed(2))
+  const txtOutros = lista => lista.map(m => ` | ${rotuloNaoAplicada(m)} ${fmtHa(m.qtd)}`).join('')
 
   const blocos = []
 
@@ -244,14 +273,15 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   if (cfg.area) {
     const area = []
     if (talhoes.length > 1) {
-      dadosPorTalhao.forEach(({ nome, total, bord, aplicada }, i) => {
-        // "Tot" é o que ESTA frente percorreu no talhão — aplicada mais a bordadura que saiu de
-        // dentro dela, ou seja, de volta ao que o piloto digitou. Mesma regra da linha de talhão
-        // único: nunca o tamanho cadastrado.
-        const percorrido = aplicada != null ? +(aplicada + bord).toFixed(2) : null
+      dadosPorTalhao.forEach(({ nome, total, bord, aplicada, outros }, i) => {
+        // "Tot" é o que ESTA frente percorreu no talhão — aplicada mais a bordadura e o não
+        // aplicado que saíram de dentro dela, ou seja, de volta ao que o piloto digitou. Mesma
+        // regra da linha de talhão único: nunca o tamanho cadastrado.
+        const qOutros = (outros || []).reduce((a, m) => a + m.qtd, 0)
+        const percorrido = aplicada != null ? +(aplicada + bord + qOutros).toFixed(2) : null
         area.push(percorrido != null
-          ? `Tal. ${nome}: Tot ${fmtHa(percorrido)} ha | Bord ${fmtHa(bord)} | Aplic ${fmtHa(aplicada)} ha`
-          : `Tal. ${nome}: Bord ${fmtHa(bord)}`)
+          ? `Tal. ${nome}: Tot ${fmtHa(percorrido)} ha | Bord ${fmtHa(bord)}${txtOutros(outros || [])} | Aplic ${fmtHa(aplicada)} ha`
+          : `Tal. ${nome}: Bord ${fmtHa(bord)}${txtOutros(outros || [])}`)
         if (i < dadosPorTalhao.length - 1) area.push('')
       })
     } else {
@@ -264,7 +294,7 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
       // fecha o montante do talhão é o consolidado da fazenda, somando todas as frentes.
       const feitaVoo = parseFloat(rel.area_feita)
       const percorridoVoo = !isNaN(feitaVoo) && feitaVoo > 0 ? feitaVoo : (parseFloat(rel.area_ha) || 0)
-      area.push(`Tot ${fmtHa(percorridoVoo)} ha | Bord ${fmtHa(rel.bordadura)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
+      area.push(`Tot ${fmtHa(percorridoVoo)} ha | Bord ${fmtHa(rel.bordadura)}${txtOutros(naoAplicada)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
     }
     blocos.push(`*Áreas*\n${area.join('\n')}`)
   }
@@ -308,7 +338,9 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   if (clima.length) blocos.push(`*Clima (Início - Fim)*\n${clima.join('\n')}`)
 
   if (cfg.observacoes) {
-    const obsTxt = [rel.obs1, cfg.observacoes2 ? rel.obs2 : null].filter(Boolean).join(' | ')
+    // As linhas "Área não aplicada…" já saem nas Áreas acima.
+    const obs1Livre = String(rel.obs1 || '').split('\n').filter(l => !RE_NAO_APLICADA.test(l.trim())).join('\n').trim()
+    const obsTxt = [obs1Livre, cfg.observacoes2 ? rel.obs2 : null].filter(Boolean).join(' | ')
     if (obsTxt) blocos.push(`*Obs:* ${obsTxt}`)
   }
 

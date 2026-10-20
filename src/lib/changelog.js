@@ -9,6 +9,16 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.3',
+    data: '2026-10-20',
+    itens: [
+      { tipo: 'correcao', titulo: 'WhatsApp mostra obstaculo, vento e outros motivos por talhao',
+        texto: 'Alem da bordadura, a linha de cada talhao mostra a area nao aplicada por outro motivo (ex.: "Obstaculo / Fiacao 1,20"; o Outro sai como "Nao aplic.") e a area aplicada e o produto descontam esse valor, igual ao Formulario Nardini (pedido do Rodolfo). Lembrete: o WhatsApp sai com o que esta salvo naquela hora; corrigiu o relatorio no painel, gere de novo.' },
+      { tipo: 'melhoria', titulo: 'Formulario Nardini com a empresa no quadro de Observacoes',
+        texto: 'O canto do quadro de Observacoes ja sai com o logo e o nome da empresa (razao social, CNPJ e telefone de Configuracoes do Sistema).' },
+    ],
+  },
+  {
     versao: '11.2',
     data: '2026-10-19',
     itens: [

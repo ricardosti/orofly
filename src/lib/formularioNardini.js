@@ -9,7 +9,7 @@
 // 0,438 L) e `gerarFormularioNardini` só desenha.
 
 import jsPDF from 'jspdf'
-import { rateioPorTalhao, calcularGastoProdutos, areaLiquida } from './pdf'
+import { rateioPorTalhao, calcularGastoProdutos, areaLiquida, LOGO_B64, empresaAtual } from './pdf'
 import { formatarDose, formatarTotalProduto } from './calda'
 
 export function ehClienteNardini(cliente) {
@@ -260,9 +260,20 @@ export function gerarFormularioNardini(rel, opts = {}) {
   barra('OBSERVAÇÕES')
   const altObs = 24
   doc.setDrawColor(...PRETO); doc.setLineWidth(0.25); doc.rect(M, y, W, altObs)
+  // Empresa executora já impressa no canto do quadro: logo + nome (pedido do Rodolfo,
+  // 20/10/2026). O texto das observações fica à esquerda, sem invadir.
+  const larguraEmpresa = 52
+  const emp = empresaAtual() || {}
+  const xEmp = M + W - larguraEmpresa
+  doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.2); doc.line(xEmp, y + 2, xEmp, y + altObs - 2)
+  try { doc.addImage(LOGO_B64, 'PNG', xEmp + (larguraEmpresa - 24) / 2, y + 2, 24, 13.5) } catch (e) { /* sem logo: fica só o nome */ }
+  doc.setTextColor(...PRETO); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5)
+  doc.text(String(emp.razao_social || emp.nome || 'Orofly').toUpperCase(), xEmp + larguraEmpresa / 2, y + 18.5, { align: 'center', maxWidth: larguraEmpresa - 4 })
+  const linhaCad = [emp.cnpj ? `CNPJ ${emp.cnpj}` : null, emp.telefone || null].filter(Boolean).join(' · ')
+  if (linhaCad) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor(90, 90, 90); doc.text(linhaCad, xEmp + larguraEmpresa / 2, y + 21.8, { align: 'center', maxWidth: larguraEmpresa - 4 }) }
   if (d.observacoes) {
     doc.setTextColor(...TINTA); doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
-    const linhas = doc.splitTextToSize(d.observacoes, W - 6).slice(0, 5)
+    const linhas = doc.splitTextToSize(d.observacoes, W - larguraEmpresa - 6).slice(0, 5)
     doc.text(linhas, M + 3, y + 5)
   }
   y += altObs

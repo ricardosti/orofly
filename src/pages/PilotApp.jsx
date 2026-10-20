@@ -1472,7 +1472,9 @@ export default function PilotApp({onSwitchMode}) {
         piloto_nome: formComPiloto.piloto_nome, drone: droneVal,
         dt_inicio: dtIniIso, dt_fim: dtFimIso,
         area_ha: form.area_ha, bordadura: bordaduraAtual(form), bordadura_detalhe: bordaduraDetalheAtual,
-        area_feita: form.area_feita, area_feita_detalhe: areaFeitaDetalheAtual,
+        area_feita: form.area_feita, area_feita_detalhe: areaFeitaDetalheAtual || montarPayload({}).area_feita_detalhe,
+        // Obstáculo, vento, outro… por talhão — saem na linha do talhão (pedido do Rodolfo).
+        nao_aplicada_detalhe: montarPayload({}).nao_aplicada_detalhe,
         produtos: form.produtos.filter(Boolean).map(produtoComUnidade),
         vazao_i: form.vazao_i, vazao_f: form.vazao_f,
         velocidade_drone: form.velocidade_drone, altura: form.altura, faixa_i: form.faixa_i, faixa_f: form.faixa_f,
