@@ -9,6 +9,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.8',
+    data: '2026-10-21',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Formulario Nardini sem o nome do piloto',
+        texto: 'Os campos "Piloto Responsavel" e o quadro PILOTO (nome e assinatura) saem em branco, pra preencher a mao. Pedido do Rodolfo.' },
+    ],
+  },
+  {
     versao: '11.7',
     data: '2026-10-21',
     itens: [

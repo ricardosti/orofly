@@ -3,7 +3,7 @@ import { useTheme } from '../lib/theme'
 import { ComposedChart, BarChart, Line, Area, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFCliente, calcularGastoProdutos, parseDoseProduto, areaLiquida, rateioPorTalhao, setEmpresaConfig, assinaturaDoPiloto } from '../lib/pdf'
+import { gerarPDFCliente, calcularGastoProdutos, parseDoseProduto, areaLiquida, rateioPorTalhao, setEmpresaConfig } from '../lib/pdf'
 import { resolverTemplate, montarTextoWhatsapp } from '../lib/reportTemplates'
 import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
@@ -6759,8 +6759,7 @@ Quando: ${tempoErroDebug.quando}`}
                 const norm = t => (t||'').trim().toLowerCase().replace(/\s+/g,' ')
                 const fz = fazendasDB.find(f=>norm(f.cliente)===norm(rel.cliente) && norm(f.nome)===norm(rel.fazenda))
                 const talhoesCatalogo = fz ? talhoesDB.filter(t=>t.fazenda_id===fz.id).map(t=>({nome:t.nome, area_ha:t.area_ha})) : []
-                const assinatura = await assinaturaDoPiloto(supabase, rel.piloto_id||profile.id)
-                const doc = gerarFormularioNardini(rel, { talhoesCatalogo, idFazenda: fz?.id_fazenda||'', assinatura })
+                const doc = gerarFormularioNardini(rel, { talhoesCatalogo, idFazenda: fz?.id_fazenda||'' })
                 await salvarOuCompartilharPdf(doc, nomeArquivoFormularioNardini(rel)); showToast('✅ Formulário pronto!')
               }}>📄 Formulário Nardini</button>
             )}

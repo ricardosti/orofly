@@ -3,7 +3,7 @@ import { useAdminTheme as useTheme } from '../lib/theme'
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
-import { gerarPDFCliente, gerarWordCliente, gerarPDFFazendaPeriodo, gerarPDFAgenda, gerarPDFSequencia, areaLiquida, setEmpresaConfig, assinaturaDoPiloto } from '../lib/pdf'
+import { gerarPDFCliente, gerarWordCliente, gerarPDFFazendaPeriodo, gerarPDFAgenda, gerarPDFSequencia, areaLiquida, setEmpresaConfig } from '../lib/pdf'
 import { registrarPush, salvarSubscription } from '../lib/notifications'
 import { pedirPermissaoNotificacaoLocal, notificarLocal } from '../lib/localNotify'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob, compartilharNativo } from '../lib/nativeShare'
@@ -1947,8 +1947,7 @@ export default function AdminPanel({ onSwitchMode }) {
         const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
         const fz = invFazendas.find(f => norm(f.cliente)===norm(relFinal.cliente) && norm(f.nome)===norm(relFinal.fazenda))
         const talhoesCatalogo = fz ? invTalhoes.filter(t => t.fazenda_id===fz.id).map(t => ({ nome:t.nome, area_ha:t.area_ha })) : []
-        const assinatura = await assinaturaDoPiloto(supabase, relFinal.piloto_id)
-        const doc = gerarFormularioNardini(relFinal, { talhoesCatalogo, idFazenda: fz?.id_fazenda || '', assinatura })
+        const doc = gerarFormularioNardini(relFinal, { talhoesCatalogo, idFazenda: fz?.id_fazenda || '' })
         await salvarOuCompartilharPdf(doc, nomeArquivoFormularioNardini(relFinal))
       } else if (tipo === 'word') {
         const blob = await gerarWordCliente(relFinal, opts)

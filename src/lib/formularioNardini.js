@@ -9,7 +9,7 @@
 // 0,438 L) e `gerarFormularioNardini` só desenha.
 
 import jsPDF from 'jspdf'
-import { rateioPorTalhao, calcularGastoProdutos, areaLiquida, LOGO_B64, empresaAtual, desenharAssinatura } from './pdf'
+import { rateioPorTalhao, calcularGastoProdutos, areaLiquida, LOGO_B64, empresaAtual } from './pdf'
 import { formatarDose, formatarTotalProduto } from './calda'
 
 export function ehClienteNardini(cliente) {
@@ -173,7 +173,9 @@ export function gerarFormularioNardini(rel, opts = {}) {
   rotulo('Fazenda / Sítio:', M, y); linhaBase(M + 30, M + W, y + 1); preenchido(d.fazenda, M + 32, y, W - 34)
   y += 7
   rotulo('Nº da O.S. e Operação:', M, y); linhaBase(M + 37, M + 110, y + 1); preenchido(d.os, M + 39, y, 69)
-  rotulo('Piloto Responsável:', M + 116, y); linhaBase(M + 146, M + W, y + 1); preenchido(d.piloto, M + 148, y, 40)
+  // Piloto em branco, aqui e no quadro PILOTO: quem preenche é o Rodolfo. Com o nome (e a
+  // assinatura) impressos, o formulário virava dedo-duro do piloto pra usina (21/10/2026).
+  rotulo('Piloto Responsável:', M + 116, y); linhaBase(M + 146, M + W, y + 1)
   y += 5
 
   // Tabela genérica: colunas [{ titulo, w, alinhar }], linhas de strings
@@ -309,11 +311,7 @@ export function gerarFormularioNardini(rel, opts = {}) {
   const altAss = 20
   doc.rect(M, y, W, altAss)
   rotulo('Assinatura:', M + 10, y + 12)
-  // Assinatura do piloto (Meu Perfil), quando cadastrada — quem chama passa em opts.assinatura.
-  desenharAssinatura(doc, opts.assinatura, M + 75, y + 12, 80, 10)
   linhaBase(M + 30, M + 120, y + 12.5)
-  doc.setTextColor(...TINTA); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5)
-  doc.text(d.piloto, M + 75, y + 16.5, { align: 'center' })
   y += altAss
 
   // Rodapé discreto — de onde saiu o formulário
