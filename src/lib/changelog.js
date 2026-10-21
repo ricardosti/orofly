@@ -9,6 +9,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.6',
+    data: '2026-10-21',
+    itens: [
+      { tipo: 'correcao', titulo: 'Formulario Nardini: nome da empresa cabe no quadro',
+        texto: 'Com a razao social inteira, o nome passava por cima do CNPJ e era cortado no fim do quadro de Observacoes. Agora o bloco se ajusta (a letra e o logo diminuem se precisar) e o CNPJ sai formatado.' },
+    ],
+  },
+  {
     versao: '11.5',
     data: '2026-10-20',
     itens: [

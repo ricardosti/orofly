@@ -264,15 +264,39 @@ export function gerarFormularioNardini(rel, opts = {}) {
   doc.setDrawColor(...PRETO); doc.setLineWidth(0.25); doc.rect(M, y, W, altObs)
   // Empresa executora já impressa no canto do quadro: logo + nome (pedido do Rodolfo,
   // 20/10/2026). O texto das observações fica à esquerda, sem invadir.
-  const larguraEmpresa = 52
+  // Montado de baixo pra cima — CNPJ e telefone, a razão social (a fonte diminui até caber em
+  // 2 linhas) e o logo no espaço que sobra. Com a razão social inteira o nome dava 3 linhas,
+  // passava por cima do CNPJ e vazava do quadro (21/10/2026).
+  const larguraEmpresa = 60
   const emp = empresaAtual() || {}
-  const xEmp = M + W - larguraEmpresa
+  const xEmp = M + W - larguraEmpresa, xMeio = xEmp + larguraEmpresa / 2, largTexto = larguraEmpresa - 4
   doc.setDrawColor(210, 210, 210); doc.setLineWidth(0.2); doc.line(xEmp, y + 2, xEmp, y + altObs - 2)
-  try { doc.addImage(LOGO_B64, 'PNG', xEmp + (larguraEmpresa - 24) / 2, y + 2, 24, 13.5) } catch (e) { /* sem logo: fica só o nome */ }
-  doc.setTextColor(...PRETO); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5)
-  doc.text(String(emp.razao_social || emp.nome || 'Orofly').toUpperCase(), xEmp + larguraEmpresa / 2, y + 18.5, { align: 'center', maxWidth: larguraEmpresa - 4 })
-  const linhaCad = [emp.cnpj ? `CNPJ ${emp.cnpj}` : null, emp.telefone || null].filter(Boolean).join(' · ')
-  if (linhaCad) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor(90, 90, 90); doc.text(linhaCad, xEmp + larguraEmpresa / 2, y + 21.8, { align: 'center', maxWidth: larguraEmpresa - 4 }) }
+  let yBase = y + altObs - 2
+  const cnpj = String(emp.cnpj || '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
+  const linhaCad = [cnpj ? `CNPJ ${cnpj}` : null, emp.telefone || null].filter(Boolean).join(' · ')
+  if (linhaCad) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.3); doc.setTextColor(90, 90, 90)
+    doc.text(doc.splitTextToSize(linhaCad, largTexto)[0], xMeio, yBase, { align: 'center' })
+    yBase -= 3.2
+  }
+  doc.setTextColor(...PRETO); doc.setFont('helvetica', 'bold')
+  const nome = String(emp.razao_social || emp.nome || 'Orofly').toUpperCase()
+  let corpo = 7, linhasNome
+  for (;;) {
+    doc.setFontSize(corpo); linhasNome = doc.splitTextToSize(nome, largTexto)
+    if (linhasNome.length <= 2 || corpo <= 5.5) break
+    corpo -= 0.5
+  }
+  linhasNome = linhasNome.slice(0, 3)
+  const entrelinha = corpo * 0.41 // 1,15× o corpo, em mm
+  linhasNome.forEach((l, i) => doc.text(l, xMeio, yBase - (linhasNome.length - 1 - i) * entrelinha, { align: 'center' }))
+  // O logo (182×104 px) ocupa o que sobrou em cima, até o tamanho de antes.
+  const topoNome = yBase - (linhasNome.length - 1) * entrelinha - corpo * 0.26 // altura das maiúsculas
+  const altLogo = Math.min(13.5, topoNome - 1.2 - (y + 1.5))
+  if (altLogo > 5) {
+    const largLogo = altLogo * 1.75
+    try { doc.addImage(LOGO_B64, 'PNG', xMeio - largLogo / 2, y + 1.5, largLogo, altLogo) } catch (e) { /* sem logo: fica só o nome */ }
+  }
   if (d.observacoes) {
     doc.setTextColor(...TINTA); doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
     const linhas = doc.splitTextToSize(d.observacoes, W - larguraEmpresa - 6).slice(0, 5)
