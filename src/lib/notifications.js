@@ -1,4 +1,5 @@
 // Helpers para Web Push notifications
+import { cabecalhoLogin } from './apiBase'
 
 const VAPID_PUBLIC_KEY = process.env.REACT_APP_VAPID_PUBLIC_KEY
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
@@ -65,7 +66,7 @@ export async function enviarNotificacao({ titulo, corpo, url, tag, requireIntera
   try {
     await fetch(`${API_BASE}/api/send-notification`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await cabecalhoLogin()) },
       body: JSON.stringify({ titulo, corpo, url, tag, requireInteraction })
     })
   } catch (e) {

@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js')
 const webpush = require('web-push')
+const { cors, conferirLogin } = require('./_auth')
 
 webpush.setVapidDetails(
   'mailto:admin@orofly.com.br',
@@ -7,12 +8,25 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY
 )
 
+// Link da notificação: só caminho do próprio site ou o mapa do Google (o do SOS). Sem essa
+// trava, quem chamasse a função mandava aos admins uma notificação apontando pra qualquer
+// site — e o clique abre o link dentro do app (public/sw.js).
+function linkPermitido(url) {
+  const s = String(url || '')
+  if (/^\/(?![/\\])/.test(s)) return s
+  try {
+    const u = new URL(s)
+    const mapa = u.hostname === 'maps.google.com' || (u.hostname === 'www.google.com' && u.pathname.startsWith('/maps'))
+    if (u.protocol === 'https:' && mapa) return u.toString()
+  } catch { /* não é URL */ }
+  return '/'
+}
+
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  cors(res)
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  if (!(await conferirLogin(req, res))) return
 
   const admin = createClient(
     process.env.REACT_APP_SUPABASE_URL,
@@ -35,11 +49,11 @@ module.exports = async function handler(req, res) {
     }
 
     const payload = JSON.stringify({
-      title: titulo || 'Orofly',
-      body: corpo || '',
-      url: url || '/',
-      tag: tag || 'orofly',
-      requireInteraction: requireInteraction || false,
+      title: String(titulo || 'Orofly').slice(0, 120),
+      body: String(corpo || '').slice(0, 500),
+      url: linkPermitido(url),
+      tag: String(tag || 'orofly').slice(0, 64),
+      requireInteraction: !!requireInteraction,
     })
 
     let sent = 0, failed = 0
@@ -62,3 +76,6 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: err.message })
   }
 }
+
+// Exposto pros testes; a Vercel só usa o handler.
+module.exports.linkPermitido = linkPermitido

@@ -48,7 +48,6 @@ import { CATEGORIA_DESPESA_OPTS, CATEGORIA_LEGADA, CATEGORIA_ICON, iconeCategori
 import { dataLocal, fmtData } from '../lib/datas'
 import { indexarClientes, receitaDoVoo, totalizarReceita, mesDoVoo, mesDaDespesa, rotuloMes, ultimosMeses } from '../lib/faturamento'
 import { calcDeltaT, classificarClimaParam, setLimitesClima } from '../lib/clima'
-import { apiUrl } from '../lib/apiBase'
 import { resolverTemplate, montarTextoWhatsapp, DEFAULT_WHATSAPP_CONFIG, DEFAULT_PDF_CONFIG, MOCK_RELATORIO } from '../lib/reportTemplates'
 import { linhasDaSequencia, totaisDaSequencia, ordenarLinhas, periodoUltimosDias, ROTULO_STATUS } from '../lib/sequencia'
 import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
@@ -210,7 +209,7 @@ export default function AdminPanel({ onSwitchMode }) {
   async function rodarBenchmarkClima() {
     setDevBenchTestando(true)
     try {
-      const r = await fetch(apiUrl(`/api/clima?lat=${devBenchLat}&lon=${devBenchLng}&diagnostico=1`))
+      const r = await apiAdmin(`clima?lat=${devBenchLat}&lon=${devBenchLng}&diagnostico=1`)
       const data = await r.json()
       setDevBenchResultados(data?.diagnostico || null)
     } catch (e) {
@@ -1595,7 +1594,7 @@ export default function AdminPanel({ onSwitchMode }) {
   async function testarConexaoClima() {
     setWeatherStatusTestando(true)
     try {
-      const r = await fetch(apiUrl('/api/clima?lat=-21.1775&lon=-47.8103'))
+      const r = await apiAdmin('clima?lat=-21.1775&lon=-47.8103')
       const data = await r.json()
       if (!r.ok) { setWeatherStatus({ estado:'erro', mensagem: data?.error || `HTTP ${r.status}` }); return }
       if (data.provider_active === weatherProviderOrdem[0]) setWeatherStatus({ estado:'ok', mensagem:'' })
@@ -1614,7 +1613,7 @@ export default function AdminPanel({ onSwitchMode }) {
   async function testarDiagnosticoProvedores() {
     setWeatherDiagnosticoTestando(true)
     try {
-      const r = await fetch(apiUrl('/api/clima?lat=-21.1775&lon=-47.8103&diagnostico=1'))
+      const r = await apiAdmin('clima?lat=-21.1775&lon=-47.8103&diagnostico=1')
       const data = await r.json()
       setWeatherDiagnostico(data?.diagnostico || null)
     } catch (e) {

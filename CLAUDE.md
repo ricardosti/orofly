@@ -257,6 +257,16 @@ Três coisas aprendidas ali, que valem pra próxima tabela:
 > e `set_config('request.jwt.claims', ...)`, dentro de um bloco que termina em
 > `RAISE EXCEPTION` — assim o teste roda de verdade e desfaz tudo no fim.
 
+Em **21/10/2026** uma varredura achou mais duas portas, as duas fechadas no banco:
+
+- **Política de UPDATE não limita coluna.** `profiles` tinha `USING (auth.uid() = id)`
+  e o piloto trocava o próprio `role` para `admin` com um update pela API. Hoje o
+  `authenticated` só tem `UPDATE (nome, telefone, avatar_url)` — coluna nova que o
+  Meu Perfil precise gravar tem que entrar nesse `GRANT`, senão o salvar falha com 42501.
+- **`user_metadata` é do usuário.** O `handle_new_user` lia o `role` dali, e o
+  cadastro público estava aberto: qualquer um criava conta já como admin. O papel
+  agora sai sempre `piloto`; quem define o certo é o `api/create-user`.
+
 **Log de atividades.** Desde **15/09/2026** a tabela `atividades` registra o que
 cada um faz no app (login, iniciou voo, lançou despesa...), e a tela fica em
 **Desenvolvedor → Log de Atividades**, só para admin. Serve pra medir o que é
@@ -319,14 +329,20 @@ Vale entender antes de mexer em qualquer coisa de relatório.
 
 **Técnicas:**
 
-3. **Segurança do login** — hoje é só e-mail e senha, sem confirmação de e-mail
-   nem 2FA. Dois passos baratos, os dois só configuração no painel do Supabase:
-   o *rate limit* (Auth → Rate Limits) e a proteção contra senha vazada
-   (Auth → Password, checa contra o HaveIBeenPwned), que o linter ainda acusa.
+3. **Segurança do login** — hoje é só e-mail e senha, sem 2FA. Três passos
+   baratos, todos só configuração no painel do Supabase: desligar o cadastro
+   público (Auth → Sign In / Providers → *Allow new users to sign up* — quem cria
+   usuário é o admin, pelo `api/create-user`, que não depende disso), o *rate limit*
+   (Auth → Rate Limits) e a proteção contra senha vazada (Auth → Password, checa
+   contra o HaveIBeenPwned), que o linter ainda acusa.
 4. **Miniaturas nas listas** — onde só se precisa de preview, ainda se baixa a
    foto inteira. Depende de o plano ter transformação de imagem no Storage.
 5. **Faxina no histórico** — 65 arquivos acima de 2 MB, de agosto, somam 281 MB:
    81% do peso do mês em 35% dos arquivos. Boa parte é FAZENDA TESTE.
+6. **Login obrigatório no clima e na notificação** — `api/clima` e
+   `api/send-notification` conferem o login quando ele vem, mas ainda aceitam
+   chamada sem login, porque o app da loja até a v11.6 não manda. Quando todos
+   estiverem na 11.7+, virar `LOGIN_OBRIGATORIO` para `true` em `api/_auth.js`.
 
 ---
 

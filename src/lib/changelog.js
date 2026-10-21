@@ -9,6 +9,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.7',
+    data: '2026-10-21',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Reforco de seguranca',
+        texto: 'Revisao geral: permissoes de perfil e de estoque mais restritas no banco, funcoes do servidor conferindo o login de quem chama e usuario desativado sem nenhum acesso, nem pela API.' },
+    ],
+  },
+  {
     versao: '11.6',
     data: '2026-10-21',
     itens: [

@@ -35,4 +35,16 @@ async function exigirPerfil(req, res, perfis) {
   return { admin, perfil }
 }
 
-module.exports = { PERFIS, clienteAdmin, cors, exigirPerfil }
+// Funções que o app do piloto chama (clima, notificação). O app manda o login desde a v11.7,
+// mas o da loja até a v11.6 não manda — por isso, por enquanto, quem vem SEM login ainda passa
+// (quem vem com login inválido, não). Quando todo mundo estiver na 11.7+, vira true.
+const LOGIN_OBRIGATORIO = false
+
+// Devolve false quando já respondeu 401/403.
+async function conferirLogin(req, res, perfis = PERFIS) {
+  const temLogin = /^Bearer\s+\S/i.test(String(req.headers?.authorization || ''))
+  if (!temLogin && !LOGIN_OBRIGATORIO) return true
+  return !!(await exigirPerfil(req, res, perfis))
+}
+
+module.exports = { PERFIS, clienteAdmin, cors, exigirPerfil, conferirLogin }

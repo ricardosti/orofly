@@ -32,7 +32,7 @@ import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud,
 import { Drone as PhDrone, House as PhHouse, Gear as PhGear, CalendarBlank as PhCalendarBlank } from '@phosphor-icons/react'
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
-import { apiUrl } from '../lib/apiBase'
+import { apiUrl, cabecalhoLogin } from '../lib/apiBase'
 
 // Ícone de "nova missão" — trilha pontilhada até um pin de mapa
 const IconRota = ({size=22}) => (
@@ -2425,7 +2425,7 @@ export default function PilotApp({onSwitchMode}) {
     try {
       let data = null, guardadaEm = null
       try {
-        const res = await comPrazo(fetch(url), 20000)
+        const res = await comPrazo(fetch(url, { headers: await cabecalhoLogin() }), 20000)
         let textoResp = ''
         try { data = await res.json() } catch(eJson) { try { textoResp = await res.text() } catch {} }
         if(!res.ok) throw Object.assign(new Error(data?.error || `HTTP ${res.status}${res.statusText?' '+res.statusText:''}`), { status: res.status, url, respostaTexto: textoResp })

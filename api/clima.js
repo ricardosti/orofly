@@ -18,6 +18,7 @@
 // contra a resposta real ("windspeed":"ms-1" na Meteoblue; Tomorrow.io dando 7 onde a
 // Open-Meteo dava 22 km/h). Até então o número ia direto pra tela como km/h, 3,6× menor.
 const { createClient } = require('@supabase/supabase-js')
+const { cors, exigirPerfil, conferirLogin } = require('./_auth')
 
 const TIMEOUT_MS = 8000
 const TODOS_PROVEDORES = ['meteoblue', 'tomorrow', 'open_meteo']
@@ -225,11 +226,15 @@ async function buscarOpenMeteo(lat, lon) {
 const BUSCAR_POR_PROVEDOR = { meteoblue: buscarMeteoblue, tomorrow: buscarTomorrow, open_meteo: buscarOpenMeteo }
 
 module.exports = async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  cors(res, 'GET, OPTIONS')
   if (req.method === 'OPTIONS') return res.status(200).end()
 
   const { lat, lon } = req.query
   if (!lat || !lon) return res.status(400).json({ error: 'lat e lon são obrigatórios' })
+  // O diagnóstico chama os 3 provedores de uma vez: só o admin. A previsão confere o login de
+  // quem chama (api/_auth.js) — a chave da Meteoblue é paga e a rota é pública.
+  const liberado = req.query.diagnostico === '1' ? await exigirPerfil(req, res, ['admin']) : await conferirLogin(req, res)
+  if (!liberado) return
 
   const sb = clienteAdmin()
 
