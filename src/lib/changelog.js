@@ -9,6 +9,16 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.5',
+    data: '2026-10-20',
+    itens: [
+      { tipo: 'novo', titulo: 'Apontamento diario pra usina',
+        texto: 'Gestao > Fazendas & Clientes > Apontamento diario: escolhe o dia e o cliente e sai o fechamento no modelo da usina, por fazenda (codigo, talhoes, area total, aplicada e diferenca) e o rendimento total do dia, com botoes de copiar e WhatsApp. A area total e a da OS (sem o que ficou como "Outro"); a diferenca e a bordadura e os outros motivos.' },
+      { tipo: 'melhoria', titulo: 'Monitoramento climatico oculto, de 15 em 15 min',
+        texto: 'Em todo voo o app guarda o clima sozinho, sem cartao nem liga/desliga pro piloto. Na Bracell o piloto tem o botao "Capturar clima agora". O intervalo (15 min por padrao) fica em Configuracoes do Sistema, com botoes de 5, 10, 15 e 30 min.' },
+    ],
+  },
+  {
     versao: '11.4',
     data: '2026-10-20',
     itens: [

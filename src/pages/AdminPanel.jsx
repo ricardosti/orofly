@@ -58,6 +58,7 @@ import { reverseGeocode } from '../lib/geocode'
 import ParamsPadraoCampos from '../components/ParamsPadraoCampos'
 import RegulamentacaoMapa from '../components/RegulamentacaoMapa'
 import MonitoramentoClimaAdmin from '../components/MonitoramentoClimaAdmin'
+import ApontamentoDiario from '../components/ApontamentoDiario'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -263,7 +264,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const LIMITES_CFG_PADRAO = { ventoMin: 3, ventoMax: 15, deltaTMin: 2, deltaTIdealMax: 7, deltaTAlertaMax: 8 }
   const WIZARD_CFG_PADRAO = { velocidadeDrone: '', altura: '', faixa: '' }
   // Monitoramento Climático: intervalo das leituras no voo e colunas por operação na ficha.
-  const MONIT_CFG_PADRAO = { intervaloMin: 10, colunas: 10 }
+  const MONIT_CFG_PADRAO = { intervaloMin: 15, colunas: 10 }
   const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO, monitoramento: MONIT_CFG_PADRAO })
   const [configGeralSaving, setConfigGeralSaving] = useState(false)
   const [configGeralLoaded, setConfigGeralLoaded] = useState(false)
@@ -601,7 +602,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzTab, setFzTab] = useState('visao')
   // Sub-abas de Gestão → Fazendas & Clientes. "Relatórios" é a aba 'relatorios' (Relatórios de
   // Voo), mostrada com esta mesma barra no topo.
-  const SUBABAS_FAZENDAS = [['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes'],['equipes','🧑‍🤝‍🧑 Equipes'],['relatorios','📋 Relatórios']]
+  const SUBABAS_FAZENDAS = [['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes'],['equipes','🧑‍🤝‍🧑 Equipes'],['relatorios','📋 Relatórios'],['apontamento','📅 Apontamento diário']]
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
   const [clienteModal, setClienteModal] = useState(null)
@@ -5420,6 +5421,13 @@ export default function AdminPanel({ onSwitchMode }) {
                 )}
 
                 {/* ── EQUIPES (times + atribuição de fazendas por time/piloto) ── */}
+                {/* ── APONTAMENTO DIÁRIO — fechamento do dia pra usina (pedido de 20/10/2026) ── */}
+                {fzTab==='apontamento' && (
+                  <ApontamentoDiario relatorios={relatorios} fazendas={invFazendas} talhoes={invTalhoes}
+                    empresa={String(configGeral.empresa?.razao_social || configGeral.empresa?.nome || 'Orofly').toUpperCase()}
+                    showToast={showToast} isMobile={isMobile} />
+                )}
+
                 {fzTab==='equipes' && (() => {
                   // Atribuição em 3 etapas: PILOTO -> FAZENDA -> TALHÕES.
                   //
@@ -9182,9 +9190,17 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
 
       <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
         <SecTitle>🌡️ Monitoramento Climático</SecTitle>
-        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Leitura do clima durante o voo e a ficha de aplicação (Gestão → Monitoramento Climático). O piloto pode trocar o intervalo em cada voo, e dá pra mudar de novo na hora de exportar.</div>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Durante todo voo o app guarda sozinho, de tempos em tempos, a temperatura, a umidade e o vento da internet — sem aparecer pro piloto. As leituras vão pra ficha em Gestão → Monitoramento Climático, onde dá pra corrigir e agrupar na hora de exportar.</div>
+        <label style={labelSt}>GUARDAR O CLIMA A CADA</label>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+          {[5,10,15,30].map(m=>{
+            const ativo = (draft.monitoramento?.intervaloMin ?? 15) === m
+            return <button key={m} type="button" onClick={()=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),intervaloMin:m}}))}
+              style={{border:`1px solid ${ativo?'#059669':theme.cardBorder2}`,background:ativo?'#059669':theme.card,color:ativo?'#fff':theme.text,borderRadius:16,padding:'6px 14px',fontSize:12.5,fontWeight:ativo?700:500,cursor:'pointer'}}>{m} min</button>
+          })}
+        </div>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-          <div><label style={labelSt}>INTERVALO ENTRE LEITURAS (min)</label><input type="number" min={5} max={240} style={inputSt} placeholder="30" value={draft.monitoramento?.intervaloMin ?? ''} onChange={e=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),intervaloMin:parseInt(e.target.value,10)||''}}))}/></div>
+          <div><label style={labelSt}>OUTRO INTERVALO (min)</label><input type="number" min={5} max={240} style={inputSt} placeholder="15" value={draft.monitoramento?.intervaloMin ?? ''} onChange={e=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),intervaloMin:parseInt(e.target.value,10)||''}}))}/></div>
           <div><label style={labelSt}>COLUNAS POR OPERAÇÃO NA FICHA</label><input type="number" min={4} max={15} style={inputSt} placeholder="10" value={draft.monitoramento?.colunas ?? ''} onChange={e=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),colunas:parseInt(e.target.value,10)||''}}))}/></div>
         </div>
       </div>

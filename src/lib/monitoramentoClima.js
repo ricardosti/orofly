@@ -25,8 +25,8 @@ export const CABECALHO = ['Fazenda (ID)', 'Talhão', 'Data da aplicação', 'Pil
   'Supervisor Operacional', 'Volume de produto consumido (L)', 'Recomendação Agronômica (L/ha)']
 // Padrões — o admin troca em Configurações do Sistema (Monitoramento Climático): o intervalo
 // entre leituras no voo e quantas colunas cada operação tem na ficha (o papel tem 10).
-// Intervalo padrão de 10 min desde 19/10/2026 (leituras automáticas, pedido do Pastor).
-export const MONITORAMENTO_PADRAO = { intervaloMin: 10, colunas: 10 }
+// Intervalo padrão de 15 min desde 20/10/2026 (leituras automáticas e ocultas, em todo voo).
+export const MONITORAMENTO_PADRAO = { intervaloMin: 15, colunas: 10 }
 
 const temValor = v => v != null && String(v).trim() !== ''
 const num = v => parseFloat(String(v ?? '').replace(',', '.'))

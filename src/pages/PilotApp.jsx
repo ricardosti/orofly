@@ -25,7 +25,7 @@ import { dataLocal, fmtData, isoLocal, hojeISO } from '../lib/datas'
 import { formatarQtd, areaPossivel, formatarHa, formatarDose, formatarTotalProduto } from '../lib/calda'
 import { ehClienteNardini, gerarFormularioNardini, nomeArquivoFormularioNardini } from '../lib/formularioNardini'
 import { paramsEfetivos, camposDoFormulario } from '../lib/paramsPadrao'
-import { limparFicha, referenciaUltimaLeitura, INTERVALO_LEITURA_MIN, intervaloValido, climaSerie, leiturasFaltando } from '../lib/monitoramentoClima'
+import { limparFicha, referenciaUltimaLeitura, INTERVALO_LEITURA_MIN, intervaloValido, climaSerie, leiturasFaltando, climaAgora } from '../lib/monitoramentoClima'
 import { cancelarLocal } from '../lib/localNotify'
 import { calcDeltaT, classificarClimaParam, setLimitesClima, cardinalDoVento, NOME_CARDINAL, GRAUS_CARDINAL, paraOndeSopra } from '../lib/clima'
 import { Clock, Map, FileBarChart2, CalendarDays, Receipt, CloudSun, Sun, Cloud, CloudRain, CloudMoon, Moon, Wind, Droplets, MapPin, Navigation, AlertTriangle, RefreshCw, Search, Crosshair } from 'lucide-react'
@@ -728,7 +728,6 @@ export default function PilotApp({onSwitchMode}) {
   const [fezTudo,setFezTudo] = useState(true)
   // Com vários talhões: o pulverizado de cada um (texto cru) e quais o piloto marcou como
   // fechados à mão — talhão sem marca segue o "Fechei todos" lá de cima.
-  const [monitAberto,setMonitAberto] = useState(false)
   // Leitura de clima a cada 30 min durante o voo (Monitoramento Climático): rascunho aberto na
   // janela, "lembrar em 5 min" e o estado da busca do clima pela API.
   const [pulvTalhao,setPulvTalhao] = useState({})
@@ -1385,15 +1384,41 @@ export default function PilotApp({onSwitchMode}) {
   // edita; quem corrige é o admin no Monitoramento Climático (pedido do Pastor, 19/10/2026).
   // Antes abria uma janela a cada 30 min pro piloto preencher. Leitura perdida (sem sinal, app
   // em segundo plano) é preenchida quando der, com o clima daquele horário (ver climaSerie).
-  // Ligado por padrão nos voos da Bracell e liga/desliga no cartão do Passo 4. Voo lançado
-  // depois (retroativo) não tem leitura automática: o horário real não é o do app.
-  const lembreteLeitura = form.monitoramento_clima?.lembrete ?? /bracell/i.test(clienteVal||'')
+  // Desde 20/10/2026: em TODO voo, a cada X min (15 por padrão; o admin troca em Configurações),
+  // e oculto pro piloto — sem cartão nem liga/desliga. Só na Bracell o piloto tem o botão
+  // "Capturar clima agora" (capturarClimaAgora). Voo lançado depois (retroativo) não tem
+  // leitura automática: o horário real não é o do app.
   const inicioVooIso = fmtDt(form,'dt_inicio')
   const refLeitura = referenciaUltimaLeitura(form.monitoramento_clima, inicioVooIso)
   const intervaloLeitura = intervaloValido(intervaloLeituraPadrao)
-  const proximaLeitura = refLeitura ? new Date(refLeitura.getTime() + intervaloLeitura*60000) : null
   const horaBR = d => d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',timeZone:'America/Sao_Paulo'})
-  const leituraAutoAtiva = (opState==='running'||opState==='paused') && lembreteLeitura && !form.inicio_retroativo
+  const leituraAutoAtiva = (opState==='running'||opState==='paused') && !form.inicio_retroativo
+  const ehBracell = /bracell/i.test(clienteVal||'')
+
+  // Bracell: o piloto registra o clima na hora, além das leituras automáticas.
+  const [capturandoClima,setCapturandoClima] = useState(false)
+  async function capturarClimaAgora() {
+    if (capturandoClima) return
+    setCapturandoClima(true)
+    try {
+      let lat = form.gps_lat, lng = form.gps_lng
+      if (navigator.geolocation) {
+        try {
+          const pos = await new Promise((ok,erro)=>navigator.geolocation.getCurrentPosition(ok,erro,{enableHighAccuracy:false,timeout:8000}))
+          lat = pos.coords.latitude.toFixed(6); lng = pos.coords.longitude.toFixed(6)
+        } catch {}
+      }
+      const c = await climaAgora(lat, lng)
+      if (!c) { showToast('📴 Não deu pra buscar o clima agora (sem sinal ou sem GPS). Tente de novo daqui a pouco.'); return }
+      const agora = new Date()
+      const leituraPiloto = { inicio: refLeitura ? horaBR(refLeitura) : horaBR(agora), fim: horaBR(agora), altura: form.altura||'', area: '',
+        ...c, obs: 'capturado pelo piloto', registrado_em: agora.toISOString(), origem: 'piloto' }
+      const ficha = { ...(form.monitoramento_clima||{}), voos: [...(form.monitoramento_clima?.voos||[]), leituraPiloto] }
+      setForm(f=>({...f, monitoramento_clima: { ...(f.monitoramento_clima||{}), voos: [...(f.monitoramento_clima?.voos||[]), leituraPiloto] }}))
+      atual.current.salvar({ status: statusAtual(), monitoramento_clima: limparFicha(ficha) })
+      showToast(`🌡️ Clima registrado: ${c.temperatura}°C · ${c.umidade}% · vento ${c.vento} km/h`)
+    } finally { setCapturandoClima(false) }
+  }
 
   const buscandoLeituraRef = useRef(false)
   async function registrarLeiturasAutomaticas() {
@@ -6263,48 +6288,14 @@ Quando: ${tempoErroDebug.quando}`}
               </div>
             </div>
 
-            {/* Monitoramento Climático (Beta) — ficha voo a voo pedida pela Bracell: início, fim,
-                altura, área e clima de cada bateria. Manual por enquanto; depois vem da telemetria.
-                Fica no form e sobe junto com o relatório (funciona sem sinal). */}
-            <div style={{background:theme.card,borderRadius:16,border:`1px solid ${theme.cardBorder}`,padding:'12px 14px',marginBottom:16}}>
-              <div onClick={()=>setMonitAberto(v=>!v)} style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
-                <span style={{fontSize:16}}>🌡️</span>
-                <span style={{flex:1,fontSize:13,fontWeight:700,color:theme.text}}>Monitoramento Climático
-                  <span style={{fontSize:10,fontWeight:700,background:theme.warningBg,color:theme.warningText2||theme.warningText,padding:'2px 7px',borderRadius:10,marginLeft:6}}>BETA</span></span>
-                <span style={{fontSize:11,color:theme.textMuted}}>{(form.monitoramento_clima?.voos||[]).length} voo(s)</span>
-                <span style={{color:'#aaa',fontSize:11}}>{monitAberto?'▲':'▼'}</span>
-              </div>
-              {monitAberto && (
-                <div style={{marginTop:12}}>
-                  <div style={{fontSize:11,color:theme.textFaint2,marginBottom:10,lineHeight:1.5}}>O app registra sozinho, a cada {intervaloLeitura} min, a temperatura, a umidade e o vento da internet — você não precisa preencher nada. As condições de início e fim continuam no Passo 3. Correções nas leituras são feitas pelo escritório.</div>
-                  <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:theme.bg,borderRadius:10,padding:'9px 11px',marginBottom:10}}>
-                    <label style={{display:'flex',alignItems:'center',gap:7,fontSize:12.5,color:theme.text,fontWeight:600,cursor:'pointer',flex:1,minWidth:180}}>
-                      <input type="checkbox" checked={!!lembreteLeitura} style={{width:16,height:16,accentColor:'#00A86B'}}
-                        onChange={e=>setForm(f=>({...f,monitoramento_clima:{...(f.monitoramento_clima||{}),lembrete:e.target.checked}}))}/>
-                      🌡️ Registrar o clima automaticamente
-                    </label>
-                    {leituraAutoAtiva && proximaLeitura && (
-                      <span style={{fontSize:11.5,color:theme.textMuted}}>próxima às <b>{horaBR(proximaLeitura)}</b></span>
-                    )}
-                    {form.inicio_retroativo && <span style={{fontSize:11.5,color:theme.textMuted}}>voo lançado depois: sem leitura automática</span>}
-                  </div>
-                  {(form.monitoramento_clima?.voos||[]).length===0 ? (
-                    <div style={{fontSize:12,color:theme.textFaint2,padding:'6px 2px'}}>Nenhuma leitura ainda.</div>
-                  ) : (
-                    <div style={{border:`1px solid ${theme.divider}`,borderRadius:10,overflow:'hidden'}}>
-                      <div style={{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr 1fr',fontSize:10,fontWeight:700,color:theme.textFaint2,background:theme.bg,padding:'6px 8px'}}>
-                        <span>HORÁRIO</span><span>TEMP. (°C)</span><span>UMID. (%)</span><span>VENTO (km/h)</span>
-                      </div>
-                      {(form.monitoramento_clima?.voos||[]).map((v,i)=>(
-                        <div key={i} style={{display:'grid',gridTemplateColumns:'1.3fr 1fr 1fr 1fr',fontSize:12,color:theme.text,padding:'6px 8px',borderTop:`1px solid ${theme.divider}`}}>
-                          <span>{v.inicio||'—'}–{v.fim||'—'}</span><span>{v.temperatura||'—'}</span><span>{v.umidade||'—'}</span><span>{v.vento||'—'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            {/* Monitoramento Climático: as leituras automáticas ficam ocultas pro piloto (20/10/2026).
+                Só na Bracell ele tem o botão de registrar o clima na hora. */}
+            {ehBracell && (opState==='running'||opState==='paused') && (
+              <button type="button" onClick={capturarClimaAgora} disabled={capturandoClima}
+                style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:16,padding:'12px',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',marginBottom:12,fontSize:14,fontWeight:600,color:theme.text,opacity:capturandoClima?.6:1}}>
+                {capturandoClima ? '⏳ Buscando o clima…' : '🌡️ Capturar clima agora'}
+              </button>
+            )}
 
             {/* Editar Horário — abre popup em vez de ficar sempre visível */}
             <button style={{background:theme.card,border:`1px solid ${theme.cardBorder}`,borderRadius:16,padding:'12px',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',marginBottom:16,color:theme.text,fontWeight:600,fontSize:13,fontFamily:"'Poppins',sans-serif"}}
