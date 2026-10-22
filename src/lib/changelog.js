@@ -9,6 +9,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.1',
+    data: '2026-10-22',
+    itens: [
+      { tipo: 'correcao', titulo: 'Ficha de clima: area do cabecalho igual a do drone',
+        texto: 'Com a planilha do drone, a area total soma o numero que veio da planilha, sem arredondar bateria por bateria (dava 42,45 onde o drone diz 42,43).' },
+    ],
+  },
+  {
     versao: '12.0',
     data: '2026-10-22',
     itens: [

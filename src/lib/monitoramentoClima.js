@@ -13,6 +13,7 @@
 import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
 import { areaLiquida } from './pdf'
+import { areaDasBaterias } from './registroDrone'
 
 export const CAMPOS_VOO = [
   ['inicio', 'Início do voo'],
@@ -166,7 +167,7 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
   // no cabeçalho, não por leitura (Pastor, 22/10/2026). Digitada na ficha vale; em branco, sai a
   // do voo (aplicada, sem a bordadura) quando ele já terminou, ou a soma das leituras.
   const terminou = rel && ['finalizado', 'pausado_dia'].includes(rel.status)
-  const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : baterias.length ? areaVoos : terminou ? areaLiquida(rel) : areaVoos
+  const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : baterias.length ? areaDasBaterias(baterias) : terminou ? areaLiquida(rel) : areaVoos
   const litrosDrone = baterias.reduce((a, b) => a + (Number(b.litros) || 0), 0)
   // Volume e recomendação: o que foi digitado vale; em branco, o volume é o que o drone registrou
   // (soma das baterias) ou a vazão do voo × área.

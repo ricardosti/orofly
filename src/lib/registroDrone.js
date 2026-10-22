@@ -88,11 +88,22 @@ export function bateriasParaFicha(baterias, leituras = []) {
     for (const x of comHora) if (!perto || Math.abs(x.ms - meio) < Math.abs(perto.ms - meio)) perto = x
     const clima = perto && Math.abs(perto.ms - meio) <= 30 * 60000 ? perto.v : {}
     return {
-      inicio: horaBR(b.iniMs), fim: horaBR(b.fimMs), altura: pt(b.altura, 1), area: pt(b.area, 2),
+      inicio: horaBR(b.iniMs), fim: horaBR(b.fimMs), altura: pt(b.altura, 1), area: pt(b.area, 2), area_ha: isNaN(b.area) ? null : b.area,
       temperatura: clima.temperatura || '', umidade: clima.umidade || '', vento: clima.vento || '',
       litros: isNaN(b.litros) ? null : +b.litros.toFixed(2), aeronave: b.aeronave, registrado_em: new Date(b.fimMs).toISOString(), origem: 'drone',
     }
   })
+}
+
+// Área total das baterias com o número que veio do drone (a planilha tem várias casas; a ficha
+// mostra 2): somar o arredondado de cada uma dava 42,45 onde o drone diz 42,43. Bateria
+// corrigida à mão na ficha vale o que foi digitado.
+export function areaDasBaterias(baterias = []) {
+  return baterias.reduce((a, b) => {
+    const original = typeof b.area_ha === 'number' && pt(b.area_ha, 2) === String(b.area ?? '') ? b.area_ha : NaN
+    const digitada = parseFloat(String(b.area ?? '').replace(/\./g, '').replace(',', '.'))
+    return a + (!isNaN(original) ? original : isNaN(digitada) ? 0 : digitada)
+  }, 0)
 }
 
 // Clima que faltou (voo sem leitura perto da bateria) a partir da série de 15 em 15 min do

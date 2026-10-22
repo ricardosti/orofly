@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useTheme } from '../lib/theme'
 import FichaClimaEditor from './FichaClimaEditor'
 import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO, climaSerie } from '../lib/monitoramentoClima'
-import { lerRegistroDrone, bateriasDoVoo, gruposPorTalhao, bateriasParaFicha, completarClima } from '../lib/registroDrone'
+import { lerRegistroDrone, bateriasDoVoo, gruposPorTalhao, bateriasParaFicha, completarClima, areaDasBaterias } from '../lib/registroDrone'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 
 // Gestão → Monitoramento Climático (Beta). Junta as fichas lançadas pelos pilotos nos voos
@@ -15,7 +15,6 @@ const dataBR = d => d ? new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR') : 
 const primeiroDoMes = () => { const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), 1).toLocaleDateString('en-CA') }
 const horaBR = ms => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
 const haBR = v => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const numBR = v => parseFloat(String(v ?? '').replace(/\./g, '').replace(',', '.')) || 0
 
 export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, fazendas, clientes, supabase, showToast, isMobile, config, abrirRelId }) {
   const { theme } = useTheme()
@@ -289,7 +288,7 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
                   <div style={rot}>🛩️ PLANILHA DO DRONE (DJI)</div>
                   {bats.length ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5, color: theme.text }}>
-                      <span style={{ flex: 1, minWidth: 220 }}><b>{bats.length} baterias</b> · {haBR(bats.reduce((a, v) => a + numBR(v.area), 0))} ha · {bats[0].inicio}–{bats[bats.length - 1].fim}{bats[0].aeronave ? ` · ${bats[0].aeronave}` : ''} — a ficha sai por bateria, com o clima da leitura mais perto.</span>
+                      <span style={{ flex: 1, minWidth: 220 }}><b>{bats.length} baterias</b> · {haBR(areaDasBaterias(bats))} ha · {bats[0].inicio}–{bats[bats.length - 1].fim}{bats[0].aeronave ? ` · ${bats[0].aeronave}` : ''} — a ficha sai por bateria, com o clima da leitura mais perto.</span>
                       <button style={{ ...btn(theme.dangerBg, theme.dangerText), padding: '5px 12px', fontSize: 12 }} onClick={() => setEditor(ed => ({ ...ed, dados: { ...ed.dados, baterias: [], baterias_arquivo: null } }))}>Tirar baterias</button>
                     </div>
                   ) : imp ? (
