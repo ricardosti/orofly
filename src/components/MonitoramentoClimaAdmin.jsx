@@ -3,6 +3,7 @@ import { useTheme } from '../lib/theme'
 import FichaClimaEditor from './FichaClimaEditor'
 import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO, climaSerie } from '../lib/monitoramentoClima'
 import { lerRegistroDrone, bateriasDoVoo, gruposPorTalhao, bateriasParaFicha, completarClima, areaDasBaterias } from '../lib/registroDrone'
+import { lerRegistroKestrel, climaDaKestrel, semKestrel } from '../lib/registroKestrel'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 
 // Gestão → Monitoramento Climático (Beta). Junta as fichas lançadas pelos pilotos nos voos
@@ -33,6 +34,8 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
   const [salvando, setSalvando] = useState(false)
   // Planilha do drone (registro de voo da DJI) lida e esperando o admin escolher os talhões.
   const [importacao, setImportacao] = useState(null) // { relId, arquivo, grupos: [{ talhao, baterias, area, iniMs, fimMs, marcado }] }
+  // Kestrel lida nesta edição: se a planilha do drone entrar depois, vale também pras baterias.
+  const [kestrelSessao, setKestrelSessao] = useState(null) // { relId, k, arquivo }
   // Na hora de emitir: agrupar as leituras a cada X min (vazio = como foram lançadas) e quantas
   // colunas cada operação tem. Começa no padrão de Configurações do Sistema.
   const [agruparMin, setAgruparMin] = useState('')
@@ -99,9 +102,51 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
     if (lista.some(v => !v.temperatura) && rel.gps_lat && rel.gps_lng && horas <= 168) {
       lista = completarClima(lista, await climaSerie(rel.gps_lat, rel.gps_lng, horas) || [])
     }
-    setEditor(ed => ({ ...ed, dados: { ...(ed.dados || {}), baterias: lista, baterias_arquivo: importacao.arquivo } }))
+    let dados = { ...(editor.dados || {}), baterias: lista, baterias_arquivo: importacao.arquivo }
+    let aviso = ''
+    if (kestrelSessao?.relId === rel.id) dados = comKestrel(dados, kestrelSessao.k, kestrelSessao.arquivo, rel) || dados
+    else if (dados.kestrel) {
+      // Kestrel de uma edição anterior: valia pras leituras (ou pras baterias trocadas agora).
+      const { kestrel, ...resto } = dados
+      dados = { ...resto, voos: semKestrel(resto.voos || []) }
+      aviso = ' Importe o CSV da Kestrel de novo pra ele valer bateria por bateria.'
+    }
+    setEditor(ed => ({ ...ed, dados }))
     setImportacao(null)
-    showToast(`🛩️ ${lista.length} baterias na ficha — falta salvar.`)
+    showToast(`🛩️ ${lista.length} baterias na ficha — falta salvar.${aviso}`)
+  }
+
+  // CSV da Kestrel (app Kestrel LiNK): o clima medido no talhão vai pra cada coluna da ficha —
+  // as baterias, se a planilha do drone já entrou; senão, as leituras.
+  function comKestrel(dados, k, arquivo, rel) {
+    const alvo = (dados?.baterias || []).length ? 'baterias' : 'voos'
+    const { colunas, usadas } = climaDaKestrel(dados?.[alvo] || [], k.medicoes, dataIso(rel.dt_inicio || rel.created_at))
+    if (!usadas) return null
+    return { ...dados, [alvo]: colunas, kestrel: { arquivo, aparelho: [k.aparelho.modelo ? `Kestrel ${k.aparelho.modelo}` : 'Kestrel', k.aparelho.nome].filter(Boolean).join(' · '),
+      medicoes: k.medicoes.length, inicio: horaBR(k.medicoes[0].ms), fim: horaBR(k.medicoes[k.medicoes.length - 1].ms), alvo, colunas: usadas, de: colunas.length } }
+  }
+  async function lerKestrel(e, rel) {
+    const arq = e.target.files?.[0]
+    e.target.value = ''
+    if (!arq || !rel) return
+    try {
+      const k = lerRegistroKestrel(await arq.text())
+      if (!k) { showToast('Esse arquivo não é o CSV da Kestrel (falta a coluna "FORMATTED DATE_TIME"). Exporte a sessão pelo app Kestrel LiNK.', 'error'); return }
+      if (!k.medicoes.length) { showToast('O CSV da Kestrel veio sem medições: exporte a sessão gravada durante o voo.', 'error'); return }
+      const novo = comKestrel(editor.dados || {}, k, arq.name, rel)
+      if (!novo) { showToast(`A Kestrel gravou das ${horaBR(k.medicoes[0].ms)} às ${horaBR(k.medicoes[k.medicoes.length - 1].ms)} — nenhum horário desta ficha cai nesse período.`, 'error'); return }
+      setEditor(ed => ({ ...ed, dados: novo }))
+      setKestrelSessao({ relId: rel.id, k, arquivo: arq.name })
+      showToast(`🌡️ Clima da Kestrel em ${novo.kestrel.colunas} de ${novo.kestrel.de} colunas — falta salvar.`)
+    } catch (err) { showToast('Não deu pra ler o arquivo: ' + err.message, 'error') }
+  }
+  // Cada coluna volta ao clima de antes da Kestrel (leitura automática ou serviço de clima).
+  function tirarKestrel() {
+    setEditor(ed => {
+      const { kestrel, ...resto } = ed.dados || {}
+      return { ...ed, dados: { ...resto, voos: semKestrel(resto.voos || []), baterias: semKestrel(resto.baterias || []) } }
+    })
+    setKestrelSessao(null)
   }
 
   async function salvar() {
@@ -281,6 +326,7 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
 
             {relDoEditor && (() => {
               const bats = editor.dados?.baterias || []
+              const kes = editor.dados?.kestrel || null
               const imp = importacao?.relId === relDoEditor.id ? importacao : null
               const nMarcadas = imp ? imp.grupos.filter(g => g.marcado).reduce((a, g) => a + g.baterias.length, 0) : 0
               return (
@@ -288,8 +334,8 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
                   <div style={rot}>🛩️ PLANILHA DO DRONE (DJI)</div>
                   {bats.length ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5, color: theme.text }}>
-                      <span style={{ flex: 1, minWidth: 220 }}><b>{bats.length} baterias</b> · {haBR(areaDasBaterias(bats))} ha · {bats[0].inicio}–{bats[bats.length - 1].fim}{bats[0].aeronave ? ` · ${bats[0].aeronave}` : ''} — a ficha sai por bateria, com o clima da leitura mais perto.</span>
-                      <button style={{ ...btn(theme.dangerBg, theme.dangerText), padding: '5px 12px', fontSize: 12 }} onClick={() => setEditor(ed => ({ ...ed, dados: { ...ed.dados, baterias: [], baterias_arquivo: null } }))}>Tirar baterias</button>
+                      <span style={{ flex: 1, minWidth: 220 }}><b>{bats.length} bateria{bats.length === 1 ? '' : 's'}</b> · {haBR(areaDasBaterias(bats))} ha · {bats[0].inicio}–{bats[bats.length - 1].fim}{bats[0].aeronave ? ` · ${bats[0].aeronave}` : ''} — a ficha sai por bateria, {kes?.alvo === 'baterias' ? 'com o clima medido pela Kestrel' : 'com o clima da leitura mais perto'}.</span>
+                      <button style={{ ...btn(theme.dangerBg, theme.dangerText), padding: '5px 12px', fontSize: 12 }} onClick={() => setEditor(ed => { const { kestrel, ...resto } = ed.dados || {}; return { ...ed, dados: { ...(kestrel?.alvo === 'baterias' ? resto : ed.dados), baterias: [], baterias_arquivo: null } } })}>Tirar baterias</button>
                     </div>
                   ) : imp ? (
                     <div>
@@ -314,6 +360,23 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
                       <span style={{ fontSize: 11.5, color: theme.textMuted, flex: 1, minWidth: 200 }}>O registro de voo do SmartFarm (uma linha por bateria): cada bateria vira um voo da ficha, com o horário, a altura e a área do drone.</span>
                     </div>
                   )}
+                  <div style={{ borderTop: `1px dashed ${theme.cardBorder2}`, marginTop: 10, paddingTop: 10 }}>
+                    <div style={rot}>🌡️ KESTREL (CLIMA MEDIDO NO TALHÃO)</div>
+                    {kes ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5, color: theme.text }}>
+                        <span style={{ flex: 1, minWidth: 220 }}><b>{kes.aparelho}</b> · {kes.medicoes} medições das {kes.inicio} às {kes.fim} — clima medido em {kes.colunas} de {kes.de} {kes.alvo === 'baterias' ? 'bateria' : 'leitura'}{kes.de === 1 ? '' : 's'}.</span>
+                        <button style={{ ...btn(theme.dangerBg, theme.dangerText), padding: '5px 12px', fontSize: 12 }} onClick={tirarKestrel}>Tirar Kestrel</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <label style={{ ...btn(theme.bg, '#059669'), padding: '7px 14px', fontSize: 12.5, display: 'inline-block' }}>
+                          🌡️ Importar Kestrel
+                          <input type="file" accept=".csv,text/csv" style={{ display: 'none' }} onChange={e => lerKestrel(e, relDoEditor)} />
+                        </label>
+                        <span style={{ fontSize: 11.5, color: theme.textMuted, flex: 1, minWidth: 200 }}>O CSV da sessão exportado pelo app Kestrel LiNK: cada {bats.length ? 'bateria' : 'leitura'} fica com a média do que a Kestrel mediu no horário dela.</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )
             })()}

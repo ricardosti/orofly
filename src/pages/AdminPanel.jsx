@@ -1055,7 +1055,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const climaDoRel = r => {
     const vs = r.monitoramento_clima?.voos || []
     const auto = vs.filter(v => v?.origem === 'auto').length
-    return { total: vs.length, auto, manual: vs.length - auto, drone: (r.monitoramento_clima?.baterias || []).length, editado: r.monitoramento_clima?.editado_admin || null }
+    return { total: vs.length, auto, manual: vs.length - auto, drone: (r.monitoramento_clima?.baterias || []).length, kestrel: r.monitoramento_clima?.kestrel?.colunas || 0, editado: r.monitoramento_clima?.editado_admin || null }
   }
   const fichaClimaDoRel = r => {
     const c = climaDoRel(r)
@@ -2434,7 +2434,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {(() => { const c = climaDoRel(rel); return (
                                         <div style={{minWidth:150,flex:1}}>
                                           <div style={{fontSize:10,fontWeight:700,color:'#059669',letterSpacing:1,marginBottom:5,fontFamily:"'Syne',sans-serif"}}>CLIMA (MONITORAMENTO)</div>
-                                          {[['Automáticas',c.auto],['Manuais',c.manual],...(c.drone?[['Baterias (drone)',c.drone]]:[])].map(([l,v]) => (
+                                          {[['Automáticas',c.auto],['Manuais',c.manual],...(c.drone?[['Baterias (drone)',c.drone]]:[]),...(c.kestrel?[['Clima Kestrel',c.kestrel]]:[])].map(([l,v]) => (
                                             <div key={l} style={{display:'flex',gap:4,marginBottom:3,fontSize:11}}>
                                               <span style={{color:theme.textMuted,minWidth:65,flexShrink:0}}>{l}:</span>
                                               <span style={{color:theme.text,fontWeight:600}}>{v}</span>

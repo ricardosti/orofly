@@ -9,6 +9,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.2',
+    data: '2026-10-22',
+    itens: [
+      { tipo: 'novo', titulo: 'Kestrel na ficha de clima',
+        texto: 'Em Monitoramento Climatico > Editar ficha do voo, "Importar Kestrel" le o CSV da sessao exportado pelo app Kestrel LiNK: cada bateria (ou leitura) fica com a media de temperatura, umidade e vento que a Kestrel mediu no horario dela. "Tirar Kestrel" volta ao clima de antes.' },
+    ],
+  },
+  {
     versao: '12.1',
     data: '2026-10-22',
     itens: [

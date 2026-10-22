@@ -86,7 +86,10 @@ export function bateriasParaFicha(baterias, leituras = []) {
     const meio = (b.iniMs + b.fimMs) / 2
     let perto = null
     for (const x of comHora) if (!perto || Math.abs(x.ms - meio) < Math.abs(perto.ms - meio)) perto = x
-    const clima = perto && Math.abs(perto.ms - meio) <= 30 * 60000 ? perto.v : {}
+    const achada = perto && Math.abs(perto.ms - meio) <= 30 * 60000 ? perto.v : null
+    // Leitura que já está com o clima da Kestrel: a bateria nasce do clima de antes dela — a
+    // Kestrel entra por cima, bateria por bateria, e o "Tirar Kestrel" volta ao certo.
+    const clima = !achada ? {} : achada.clima_origem === 'kestrel' && achada.clima_original ? achada.clima_original : achada
     return {
       inicio: horaBR(b.iniMs), fim: horaBR(b.fimMs), altura: pt(b.altura, 1), area: pt(b.area, 2), area_ha: isNaN(b.area) ? null : b.area,
       temperatura: clima.temperatura || '', umidade: clima.umidade || '', vento: clima.vento || '',
