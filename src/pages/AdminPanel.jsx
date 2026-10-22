@@ -169,6 +169,10 @@ export default function AdminPanel({ onSwitchMode }) {
   }, [profile?.avatar_url])
   const isMobile = useIsMobile()
   const [tab, setTab] = useState(profile?.role==='supervisor' ? 'agenda' : profile?.role==='administrativo' ? 'custos' : 'relatorios')
+  // Voo que o "Abrir no Monitoramento" (resumo do voo em Relatórios) manda abrir já na ficha;
+  // some ao sair da tela, pra o menu abrir o Monitoramento normal depois.
+  const [monitAbrirRel, setMonitAbrirRel] = useState(null)
+  useEffect(() => { if (tab !== 'monitclima') setMonitAbrirRel(null) }, [tab])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   // Sidebar em accordion — {grupoId: true|false}. Grupo sem entrada aqui ainda (nunca
   // clicado) usa o padrão de "aberto se contém a aba ativa", calculado na hora do render.
@@ -1045,14 +1049,22 @@ export default function AdminPanel({ onSwitchMode }) {
     codigoFazendaPorChave[k] = [...(codigoFazendaPorChave[k]||[]), String(f.id_fazenda)]
   })
   const codigoFazendaDoRel = r => (codigoFazendaPorChave[`${(r.cliente||'').trim().toLowerCase()}|${(r.fazenda||'').trim().toLowerCase()}`] || []).join('/')
-  // Ficha do Monitoramento Climático do voo: automática (leituras do app), editada pelo admin
-  // ou inexistente — o selo na lista de Relatórios.
-  const fichaClimaDoRel = r => {
-    const m = r.monitoramento_clima
-    if (!m || !(m.voos||[]).length) return { txt:'sem ficha clima', cor:theme.textFaint, bg:theme.divider }
-    if (m.editado_admin) return { txt:'clima editado', cor:'#1d4ed8', bg:'#dbeafe' }
-    return { txt:'clima automático', cor:'#047857', bg:'#d1fae5' }
+  // Leituras de clima do voo (Monitoramento Climático): automáticas (o app guarda sozinho de
+  // tempos em tempos) e manuais (o "Capturar clima agora" da Bracell, ou digitadas na ficha).
+  // Saem daqui o selo da lista e o bloco Clima do resumo do voo.
+  const climaDoRel = r => {
+    const vs = r.monitoramento_clima?.voos || []
+    const auto = vs.filter(v => v?.origem === 'auto').length
+    return { total: vs.length, auto, manual: vs.length - auto, editado: r.monitoramento_clima?.editado_admin || null }
   }
+  const fichaClimaDoRel = r => {
+    const c = climaDoRel(r)
+    if (!c.total) return { txt:'sem leitura de clima', cor:theme.textFaint, bg:theme.divider }
+    const txt = `${c.total} leitura${c.total===1?'':'s'} de clima`
+    if (c.editado) return { txt: txt + ' · editada', cor:'#1d4ed8', bg:'#dbeafe' }
+    return { txt, cor:'#047857', bg:'#d1fae5' }
+  }
+  function abrirMonitoramentoDoVoo(rel) { setMonitAbrirRel(rel.id); setTab('monitclima') }
   const filtered = relatorios.filter(r => {
     if (filters.cliente && !r.cliente?.toLowerCase().includes(filters.cliente.toLowerCase())) return false
     if (filters.fazenda && !r.fazenda?.toLowerCase().includes(filters.fazenda.toLowerCase())) return false
@@ -2295,6 +2307,7 @@ export default function AdminPanel({ onSwitchMode }) {
                           <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
                             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: (rel.kml_arquivos?.length > 0) ? 10 : 0 }}>
                               <button style={sG.actBtn('#2f6fed')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
+                              {climaDoRel(rel).total>0 && <button style={sG.actBtn('#047857')} onClick={e => { e.stopPropagation(); abrirMonitoramentoDoVoo(rel) }}>🌡️ Clima</button>}
                               <button style={sG.actBtn('#059669')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢 Cliente</button>
                               <button style={sG.actBtn('#1a5fa5')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝 Word</button>
                               {rel.gps_lat && <a style={{ ...sG.actBtn('#059669'), textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer">🗺️</a>}
@@ -2345,8 +2358,9 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {codigoFazendaDoRel(rel) && <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>cód. {codigoFazendaDoRel(rel)}</span>}
                                     </div>
                                   )}
-                                  {(()=>{ const fc=fichaClimaDoRel(rel); return (
-                                    <div><span title="Ficha do Monitoramento Climático" style={{fontSize:9.5,fontWeight:700,color:fc.cor,background:fc.bg,padding:'1px 7px',borderRadius:20,whiteSpace:'nowrap'}}>🌡️ {fc.txt}</span></div>
+                                  {(()=>{ const fc=fichaClimaDoRel(rel), tem=climaDoRel(rel).total>0; return (
+                                    <div><span title={tem?'Abrir a ficha no Monitoramento Climático':'Ficha do Monitoramento Climático'} onClick={tem?(e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}):undefined}
+                                      style={{fontSize:9.5,fontWeight:700,color:fc.cor,background:fc.bg,padding:'1px 7px',borderRadius:20,whiteSpace:'nowrap',cursor:tem?'pointer':'default'}}>🌡️ {fc.txt}</span></div>
                                   )})()}
                                   {(rel.tipo_servico||(rel.qtd_voos&&rel.qtd_voos>1)) && (
                                     <div style={{fontSize:10,color:theme.textFaint2,marginTop:1}}>
@@ -2417,6 +2431,20 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <DetailCol title="Cond. Fim" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_f']])} />
                                       <DetailCol title="Horários" items={[['Início',fmt(rel.dt_inicio)],['Fim',fmt(rel.dt_fim)],...(tempo?[['Total',tempo.total],...(tempo.temPausa?[['Efetivo',tempo.efetivo]]:[])]:[] )]} />
                                       <DetailCol title="Outros" items={[['OS',rel.ordem_servico],...((rel.produtos||[]).map((p,ii)=>['Prod.'+(ii+1),p])),['Tipo Serviço',rel.tipo_servico==='catacao'?'Catação':rel.tipo_servico==='area_total'?'Área Total':null],['Qtde Voos',rel.qtd_voos>1?rel.qtd_voos:null],['Gota',rel.tamanho_gota],['Vel.',rel.velocidade_drone],['Obs 1',rel.obs1],['Obs 2',rel.obs2]]} />
+                                      {(() => { const c = climaDoRel(rel); return (
+                                        <div style={{minWidth:150,flex:1}}>
+                                          <div style={{fontSize:10,fontWeight:700,color:'#059669',letterSpacing:1,marginBottom:5,fontFamily:"'Syne',sans-serif"}}>CLIMA (MONITORAMENTO)</div>
+                                          {[['Automáticas',c.auto],['Manuais',c.manual]].map(([l,v]) => (
+                                            <div key={l} style={{display:'flex',gap:4,marginBottom:3,fontSize:11}}>
+                                              <span style={{color:theme.textMuted,minWidth:65,flexShrink:0}}>{l}:</span>
+                                              <span style={{color:theme.text,fontWeight:600}}>{v}</span>
+                                            </div>
+                                          ))}
+                                          {c.editado && <div style={{fontSize:10.5,color:'#1d4ed8',marginBottom:3}}>✎ editada em {fmt(c.editado)}</div>}
+                                          {c.total>0 && <button style={{background:'none',border:'none',padding:0,marginTop:3,color:'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}
+                                            onClick={e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}}>🌡️ Abrir no Monitoramento →</button>}
+                                        </div>
+                                      )})()}
                                       <div style={{minWidth:200,flex:1}}>
                                         <div style={{fontSize:10,fontWeight:700,color:'#059669',letterSpacing:1,marginBottom:5,fontFamily:"'Syne',sans-serif"}}>CUSTO DO VOO</div>
                                         {custosVinculados.length===0 ? (
@@ -7708,7 +7736,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
           )}
 
           {tab === 'monitclima' && (
-            <MonitoramentoClimaAdmin relatorios={relatorios} setRelatorios={setRelatorios} fazendas={invFazendas} clientes={invClientes}
+            <MonitoramentoClimaAdmin relatorios={relatorios} setRelatorios={setRelatorios} abrirRelId={monitAbrirRel} fazendas={invFazendas} clientes={invClientes}
               supabase={supabase} showToast={showToast} isMobile={isMobile} config={configGeral.monitoramento} />
           )}
 

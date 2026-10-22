@@ -202,14 +202,19 @@ function marcaOrofly(doc, x, y) {
   doc.setFillColor(...PRETO); doc.circle(cx, cy, 1.1, 'F')
 }
 
-export function gerarPdfFichas(fichas, { colunas } = {}) {
+// Linha "Área aplicada (ha)" opcional: as leituras automáticas não trazem área e a linha saía
+// vazia (Pastor, 22/10/2026). `comArea` vem da caixinha da tela; sem ela, sai como antes.
+const camposDaFicha = comArea => comArea ? CAMPOS_VOO : CAMPOS_VOO.filter(([chave]) => chave !== 'area')
+
+export function gerarPdfFichas(fichas, { colunas, comArea = true } = {}) {
   const N = colunasValidas(colunas)
+  const campos = camposDaFicha(comArea)
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
   const M = 8, W = 297 - 2 * M
   const larg = [38, 20, 24, 30, 24, 30, 34, 39, 42]
   const colDet = 46, colVoo = (W - colDet) / N
   const R = { titulo: 5, rot: 4.6, val: 5.6, grade: 4.6, linha: 4.4, obs: 5.2 }
-  const altBloco = R.titulo + R.rot + R.val + R.grade + R.linha * CAMPOS_VOO.length + R.obs
+  const altBloco = R.titulo + R.rot + R.val + R.grade + R.linha * campos.length + R.obs
   const lista = blocos(fichas, N)
 
   const cabecalhoPagina = () => {
@@ -248,7 +253,7 @@ export function gerarPdfFichas(fichas, { colunas } = {}) {
     celula(M, y, colDet, R.grade, 'Detalhamento Operacional', { negrito: true, tam: 6 })
     for (let k = 0; k < N; k++) celula(M + colDet + k * colVoo, y, colVoo, R.grade, `Voo ${String(b.offset + k + 1).padStart(2, '0')}`, { negrito: true, tam: 6.5 })
     y += R.grade
-    CAMPOS_VOO.forEach(([chave, rotulo]) => {
+    campos.forEach(([chave, rotulo]) => {
       celula(M, y, colDet, R.linha, rotulo, { negrito: true, tam: 5.6, centro: false })
       for (let k = 0; k < N; k++) celula(M + colDet + k * colVoo, y, colVoo, R.linha, b.voos[k]?.[chave] ?? '', { tam: 7, cor: TINTA })
       y += R.linha
@@ -261,8 +266,9 @@ export function gerarPdfFichas(fichas, { colunas } = {}) {
 }
 
 // ── Excel com a mesma grade ────────────────────────────────────────────────────────
-export function planilhaFichasBlob(fichas, { colunas } = {}) {
+export function planilhaFichasBlob(fichas, { colunas, comArea = true } = {}) {
   const N = colunasValidas(colunas)
+  const campos = camposDaFicha(comArea)
   const linhas = [['MONITORAMENTO CLIMÁTICO — FICHA DE APLICAÇÃO — DRONE'], ['OROFLY'], []]
   const merges = []
   blocos(fichas, N).forEach(b => {
@@ -270,7 +276,7 @@ export function planilhaFichasBlob(fichas, { colunas } = {}) {
     linhas.push(CABECALHO)
     linhas.push(b.cabecalho)
     linhas.push(['Detalhamento Operacional', ...Array.from({ length: N }, (_, k) => `Voo ${String(b.offset + k + 1).padStart(2, '0')}`)])
-    CAMPOS_VOO.forEach(([chave, rotulo]) => linhas.push([rotulo, ...Array.from({ length: N }, (_, k) => b.voos[k]?.[chave] ?? '')]))
+    campos.forEach(([chave, rotulo]) => linhas.push([rotulo, ...Array.from({ length: N }, (_, k) => b.voos[k]?.[chave] ?? '')]))
     linhas.push(['Observações', b.continuacao ? '' : b.observacoes])
     merges.push({ s: { r: linhas.length - 1, c: 1 }, e: { r: linhas.length - 1, c: N } })
     linhas.push([])

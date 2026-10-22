@@ -13,20 +13,28 @@ const dataIso = iso => iso ? new Date(iso).toLocaleDateString('en-CA', { timeZon
 const dataBR = d => d ? new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR') : '—'
 const primeiroDoMes = () => { const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), 1).toLocaleDateString('en-CA') }
 
-export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, fazendas, clientes, supabase, showToast, isMobile, config }) {
+export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, fazendas, clientes, supabase, showToast, isMobile, config, abrirRelId }) {
   const { theme } = useTheme()
   const [manuais, setManuais] = useState([])
-  const [de, setDe] = useState(primeiroDoMes())
+  // Vindo do resumo do voo em Relatórios ("Abrir no Monitoramento"): já abre a ficha daquele
+  // voo, com o período cobrindo a data dele.
+  const relInicial = abrirRelId ? relatorios.find(r => r.id === abrirRelId) : null
+  const [de, setDe] = useState(() => {
+    const p = primeiroDoMes(), d = relInicial ? dataIso(relInicial.dt_inicio || relInicial.created_at) : ''
+    return d && d < p ? d : p
+  })
   const [ate, setAte] = useState(new Date().toLocaleDateString('en-CA'))
   const [cliente, setCliente] = useState('')
   const [marcadas, setMarcadas] = useState({})
-  const [editor, setEditor] = useState(null) // { tipo:'voo'|'manual', id?, relId?, cab:{...}, dados:{...} }
+  const [editor, setEditor] = useState(() => relInicial ? { tipo: 'voo', relId: relInicial.id, dados: relInicial.monitoramento_clima || { voos: [] } } : null) // { tipo:'voo'|'manual', id?, relId?, cab:{...}, dados:{...} }
   const [salvando, setSalvando] = useState(false)
   // Na hora de emitir: agrupar as leituras a cada X min (vazio = como foram lançadas) e quantas
   // colunas cada operação tem. Começa no padrão de Configurações do Sistema.
   const [agruparMin, setAgruparMin] = useState('')
   const [colunas, setColunas] = useState(config?.colunas || MONITORAMENTO_PADRAO.colunas)
   useEffect(() => { if (config?.colunas) setColunas(config.colunas) }, [config?.colunas])
+  // Linha de área (ha) na ficha exportada: desmarcada por padrão, lembrada no aparelho.
+  const [comArea, setComArea] = useState(() => { try { return localStorage.getItem('orofly_monit_com_area') === '1' } catch { return false } })
 
   async function carregarManuais() {
     const { data, error } = await supabase.from('fichas_clima').select('*').order('data', { ascending: false })
@@ -107,8 +115,8 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
       : fichaParaExportar({ manual: x.manual, intervaloMin }))
     const nome = `monitoramento-climatico-${de || 'inicio'}-a-${ate || 'hoje'}`
     try {
-      if (tipo === 'pdf') await salvarOuCompartilharPdf(gerarPdfFichas(fichas, { colunas }), `${nome}.pdf`)
-      else await salvarOuCompartilharBlob(planilhaFichasBlob(fichas, { colunas }), `${nome}.xlsx`)
+      if (tipo === 'pdf') await salvarOuCompartilharPdf(gerarPdfFichas(fichas, { colunas, comArea }), `${nome}.pdf`)
+      else await salvarOuCompartilharBlob(planilhaFichasBlob(fichas, { colunas, comArea }), `${nome}.xlsx`)
       showToast('✅ Exportado!')
     } catch (e) { showToast('Erro ao exportar: ' + e.message, 'error') }
   }
@@ -124,7 +132,7 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
     <div>
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontFamily: "'Syne',sans-serif", fontSize: isMobile ? 18 : 22, fontWeight: 700, color: theme.text }}>🌡️ Monitoramento Climático <span style={{ fontSize: 12, background: theme.warningBg, color: theme.warningText2 || theme.warningText, padding: '2px 8px', borderRadius: 10, verticalAlign: 'middle' }}>BETA</span></div>
-        <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>Ficha de aplicação voo a voo (início, fim, altura, área, temperatura, umidade e vento). Por enquanto manual: o piloto lança no app ou você digita aqui.</div>
+        <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>Ficha de aplicação voo a voo (início, fim, altura, área, temperatura, umidade e vento). As leituras chegam sozinhas: o app guarda o clima durante o voo, e na Bracell o piloto também captura na hora. Aqui você corrige, junta e exporta.</div>
       </div>
 
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
@@ -138,6 +146,10 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
         </div>
         <div><div style={rot}>AGRUPAR A CADA (min)</div><input type="number" min={5} max={240} style={{ ...campo, width: 120 }} placeholder="como lançado" value={agruparMin} onChange={e => setAgruparMin(e.target.value)} title={`Ex.: ${config?.intervaloMin || 30} — junta as leituras em períodos desse tamanho (área somada, clima da última). Vazio: uma coluna por leitura.`} /></div>
         <div><div style={rot}>COLUNAS / OPERAÇÃO</div><input type="number" min={4} max={15} style={{ ...campo, width: 90 }} value={colunas} onChange={e => setColunas(e.target.value)} /></div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: theme.text, cursor: 'pointer', paddingBottom: 9 }}>
+          <input type="checkbox" checked={comArea} onChange={e => { setComArea(e.target.checked); try { localStorage.setItem('orofly_monit_com_area', e.target.checked ? '1' : '0') } catch {} }} />
+          Linha de área (ha)
+        </label>
         <div style={{ flex: 1 }} />
         <button style={btn('#059669')} onClick={abrirNova}>+ Nova ficha</button>
         <button style={btn('#111111')} onClick={() => exportar('pdf')}>⬇️ PDF{nMarcadas ? ` (${nMarcadas})` : ''}</button>
@@ -146,7 +158,7 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
 
       <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
         {lista.length === 0 ? (
-          <div style={{ padding: 30, textAlign: 'center', color: theme.textMuted, fontSize: 13 }}>Nenhuma ficha no período. Use "+ Nova ficha" ou peça pro piloto lançar os voos no Passo 4 do app.</div>
+          <div style={{ padding: 30, textAlign: 'center', color: theme.textMuted, fontSize: 13 }}>Nenhuma ficha no período. Os voos feitos no app trazem as leituras sozinhos; pra lançar à mão, use "+ Nova ficha".</div>
         ) : (
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5, minWidth: 720 }}>
             <thead>

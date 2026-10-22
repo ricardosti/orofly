@@ -9,6 +9,16 @@
 
 export const NOVIDADES = [
   {
+    versao: '11.9',
+    data: '2026-10-22',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Relatorios: leituras de clima no resumo do voo',
+        texto: 'O resumo de cada voo ganhou o bloco Clima, com quantas leituras foram automaticas e quantas manuais, e o atalho "Abrir no Monitoramento", que ja abre a ficha daquele voo. O selo da lista mostra a quantidade.' },
+      { tipo: 'melhoria', titulo: 'Monitoramento Climatico: area (ha) opcional na ficha',
+        texto: 'Na exportacao (PDF e Excel), a linha "Area aplicada (ha)" so sai marcando "Linha de area (ha)". Pedido do Pastor.' },
+    ],
+  },
+  {
     versao: '11.8',
     data: '2026-10-21',
     itens: [
