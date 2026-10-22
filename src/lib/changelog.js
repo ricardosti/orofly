@@ -12,6 +12,10 @@ export const NOVIDADES = [
     versao: '12.0',
     data: '2026-10-22',
     itens: [
+      { tipo: 'melhoria', titulo: 'App do piloto: so o drone dele',
+        texto: 'Piloto com drone atribuido no Inventario ve so o drone dele, ja marcado, e "Outro drone" pra digitar quando estiver com outro (o campo sugere os nomes da frota). Quem troca o drone de piloto e o admin, no Inventario. Pedido do Pastor.' },
+      { tipo: 'novo', titulo: 'Planilha do drone na ficha de clima',
+        texto: 'Em Monitoramento Climatico > Editar ficha do voo, "Importar planilha" le o registro de voo da DJI (SmartFarm): cada bateria vira um voo da ficha, com horario, altura e area do drone, e o clima da leitura mais perto. A area e o volume do cabecalho passam a ser os do drone. Pedido do Rodolfo.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima com a area aplicada da operacao',
         texto: 'O cabecalho de cada operacao (do inicio ao fim ou parcial do talhao) mostra a area aplicada total, sem a bordadura, e o volume consumido sai dela x a vazao. Da pra digitar outra na ficha. Pedido do Pastor.' },
     ],

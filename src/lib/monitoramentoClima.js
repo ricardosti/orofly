@@ -4,7 +4,8 @@
 //
 // Formato guardado (relatorios.monitoramento_clima e fichas_clima.dados):
 //   { auxiliar, tecnico_regional, supervisor, area_aplicada, volume_consumido, recomendacao, observacoes,
-//     voos: [{ inicio, fim, altura, area, temperatura, umidade, vento, obs }] }
+//     voos: [{ inicio, fim, altura, area, temperatura, umidade, vento, obs }],
+//     baterias: [mesmo formato + litros, aeronave] — da planilha do drone (lib/registroDrone) }
 //
 // A exportação copia a ficha do Pastor: A4 paisagem, 3 operações por página, 10 voos por bloco
 // (operação com mais de 10 voos continua num bloco seguinte, "OPERAÇÃO 01 (cont.)").
@@ -39,7 +40,7 @@ export function limparFicha(f) {
   const voos = (f.voos || []).filter(v => v && Object.values(v).some(temValor))
   const out = { ...f, voos }
   const temCab = ['auxiliar', 'tecnico_regional', 'supervisor', 'area_aplicada', 'volume_consumido', 'recomendacao', 'observacoes'].some(k => temValor(f[k]))
-  return voos.length || temCab ? out : null
+  return voos.length || temCab || (f.baterias || []).length ? out : null
 }
 
 // Próximo voo já sugerido: começa onde o anterior terminou e repete altura e clima, que mudam
@@ -153,7 +154,10 @@ const dataBR = iso => iso ? new Date(String(iso).length === 10 ? `${iso}T12:00:0
 // Ficha pronta pra exportar, a partir de um voo registrado (relatório) ou de uma ficha manual.
 export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMin = 0 }) {
   const d = (rel ? rel.monitoramento_clima : manual?.dados) || {}
-  const voos = agruparLeituras((d.voos || []).filter(v => v && Object.values(v).some(temValor)), intervaloMin)
+  // Com a planilha do drone importada, as colunas são as baterias (Voo 01 = 1ª bateria), cada
+  // uma com a área dela; sem ela, as leituras de clima.
+  const baterias = (d.baterias || []).filter(v => v && Object.values(v).some(temValor))
+  const voos = agruparLeituras((baterias.length ? baterias : (d.voos || [])).filter(v => v && Object.values(v).some(temValor)), intervaloMin)
   const fazenda = rel ? rel.fazenda : manual?.fazenda
   const codigo = rel ? fazendaCodigo : manual?.fazenda_codigo
   const vazao = rel ? num(rel.vazao_i || rel.vazao_f) : NaN
@@ -162,10 +166,13 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
   // no cabeçalho, não por leitura (Pastor, 22/10/2026). Digitada na ficha vale; em branco, sai a
   // do voo (aplicada, sem a bordadura) quando ele já terminou, ou a soma das leituras.
   const terminou = rel && ['finalizado', 'pausado_dia'].includes(rel.status)
-  const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : terminou ? areaLiquida(rel) : areaVoos
-  // Volume e recomendação: o que foi digitado vale; em branco, sai da vazão do voo × área.
+  const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : baterias.length ? areaVoos : terminou ? areaLiquida(rel) : areaVoos
+  const litrosDrone = baterias.reduce((a, b) => a + (Number(b.litros) || 0), 0)
+  // Volume e recomendação: o que foi digitado vale; em branco, o volume é o que o drone registrou
+  // (soma das baterias) ou a vazão do voo × área.
   const recomendacao = temValor(d.recomendacao) ? d.recomendacao : (!isNaN(vazao) ? fmt(vazao) : '')
   const volume = temValor(d.volume_consumido) ? d.volume_consumido
+    : litrosDrone > 0 ? fmt(litrosDrone, 1)
     : (!isNaN(vazao) && areaOperacao > 0 ? fmt(vazao * areaOperacao, 1) : '')
   return {
     cabecalho: [
@@ -176,6 +183,7 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
       d.auxiliar || '', d.tecnico_regional || '', d.supervisor || '', areaOperacao > 0 ? fmt(areaOperacao) : '', volume, recomendacao,
     ],
     voos,
+    porBateria: baterias.length > 0,
     observacoes: [d.observacoes, ...voos.map((v, i) => v.obs ? `Voo ${String(i + 1).padStart(2, '0')}: ${v.obs}` : '')].filter(Boolean).join(' · '),
   }
 }
@@ -209,12 +217,13 @@ function marcaOrofly(doc, x, y) {
 }
 
 // Linha "Área aplicada (ha)" opcional: as leituras automáticas não trazem área e a linha saía
-// vazia (Pastor, 22/10/2026). `comArea` vem da caixinha da tela; sem ela, sai como antes.
+// vazia (Pastor, 22/10/2026). `comArea` vem da caixinha da tela; sem ela, sai como antes. Ficha
+// por bateria (planilha do drone) sempre leva a linha: lá cada coluna tem a área dela.
 const camposDaFicha = comArea => comArea ? CAMPOS_VOO : CAMPOS_VOO.filter(([chave]) => chave !== 'area')
 
 export function gerarPdfFichas(fichas, { colunas, comArea = true } = {}) {
   const N = colunasValidas(colunas)
-  const campos = camposDaFicha(comArea)
+  const campos = camposDaFicha(comArea || fichas.some(f => f.porBateria))
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
   const M = 8, W = 297 - 2 * M
   const larg = [36, 18, 22, 28, 22, 27, 30, 22, 37, 39]
@@ -274,7 +283,7 @@ export function gerarPdfFichas(fichas, { colunas, comArea = true } = {}) {
 // ── Excel com a mesma grade ────────────────────────────────────────────────────────
 export function planilhaFichasBlob(fichas, { colunas, comArea = true } = {}) {
   const N = colunasValidas(colunas)
-  const campos = camposDaFicha(comArea)
+  const campos = camposDaFicha(comArea || fichas.some(f => f.porBateria))
   const linhas = [['MONITORAMENTO CLIMÁTICO — FICHA DE APLICAÇÃO — DRONE'], ['OROFLY'], []]
   const merges = []
   blocos(fichas, N).forEach(b => {

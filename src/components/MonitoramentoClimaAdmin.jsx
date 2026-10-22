@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTheme } from '../lib/theme'
 import FichaClimaEditor from './FichaClimaEditor'
-import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO } from '../lib/monitoramentoClima'
+import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO, climaSerie } from '../lib/monitoramentoClima'
+import { lerRegistroDrone, bateriasDoVoo, gruposPorTalhao, bateriasParaFicha, completarClima } from '../lib/registroDrone'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
 
 // Gestão → Monitoramento Climático (Beta). Junta as fichas lançadas pelos pilotos nos voos
@@ -12,6 +13,9 @@ const norm = s => (s || '').trim().toLowerCase().replace(/\s+/g, ' ')
 const dataIso = iso => iso ? new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) : ''
 const dataBR = d => d ? new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR') : '—'
 const primeiroDoMes = () => { const h = new Date(); return new Date(h.getFullYear(), h.getMonth(), 1).toLocaleDateString('en-CA') }
+const horaBR = ms => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })
+const haBR = v => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const numBR = v => parseFloat(String(v ?? '').replace(/\./g, '').replace(',', '.')) || 0
 
 export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, fazendas, clientes, supabase, showToast, isMobile, config, abrirRelId }) {
   const { theme } = useTheme()
@@ -28,6 +32,8 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
   const [marcadas, setMarcadas] = useState({})
   const [editor, setEditor] = useState(() => relInicial ? { tipo: 'voo', relId: relInicial.id, dados: relInicial.monitoramento_clima || { voos: [] } } : null) // { tipo:'voo'|'manual', id?, relId?, cab:{...}, dados:{...} }
   const [salvando, setSalvando] = useState(false)
+  // Planilha do drone (registro de voo da DJI) lida e esperando o admin escolher os talhões.
+  const [importacao, setImportacao] = useState(null) // { relId, arquivo, grupos: [{ talhao, baterias, area, iniMs, fimMs, marcado }] }
   // Na hora de emitir: agrupar as leituras a cada X min (vazio = como foram lançadas) e quantas
   // colunas cada operação tem. Começa no padrão de Configurações do Sistema.
   const [agruparMin, setAgruparMin] = useState('')
@@ -46,8 +52,10 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
   const codigoDaFazenda = rel => fazendas.find(f => norm(f.cliente) === norm(rel.cliente) && norm(f.nome) === norm(rel.fazenda))?.id_fazenda || ''
 
   const lista = useMemo(() => {
-    const doVoo = relatorios.filter(r => r.monitoramento_clima && (r.monitoramento_clima.voos || []).length)
-      .map(r => ({ chave: 'v' + r.id, tipo: 'voo', rel: r, data: dataIso(r.dt_inicio || r.created_at), cliente: r.cliente, fazenda: r.fazenda, talhao: r.localizacao, piloto: r.piloto_nome, nVoos: r.monitoramento_clima.voos.length }))
+    // Ficha com baterias do drone conta as baterias (são as colunas dela); sem, as leituras.
+    const doVoo = relatorios.filter(r => r.monitoramento_clima && ((r.monitoramento_clima.voos || []).length || (r.monitoramento_clima.baterias || []).length))
+      .map(r => ({ chave: 'v' + r.id, tipo: 'voo', rel: r, data: dataIso(r.dt_inicio || r.created_at), cliente: r.cliente, fazenda: r.fazenda, talhao: r.localizacao, piloto: r.piloto_nome,
+        nVoos: (r.monitoramento_clima.baterias || []).length || (r.monitoramento_clima.voos || []).length, drone: (r.monitoramento_clima.baterias || []).length > 0 }))
     const doPainel = manuais.map(m => ({ chave: 'm' + m.id, tipo: 'manual', manual: m, data: m.data, cliente: m.cliente, fazenda: m.fazenda, talhao: m.talhao, piloto: m.piloto, nVoos: (m.dados?.voos || []).length }))
     return [...doVoo, ...doPainel]
       .filter(x => (!de || (x.data || '') >= de) && (!ate || (x.data || '') <= ate) && (!cliente || norm(x.cliente) === norm(cliente)))
@@ -65,6 +73,36 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
   function abrir(item) {
     if (item.tipo === 'voo') setEditor({ tipo: 'voo', relId: item.rel.id, dados: item.rel.monitoramento_clima || { voos: [] } })
     else { const m = item.manual; setEditor({ tipo: 'manual', id: m.id, vincular: '', cab: { cliente: m.cliente || '', fazenda: m.fazenda || '', fazenda_codigo: m.fazenda_codigo || '', talhao: m.talhao || '', data: m.data || '', piloto: m.piloto || '' }, dados: m.dados || { voos: [] } }) }
+  }
+
+  // Registro de voo da DJI (uma linha por bateria): fica só o que é do horário deste voo,
+  // separado pelo talhão do drone, pra o admin desmarcar o que for de outro talhão.
+  async function lerPlanilhaDrone(e, rel) {
+    const arq = e.target.files?.[0]
+    e.target.value = ''
+    if (!arq || !rel) return
+    try {
+      const todas = lerRegistroDrone(new Uint8Array(await arq.arrayBuffer()))
+      if (!todas) { showToast('Essa planilha não é o registro de voo da DJI (faltam as colunas "Flight time" e "Sprayed area").', 'error'); return }
+      const doVoo = bateriasDoVoo(todas, rel)
+      if (!doVoo.length) { showToast(`Nenhuma das ${todas.length} baterias da planilha é do horário deste voo.`, 'error'); return }
+      setImportacao({ relId: rel.id, arquivo: arq.name, grupos: gruposPorTalhao(doVoo).map(g => ({ ...g, marcado: true })) })
+    } catch (err) { showToast('Não deu pra ler a planilha: ' + err.message, 'error') }
+  }
+
+  // Cada bateria vira um voo da ficha, com o clima da leitura mais perto; a que não tem leitura
+  // perto pega o do mesmo serviço pelo GPS do voo (dá até 7 dias pra trás).
+  async function usarBaterias(rel) {
+    const sel = importacao.grupos.filter(g => g.marcado).flatMap(g => g.baterias).sort((a, b) => a.iniMs - b.iniMs)
+    if (!sel.length) return
+    let lista = bateriasParaFicha(sel, editor.dados?.voos || [])
+    const horas = (Date.now() - sel[0].iniMs) / 3600000 + 1
+    if (lista.some(v => !v.temperatura) && rel.gps_lat && rel.gps_lng && horas <= 168) {
+      lista = completarClima(lista, await climaSerie(rel.gps_lat, rel.gps_lng, horas) || [])
+    }
+    setEditor(ed => ({ ...ed, dados: { ...(ed.dados || {}), baterias: lista, baterias_arquivo: importacao.arquivo } }))
+    setImportacao(null)
+    showToast(`🛩️ ${lista.length} baterias na ficha — falta salvar.`)
   }
 
   async function salvar() {
@@ -177,7 +215,7 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
                   <td style={{ padding: '8px 10px' }}>{x.talhao || '—'}</td>
                   <td style={{ padding: '8px 10px' }}>{x.piloto || '—'}</td>
                   <td style={{ padding: '8px 10px', fontWeight: 700 }}>{x.nVoos}</td>
-                  <td style={{ padding: '8px 10px', color: theme.textMuted }}>{x.tipo === 'voo' ? '🚁 voo registrado' : '✍️ manual'}</td>
+                  <td style={{ padding: '8px 10px', color: theme.textMuted }}>{x.tipo === 'voo' ? (x.drone ? '🛩️ baterias do drone' : '🚁 voo registrado') : '✍️ manual'}</td>
                   <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                     <button style={{ ...btn(theme.bg, '#059669'), padding: '5px 10px', fontSize: 12 }} onClick={() => abrir(x)}>✏️ Editar</button>
                     <button style={{ ...btn(theme.dangerBg, theme.dangerText), padding: '5px 10px', fontSize: 12, marginLeft: 4 }} onClick={() => excluir(x)}>🗑️</button>
@@ -242,8 +280,55 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
               </div>
             )}
 
-            <FichaClimaEditor valor={editor.dados} onChange={dados => setEditor(ed => ({ ...ed, dados }))}
-              sugestao={{ altura: relDoEditor?.altura || '', temperatura: relDoEditor?.temperatura_i || '', umidade: relDoEditor?.umidade_i || '', vento: relDoEditor?.vento_i || '' }} />
+            {relDoEditor && (() => {
+              const bats = editor.dados?.baterias || []
+              const imp = importacao?.relId === relDoEditor.id ? importacao : null
+              const nMarcadas = imp ? imp.grupos.filter(g => g.marcado).reduce((a, g) => a + g.baterias.length, 0) : 0
+              return (
+                <div style={{ border: `1px dashed ${theme.cardBorder2}`, borderRadius: 12, padding: '10px 12px', marginBottom: 12 }}>
+                  <div style={rot}>🛩️ PLANILHA DO DRONE (DJI)</div>
+                  {bats.length ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12.5, color: theme.text }}>
+                      <span style={{ flex: 1, minWidth: 220 }}><b>{bats.length} baterias</b> · {haBR(bats.reduce((a, v) => a + numBR(v.area), 0))} ha · {bats[0].inicio}–{bats[bats.length - 1].fim}{bats[0].aeronave ? ` · ${bats[0].aeronave}` : ''} — a ficha sai por bateria, com o clima da leitura mais perto.</span>
+                      <button style={{ ...btn(theme.dangerBg, theme.dangerText), padding: '5px 12px', fontSize: 12 }} onClick={() => setEditor(ed => ({ ...ed, dados: { ...ed.dados, baterias: [], baterias_arquivo: null } }))}>Tirar baterias</button>
+                    </div>
+                  ) : imp ? (
+                    <div>
+                      <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>{imp.arquivo} — baterias no horário deste voo, separadas pelo talhão do drone. Desmarque o que for de outro talhão.</div>
+                      {imp.grupos.map((g, i) => (
+                        <label key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, color: theme.text, marginBottom: 4, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={g.marcado} onChange={e => setImportacao(im => ({ ...im, grupos: im.grupos.map((x, j) => j === i ? { ...x, marcado: e.target.checked } : x) }))} />
+                          <span><b>{g.baterias.length} bateria{g.baterias.length === 1 ? '' : 's'}</b> · {haBR(g.area)} ha · {horaBR(g.iniMs)}–{horaBR(g.fimMs)}{g.talhao ? <span style={{ color: theme.textFaint2 }}> · talhão do drone {g.talhao.slice(0, 8)}</span> : null}</span>
+                        </label>
+                      ))}
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <button style={{ ...btn('#059669'), padding: '7px 14px', fontSize: 12.5, opacity: nMarcadas ? 1 : .5 }} disabled={!nMarcadas} onClick={() => usarBaterias(relDoEditor)}>Usar {nMarcadas} bateria{nMarcadas === 1 ? '' : 's'}</button>
+                        <button style={{ ...btn(theme.bg, theme.textMuted), padding: '7px 14px', fontSize: 12.5 }} onClick={() => setImportacao(null)}>Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <label style={{ ...btn(theme.bg, '#059669'), padding: '7px 14px', fontSize: 12.5, display: 'inline-block' }}>
+                        📥 Importar planilha
+                        <input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={e => lerPlanilhaDrone(e, relDoEditor)} />
+                      </label>
+                      <span style={{ fontSize: 11.5, color: theme.textMuted, flex: 1, minWidth: 200 }}>O registro de voo do SmartFarm (uma linha por bateria): cada bateria vira um voo da ficha, com o horário, a altura e a área do drone.</span>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {(() => {
+              // Com baterias, o editor mostra e corrige as baterias; as leituras ficam guardadas
+              // como estão (são a fonte do clima delas).
+              const comBaterias = (editor.dados?.baterias || []).length > 0
+              return (
+                <FichaClimaEditor valor={comBaterias ? { ...editor.dados, voos: editor.dados.baterias } : editor.dados}
+                  onChange={dados => setEditor(ed => ({ ...ed, dados: comBaterias ? { ...dados, voos: ed.dados.voos, baterias: dados.voos } : dados }))}
+                  sugestao={{ altura: relDoEditor?.altura || '', temperatura: relDoEditor?.temperatura_i || '', umidade: relDoEditor?.umidade_i || '', vento: relDoEditor?.vento_i || '' }} />
+              )
+            })()}
 
             <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
               <button style={{ ...btn(theme.bg, theme.textMuted), flex: 1 }} onClick={() => setEditor(null)} disabled={salvando}>Cancelar</button>

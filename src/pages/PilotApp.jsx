@@ -297,12 +297,12 @@ function fimDoVoo(form) {
 }
 
 // Componentes de campo — fora do PilotApp para não perder foco a cada render
-function FI({label,ph,val,onChange,type='text',styles,disabled,min,max}) {
+function FI({label,ph,val,onChange,type='text',styles,disabled,min,max,list}) {
   const { theme } = useTheme()
   return (
     <div style={{marginBottom:14}}>
       <label style={{fontSize:10,fontWeight:600,color:theme.textFaint2,letterSpacing:.5,marginBottom:5,display:'block',fontFamily:"'Poppins',sans-serif"}}>{label}</label>
-      <input type={type} disabled={disabled} min={min} max={max} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:theme.text,outline:'none',background:disabled?theme.bg:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",opacity:disabled?.6:1}} placeholder={ph||''} value={val||''} onChange={onChange}/>
+      <input type={type} disabled={disabled} min={min} max={max} list={list} style={{width:'100%',border:'1px solid #e0ece5',borderRadius:10,padding:'12px 14px',fontSize:14,color:theme.text,outline:'none',background:disabled?theme.bg:'#fff',boxSizing:'border-box',fontFamily:"'Poppins',sans-serif",opacity:disabled?.6:1}} placeholder={ph||''} value={val||''} onChange={onChange}/>
     </div>
   )
 }
@@ -1462,6 +1462,11 @@ export default function PilotApp({onSwitchMode}) {
   // responsável) e os padrões dele. Só no formulário limpo — não mexe em voo em andamento nem
   // troca o que o piloto já escolheu.
   const meuDrone = dronesDB.find(d=>d.piloto_id && d.piloto_id===profile?.id)
+  // Piloto com drone atribuído vê só o(s) dele e "Outro drone": com outro na mão, digita o nome —
+  // quem muda o drone de dono é o admin, no Inventário (Pastor, 22/10/2026). Sem drone
+  // atribuído, continua a frota toda.
+  const meusDrones = dronesDB.filter(d=>d.ativo && d.piloto_id && d.piloto_id===profile?.id).map(d=>d.nome)
+  const dronesDaLista = meusDrones.length ? [...meusDrones, 'Outros'] : DRONES
   useEffect(() => {
     if (!meuDrone || relId || opState!=='idle' || form.drone || form.cliente) return
     setForm(f => (f.drone || f.cliente) ? f : ({...f, drone: meuDrone.nome, ...padroesDoFormulario({...f, drone: meuDrone.nome})}))
@@ -5852,15 +5857,19 @@ Quando: ${tempoErroDebug.quando}`}
               setForm(f=>({...f, drone:nomeDrone, ...padroesDoFormulario({...f, drone:nomeDrone})}));autoGPS()
             }}>
               <option value="">Selecione o Drone...</option>
-              {/* O drone atribuído ao piloto (Inventário → Piloto responsável) vem no topo e marcado,
-                  mas os outros continuam na lista: no campo ele troca de drone (manutenção, drone
-                  emprestado). Pedido do Pastor, 15/10/2026. */}
-              {[...DRONES].sort((a,b)=>(b===meuDrone?.nome)-(a===meuDrone?.nome)).map(d=>{
-                const rotulo = [d, d===meuDrone?.nome ? 'seu drone' : null, dronesEmUsoAgora.includes(d)&&d!==form.drone ? 'em uso' : null].filter(Boolean).join(' — ')
+              {/* Só o(s) drone(s) do piloto e "Outro drone" (ver dronesDaLista). Voo retomado com
+                  um drone fora da lista continua mostrando o dele. */}
+              {(form.drone && !dronesDaLista.includes(form.drone) ? [form.drone, ...dronesDaLista] : dronesDaLista).map(d=>{
+                const rotulo = d==='Outros' ? (meusDrones.length ? 'Outro drone (digitar o nome)' : 'Outros')
+                  : [d, meusDrones.includes(d) ? 'seu drone' : null, dronesEmUsoAgora.includes(d)&&d!==form.drone ? 'em uso' : null].filter(Boolean).join(' — ')
                 return <option key={d} value={d}>{rotulo}</option>
               })}
             </FS>
-            {form.drone==='Outros'&&<FI label="NOME DO DRONE" ph="..." val={form.droneOutro} onChange={e=>setForm(f=>({...f,droneOutro:e.target.value}))}/>}
+            {form.drone==='Outros'&&<>
+              <FI label="NOME DO DRONE" ph="Ex.: T70P 02 — o drone que está com você" list="drones-frota" val={form.droneOutro} onChange={e=>setForm(f=>({...f,droneOutro:e.target.value}))}/>
+              {/* Sugere os nomes do Inventário: escrito igual ao cadastro, a planilha do MAPA acha o prefixo. */}
+              <datalist id="drones-frota">{DRONES.filter(d=>d!=='Outros').map(d=><option key={d} value={d}/>)}</datalist>
+            </>}
 
             {/* GPS — exibe silenciosamente */}
             {form.gps_lat&&(

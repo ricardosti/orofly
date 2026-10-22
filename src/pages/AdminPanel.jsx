@@ -1055,12 +1055,12 @@ export default function AdminPanel({ onSwitchMode }) {
   const climaDoRel = r => {
     const vs = r.monitoramento_clima?.voos || []
     const auto = vs.filter(v => v?.origem === 'auto').length
-    return { total: vs.length, auto, manual: vs.length - auto, editado: r.monitoramento_clima?.editado_admin || null }
+    return { total: vs.length, auto, manual: vs.length - auto, drone: (r.monitoramento_clima?.baterias || []).length, editado: r.monitoramento_clima?.editado_admin || null }
   }
   const fichaClimaDoRel = r => {
     const c = climaDoRel(r)
-    if (!c.total) return { txt:'sem leitura de clima', cor:theme.textFaint, bg:theme.divider }
-    const txt = `${c.total} leitura${c.total===1?'':'s'} de clima`
+    if (!c.total && !c.drone) return { txt:'sem leitura de clima', cor:theme.textFaint, bg:theme.divider }
+    const txt = [c.total ? `${c.total} leitura${c.total===1?'':'s'} de clima` : null, c.drone ? `${c.drone} baterias` : null].filter(Boolean).join(' · ')
     if (c.editado) return { txt: txt + ' · editada', cor:'#1d4ed8', bg:'#dbeafe' }
     return { txt, cor:'#047857', bg:'#d1fae5' }
   }
@@ -2307,7 +2307,7 @@ export default function AdminPanel({ onSwitchMode }) {
                           <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
                             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: (rel.kml_arquivos?.length > 0) ? 10 : 0 }}>
                               <button style={sG.actBtn('#2f6fed')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
-                              {climaDoRel(rel).total>0 && <button style={sG.actBtn('#047857')} onClick={e => { e.stopPropagation(); abrirMonitoramentoDoVoo(rel) }}>🌡️ Clima</button>}
+                              {(climaDoRel(rel).total>0||climaDoRel(rel).drone>0) && <button style={sG.actBtn('#047857')} onClick={e => { e.stopPropagation(); abrirMonitoramentoDoVoo(rel) }}>🌡️ Clima</button>}
                               <button style={sG.actBtn('#059669')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢 Cliente</button>
                               <button style={sG.actBtn('#1a5fa5')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝 Word</button>
                               {rel.gps_lat && <a style={{ ...sG.actBtn('#059669'), textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer">🗺️</a>}
@@ -2358,7 +2358,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {codigoFazendaDoRel(rel) && <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>cód. {codigoFazendaDoRel(rel)}</span>}
                                     </div>
                                   )}
-                                  {(()=>{ const fc=fichaClimaDoRel(rel), tem=climaDoRel(rel).total>0; return (
+                                  {(()=>{ const fc=fichaClimaDoRel(rel), c0=climaDoRel(rel), tem=c0.total>0||c0.drone>0; return (
                                     <div><span title={tem?'Abrir a ficha no Monitoramento Climático':'Ficha do Monitoramento Climático'} onClick={tem?(e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}):undefined}
                                       style={{fontSize:9.5,fontWeight:700,color:fc.cor,background:fc.bg,padding:'1px 7px',borderRadius:20,whiteSpace:'nowrap',cursor:tem?'pointer':'default'}}>🌡️ {fc.txt}</span></div>
                                   )})()}
@@ -2434,14 +2434,14 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {(() => { const c = climaDoRel(rel); return (
                                         <div style={{minWidth:150,flex:1}}>
                                           <div style={{fontSize:10,fontWeight:700,color:'#059669',letterSpacing:1,marginBottom:5,fontFamily:"'Syne',sans-serif"}}>CLIMA (MONITORAMENTO)</div>
-                                          {[['Automáticas',c.auto],['Manuais',c.manual]].map(([l,v]) => (
+                                          {[['Automáticas',c.auto],['Manuais',c.manual],...(c.drone?[['Baterias (drone)',c.drone]]:[])].map(([l,v]) => (
                                             <div key={l} style={{display:'flex',gap:4,marginBottom:3,fontSize:11}}>
                                               <span style={{color:theme.textMuted,minWidth:65,flexShrink:0}}>{l}:</span>
                                               <span style={{color:theme.text,fontWeight:600}}>{v}</span>
                                             </div>
                                           ))}
                                           {c.editado && <div style={{fontSize:10.5,color:'#1d4ed8',marginBottom:3}}>✎ editada em {fmt(c.editado)}</div>}
-                                          {c.total>0 && <button style={{background:'none',border:'none',padding:0,marginTop:3,color:'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}
+                                          {(c.total>0||c.drone>0) && <button style={{background:'none',border:'none',padding:0,marginTop:3,color:'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}
                                             onClick={e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}}>🌡️ Abrir no Monitoramento →</button>}
                                         </div>
                                       )})()}
