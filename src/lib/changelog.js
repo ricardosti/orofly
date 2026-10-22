@@ -9,6 +9,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.0',
+    data: '2026-10-22',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Ficha de clima com a area aplicada da operacao',
+        texto: 'O cabecalho de cada operacao (do inicio ao fim ou parcial do talhao) mostra a area aplicada total, sem a bordadura, e o volume consumido sai dela x a vazao. Da pra digitar outra na ficha. Pedido do Pastor.' },
+    ],
+  },
+  {
     versao: '11.9',
     data: '2026-10-22',
     itens: [

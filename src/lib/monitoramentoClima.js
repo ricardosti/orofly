@@ -3,7 +3,7 @@
 // ou o Pastor digita no painel a partir do papel. A ideia é depois vir da telemetria do drone.
 //
 // Formato guardado (relatorios.monitoramento_clima e fichas_clima.dados):
-//   { auxiliar, tecnico_regional, supervisor, volume_consumido, recomendacao, observacoes,
+//   { auxiliar, tecnico_regional, supervisor, area_aplicada, volume_consumido, recomendacao, observacoes,
 //     voos: [{ inicio, fim, altura, area, temperatura, umidade, vento, obs }] }
 //
 // A exportação copia a ficha do Pastor: A4 paisagem, 3 operações por página, 10 voos por bloco
@@ -11,6 +11,7 @@
 
 import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
+import { areaLiquida } from './pdf'
 
 export const CAMPOS_VOO = [
   ['inicio', 'Início do voo'],
@@ -22,7 +23,7 @@ export const CAMPOS_VOO = [
   ['vento', 'Vento (km/h)'],
 ]
 export const CABECALHO = ['Fazenda (ID)', 'Talhão', 'Data da aplicação', 'Piloto', 'Auxiliar', 'Técnico Regional',
-  'Supervisor Operacional', 'Volume de produto consumido (L)', 'Recomendação Agronômica (L/ha)']
+  'Supervisor Operacional', 'Área aplicada (ha)', 'Volume de produto consumido (L)', 'Recomendação Agronômica (L/ha)']
 // Padrões — o admin troca em Configurações do Sistema (Monitoramento Climático): o intervalo
 // entre leituras no voo e quantas colunas cada operação tem na ficha (o papel tem 10).
 // Intervalo padrão de 15 min desde 20/10/2026 (leituras automáticas e ocultas, em todo voo).
@@ -37,7 +38,7 @@ export function limparFicha(f) {
   if (!f) return null
   const voos = (f.voos || []).filter(v => v && Object.values(v).some(temValor))
   const out = { ...f, voos }
-  const temCab = ['auxiliar', 'tecnico_regional', 'supervisor', 'volume_consumido', 'recomendacao', 'observacoes'].some(k => temValor(f[k]))
+  const temCab = ['auxiliar', 'tecnico_regional', 'supervisor', 'area_aplicada', 'volume_consumido', 'recomendacao', 'observacoes'].some(k => temValor(f[k]))
   return voos.length || temCab ? out : null
 }
 
@@ -157,17 +158,22 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
   const codigo = rel ? fazendaCodigo : manual?.fazenda_codigo
   const vazao = rel ? num(rel.vazao_i || rel.vazao_f) : NaN
   const areaVoos = voos.reduce((a, v) => a + (num(v.area) || 0), 0)
+  // Área aplicada da operação inteira — do início ao fim (ou parcial) do talhão —, uma vez só
+  // no cabeçalho, não por leitura (Pastor, 22/10/2026). Digitada na ficha vale; em branco, sai a
+  // do voo (aplicada, sem a bordadura) quando ele já terminou, ou a soma das leituras.
+  const terminou = rel && ['finalizado', 'pausado_dia'].includes(rel.status)
+  const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : terminou ? areaLiquida(rel) : areaVoos
   // Volume e recomendação: o que foi digitado vale; em branco, sai da vazão do voo × área.
   const recomendacao = temValor(d.recomendacao) ? d.recomendacao : (!isNaN(vazao) ? fmt(vazao) : '')
   const volume = temValor(d.volume_consumido) ? d.volume_consumido
-    : (!isNaN(vazao) && areaVoos > 0 ? fmt(vazao * areaVoos, 1) : '')
+    : (!isNaN(vazao) && areaOperacao > 0 ? fmt(vazao * areaOperacao, 1) : '')
   return {
     cabecalho: [
       [fazenda, codigo ? `(${codigo})` : ''].filter(Boolean).join(' '),
       rel ? (rel.localizacao || '') : (manual?.talhao || ''),
       rel ? dataBR(rel.dt_inicio || rel.created_at) : dataBR(manual?.data),
       rel ? (rel.piloto_nome || '') : (manual?.piloto || ''),
-      d.auxiliar || '', d.tecnico_regional || '', d.supervisor || '', volume, recomendacao,
+      d.auxiliar || '', d.tecnico_regional || '', d.supervisor || '', areaOperacao > 0 ? fmt(areaOperacao) : '', volume, recomendacao,
     ],
     voos,
     observacoes: [d.observacoes, ...voos.map((v, i) => v.obs ? `Voo ${String(i + 1).padStart(2, '0')}: ${v.obs}` : '')].filter(Boolean).join(' · '),
@@ -211,7 +217,7 @@ export function gerarPdfFichas(fichas, { colunas, comArea = true } = {}) {
   const campos = camposDaFicha(comArea)
   const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
   const M = 8, W = 297 - 2 * M
-  const larg = [38, 20, 24, 30, 24, 30, 34, 39, 42]
+  const larg = [36, 18, 22, 28, 22, 27, 30, 22, 37, 39]
   const colDet = 46, colVoo = (W - colDet) / N
   const R = { titulo: 5, rot: 4.6, val: 5.6, grade: 4.6, linha: 4.4, obs: 5.2 }
   const altBloco = R.titulo + R.rot + R.val + R.grade + R.linha * campos.length + R.obs
@@ -282,7 +288,7 @@ export function planilhaFichasBlob(fichas, { colunas, comArea = true } = {}) {
     linhas.push([])
   })
   const ws = XLSX.utils.aoa_to_sheet(linhas)
-  ws['!cols'] = [34, 16, 14, 16, 14, 16, 18, 20, 20, 12, 12].map(w => ({ wch: w }))
+  ws['!cols'] = [34, 16, 14, 16, 14, 16, 18, 16, 20, 20, 12].map(w => ({ wch: w }))
   ws['!merges'] = merges
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Fichas')
