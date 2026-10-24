@@ -57,6 +57,8 @@ import { reverseGeocode } from '../lib/geocode'
 import ParamsPadraoCampos from '../components/ParamsPadraoCampos'
 import RegulamentacaoMapa from '../components/RegulamentacaoMapa'
 import MonitoramentoClimaAdmin from '../components/MonitoramentoClimaAdmin'
+import DocumentosFazenda from '../components/DocumentosFazenda'
+import { CATEGORIAS_DOC, categoriaDoc, palpiteCategoria, caminhoDocumento, tamanhoLegivel } from '../lib/documentosFazenda'
 import ApontamentoDiario from '../components/ApontamentoDiario'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
@@ -475,6 +477,15 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzMapaExistente, setFzMapaExistente] = useState(null) // mapa_pdf_path da fazenda em edição
   const [fzMapaUploading, setFzMapaUploading] = useState(false)
   const [mapaViewerFazenda, setMapaViewerFazenda] = useState(null)
+  // Documentos da fazenda em edição: os que já estão nela (`remover` marcado sai ao salvar) e
+  // os arquivos novos escolhidos agora (lib/documentosFazenda).
+  const [fzDocs, setFzDocs] = useState([])
+  const [fzDocsNovos, setFzDocsNovos] = useState([])
+  const [fzDocsEnviando, setFzDocsEnviando] = useState(false)
+  const [docsViewerFazenda, setDocsViewerFazenda] = useState(null)
+  // Clonar fazenda: { origem, nome, cliente, produto, talhoes }
+  const [fzClone, setFzClone] = useState(null)
+  const [fzClonando, setFzClonando] = useState(false)
   const [relatorioPeriodoFz, setRelatorioPeriodoFz] = useState(null) // fazenda (com BI) selecionada pro modal de relatório do período
   const [relatorioPeriodoForm, setRelatorioPeriodoForm] = useState({dataIni:'',dataFim:''})
   const [relatorioPeriodoLoading, setRelatorioPeriodoLoading] = useState('') // '' | 'pdf' | 'whats'
@@ -4561,9 +4572,29 @@ export default function AdminPanel({ onSwitchMode }) {
                   const {error: pathErr} = await supabase.from('fazendas').update({mapa_pdf_path:path}).eq('id',savedId)
                   if(pathErr) throw pathErr
                 }
+                // Documentos: sobem os novos (foto vai comprimida, legível), saem os marcados — e a
+                // lista vai pra fazenda. Arquivo só sai do Storage se nenhuma outra fazenda (clone) usa.
+                if(savedId && (fzDocsNovos.length || fzDocs.some(d=>d.remover))){
+                  setFzDocsEnviando(true)
+                  const mantidos = fzDocs.filter(d=>!d.remover).map(({remover, ...d})=>d)
+                  const novos = []
+                  for(const n of fzDocsNovos){
+                    let arquivo = n.file, tipo = n.file.type || ''
+                    if(/^image\//.test(tipo)){ const c = await comprimirImagem(n.file, {maxLado:2000, qualidade:0.85}); if(c?.blob){ arquivo = c.blob; tipo = 'image/jpeg' } }
+                    const path = caminhoDocumento(savedId, n.file.name)
+                    const {error: upErr} = await supabase.storage.from('relatorios').upload(path, arquivo, {contentType: tipo || undefined})
+                    if(upErr) throw upErr
+                    novos.push({nome:n.nome||n.file.name, categoria:n.categoria, path, tipo, tamanho:arquivo.size, enviado_em:new Date().toISOString()})
+                  }
+                  const {error: docErr} = await supabase.from('fazendas').update({documentos:[...mantidos, ...novos]}).eq('id',savedId)
+                  if(docErr) throw docErr
+                  const apagar = fzDocs.filter(d=>d.remover).map(d=>d.path)
+                    .filter(p=>!invFazendas.some(f=>f.id!==savedId && (f.documentos||[]).some(x=>x.path===p)))
+                  if(apagar.length) await supabase.storage.from('relatorios').remove(apagar)
+                }
                 showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
                 setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}})
-                setFzEditId(null); setFzMapaFile(null); setFzMapaExistente(null); setFzModal(false); fetchInventario()
+                setFzEditId(null); setFzMapaFile(null); setFzMapaExistente(null); setFzDocs([]); setFzDocsNovos([]); setFzModal(false); fetchInventario()
                 // Fazenda nova já abre com o campo de talhão, no topo da lista (mais recentes).
                 if (novaFazenda && savedId) {
                   setFzTab('fazendas'); setFzListaOrdem('recentes'); setFzSearch(''); setFzClienteFiltro(''); setFzProdutoFiltro('')
@@ -4571,7 +4602,34 @@ export default function AdminPanel({ onSwitchMode }) {
                   setTimeout(()=>{ const el=document.getElementById(`novo-talhao-${savedId}`); if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus() } }, 700)
                   showToast('✅ Fazenda cadastrada! Agora adicione os talhões.')
                 }
-              } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false); setFzMapaUploading(false) }
+              } catch(e){ showToast('Erro: '+e.message,'error') } finally { setInvSaving(false); setFzMapaUploading(false); setFzDocsEnviando(false) }
+            }
+
+            // Clonar: outra fazenda igual (talhões, mapa, documentos e padrões) pra lançar com outra
+            // operação — o progresso de cada uma conta separado (pedido do Rodolfo, 23/10/2026). Mapa e
+            // documentos apontam pros mesmos arquivos. Pra recomeçar a MESMA fazenda, é o "novo ciclo".
+            async function clonarFazenda() {
+              const { origem, cliente, produto, talhoes } = fzClone
+              const nome = (fzClone.nome || '').trim().replace(/\s*-\s*$/, '')
+              const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
+              if (!nome || !cliente) { showToast('Preencha o nome e o cliente', 'error'); return }
+              if (invFazendas.some(f => norm(f.cliente) === norm(cliente) && norm(f.nome) === norm(nome))) { showToast(`Já existe "${nome}" em ${cliente} — mude o nome (ex.: com a operação).`, 'error'); return }
+              setFzClonando(true)
+              try {
+                const campos = ['produtos_padrao','cep','lat','lng','id_fazenda','mapa_pdf_path','mapa_versao','mapa_lat_min','mapa_lat_max','mapa_lng_min','mapa_lng_max','mapa_vp_x','mapa_vp_y','mapa_vp_w','mapa_vp_h','params_padrao','municipio','uf']
+                const copia = { cliente, nome, produto: produto || null, ativo: true, documentos: origem.documentos || [], ...Object.fromEntries(campos.map(k => [k, origem[k] ?? null])) }
+                const { data, error } = await supabase.from('fazendas').insert(copia).select().single()
+                if (error) throw error
+                const ts = talhoes ? invTalhoes.filter(t => t.fazenda_id === origem.id && t.ativo !== false) : []
+                if (ts.length) {
+                  const { error: e2 } = await supabase.from('talhoes').insert(ts.map(t => ({ fazenda_id: data.id, nome: t.nome, area_ha: t.area_ha, ativo: true })))
+                  if (e2) showToast(`Fazenda criada, mas os talhões não copiaram (${e2.message}) — adicione na fazenda nova.`, 'error')
+                }
+                setFzClone(null); fetchInventario()
+                setFzTab('fazendas'); setFzListaOrdem('recentes'); setFzSearch(''); setFzClienteFiltro(''); setFzProdutoFiltro('')
+                setFzExpandido(s => ({ ...s, [data.id]: true }))
+                showToast(`✅ "${nome}" criada${ts.length ? ` com ${ts.length} talhões` : ''} — o progresso dela começa do zero.`)
+              } catch (e) { showToast('Erro ao clonar: ' + e.message, 'error') } finally { setFzClonando(false) }
             }
 
             return (
@@ -4594,7 +4652,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         📤 Importar planilha
                       </button>
                       <button style={{background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzModal(true)}}>
+                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzDocs([]);setFzDocsNovos([]);setFzModal(true)}}>
                         + Nova Fazenda
                       </button>
                     </div>
@@ -5200,13 +5258,19 @@ export default function AdminPanel({ onSwitchMode }) {
                                       <button style={{background:theme.successBg,color:'#059669',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                         onClick={(e)=>{ e.stopPropagation(); setMapaViewerFazenda(fz) }}>🗺️</button>
                                     )}
+                                    {(fz.documentos||[]).length>0 && (
+                                      <button title="Documentos da fazenda" style={{background:theme.bg,color:'#059669',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                        onClick={(e)=>{ e.stopPropagation(); setDocsViewerFazenda(fz) }}>📎 {fz.documentos.length}</button>
+                                    )}
+                                    <button title="Clonar fazenda (com os talhões)" style={{background:theme.bg,color:'#059669',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
+                                      onClick={(e)=>{ e.stopPropagation(); setFzClone({origem:fz,nome:`${fz.nome} - `,cliente:fz.cliente,produto:fz.produto||'',talhoes:true}) }}>⧉</button>
                                     <button style={{background:theme.bg,color:'#059669',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={(e)=>{
                                         e.stopPropagation()
                                         setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',produtos_padrao:fz.produtos_padrao||[],cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',
                                           mapa_lat_min:fz.mapa_lat_min??'',mapa_lat_max:fz.mapa_lat_max??'',mapa_lng_min:fz.mapa_lng_min??'',mapa_lng_max:fz.mapa_lng_max??'',
                                           municipio:fz.municipio||'',uf:fz.uf||'',params_padrao:fz.params_padrao||{}})
-                                        setFzEditId(fz.id); setFzMapaFile(null); setFzMapaExistente(fz.mapa_pdf_path||null); setFzModal(true)
+                                        setFzEditId(fz.id); setFzMapaFile(null); setFzMapaExistente(fz.mapa_pdf_path||null); setFzDocs(fz.documentos||[]); setFzDocsNovos([]); setFzModal(true)
                                       }}>✏️</button>
                                     <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={async(e)=>{
@@ -5407,15 +5471,102 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </>
                               )}
                             </div>
+
+                            {/* Documentos pra fiscalização: o piloto vê no app (tela do Mapa) e eles ficam
+                                guardados no celular dele pra abrir sem sinal. */}
+                            <div style={{borderTop:`1px solid ${theme.divider}`,paddingTop:12}}>
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>📎 DOCUMENTOS DA FAZENDA (OPCIONAL)</div>
+                              <div style={{fontSize:11,color:theme.textFaint2,marginBottom:8}}>Pra fiscalização: solicitação de voo, documentos dos pilotos e da aeronave. O piloto vê no app, na tela do Mapa, e eles ficam guardados no celular pra abrir sem sinal.</div>
+                              {fzDocs.map((d,i)=>{ const [,ic,rot]=categoriaDoc(d.categoria); return (
+                                <div key={d.path} style={{display:'flex',alignItems:'center',gap:8,background:theme.bg,borderRadius:8,padding:'7px 10px',marginBottom:5,fontSize:12,opacity:d.remover?.45:1}}>
+                                  <span>{ic}</span>
+                                  <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textDecoration:d.remover?'line-through':'none'}} title={d.nome}>{d.nome}</span>
+                                  <span style={{fontSize:10.5,color:theme.textMuted,flexShrink:0}}>{rot} · {tamanhoLegivel(d.tamanho)}</span>
+                                  <button title={d.remover?'Manter':'Tirar ao salvar'} style={{background:'none',border:'none',color:d.remover?'#059669':theme.dangerText,fontSize:14,cursor:'pointer',flexShrink:0}}
+                                    onClick={()=>setFzDocs(ds=>ds.map((x,j)=>j===i?{...x,remover:!x.remover}:x))}>{d.remover?'↺':'×'}</button>
+                                </div>
+                              )})}
+                              {fzDocsNovos.map((n,i)=>(
+                                <div key={i} style={{display:'flex',alignItems:'center',gap:6,background:theme.successBg,borderRadius:8,padding:'6px 8px',marginBottom:5,fontSize:12}}>
+                                  <span style={{flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={n.file.name}>🆕 {n.file.name}</span>
+                                  <select style={{border:`1px solid ${theme.cardBorder2}`,borderRadius:6,padding:'4px 6px',fontSize:11.5,outline:'none',maxWidth:160}}
+                                    value={n.categoria} onChange={e=>setFzDocsNovos(ns=>ns.map((x,j)=>j===i?{...x,categoria:e.target.value}:x))}>
+                                    {CATEGORIAS_DOC.map(([id,ic,rot])=><option key={id} value={id}>{ic} {rot}</option>)}
+                                  </select>
+                                  <button title="Tirar" style={{background:'none',border:'none',color:theme.dangerText,fontSize:14,cursor:'pointer'}} onClick={()=>setFzDocsNovos(ns=>ns.filter((_,j)=>j!==i))}>×</button>
+                                </div>
+                              ))}
+                              <label style={{display:'flex',alignItems:'center',gap:8,border:`1px dashed ${theme.cardBorder2}`,borderRadius:8,padding:'10px 12px',fontSize:12,color:theme.textMuted,cursor:'pointer'}}>
+                                📎 Adicionar documentos (PDF ou foto)...
+                                <input type="file" multiple accept="application/pdf,image/*" style={{display:'none'}}
+                                  onChange={e=>{ const arqs=[...(e.target.files||[])]; e.target.value=''; setFzDocsNovos(ns=>[...ns,...arqs.map(file=>({file,nome:file.name,categoria:palpiteCategoria(file.name)}))]) }}/>
+                              </label>
+                              {fzDocsNovos.some(n=>n.file.size>8*1048576) && <div style={{fontSize:10.5,color:theme.warningText,marginTop:6}}>Arquivo acima de 8 MB: cada piloto baixa uma vez pro celular — se der, mande uma versão menor.</div>}
+                            </div>
                           </div>
                           <div style={{display:'flex',gap:8,marginTop:20}}>
                             <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} onClick={()=>setFzModal(false)}>Cancelar</button>
-                            <button style={{flex:2,background:'#059669',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}} disabled={invSaving} onClick={salvarNovaFazenda}>{fzMapaUploading?'Enviando mapa...':invSaving?'Salvando...':'💾 Salvar'}</button>
+                            <button style={{flex:2,background:'#059669',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:invSaving?.6:1}} disabled={invSaving} onClick={salvarNovaFazenda}>{fzMapaUploading?'Enviando mapa...':fzDocsEnviando?'Enviando documentos...':invSaving?'Salvando...':'💾 Salvar'}</button>
                           </div>
                         </div>
                       </div>
                     )}
                     {mapaViewerFazenda && <MapaFazendaViewer supabase={supabase} fazenda={mapaViewerFazenda} onClose={()=>setMapaViewerFazenda(null)}/>}
+                    {docsViewerFazenda && (
+                      <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>setDocsViewerFazenda(null)}>
+                        <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:460,padding:18,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+                          <div style={{display:'flex',alignItems:'center',marginBottom:2}}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,flex:1}}>📎 {docsViewerFazenda.nome}</div>
+                            <button style={{background:'none',border:'none',fontSize:18,cursor:'pointer',color:theme.textMuted}} onClick={()=>setDocsViewerFazenda(null)}>✕</button>
+                          </div>
+                          <div style={{fontSize:11.5,color:theme.textMuted}}>{docsViewerFazenda.cliente} — pra mudar a lista, edite a fazenda (✏️).</div>
+                          <DocumentosFazenda supabase={supabase} fazenda={docsViewerFazenda} />
+                        </div>
+                      </div>
+                    )}
+                    {fzClone && (()=>{
+                      const tsClone = invTalhoes.filter(t=>t.fazenda_id===fzClone.origem.id && t.ativo!==false)
+                      const areaClone = tsClone.reduce((a,t)=>a+parseFloat(t.area_ha||0),0)
+                      const inp = {width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}
+                      const rotulo = {fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}
+                      const clientesOpc = invClientes.filter(c=>c.ativo).map(c=>c.nome)
+                      return (
+                        <div style={{position:'fixed',inset:0,background:'rgba(11,18,16,0.55)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={()=>{ if(!fzClonando) setFzClone(null) }}>
+                          <div style={{background:theme.card,borderRadius:20,width:'100%',maxWidth:380,padding:22,maxHeight:'90vh',overflowY:'auto'}} onClick={e=>e.stopPropagation()}>
+                            <div style={{fontFamily:"'Syne',sans-serif",fontSize:16,fontWeight:700,marginBottom:6}}>⧉ Clonar fazenda</div>
+                            <div style={{fontSize:12,color:theme.textMuted,marginBottom:14,lineHeight:1.45}}>Cria outra fazenda igual a <b>{fzClone.origem.nome}</b> — talhões, mapa, documentos e padrões — pra lançar com outra operação. O progresso da nova começa do zero; a original não muda.</div>
+                            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+                              <div>
+                                <div style={rotulo}>NOME DA NOVA FAZENDA</div>
+                                <input style={inp} autoFocus value={fzClone.nome} placeholder="Ex.: Fazenda Jamaica - Maturador" onChange={e=>setFzClone(c=>({...c,nome:e.target.value}))}/>
+                                <div style={{fontSize:10,color:'#aaa',marginTop:4}}>Ponha a operação no nome, pro piloto não confundir com a original.</div>
+                              </div>
+                              <div>
+                                <div style={rotulo}>CLIENTE</div>
+                                <select style={inp} value={fzClone.cliente} onChange={e=>setFzClone(c=>({...c,cliente:e.target.value}))}>
+                                  {(clientesOpc.includes(fzClone.cliente) ? clientesOpc : [fzClone.cliente, ...clientesOpc]).map(n=><option key={n}>{n}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <div style={rotulo}>PRODUTO (OPCIONAL)</div>
+                                <select style={inp} value={fzClone.produto} onChange={e=>setFzClone(c=>({...c,produto:e.target.value}))}>
+                                  <option value="">Selecione...</option>
+                                  {PRODUTO_FAZENDA_OPTS.map(p=><option key={p}>{p}</option>)}
+                                </select>
+                              </div>
+                              <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,cursor:'pointer',color:theme.text}}>
+                                <input type="checkbox" checked={fzClone.talhoes} onChange={e=>setFzClone(c=>({...c,talhoes:e.target.checked}))}/>
+                                Copiar os {tsClone.length} talhões{areaClone>0?` (${fmtHa(areaClone)} ha)`:''}
+                              </label>
+                            </div>
+                            <div style={{display:'flex',gap:8,marginTop:20}}>
+                              <button style={{flex:1,background:theme.bg,color:theme.textMuted,border:'none',borderRadius:100,padding:12,fontSize:13,cursor:'pointer'}} disabled={fzClonando} onClick={()=>setFzClone(null)}>Cancelar</button>
+                              <button style={{flex:2,background:'#059669',color:'#fff',border:'none',borderRadius:100,padding:12,fontSize:13,fontWeight:600,cursor:'pointer',opacity:fzClonando?.6:1}} disabled={fzClonando} onClick={clonarFazenda}>{fzClonando?'Clonando...':'⧉ Clonar'}</button>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
 

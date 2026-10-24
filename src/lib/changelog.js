@@ -9,6 +9,16 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.3',
+    data: '2026-10-23',
+    itens: [
+      { tipo: 'novo', titulo: 'Clonar fazenda',
+        texto: 'Gestao > Fazendas: o botao de clonar cria outra fazenda igual (talhoes, mapa, documentos e padroes) com outro nome ou cliente, pra lancar com outra operacao. O progresso da nova comeca do zero e a original nao muda. Pedido do Rodolfo.' },
+      { tipo: 'novo', titulo: 'Documentos da fazenda pra fiscalizacao',
+        texto: 'No cadastro da fazenda, igual ao mapa, da pra subir documentos (solicitacao de voo, do piloto, da aeronave). O piloto ve no app, na tela do Mapa, e eles ficam guardados no celular pra abrir sem sinal; da pra compartilhar com o fiscal. Pedido do Rodolfo.' },
+    ],
+  },
+  {
     versao: '12.2',
     data: '2026-10-22',
     itens: [

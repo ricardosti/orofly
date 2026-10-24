@@ -9,6 +9,8 @@ import { registrarPush, enviarNotificacao } from '../lib/notifications'
 import { compartilharNativo, salvarOuCompartilharPdf } from '../lib/nativeShare'
 import ProfileModal from '../components/ProfileModal'
 import MapaFazendaViewer from '../components/MapaFazendaViewer'
+import DocumentosFazenda from '../components/DocumentosFazenda'
+import { guardarDocumentosDaFazenda } from '../lib/documentosFazenda'
 import ImageAnnotator from '../components/ImageAnnotator'
 import { urlAssinada, esquecerUrl } from '../lib/storageUrl'
 import { registrar, enviarAtividadesGuardadas } from '../lib/atividade'
@@ -1101,7 +1103,7 @@ export default function PilotApp({onSwitchMode}) {
       .then(({data}) => { if(data?.length){ setCulturasDB(data); saveCache('orofly_cache_culturas',data) } })
     supabase.from('clientes').select('nome,ativo,params_padrao').eq('ativo',true).order('nome')
       .then(({data}) => { if(data?.length){ setClientesDB(data); saveCache('orofly_cache_clientes',data) } })
-    supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_versao,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max,params_padrao').eq('ativo',true).order('nome')
+    supabase.from('fazendas').select('id,cliente,nome,produto,produtos_padrao,ativo,campanha_inicio,lat,lng,cep,id_fazenda,mapa_pdf_path,mapa_versao,mapa_lat_min,mapa_lat_max,mapa_lng_min,mapa_lng_max,params_padrao,documentos').eq('ativo',true).order('nome')
       .then(({data}) => { if(data){ setFazendasDB(data); saveCache('orofly_cache_fazendas',data) } })
     // Permissão de fazenda por time — se o time do piloto tiver alguma fazenda marcada em
     // Usuários > Equipes, o dropdown de fazenda no wizard só mostra essas.
@@ -1472,6 +1474,14 @@ export default function PilotApp({onSwitchMode}) {
     setForm(f => (f.drone || f.cliente) ? f : ({...f, drone: meuDrone.nome, ...padroesDoFormulario({...f, drone: meuDrone.nome})}))
   }, [meuDrone?.nome, relId, opState, form.drone, form.cliente])
   const droneVal=form.drone==='Outros'?form.droneOutro:form.drone
+
+  // Documentos da fazenda do voo (fiscalização) vão pro aparelho quando tem sinal — no talhão
+  // pode não ter. Ver lib/documentosFazenda.
+  const fazendaDoVoo = fazendasDB.find(f=>f.cliente===clienteVal && f.nome===form.fazenda)
+  useEffect(() => {
+    if (!fazendaDoVoo?.documentos?.length || navigator.onLine === false) return
+    guardarDocumentosDaFazenda(supabase, fazendaDoVoo)
+  }, [fazendaDoVoo])
 
   // Compartilha o relatório resumido no WhatsApp — tenta ir junto com a foto do mapa de
   // pós-aplicação. Usa o menu nativo de compartilhar do Android dentro do app empacotado
@@ -3644,6 +3654,9 @@ export default function PilotApp({onSwitchMode}) {
                     🟢 Você tem um voo em andamento nessa fazenda
                   </div>
                 )}
+                {/* Documentos pra fiscalização (solicitação de voo, piloto, aeronave): abrem aqui e
+                    ficam guardados no aparelho. */}
+                {fzSel && <DocumentosFazenda supabase={supabase} fazenda={fzSel} guardarSozinho />}
               </>
             )
           ) : mapaModo==='avulso' ? (
