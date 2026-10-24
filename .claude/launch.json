@@ -4,8 +4,19 @@
     {
       "name": "orofly-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["start"],
+      "runtimeArgs": [
+        "start"
+      ],
       "port": 3000
+    },
+    {
+      "name": "orofly-teste",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "-e",
+        "Object.assign(process.env,{REACT_APP_SUPABASE_URL:'http://127.0.0.1:9',PORT:'3100',BROWSER:'none'});require('react-scripts/scripts/start')"
+      ],
+      "port": 3100
     }
   ]
 }
