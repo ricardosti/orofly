@@ -169,10 +169,12 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
   // dos pilotos (Rodolfo, 28/10/2026) — ela só preenche as colunas de cada bateria.
   const terminou = rel && ['finalizado', 'pausado_dia'].includes(rel.status)
   const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : terminou ? areaLiquida(rel) : baterias.length ? 0 : areaVoos
-  // Volume e recomendação: o que foi digitado vale; em branco, saem da vazão do voo (× a área).
+  // Recomendação: a digitada, ou a vazão que o piloto lançou. Volume consumido: só o digitado na
+  // ficha. O piloto não lança volume de calda no app, e a equipe ajusta a calda no campo — conta
+  // automática (vazão × área, ou os litros da planilha do drone) não batia com o que ela reporta
+  // (Rodolfo, 28/10/2026).
   const recomendacao = temValor(d.recomendacao) ? d.recomendacao : (!isNaN(vazao) ? fmt(vazao) : '')
-  const volume = temValor(d.volume_consumido) ? d.volume_consumido
-    : (!isNaN(vazao) && areaOperacao > 0 ? fmt(vazao * areaOperacao, 1) : '')
+  const volume = temValor(d.volume_consumido) ? d.volume_consumido : ''
   return {
     cabecalho: [
       [fazenda, codigo ? `(${codigo})` : ''].filter(Boolean).join(' '),

@@ -11,7 +11,7 @@ const CAB = [
   ['tecnico_regional', 'TÉCNICO REGIONAL', 'Nome'],
   ['supervisor', 'SUPERVISOR OPERACIONAL', 'Nome'],
   ['area_aplicada', 'ÁREA APLICADA (ha)', 'Em branco: a do voo'],
-  ['volume_consumido', 'VOLUME CONSUMIDO (L)', 'Em branco: vazão × área'],
+  ['volume_consumido', 'VOLUME CONSUMIDO (L)', 'O da equipe (opcional)'],
   ['recomendacao', 'RECOMENDAÇÃO (L/ha)', 'Em branco: vazão do voo'],
 ]
 const CURTO = { inicio: 'INÍCIO', fim: 'FIM', altura: 'ALTURA (m)', area: 'ÁREA (ha)', temperatura: 'TEMP. (°C)', umidade: 'UMID. (%)', vento: 'VENTO (km/h)' }

@@ -270,7 +270,7 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
           </table>
         )}
       </div>
-      <div style={{ fontSize: 11, color: theme.textFaint2 }}>Sem nenhuma marcada, o PDF/Excel sai com todas as fichas do período. Volume consumido e recomendação em branco saem da vazão do voo.</div>
+      <div style={{ fontSize: 11, color: theme.textFaint2 }}>Sem nenhuma marcada, o PDF/Excel sai com todas as fichas do período. Área aplicada em branco sai a do relatório do voo; volume consumido só sai se for digitado na ficha.</div>
 
       {editor && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
