@@ -13,7 +13,6 @@
 import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
 import { areaLiquida } from './pdf'
-import { areaDasBaterias } from './registroDrone'
 
 export const CAMPOS_VOO = [
   ['inicio', 'Início do voo'],
@@ -166,14 +165,13 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
   // Área aplicada da operação inteira — do início ao fim (ou parcial) do talhão —, uma vez só
   // no cabeçalho, não por leitura (Pastor, 22/10/2026). Digitada na ficha vale; em branco, sai a
   // do voo (aplicada, sem a bordadura) quando ele já terminou, ou a soma das leituras.
+  // A planilha do drone NÃO entra aqui: a soma das baterias às vezes não batia com o relatório
+  // dos pilotos (Rodolfo, 28/10/2026) — ela só preenche as colunas de cada bateria.
   const terminou = rel && ['finalizado', 'pausado_dia'].includes(rel.status)
-  const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : baterias.length ? areaDasBaterias(baterias) : terminou ? areaLiquida(rel) : areaVoos
-  const litrosDrone = baterias.reduce((a, b) => a + (Number(b.litros) || 0), 0)
-  // Volume e recomendação: o que foi digitado vale; em branco, o volume é o que o drone registrou
-  // (soma das baterias) ou a vazão do voo × área.
+  const areaOperacao = temValor(d.area_aplicada) ? num(d.area_aplicada) : terminou ? areaLiquida(rel) : baterias.length ? 0 : areaVoos
+  // Volume e recomendação: o que foi digitado vale; em branco, saem da vazão do voo (× a área).
   const recomendacao = temValor(d.recomendacao) ? d.recomendacao : (!isNaN(vazao) ? fmt(vazao) : '')
   const volume = temValor(d.volume_consumido) ? d.volume_consumido
-    : litrosDrone > 0 ? fmt(litrosDrone, 1)
     : (!isNaN(vazao) && areaOperacao > 0 ? fmt(vazao * areaOperacao, 1) : '')
   return {
     cabecalho: [

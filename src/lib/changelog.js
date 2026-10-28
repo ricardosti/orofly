@@ -9,6 +9,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.4',
+    data: '2026-10-28',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Ficha de clima: cabecalho igual ao relatorio do voo',
+        texto: 'Com a planilha do drone importada, a area aplicada e o volume consumido do cabecalho continuam saindo do relatorio do voo (o que o piloto lancou), e nao da soma do drone, que as vezes dava diferenca. A planilha so preenche as colunas de cada bateria. Pedido do Rodolfo.' },
+    ],
+  },
+  {
     versao: '12.3',
     data: '2026-10-23',
     itens: [
