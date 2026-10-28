@@ -62,6 +62,13 @@ export function bateriasDoVoo(baterias, rel, folgaMin = 120) {
   const ini = Date.parse(rel.dt_inicio || rel.created_at)
   const fim = rel.dt_fim ? Date.parse(rel.dt_fim) : Date.now()
   if (isNaN(ini)) return []
+  // Voo lançado depois do trabalho (aberto e fechado no app em minutos — o Agnaldo em 27/10/2026:
+  // 6 s, às 19:32): o horário dele não é o da aplicação. Aí vale o dia inteiro, e o admin
+  // desmarca o talhão do drone que não for deste voo.
+  if (fim - ini < 30 * 60000) {
+    const dia = ms => new Date(ms).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+    return baterias.filter(b => dia(b.iniMs) === dia(ini))
+  }
   const f = folgaMin * 60000
   return baterias.filter(b => b.iniMs >= ini - f && b.fimMs <= fim + f)
 }

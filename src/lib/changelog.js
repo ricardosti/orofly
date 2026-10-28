@@ -12,6 +12,8 @@ export const NOVIDADES = [
     versao: '12.4',
     data: '2026-10-28',
     itens: [
+      { tipo: 'melhoria', titulo: 'Voo lancado depois: ficha de clima pela planilha do drone',
+        texto: 'A leitura de clima automatica so acontece com o voo aberto no app (do Iniciar ao Finalizar). Voo iniciado e finalizado em minutos, depois do trabalho, agora avisa isso no resumo, e a planilha do drone importada na ficha pega as baterias do dia inteiro, com o clima pelo GPS. O selo de clima da lista abre a ficha de qualquer voo.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima: cabecalho igual ao relatorio do voo',
         texto: 'A planilha do drone so preenche as colunas de cada bateria. A area aplicada do cabecalho sai do relatorio do voo (o que o piloto lancou) e o volume consumido fica em branco pra equipe preencher na ficha quando precisar, sem conta automatica: a soma do drone e a vazao x area as vezes nao batiam com o que a equipe reporta. Pedido do Rodolfo.' },
     ],

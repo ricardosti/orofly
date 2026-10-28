@@ -2318,7 +2318,7 @@ export default function AdminPanel({ onSwitchMode }) {
                           <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
                             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: (rel.kml_arquivos?.length > 0) ? 10 : 0 }}>
                               <button style={sG.actBtn('#2f6fed')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
-                              {(climaDoRel(rel).total>0||climaDoRel(rel).drone>0) && <button style={sG.actBtn('#047857')} onClick={e => { e.stopPropagation(); abrirMonitoramentoDoVoo(rel) }}>🌡️ Clima</button>}
+                              <button style={sG.actBtn('#047857')} onClick={e => { e.stopPropagation(); abrirMonitoramentoDoVoo(rel) }}>🌡️ Clima</button>
                               <button style={sG.actBtn('#059669')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'cliente') }}>🟢 Cliente</button>
                               <button style={sG.actBtn('#1a5fa5')} onClick={e => { e.stopPropagation(); gerarPDF(rel,null,null,'word') }}>📝 Word</button>
                               {rel.gps_lat && <a style={{ ...sG.actBtn('#059669'), textDecoration:'none' }} href={`https://maps.google.com/?q=${rel.gps_lat},${rel.gps_lng}`} target="_blank" rel="noreferrer">🗺️</a>}
@@ -2369,9 +2369,9 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {codigoFazendaDoRel(rel) && <span style={{fontFamily:'ui-monospace,monospace',fontSize:10,fontWeight:600,color:theme.textMuted,background:theme.divider,padding:'1px 6px',borderRadius:20}}>cód. {codigoFazendaDoRel(rel)}</span>}
                                     </div>
                                   )}
-                                  {(()=>{ const fc=fichaClimaDoRel(rel), c0=climaDoRel(rel), tem=c0.total>0||c0.drone>0; return (
-                                    <div><span title={tem?'Abrir a ficha no Monitoramento Climático':'Ficha do Monitoramento Climático'} onClick={tem?(e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}):undefined}
-                                      style={{fontSize:9.5,fontWeight:700,color:fc.cor,background:fc.bg,padding:'1px 7px',borderRadius:20,whiteSpace:'nowrap',cursor:tem?'pointer':'default'}}>🌡️ {fc.txt}</span></div>
+                                  {(()=>{ const fc=fichaClimaDoRel(rel); return (
+                                    <div><span title="Abrir a ficha no Monitoramento Climático" onClick={e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}}
+                                      style={{fontSize:9.5,fontWeight:700,color:fc.cor,background:fc.bg,padding:'1px 7px',borderRadius:20,whiteSpace:'nowrap',cursor:'pointer'}}>🌡️ {fc.txt}</span></div>
                                   )})()}
                                   {(rel.tipo_servico||(rel.qtd_voos&&rel.qtd_voos>1)) && (
                                     <div style={{fontSize:10,color:theme.textFaint2,marginTop:1}}>
@@ -2452,8 +2452,15 @@ export default function AdminPanel({ onSwitchMode }) {
                                             </div>
                                           ))}
                                           {c.editado && <div style={{fontSize:10.5,color:'#1d4ed8',marginBottom:3}}>✎ editada em {fmt(c.editado)}</div>}
-                                          {(c.total>0||c.drone>0) && <button style={{background:'none',border:'none',padding:0,marginTop:3,color:'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}
-                                            onClick={e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}}>🌡️ Abrir no Monitoramento →</button>}
+                                          {/* Leitura automática só acontece com o voo aberto no app (a cada 15 min, entre o
+                                              Iniciar e o Finalizar). Voo aberto e fechado em minutos foi lançado depois. */}
+                                          {!c.total && !c.drone && rel.dt_inicio && rel.dt_fim && (Date.parse(rel.dt_fim) - Date.parse(rel.dt_inicio)) < 30*60000 && (
+                                            <div style={{fontSize:10.5,color:theme.warningText,marginBottom:3,lineHeight:1.4,maxWidth:260}}>
+                                              Voo lançado depois (iniciado e finalizado no app em {(()=>{ const m=Math.round((Date.parse(rel.dt_fim)-Date.parse(rel.dt_inicio))/60000); return m<1?'segundos':`${m} min` })()}): sem tempo de registrar o clima. Na ficha, importe a planilha do drone do dia — o clima vem pelo GPS.
+                                            </div>
+                                          )}
+                                          <button style={{background:'none',border:'none',padding:0,marginTop:3,color:'#059669',fontSize:11,fontWeight:700,cursor:'pointer'}}
+                                            onClick={e=>{e.stopPropagation();abrirMonitoramentoDoVoo(rel)}}>🌡️ {c.total||c.drone ? 'Abrir no Monitoramento →' : 'Montar a ficha no Monitoramento →'}</button>
                                         </div>
                                       )})()}
                                       <div style={{minWidth:200,flex:1}}>
