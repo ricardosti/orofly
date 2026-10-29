@@ -2396,6 +2396,12 @@ export default function AdminPanel({ onSwitchMode }) {
                         </div>
                         {isSel && (
                           <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
+                            {/* No celular não tem passar o mouse: o que falta aparece com o card aberto. */}
+                            {(() => { const pr = preenchimentoDoRel(rel), c = corPreenchimento(pr.pct); return (
+                              <div style={{ fontSize:11.5, color:c.cor, fontWeight:600, marginBottom:8, lineHeight:1.4 }}>
+                                {pr.faltam.length ? `Preenchimento ${pr.pct}% — falta: ${pr.faltam.join(', ')}` : 'Preenchimento 100% — tudo preenchido'}
+                              </div>
+                            )})()}
                             <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: (rel.kml_arquivos?.length > 0) ? 10 : 0 }}>
                               <button style={sG.actBtn('#2f6fed')} onClick={e => { e.stopPropagation(); setEditModal({...rel}) }}>✏️ Editar</button>
                               <button style={sG.actBtn('#047857')} onClick={e => { e.stopPropagation(); abrirMonitoramentoDoVoo(rel) }}>🌡️ Clima</button>
