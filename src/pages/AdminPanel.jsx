@@ -3013,7 +3013,7 @@ export default function AdminPanel({ onSwitchMode }) {
 
                 {/* ── USO DO APP ── */}
                 {rankingUso.length>0 && (
-                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
+                <div id="uso-do-app" style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>📱 Uso do App</SecTitle>
                   <div style={{fontSize:11.5,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>
                     Interações = ações no app + notas lançadas + fotos. <b>Ao vivo</b> é o voo aberto no app durante o trabalho (30 min ou mais) — lançado depois, o clima não é registrado sozinho.
@@ -8024,6 +8024,12 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                 <div style={{ minWidth:0 }}>
                                   <div style={{ fontSize:13.5, fontWeight:700, color:theme.text }}>{it.titulo}</div>
                                   {it.texto && <div style={{ fontSize:12.5, color:theme.textMuted, marginTop:3, lineHeight:1.5 }}>{it.texto}</div>}
+                                  {it.ir && (
+                                    <button style={{ background:'none', border:'none', padding:0, marginTop:5, color:'#059669', fontSize:12, fontWeight:700, cursor:'pointer' }}
+                                      onClick={() => { setTab(it.ir); if (it.ancora) setTimeout(() => document.getElementById(it.ancora)?.scrollIntoView({ behavior:'smooth', block:'start' }), 600) }}>
+                                      Abrir →
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             )

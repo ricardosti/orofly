@@ -6,17 +6,21 @@
 // precisam andar juntas — se divergirem, nenhuma entrada aparece como atual.
 //
 // `tipo` decide a cor da tag: 'novo' (verde), 'melhoria' (azul), 'correcao' (âmbar).
+// `ir` (opcional) é a aba do painel aonde a novidade leva — vira o botão "Abrir" na tela;
+// `ancora`, o id do bloco dentro da aba, quando a função fica no meio dela.
 
 export const NOVIDADES = [
   {
     versao: '12.4',
     data: '2026-10-28',
     itens: [
-      { tipo: 'novo', titulo: 'Dashboard: Uso do App por piloto',
+      { tipo: 'melhoria', titulo: 'Novidades com atalho pra funcao',
+        texto: 'Novidade que tem lugar no painel ganhou o botao "Abrir", que leva direto pra tela dela.' },
+      { tipo: 'novo', titulo: 'Dashboard: Uso do App por piloto', ir: 'dashboard', ancora: 'uso-do-app',
         texto: 'Ranking de quem usa o app de verdade: interações (ações no app, notas lançadas e fotos), voos registrados ao vivo (abertos no app durante o trabalho) e voos com clima automático. O usuário admin e contas de teste ficam de fora.' },
-      { tipo: 'melhoria', titulo: 'Voo lancado depois: ficha de clima pela planilha do drone',
+      { tipo: 'melhoria', titulo: 'Voo lancado depois: ficha de clima pela planilha do drone', ir: 'monitclima',
         texto: 'A leitura de clima automatica so acontece com o voo aberto no app (do Iniciar ao Finalizar). Voo iniciado e finalizado em minutos, depois do trabalho, agora avisa isso no resumo, e a planilha do drone importada na ficha pega as baterias do dia inteiro, com o clima pelo GPS. O selo de clima da lista abre a ficha de qualquer voo.' },
-      { tipo: 'melhoria', titulo: 'Ficha de clima: cabecalho igual ao relatorio do voo',
+      { tipo: 'melhoria', titulo: 'Ficha de clima: cabecalho igual ao relatorio do voo', ir: 'monitclima',
         texto: 'A planilha do drone so preenche as colunas de cada bateria. A area aplicada do cabecalho sai do relatorio do voo (o que o piloto lancou) e o volume consumido fica em branco pra equipe preencher na ficha quando precisar, sem conta automatica: a soma do drone e a vazao x area as vezes nao batiam com o que a equipe reporta. Pedido do Rodolfo.' },
     ],
   },
@@ -24,9 +28,9 @@ export const NOVIDADES = [
     versao: '12.3',
     data: '2026-10-23',
     itens: [
-      { tipo: 'novo', titulo: 'Clonar fazenda',
+      { tipo: 'novo', titulo: 'Clonar fazenda', ir: 'fazendas',
         texto: 'Gestao > Fazendas: o botao de clonar cria outra fazenda igual (talhoes, mapa, documentos e padroes) com outro nome ou cliente, pra lancar com outra operacao. O progresso da nova comeca do zero e a original nao muda. Pedido do Rodolfo.' },
-      { tipo: 'novo', titulo: 'Documentos da fazenda pra fiscalizacao',
+      { tipo: 'novo', titulo: 'Documentos da fazenda pra fiscalizacao', ir: 'fazendas',
         texto: 'No cadastro da fazenda, igual ao mapa, da pra subir documentos (solicitacao de voo, do piloto, da aeronave). O piloto ve no app, na tela do Mapa, e eles ficam guardados no celular pra abrir sem sinal; da pra compartilhar com o fiscal. Pedido do Rodolfo.' },
     ],
   },
@@ -34,7 +38,7 @@ export const NOVIDADES = [
     versao: '12.2',
     data: '2026-10-22',
     itens: [
-      { tipo: 'novo', titulo: 'Kestrel na ficha de clima',
+      { tipo: 'novo', titulo: 'Kestrel na ficha de clima', ir: 'monitclima',
         texto: 'Em Monitoramento Climatico > Editar ficha do voo, "Importar Kestrel" le o CSV da sessao exportado pelo app Kestrel LiNK: cada bateria (ou leitura) fica com a media de temperatura, umidade e vento que a Kestrel mediu no horario dela. "Tirar Kestrel" volta ao clima de antes.' },
     ],
   },
@@ -42,7 +46,7 @@ export const NOVIDADES = [
     versao: '12.1',
     data: '2026-10-22',
     itens: [
-      { tipo: 'correcao', titulo: 'Ficha de clima: area do cabecalho igual a do drone',
+      { tipo: 'correcao', titulo: 'Ficha de clima: area do cabecalho igual a do drone', ir: 'monitclima',
         texto: 'Com a planilha do drone, a area total soma o numero que veio da planilha, sem arredondar bateria por bateria (dava 42,45 onde o drone diz 42,43).' },
     ],
   },
@@ -52,9 +56,9 @@ export const NOVIDADES = [
     itens: [
       { tipo: 'melhoria', titulo: 'App do piloto: so o drone dele',
         texto: 'Piloto com drone atribuido no Inventario ve so o drone dele, ja marcado, e "Outro drone" pra digitar quando estiver com outro (o campo sugere os nomes da frota). Quem troca o drone de piloto e o admin, no Inventario. Pedido do Pastor.' },
-      { tipo: 'novo', titulo: 'Planilha do drone na ficha de clima',
+      { tipo: 'novo', titulo: 'Planilha do drone na ficha de clima', ir: 'monitclima',
         texto: 'Em Monitoramento Climatico > Editar ficha do voo, "Importar planilha" le o registro de voo da DJI (SmartFarm): cada bateria vira um voo da ficha, com horario, altura e area do drone, e o clima da leitura mais perto. A area e o volume do cabecalho passam a ser os do drone. Pedido do Rodolfo.' },
-      { tipo: 'melhoria', titulo: 'Ficha de clima com a area aplicada da operacao',
+      { tipo: 'melhoria', titulo: 'Ficha de clima com a area aplicada da operacao', ir: 'monitclima',
         texto: 'O cabecalho de cada operacao (do inicio ao fim ou parcial do talhao) mostra a area aplicada total, sem a bordadura, e o volume consumido sai dela x a vazao. Da pra digitar outra na ficha. Pedido do Pastor.' },
     ],
   },
@@ -62,9 +66,9 @@ export const NOVIDADES = [
     versao: '11.9',
     data: '2026-10-22',
     itens: [
-      { tipo: 'melhoria', titulo: 'Relatorios: leituras de clima no resumo do voo',
+      { tipo: 'melhoria', titulo: 'Relatorios: leituras de clima no resumo do voo', ir: 'fazendas',
         texto: 'O resumo de cada voo ganhou o bloco Clima, com quantas leituras foram automaticas e quantas manuais, e o atalho "Abrir no Monitoramento", que ja abre a ficha daquele voo. O selo da lista mostra a quantidade.' },
-      { tipo: 'melhoria', titulo: 'Monitoramento Climatico: area (ha) opcional na ficha',
+      { tipo: 'melhoria', titulo: 'Monitoramento Climatico: area (ha) opcional na ficha', ir: 'monitclima',
         texto: 'Na exportacao (PDF e Excel), a linha "Area aplicada (ha)" so sai marcando "Linha de area (ha)". Pedido do Pastor.' },
     ],
   },
@@ -132,7 +136,7 @@ export const NOVIDADES = [
         texto: 'Em talhao fechado o campo agora e a bordadura, igual ao talhao unico. Antes perguntava o pulverizado e digitar 5 virava "5 pulverizado + 95 bordadura".' },
       { tipo: 'correcao', titulo: 'Voo lancado depois (data retroativa)',
         texto: 'O inicio ajustado em "Editar Horario" antes de iniciar nao e mais trocado pela hora atual, e o fim acompanha. O Formulario Nardini sai com a data certa.' },
-      { tipo: 'melhoria', titulo: 'Relatorios dentro de Fazendas & Clientes',
+      { tipo: 'melhoria', titulo: 'Relatorios dentro de Fazendas & Clientes', ir: 'fazendas',
         texto: 'Relatorios de Voo saiu de Administrativo & Financeiro e virou a aba "Relatorios" em Gestao > Fazendas & Clientes. Cada voo mostra o selo do Monitoramento Climatico: automatico, editado pelo admin ou sem ficha.' },
       { tipo: 'melhoria', titulo: 'Fazendas: mais recentes primeiro e talhao logo apos cadastrar',
         texto: 'A lista de fazendas abre pelas mais recentes (da para voltar a ordem alfabetica). Fazenda nova ja abre com o campo de talhao.' },
