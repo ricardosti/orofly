@@ -11,17 +11,23 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.5',
+    data: '2026-10-29',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Peso de cada item na nota de preenchimento', ir: 'configuracoes',
+        texto: 'Em Configurações do Sistema, o bloco Nota de Preenchimento dos Relatórios define quanto vale cada item (início do voo, talhão e área, produtos, clima, fotos, mapa...). Peso 0 tira o item da nota. Vale para a pílula de % em Relatórios e a coluna Preenchimento do Uso do App.' },
+      { tipo: 'novo', titulo: 'Relatórios: nível de preenchimento e rascunhos à parte', ir: 'relatorios',
+        texto: 'Cada relatório mostra quanto está preenchido (início do voo, talhão e área, produtos, clima inicial e final, fotos do início e do fim, mapa, clima durante o voo e encerramento). Passando o mouse aparece o que falta. Rascunho (voo nunca iniciado) saiu da lista e fica no botão Rascunhos; o filtro de status ganhou Finalizado Parcial e Incompletos (abaixo de 80%). No Uso do App entrou a média de preenchimento de cada piloto.' },
+      { tipo: 'melhoria', titulo: 'Novidades com atalho pra função',
+        texto: 'Novidade que tem lugar no painel ganhou o botão "Abrir", que leva direto pra tela dela.' },
+      { tipo: 'novo', titulo: 'Dashboard: Uso do App por piloto', ir: 'dashboard', ancora: 'uso-do-app',
+        texto: 'Ranking de quem usa o app de verdade: interações (ações no app, notas lançadas e fotos), voos registrados ao vivo (abertos no app durante o trabalho) e voos com clima automático. O usuário admin e contas de teste ficam de fora.' },
+    ],
+  },
+  {
     versao: '12.4',
     data: '2026-10-28',
     itens: [
-      { tipo: 'melhoria', titulo: 'Peso de cada item na nota de preenchimento', ir: 'configuracoes',
-        texto: 'Em Configuracoes do Sistema, o bloco Nota de Preenchimento dos Relatorios define quanto vale cada item (inicio do voo, talhao e area, produtos, clima, fotos, mapa...). Peso 0 tira o item da nota. Vale para a pilula de % em Relatorios e a coluna Preenchimento do Uso do App.' },
-      { tipo: 'novo', titulo: 'Relatorios: nivel de preenchimento e rascunhos a parte', ir: 'relatorios',
-        texto: 'Cada relatorio mostra quanto esta preenchido (10 itens, 10% cada: inicio do voo, talhao e area, produtos, clima inicial e final, fotos do inicio e do fim, mapa, clima durante o voo e encerramento). Passando o mouse aparece o que falta. Rascunho (voo nunca iniciado) saiu da lista e fica no botao Rascunhos; o filtro de status ganhou Finalizado Parcial e Incompletos (abaixo de 80%). No Uso do App entrou a media de preenchimento de cada piloto.' },
-      { tipo: 'melhoria', titulo: 'Novidades com atalho pra funcao',
-        texto: 'Novidade que tem lugar no painel ganhou o botao "Abrir", que leva direto pra tela dela.' },
-      { tipo: 'novo', titulo: 'Dashboard: Uso do App por piloto', ir: 'dashboard', ancora: 'uso-do-app',
-        texto: 'Ranking de quem usa o app de verdade: interações (ações no app, notas lançadas e fotos), voos registrados ao vivo (abertos no app durante o trabalho) e voos com clima automático. O usuário admin e contas de teste ficam de fora.' },
       { tipo: 'melhoria', titulo: 'Voo lancado depois: ficha de clima pela planilha do drone', ir: 'monitclima',
         texto: 'A leitura de clima automatica so acontece com o voo aberto no app (do Iniciar ao Finalizar). Voo iniciado e finalizado em minutos, depois do trabalho, agora avisa isso no resumo, e a planilha do drone importada na ficha pega as baterias do dia inteiro, com o clima pelo GPS. O selo de clima da lista abre a ficha de qualquer voo.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima: cabecalho igual ao relatorio do voo', ir: 'monitclima',
