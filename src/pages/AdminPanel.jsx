@@ -79,6 +79,14 @@ async function apiAdmin(rota, corpo) {
     ...(corpo ? { body: JSON.stringify(corpo) } : {}),
   })
 }
+// Itens da nota de preenchimento do relatório. O peso de cada um é configurável em
+// Configurações do Sistema (config_geral.pesosPreenchimento); peso 0 tira o item da nota.
+const ITENS_PREENCHIMENTO = [
+  ['inicio', 'início do voo'], ['talhao', 'talhão e área'], ['produtos', 'produtos'],
+  ['clima_i', 'clima inicial'], ['clima_f', 'clima final'], ['foto_i', 'foto do início'],
+  ['foto_f', 'foto do fim'], ['mapa', 'mapa'], ['clima_voo', 'clima durante o voo'], ['encerrado', 'encerrado'],
+]
+const PESOS_PREENCH_PADRAO = Object.fromEntries(ITENS_PREENCHIMENTO.map(([id]) => [id, 10]))
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
 // Funções (em vez de objeto fixo) porque as cores dependem do tema atual (claro/escuro).
 // Pílulas sóbrias: fundo suave + texto na mesma família de cor (sem preenchimento sólido).
@@ -270,7 +278,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const WIZARD_CFG_PADRAO = { velocidadeDrone: '', altura: '', faixa: '' }
   // Monitoramento Climático: intervalo das leituras no voo e colunas por operação na ficha.
   const MONIT_CFG_PADRAO = { intervaloMin: 15, colunas: 10 }
-  const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO, monitoramento: MONIT_CFG_PADRAO })
+  const [configGeral, setConfigGeral] = useState({ empresa: EMPRESA_CFG_PADRAO, limitesClima: LIMITES_CFG_PADRAO, wizardDefaults: WIZARD_CFG_PADRAO, monitoramento: MONIT_CFG_PADRAO, pesosPreenchimento: PESOS_PREENCH_PADRAO })
   const [configGeralSaving, setConfigGeralSaving] = useState(false)
   const [configGeralLoaded, setConfigGeralLoaded] = useState(false)
   async function carregarConfigGeral() {
@@ -282,6 +290,7 @@ export default function AdminPanel({ onSwitchMode }) {
         limitesClima: { ...LIMITES_CFG_PADRAO, ...cfg.limitesClima },
         wizardDefaults: { ...WIZARD_CFG_PADRAO, ...cfg.wizardDefaults },
         monitoramento: { ...MONIT_CFG_PADRAO, ...cfg.monitoramento },
+        pesosPreenchimento: { ...PESOS_PREENCH_PADRAO, ...cfg.pesosPreenchimento },
       }
       setConfigGeral(nova)
       setEmpresaConfig(nova.empresa)
@@ -1097,7 +1106,7 @@ export default function AdminPanel({ onSwitchMode }) {
     return { txt, cor:'#047857', bg:'#d1fae5' }
   }
   function abrirMonitoramentoDoVoo(rel) { setMonitAbrirRel(rel.id); setTab('monitclima') }
-  // Nível de preenchimento do relatório: 10 itens, 10% cada, pra o gestor bater o olho e saber
+  // Nível de preenchimento do relatório: 10 itens com peso configurável (padrão 10 cada), pra o gestor bater o olho e saber
   // qual voo está completo (o Rodolfo, 29/10/2026: três rascunhos vazios do mesmo talhão no meio
   // dos relatórios, sem saber qual era o certo). As fotos do Passo 4 ficam em obs_fotos_urls:
   // [0] observação, [1] evidência do início, [2] evidência do fim.
@@ -1105,22 +1114,30 @@ export default function AdminPanel({ onSwitchMode }) {
     const tem = v => v !== null && v !== undefined && String(v).trim() !== ''
     const fotos = Array.isArray(r.obs_fotos_urls) ? r.obs_fotos_urls : []
     const c = climaDoRel(r)
-    const itens = [
-      ['início do voo', !!r.dt_inicio],
-      ['talhão e área', tem(r.localizacao) && parseFloat(r.area_ha) > 0],
-      ['produtos', (r.produtos||[]).some(Boolean)],
-      ['clima inicial', tem(r.temperatura_i) && tem(r.umidade_i) && tem(r.vento_i)],
-      ['clima final', tem(r.temperatura_f) && tem(r.umidade_f) && tem(r.vento_f)],
+    const ok = {
+      inicio: !!r.dt_inicio,
+      talhao: tem(r.localizacao) && parseFloat(r.area_ha) > 0,
+      produtos: (r.produtos||[]).some(Boolean),
+      clima_i: tem(r.temperatura_i) && tem(r.umidade_i) && tem(r.vento_i),
+      clima_f: tem(r.temperatura_f) && tem(r.umidade_f) && tem(r.vento_f),
       // Conta também a evidência anexada cujo arquivo não chegou ao Storage (15 voos de outubro):
       // o piloto anexou, a falha foi do envio.
-      ['foto do início', !!fotos[1] || !!r.evidencia_meta?.inicio],
-      ['foto do fim', !!fotos[2] || !!r.evidencia_meta?.fim],
-      ['mapa', !!r.foto_mapa_url],
-      ['clima durante o voo', c.total > 0 || c.drone > 0],
-      ['encerrado', r.status === 'finalizado' || r.status === 'pausado_dia'],
-    ]
-    const faltam = itens.filter(([, ok]) => !ok).map(([n]) => n)
-    return { pct: Math.round((itens.length - faltam.length) / itens.length * 100), faltam }
+      foto_i: !!fotos[1] || !!r.evidencia_meta?.inicio,
+      foto_f: !!fotos[2] || !!r.evidencia_meta?.fim,
+      mapa: !!r.foto_mapa_url,
+      clima_voo: c.total > 0 || c.drone > 0,
+      encerrado: r.status === 'finalizado' || r.status === 'pausado_dia',
+    }
+    const pesos = configGeral.pesosPreenchimento || PESOS_PREENCH_PADRAO
+    let total = 0, feito = 0
+    const faltam = []
+    ITENS_PREENCHIMENTO.forEach(([id, nome]) => {
+      const p = Math.max(0, parseFloat(pesos[id]) || 0)
+      if (!p) return
+      total += p
+      if (ok[id]) feito += p; else faltam.push(nome)
+    })
+    return { pct: total ? Math.round(feito / total * 100) : 100, faltam }
   }
   const corPreenchimento = pct => pct >= 80 ? { cor:'#059669', bg:theme.successBg } : pct >= 50 ? { cor:'#B45309', bg:'#FEF3C7' } : { cor:theme.dangerText, bg:theme.dangerBg }
   const filtered = relatorios.filter(r => {
@@ -3066,7 +3083,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div id="uso-do-app" style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>📱 Uso do App</SecTitle>
                   <div style={{fontSize:11.5,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>
-                    Interações = ações no app + notas lançadas + fotos. <b>Ao vivo</b> é o voo aberto no app durante o trabalho (30 min ou mais) — lançado depois, o clima não é registrado sozinho. <b>Preenchimento</b> é a média dos relatórios dele (10 itens, 10% cada).
+                    Interações = ações no app + notas lançadas + fotos. <b>Ao vivo</b> é o voo aberto no app durante o trabalho (30 min ou mais) — lançado depois, o clima não é registrado sozinho. <b>Preenchimento</b> é a média dos relatórios dele (pesos em Configurações do Sistema).
                     {dashAtiv===null && profile?.role==='admin' && <span> Carregando o log…</span>}
                   </div>
                   <div style={{overflowX:'auto'}}>
@@ -9534,6 +9551,39 @@ function ConfigGeralPainel({ config, onSalvar, saving }) {
           <div><label style={labelSt}>OUTRO INTERVALO (min)</label><input type="number" min={5} max={240} style={inputSt} placeholder="15" value={draft.monitoramento?.intervaloMin ?? ''} onChange={e=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),intervaloMin:parseInt(e.target.value,10)||''}}))}/></div>
           <div><label style={labelSt}>COLUNAS POR OPERAÇÃO NA FICHA</label><input type="number" min={4} max={15} style={inputSt} placeholder="10" value={draft.monitoramento?.colunas ?? ''} onChange={e=>setDraft(d=>({...d,monitoramento:{...(d.monitoramento||{}),colunas:parseInt(e.target.value,10)||''}}))}/></div>
         </div>
+      </div>
+
+      <div style={{ background:theme.card, borderRadius:14, border:`1px solid ${theme.cardBorder}`, padding:20, maxWidth:520 }}>
+        <SecTitle>📋 Nota de Preenchimento dos Relatórios</SecTitle>
+        <div style={{ fontSize:11.5, color:theme.textFaint2, marginBottom:12 }}>Quanto cada item vale na nota (a pílula de % em Relatórios e a coluna Preenchimento do Uso do App). A nota é a soma dos itens preenchidos sobre o total. Peso 0 tira o item da conta.</div>
+        {(() => {
+          const pesos = { ...PESOS_PREENCH_PADRAO, ...(draft.pesosPreenchimento||{}) }
+          const total = ITENS_PREENCHIMENTO.reduce((a,[id]) => a + (Math.max(0, parseFloat(pesos[id])||0)), 0)
+          return (
+            <>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px 12px'}}>
+                {ITENS_PREENCHIMENTO.map(([id, nome]) => {
+                  const p = Math.max(0, parseFloat(pesos[id])||0)
+                  return (
+                    <div key={id} style={{display:'flex',alignItems:'center',gap:8}}>
+                      <input type="number" min={0} max={100} style={{...inputSt,width:64,flexShrink:0,textAlign:'center'}} value={pesos[id] ?? ''}
+                        onChange={e=>setDraft(d=>({...d,pesosPreenchimento:{...PESOS_PREENCH_PADRAO,...(d.pesosPreenchimento||{}),[id]:e.target.value===''?'':Math.max(0,parseFloat(e.target.value)||0)}}))}/>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12.5,color:p?theme.text:theme.textFaint2,textDecoration:p?'none':'line-through'}}>{nome}</div>
+                        <div style={{fontSize:10.5,color:theme.textFaint2}}>{p && total ? `${(p/total*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}% da nota` : 'fora da nota'}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:12,fontSize:11.5,color:theme.textMuted}}>
+                <span>Total: <b>{total.toLocaleString('pt-BR')}</b> pontos</span>
+                <button type="button" onClick={()=>setDraft(d=>({...d,pesosPreenchimento:PESOS_PREENCH_PADRAO}))}
+                  style={{background:'none',border:'none',padding:0,color:'#059669',fontSize:11.5,fontWeight:700,cursor:'pointer'}}>Voltar ao padrão (10 cada)</button>
+              </div>
+            </>
+          )
+        })()}
       </div>
 
       {alterado && (

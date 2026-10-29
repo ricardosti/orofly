@@ -14,6 +14,8 @@ export const NOVIDADES = [
     versao: '12.4',
     data: '2026-10-28',
     itens: [
+      { tipo: 'melhoria', titulo: 'Peso de cada item na nota de preenchimento', ir: 'configuracoes',
+        texto: 'Em Configuracoes do Sistema, o bloco Nota de Preenchimento dos Relatorios define quanto vale cada item (inicio do voo, talhao e area, produtos, clima, fotos, mapa...). Peso 0 tira o item da nota. Vale para a pilula de % em Relatorios e a coluna Preenchimento do Uso do App.' },
       { tipo: 'novo', titulo: 'Relatorios: nivel de preenchimento e rascunhos a parte', ir: 'relatorios',
         texto: 'Cada relatorio mostra quanto esta preenchido (10 itens, 10% cada: inicio do voo, talhao e area, produtos, clima inicial e final, fotos do inicio e do fim, mapa, clima durante o voo e encerramento). Passando o mouse aparece o que falta. Rascunho (voo nunca iniciado) saiu da lista e fica no botao Rascunhos; o filtro de status ganhou Finalizado Parcial e Incompletos (abaixo de 80%). No Uso do App entrou a media de preenchimento de cada piloto.' },
       { tipo: 'melhoria', titulo: 'Novidades com atalho pra funcao',
