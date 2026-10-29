@@ -14,6 +14,8 @@ export const NOVIDADES = [
     versao: '12.4',
     data: '2026-10-28',
     itens: [
+      { tipo: 'novo', titulo: 'Relatorios: nivel de preenchimento e rascunhos a parte', ir: 'relatorios',
+        texto: 'Cada relatorio mostra quanto esta preenchido (10 itens, 10% cada: inicio do voo, talhao e area, produtos, clima inicial e final, fotos do inicio e do fim, mapa, clima durante o voo e encerramento). Passando o mouse aparece o que falta. Rascunho (voo nunca iniciado) saiu da lista e fica no botao Rascunhos; o filtro de status ganhou Finalizado Parcial e Incompletos (abaixo de 80%). No Uso do App entrou a media de preenchimento de cada piloto.' },
       { tipo: 'melhoria', titulo: 'Novidades com atalho pra funcao',
         texto: 'Novidade que tem lugar no painel ganhou o botao "Abrir", que leva direto pra tela dela.' },
       { tipo: 'novo', titulo: 'Dashboard: Uso do App por piloto', ir: 'dashboard', ancora: 'uso-do-app',
@@ -66,7 +68,7 @@ export const NOVIDADES = [
     versao: '11.9',
     data: '2026-10-22',
     itens: [
-      { tipo: 'melhoria', titulo: 'Relatorios: leituras de clima no resumo do voo', ir: 'fazendas',
+      { tipo: 'melhoria', titulo: 'Relatorios: leituras de clima no resumo do voo', ir: 'relatorios',
         texto: 'O resumo de cada voo ganhou o bloco Clima, com quantas leituras foram automaticas e quantas manuais, e o atalho "Abrir no Monitoramento", que ja abre a ficha daquele voo. O selo da lista mostra a quantidade.' },
       { tipo: 'melhoria', titulo: 'Monitoramento Climatico: area (ha) opcional na ficha', ir: 'monitclima',
         texto: 'Na exportacao (PDF e Excel), a linha "Area aplicada (ha)" so sai marcando "Linha de area (ha)". Pedido do Pastor.' },
@@ -136,7 +138,7 @@ export const NOVIDADES = [
         texto: 'Em talhao fechado o campo agora e a bordadura, igual ao talhao unico. Antes perguntava o pulverizado e digitar 5 virava "5 pulverizado + 95 bordadura".' },
       { tipo: 'correcao', titulo: 'Voo lancado depois (data retroativa)',
         texto: 'O inicio ajustado em "Editar Horario" antes de iniciar nao e mais trocado pela hora atual, e o fim acompanha. O Formulario Nardini sai com a data certa.' },
-      { tipo: 'melhoria', titulo: 'Relatorios dentro de Fazendas & Clientes', ir: 'fazendas',
+      { tipo: 'melhoria', titulo: 'Relatorios dentro de Fazendas & Clientes', ir: 'relatorios',
         texto: 'Relatorios de Voo saiu de Administrativo & Financeiro e virou a aba "Relatorios" em Gestao > Fazendas & Clientes. Cada voo mostra o selo do Monitoramento Climatico: automatico, editado pelo admin ou sem ficha.' },
       { tipo: 'melhoria', titulo: 'Fazendas: mais recentes primeiro e talhao logo apos cadastrar',
         texto: 'A lista de fazendas abre pelas mais recentes (da para voltar a ordem alfabetica). Fazenda nova ja abre com o campo de talhao.' },

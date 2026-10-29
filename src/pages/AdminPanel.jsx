@@ -1097,6 +1097,32 @@ export default function AdminPanel({ onSwitchMode }) {
     return { txt, cor:'#047857', bg:'#d1fae5' }
   }
   function abrirMonitoramentoDoVoo(rel) { setMonitAbrirRel(rel.id); setTab('monitclima') }
+  // Nível de preenchimento do relatório: 10 itens, 10% cada, pra o gestor bater o olho e saber
+  // qual voo está completo (o Rodolfo, 29/10/2026: três rascunhos vazios do mesmo talhão no meio
+  // dos relatórios, sem saber qual era o certo). As fotos do Passo 4 ficam em obs_fotos_urls:
+  // [0] observação, [1] evidência do início, [2] evidência do fim.
+  const preenchimentoDoRel = r => {
+    const tem = v => v !== null && v !== undefined && String(v).trim() !== ''
+    const fotos = Array.isArray(r.obs_fotos_urls) ? r.obs_fotos_urls : []
+    const c = climaDoRel(r)
+    const itens = [
+      ['início do voo', !!r.dt_inicio],
+      ['talhão e área', tem(r.localizacao) && parseFloat(r.area_ha) > 0],
+      ['produtos', (r.produtos||[]).some(Boolean)],
+      ['clima inicial', tem(r.temperatura_i) && tem(r.umidade_i) && tem(r.vento_i)],
+      ['clima final', tem(r.temperatura_f) && tem(r.umidade_f) && tem(r.vento_f)],
+      // Conta também a evidência anexada cujo arquivo não chegou ao Storage (15 voos de outubro):
+      // o piloto anexou, a falha foi do envio.
+      ['foto do início', !!fotos[1] || !!r.evidencia_meta?.inicio],
+      ['foto do fim', !!fotos[2] || !!r.evidencia_meta?.fim],
+      ['mapa', !!r.foto_mapa_url],
+      ['clima durante o voo', c.total > 0 || c.drone > 0],
+      ['encerrado', r.status === 'finalizado' || r.status === 'pausado_dia'],
+    ]
+    const faltam = itens.filter(([, ok]) => !ok).map(([n]) => n)
+    return { pct: Math.round((itens.length - faltam.length) / itens.length * 100), faltam }
+  }
+  const corPreenchimento = pct => pct >= 80 ? { cor:'#059669', bg:theme.successBg } : pct >= 50 ? { cor:'#B45309', bg:'#FEF3C7' } : { cor:theme.dangerText, bg:theme.dangerBg }
   const filtered = relatorios.filter(r => {
     if (filters.cliente && !r.cliente?.toLowerCase().includes(filters.cliente.toLowerCase())) return false
     if (filters.fazenda && !r.fazenda?.toLowerCase().includes(filters.fazenda.toLowerCase())) return false
@@ -1106,7 +1132,10 @@ export default function AdminPanel({ onSwitchMode }) {
     // Um voo pode cobrir vários talhões, gravados numa string só ("002-01, 005-01").
     // Busca por pedaço do nome pra "002" achar todos os 002-xx.
     if (filters.talhao && !r.localizacao?.toLowerCase().includes(filters.talhao.toLowerCase())) return false
-    if (filters.status && r.status !== filters.status) return false
+    // Rascunho (voo nunca iniciado) não é relatório: só aparece pedindo o filtro Rascunho.
+    if (filters.status === 'incompletos') { if (r.status === 'rascunho' || preenchimentoDoRel(r).pct >= 80) return false }
+    else if (filters.status) { if (r.status !== filters.status) return false }
+    else if (r.status === 'rascunho') return false
     // Filtra pela data do VOO (dt_inicio), não pela de criação do registro. Eram a mesma
     // coisa até a data virar editável: hoje 25 dos 179 voos já têm as duas diferentes (até
     // 3 dias), e é dt_inicio que manda no consolidado, no dashboard e no relatório do
@@ -2253,8 +2282,14 @@ export default function AdminPanel({ onSwitchMode }) {
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end' }}>
                   {relatorios.some(r=>r.status==='rascunho') && (
-                    <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
-                      onClick={excluirTodosRascunhos}>🗑️ Excluir todos os rascunhos</button>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap',justifyContent:'flex-end'}}>
+                      <button style={{background:filters.status==='rascunho'?'#1E293B':theme.bg,color:filters.status==='rascunho'?'#fff':theme.textMuted,border:`1px solid ${theme.cardBorder2}`,borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                        onClick={() => setFilters(f => ({ ...f, status: f.status==='rascunho' ? '' : 'rascunho' }))}>
+                        📝 {filters.status==='rascunho' ? 'Voltar aos relatórios' : `Rascunhos (${relatorios.filter(r=>r.status==='rascunho').length})`}
+                      </button>
+                      <button style={{background:theme.dangerBg,color:theme.dangerText,border:'none',borderRadius:16,padding:'7px 14px',fontSize:12,fontWeight:600,cursor:'pointer'}}
+                        onClick={excluirTodosRascunhos}>🗑️ Excluir todos os rascunhos</button>
+                    </div>
                   )}
                   {relatorios.some(r=>r.teste) && (()=>{
                     const testes = relatorios.filter(r=>r.teste)
@@ -2297,13 +2332,15 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input key={k} style={sG.fi} placeholder={`${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
                 <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
-                  <option value="">Todos status</option>
+                  <option value="">Todos (sem rascunho)</option>
                   <option value="em_operacao">Em operação</option>
                   <option value="pausado">Pausado</option>
+                  <option value="pausado_dia">Finalizado Parcial</option>
                   <option value="finalizado">Finalizado</option>
+                  <option value="incompletos">⚠️ Incompletos (abaixo de 80%)</option>
                   <option value="sos">SOS Ativo</option>
                   <option value="sos_resolvido">SOS Resolvido</option>
-                  <option value="rascunho">Rascunho</option>
+                  <option value="rascunho">Rascunho ({relatorios.filter(r=>r.status==='rascunho').length})</option>
                 </select>
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                   <span style={{ fontSize:11, color:theme.textMuted, whiteSpace:'nowrap' }}>De:</span>
@@ -2330,7 +2367,12 @@ export default function AdminPanel({ onSwitchMode }) {
                         <div style={{ padding:'13px 15px', cursor:'pointer' }} onClick={() => setSelected(isSel ? null : rel)}>
                           <div style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
                             <div style={{ fontWeight:600, fontSize:14, color:theme.text }}>{rel.cliente||'—'}</div>
-                            <span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                            <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                              {(()=>{ const pr=preenchimentoDoRel(rel), c=corPreenchimento(pr.pct); return (
+                                  <span title={pr.faltam.length?'Falta: '+pr.faltam.join(', '):'Tudo preenchido'} style={{ background:c.bg, color:c.cor, fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:20, whiteSpace:'nowrap', cursor:'help' }}>{pr.pct}%</span>
+                                )})()}
+                              <span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:10, fontWeight:600, padding:'2px 8px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                            </div>
                           </div>
                           <div style={{ fontSize:12, color:theme.textMuted }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}{rel.ordem_servico?` · OS ${rel.ordem_servico}`:''}</div>
                           <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''} · 🌡️ {fichaClimaDoRel(rel).txt}</div>
@@ -2420,7 +2462,14 @@ export default function AdminPanel({ onSwitchMode }) {
                                 </td>
                                 <td style={sG.td}>{rel.piloto_nome||'—'}</td>
                                 <td style={sG.td}>{rel.drone||'—'}</td>
-                                <td style={sG.td}><span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20 }}>{STATUS_LABEL[rel.status]||rel.status}</span></td>
+                                <td style={sG.td}>
+                                  <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', gap:4 }}>
+                                    <span style={{ background: statusBg(theme)[rel.status]||theme.bg, color: statusColor(theme)[rel.status]||theme.textMuted, fontSize:11, fontWeight:600, padding:'3px 9px', borderRadius:20, whiteSpace:'nowrap' }}>{STATUS_LABEL[rel.status]||rel.status}</span>
+                                    {(()=>{ const pr=preenchimentoDoRel(rel), c=corPreenchimento(pr.pct); return (
+                                  <span title={pr.faltam.length?'Falta: '+pr.faltam.join(', '):'Tudo preenchido'} style={{ background:c.bg, color:c.cor, fontSize:10, fontWeight:700, padding:'2px 7px', borderRadius:20, whiteSpace:'nowrap', cursor:'help' }}>{pr.pct}%</span>
+                                )})()}
+                                  </div>
+                                </td>
                                 <td style={sG.td}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}</td>
                                 <td style={sG.td}>{tempo ? <span style={{ fontSize:12 }}>{tempo.total}{tempo.temPausa?<span style={{ color:theme.textMuted }}> /{tempo.efetivo}</span>:''}</span> : '—'}</td>
                                 <td style={sG.td}>{(() => { const t=custosDoRel(rel).reduce((a,c)=>a+parseFloat(c.valor||0),0); return t>0 ? <span style={{fontWeight:600,color:theme.warningText}}>R$ {t.toFixed(2)}</span> : <span style={{color:'#c3d4c9'}}>—</span> })()}</td>
@@ -2613,14 +2662,15 @@ export default function AdminPanel({ onSwitchMode }) {
             // Fora do ranking: o usuário "admin" e contas de teste (é o Ricardo testando).
             const foraDoUso = n => /^admin$/i.test(String(n||'').trim()) || /teste/i.test(String(n||''))
             const uso = {}
-            const usoDe = (id,nome) => uso[id] || (uso[id] = {nome, voos:0, aoVivo:0, comClima:0, fotos:0, notas:0, acoes:0})
+            const usoDe = (id,nome) => uso[id] || (uso[id] = {nome, voos:0, aoVivo:0, comClima:0, fotos:0, notas:0, acoes:0, preench:0})
             rel.forEach(r => {
               if(!r.piloto_id || foraDoUso(r.piloto_nome)) return
               const u = usoDe(r.piloto_id, r.piloto_nome)
               u.voos++
               if(r.dt_inicio && r.dt_fim && (new Date(r.dt_fim)-new Date(r.dt_inicio)) >= 30*60000) u.aoVivo++
               if(climaDoRel(r).auto > 0) u.comClima++
-              u.fotos += (Array.isArray(r.obs_fotos_urls) ? r.obs_fotos_urls.length : 0) + (r.foto_mapa_url ? 1 : 0)
+              u.fotos += (Array.isArray(r.obs_fotos_urls) ? r.obs_fotos_urls.filter(Boolean).length : 0) + (r.foto_mapa_url ? 1 : 0)
+              u.preench += preenchimentoDoRel(r).pct
             })
             const nomePorId = Object.fromEntries(pilotos.map(p=>[p.id, p.nome||p.email]))
             custos.forEach(d => {
@@ -2636,7 +2686,7 @@ export default function AdminPanel({ onSwitchMode }) {
             })
             const rankingUso = Object.values(uso)
               .filter(u => !dashPilotos.length || dashPilotos.includes(u.nome))
-              .map(u => ({...u, interacoes: u.acoes + u.notas + u.fotos, pctVivo: u.voos ? Math.round(u.aoVivo/u.voos*100) : null}))
+              .map(u => ({...u, interacoes: u.acoes + u.notas + u.fotos, pctVivo: u.voos ? Math.round(u.aoVivo/u.voos*100) : null, pctPreench: u.voos ? Math.round(u.preench/u.voos) : null}))
               .sort((a,b) => b.interacoes-a.interacoes)
 
             // ── Heatmap dias da semana ──
@@ -3016,14 +3066,14 @@ export default function AdminPanel({ onSwitchMode }) {
                 <div id="uso-do-app" style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
                   <SecTitle>📱 Uso do App</SecTitle>
                   <div style={{fontSize:11.5,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>
-                    Interações = ações no app + notas lançadas + fotos. <b>Ao vivo</b> é o voo aberto no app durante o trabalho (30 min ou mais) — lançado depois, o clima não é registrado sozinho.
+                    Interações = ações no app + notas lançadas + fotos. <b>Ao vivo</b> é o voo aberto no app durante o trabalho (30 min ou mais) — lançado depois, o clima não é registrado sozinho. <b>Preenchimento</b> é a média dos relatórios dele (10 itens, 10% cada).
                     {dashAtiv===null && profile?.role==='admin' && <span> Carregando o log…</span>}
                   </div>
                   <div style={{overflowX:'auto'}}>
                     <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
                       <thead>
                         <tr style={{background:theme.bg}}>
-                          {['#','Piloto','Interações','Ações','Notas','Fotos','Voos','Ao vivo','Com clima'].map(h=>(
+                          {['#','Piloto','Interações','Ações','Notas','Fotos','Voos','Ao vivo','Preenchimento','Com clima'].map(h=>(
                             <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
                           ))}
                         </tr>
@@ -3042,6 +3092,9 @@ export default function AdminPanel({ onSwitchMode }) {
                             <td style={{padding:'8px 10px',color:theme.textMuted}}>{u.voos}</td>
                             <td style={{padding:'8px 10px',fontWeight:700,whiteSpace:'nowrap',color:u.pctVivo===null?theme.textFaint2:u.pctVivo>=80?'#059669':u.pctVivo>=50?'#D97706':'#dc2626'}}>
                               {u.pctVivo===null?'—':`${u.pctVivo}%`}
+                            </td>
+                            <td style={{padding:'8px 10px',fontWeight:700,whiteSpace:'nowrap',color:u.pctPreench===null?theme.textFaint2:corPreenchimento(u.pctPreench).cor}}>
+                              {u.pctPreench===null?'—':`${u.pctPreench}%`}
                             </td>
                             <td style={{padding:'8px 10px',color:theme.textMuted,whiteSpace:'nowrap'}}>{u.voos?`${u.comClima}/${u.voos}`:'—'}</td>
                           </tr>
@@ -3484,10 +3537,12 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input key={k} style={sG.fi} placeholder={`🔍 ${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
                 <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
-                  <option value="">Todos status</option>
+                  <option value="">Todos (sem rascunho)</option>
                   <option value="em_operacao">🟢 Em operação</option>
                   <option value="pausado">🟡 Pausado</option>
+                  <option value="pausado_dia">🟡 Finalizado Parcial</option>
                   <option value="finalizado">✅ Finalizado</option>
+                  <option value="incompletos">⚠️ Incompletos (abaixo de 80%)</option>
                   <option value="sos">🆘 SOS Ativo</option>
                   <option value="sos_resolvido">✅ SOS Resolvido</option>
                   <option value="rascunho">Rascunho</option>
