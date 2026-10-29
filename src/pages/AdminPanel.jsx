@@ -454,6 +454,27 @@ export default function AdminPanel({ onSwitchMode }) {
   const [metaMensalHa, setMetaMensalHa] = useState(() => { try { return parseFloat(localStorage.getItem('orofly_meta_mensal')||'0') } catch { return 0 } })
   const [pushAtivo, setPushAtivo] = useState(false)
   const [heatMetrica, setHeatMetrica] = useState('voos') // 'voos' | 'area' | 'horas'
+  const dashRange = () => {
+    const ini = new Date()
+    if(dashPeriodo==='hoje') { ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
+    if(dashPeriodo==='semana') { ini.setDate(ini.getDate()-7); return {ini, fim:new Date()} }
+    if(dashPeriodo==='mes') { ini.setDate(1); ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
+    if(dashPeriodo==='trimestre') { ini.setMonth(ini.getMonth()-3); return {ini, fim:new Date()} }
+    if(dashPeriodo==='ano') { ini.setMonth(0,1); ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
+    if(dashPeriodo==='custom' && dashDataIni && dashDataFim) return {ini:new Date(dashDataIni), fim:new Date(dashDataFim+'T23:59:59')}
+    ini.setDate(1); ini.setHours(0,0,0,0); return {ini, fim:new Date()}
+  }
+  // Uso do app no dashboard: ações do Log de Atividades no período (só o admin lê a tabela).
+  // Só as colunas que a conta precisa — o log cresce ~1000 linhas por mês.
+  const [dashAtiv, setDashAtiv] = useState(null)
+  useEffect(() => {
+    if (tab !== 'dashboard' || profile?.role !== 'admin') return
+    const { ini, fim } = dashRange()
+    let vivo = true
+    supabase.from('atividades').select('user_id,acao').gte('created_at', ini.toISOString()).lte('created_at', fim.toISOString()).limit(20000)
+      .then(({ data, error }) => { if (!vivo) return; if (error) { console.warn('Uso do app:', error.message); setDashAtiv(null) } else setDashAtiv(data || []) })
+    return () => { vivo = false }
+  }, [tab, dashPeriodo, dashDataIni, dashDataFim]) // eslint-disable-line
 
   // Sustentabilidade — premissas editáveis (persistidas localmente), com defaults de referência do setor
   const numLS = (key,def) => { try { const v=parseFloat(localStorage.getItem(key)); return isNaN(v)?def:v } catch { return def } }
@@ -2509,17 +2530,7 @@ export default function AdminPanel({ onSwitchMode }) {
           {tab === 'dashboard' && (() => {
             // ── Filtro de período ──
             const hoje = new Date()
-            const periodoRange = () => {
-              const ini = new Date()
-              if(dashPeriodo==='hoje') { ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
-              if(dashPeriodo==='semana') { ini.setDate(ini.getDate()-7); return {ini, fim:new Date()} }
-              if(dashPeriodo==='mes') { ini.setDate(1); ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
-              if(dashPeriodo==='trimestre') { ini.setMonth(ini.getMonth()-3); return {ini, fim:new Date()} }
-              if(dashPeriodo==='ano') { ini.setMonth(0,1); ini.setHours(0,0,0,0); return {ini, fim:new Date()} }
-              if(dashPeriodo==='custom' && dashDataIni && dashDataFim) return {ini:new Date(dashDataIni), fim:new Date(dashDataFim+'T23:59:59')}
-              ini.setDate(1); ini.setHours(0,0,0,0); return {ini, fim:new Date()}
-            }
-            const {ini:pIni, fim:pFim} = periodoRange()
+            const {ini:pIni, fim:pFim} = dashRange()
 
             // ── Filtra relatórios ──
             const rel = relatorios.filter(r => {
@@ -2593,6 +2604,40 @@ export default function AdminPanel({ onSwitchMode }) {
             })
             const rankingPilotos = Object.entries(pilotoStats).sort((a,b)=>b[1].area-a[1].area).slice(0,8)
             const pilotosChart = rankingPilotos.slice(0,6).map(([name,s])=>({name:name.split(' ')[0],area:parseFloat(s.area.toFixed(1)),voos:s.voos,horas:parseFloat((s.minutos/60).toFixed(1))}))
+
+            // ── Uso do app: quem usa de verdade, não só registra e sai ──
+            // Voo "ao vivo" = aberto no app pelo tempo do trabalho (30 min ou mais); aberto e fechado
+            // em minutos foi lançado depois, e aí o clima automático não roda. Interações = ações do
+            // Log de Atividades (sem entrar/sair, e sem a edição de relatório, que é trabalho do
+            // escritório) + notas de despesa + fotos dos relatórios.
+            // Fora do ranking: o usuário "admin" e contas de teste (é o Ricardo testando).
+            const foraDoUso = n => /^admin$/i.test(String(n||'').trim()) || /teste/i.test(String(n||''))
+            const uso = {}
+            const usoDe = (id,nome) => uso[id] || (uso[id] = {nome, voos:0, aoVivo:0, comClima:0, fotos:0, notas:0, acoes:0})
+            rel.forEach(r => {
+              if(!r.piloto_id || foraDoUso(r.piloto_nome)) return
+              const u = usoDe(r.piloto_id, r.piloto_nome)
+              u.voos++
+              if(r.dt_inicio && r.dt_fim && (new Date(r.dt_fim)-new Date(r.dt_inicio)) >= 30*60000) u.aoVivo++
+              if(climaDoRel(r).auto > 0) u.comClima++
+              u.fotos += (Array.isArray(r.obs_fotos_urls) ? r.obs_fotos_urls.length : 0) + (r.foto_mapa_url ? 1 : 0)
+            })
+            const nomePorId = Object.fromEntries(pilotos.map(p=>[p.id, p.nome||p.email]))
+            custos.forEach(d => {
+              if(!d.piloto_id || foraDoUso(d.piloto_nome)) return
+              const t = new Date(d.created_at); if(t<pIni||t>pFim) return
+              usoDe(d.piloto_id, d.piloto_nome || nomePorId[d.piloto_id]).notas++
+            })
+            ;(dashAtiv||[]).forEach(a => {
+              if(!a.user_id || ['login','logout','despesa_lancada','relatorio_editado'].includes(a.acao)) return
+              const nome = nomePorId[a.user_id]
+              if(!uso[a.user_id] && (!nome || foraDoUso(nome))) return
+              usoDe(a.user_id, nome).acoes++
+            })
+            const rankingUso = Object.values(uso)
+              .filter(u => !dashPilotos.length || dashPilotos.includes(u.nome))
+              .map(u => ({...u, interacoes: u.acoes + u.notas + u.fotos, pctVivo: u.voos ? Math.round(u.aoVivo/u.voos*100) : null}))
+              .sort((a,b) => b.interacoes-a.interacoes)
 
             // ── Heatmap dias da semana ──
             const diasSemana = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
@@ -2965,6 +3010,47 @@ export default function AdminPanel({ onSwitchMode }) {
                     </div>
                   </div>
                 </div>
+
+                {/* ── USO DO APP ── */}
+                {rankingUso.length>0 && (
+                <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>
+                  <SecTitle>📱 Uso do App</SecTitle>
+                  <div style={{fontSize:11.5,color:theme.textMuted,marginBottom:12,lineHeight:1.5}}>
+                    Interações = ações no app + notas lançadas + fotos. <b>Ao vivo</b> é o voo aberto no app durante o trabalho (30 min ou mais) — lançado depois, o clima não é registrado sozinho.
+                    {dashAtiv===null && profile?.role==='admin' && <span> Carregando o log…</span>}
+                  </div>
+                  <div style={{overflowX:'auto'}}>
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{background:theme.bg}}>
+                          {['#','Piloto','Interações','Ações','Notas','Fotos','Voos','Ao vivo','Com clima'].map(h=>(
+                            <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:theme.textFaint2,fontFamily:"'Syne',sans-serif",whiteSpace:'nowrap'}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rankingUso.map((u,i)=>(
+                          <tr key={u.nome+i} style={{background:i%2===0?'#fff':'#f7fbf8'}}>
+                            <td style={{padding:'8px 10px',fontWeight:700,color:i===0?'#D97706':i===1?'#aaa':i===2?'#cd7f32':theme.textFaint2}}>
+                              {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`}
+                            </td>
+                            <td style={{padding:'8px 10px',fontWeight:500,whiteSpace:'nowrap'}}>{u.nome||'—'}</td>
+                            <td style={{padding:'8px 10px',fontWeight:700,color:'#059669'}}>{u.interacoes}</td>
+                            <td style={{padding:'8px 10px',color:theme.textMuted}}>{u.acoes}</td>
+                            <td style={{padding:'8px 10px',color:theme.textMuted}}>{u.notas}</td>
+                            <td style={{padding:'8px 10px',color:theme.textMuted}}>{u.fotos}</td>
+                            <td style={{padding:'8px 10px',color:theme.textMuted}}>{u.voos}</td>
+                            <td style={{padding:'8px 10px',fontWeight:700,whiteSpace:'nowrap',color:u.pctVivo===null?theme.textFaint2:u.pctVivo>=80?'#059669':u.pctVivo>=50?'#D97706':'#dc2626'}}>
+                              {u.pctVivo===null?'—':`${u.pctVivo}%`}
+                            </td>
+                            <td style={{padding:'8px 10px',color:theme.textMuted,whiteSpace:'nowrap'}}>{u.voos?`${u.comClima}/${u.voos}`:'—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                )}
 
                 {/* ── HEATMAP DIAS DA SEMANA ── */}
                 <div style={{background:theme.card,borderRadius:14,border:`1px solid ${theme.cardBorder}`,padding:'20px',marginBottom:16}}>

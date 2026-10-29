@@ -12,6 +12,8 @@ export const NOVIDADES = [
     versao: '12.4',
     data: '2026-10-28',
     itens: [
+      { tipo: 'novo', titulo: 'Dashboard: Uso do App por piloto',
+        texto: 'Ranking de quem usa o app de verdade: interações (ações no app, notas lançadas e fotos), voos registrados ao vivo (abertos no app durante o trabalho) e voos com clima automático. O usuário admin e contas de teste ficam de fora.' },
       { tipo: 'melhoria', titulo: 'Voo lancado depois: ficha de clima pela planilha do drone',
         texto: 'A leitura de clima automatica so acontece com o voo aberto no app (do Iniciar ao Finalizar). Voo iniciado e finalizado em minutos, depois do trabalho, agora avisa isso no resumo, e a planilha do drone importada na ficha pega as baterias do dia inteiro, com o clima pelo GPS. O selo de clima da lista abre a ficha de qualquer voo.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima: cabecalho igual ao relatorio do voo',
