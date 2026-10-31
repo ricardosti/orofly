@@ -13,6 +13,7 @@
 import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
 import { areaLiquida } from './pdf'
+import { areaDasBaterias } from './registroDrone'
 
 export const CAMPOS_VOO = [
   ['inicio', 'Início do voo'],
@@ -151,8 +152,33 @@ export function leiturasFaltando({ refMs, agoraMs, intervaloMin, serie = [], alt
 
 const dataBR = iso => iso ? new Date(String(iso).length === 10 ? `${iso}T12:00:00` : iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : ''
 
+// De onde podem vir a área aplicada e o volume consumido do cabeçalho — quem emite escolhe na
+// hora (Rodolfo, 29/10/2026: "deixa área aplicada pra gente preencher manual, volume também").
+// manual = o digitado na ficha; voo = a área do relatório do piloto (aplicada, sem bordadura);
+// drone = soma das baterias da planilha da DJI importada na ficha. null quando não tem.
+export const FONTES_AREA = [['manual', 'Digitada na ficha'], ['voo', 'Do relatório do voo'], ['drone', 'Da planilha do drone'], ['branco', 'Em branco']]
+export const FONTES_VOLUME = [['manual', 'Digitado na ficha'], ['drone', 'Da planilha do drone'], ['branco', 'Em branco']]
+export function fontesDaFicha({ rel, manual }) {
+  const d = (rel ? rel.monitoramento_clima : manual?.dados) || {}
+  const baterias = (d.baterias || []).filter(v => v && Object.values(v).some(temValor))
+  const terminou = rel && ['finalizado', 'pausado_dia'].includes(rel.status)
+  const litros = baterias.reduce((a, b) => a + (typeof b.litros === 'number' ? b.litros : num(b.litros) || 0), 0)
+  return {
+    area: {
+      manual: temValor(d.area_aplicada) ? num(d.area_aplicada) : null,
+      voo: terminou ? areaLiquida(rel) : null,
+      drone: baterias.length ? areaDasBaterias(baterias) : null,
+    },
+    volume: {
+      manual: temValor(d.volume_consumido) ? d.volume_consumido : null,
+      drone: baterias.length && litros > 0 ? litros : null,
+    },
+  }
+}
+
 // Ficha pronta pra exportar, a partir de um voo registrado (relatório) ou de uma ficha manual.
-export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMin = 0 }) {
+// Sem `fonteArea`/`fonteVolume`, vale o de antes: área digitada ou a do voo, volume digitado.
+export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMin = 0, fonteArea, fonteVolume }) {
   const d = (rel ? rel.monitoramento_clima : manual?.dados) || {}
   // Com a planilha do drone importada, as colunas são as baterias (Voo 01 = 1ª bateria), cada
   // uma com a área dela; sem ela, as leituras de clima.
@@ -174,14 +200,22 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
   // automática (vazão × área, ou os litros da planilha do drone) não batia com o que ela reporta
   // (Rodolfo, 28/10/2026).
   const recomendacao = temValor(d.recomendacao) ? d.recomendacao : (!isNaN(vazao) ? fmt(vazao) : '')
-  const volume = temValor(d.volume_consumido) ? d.volume_consumido : ''
+  let volume = temValor(d.volume_consumido) ? d.volume_consumido : ''
+  let areaCab = areaOperacao > 0 ? fmt(areaOperacao) : ''
+  // Escolhida na hora de emitir: a fonte que não tem valor sai em branco (não cai em outra).
+  const fontes = (fonteArea || fonteVolume) ? fontesDaFicha({ rel, manual }) : null
+  if (fonteArea) { const v = fonteArea === 'branco' ? null : fontes.area[fonteArea]; areaCab = v > 0 ? fmt(v) : '' }
+  if (fonteVolume) {
+    const v = fonteVolume === 'branco' ? null : fontes.volume[fonteVolume]
+    volume = v == null ? '' : typeof v === 'number' ? fmt(v, 1) : v
+  }
   return {
     cabecalho: [
       [fazenda, codigo ? `(${codigo})` : ''].filter(Boolean).join(' '),
       rel ? (rel.localizacao || '') : (manual?.talhao || ''),
       rel ? dataBR(rel.dt_inicio || rel.created_at) : dataBR(manual?.data),
       rel ? (rel.piloto_nome || '') : (manual?.piloto || ''),
-      d.auxiliar || '', d.tecnico_regional || '', d.supervisor || '', areaOperacao > 0 ? fmt(areaOperacao) : '', volume, recomendacao,
+      d.auxiliar || '', d.tecnico_regional || '', d.supervisor || '', areaCab, volume, recomendacao,
     ],
     voos,
     porBateria: baterias.length > 0,

@@ -11,6 +11,16 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.6',
+    data: '2026-10-31',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Ficha de clima: você escolhe de onde vêm a área e o volume', ir: 'monitclima',
+        texto: 'Na hora de emitir o PDF ou o Excel do Monitoramento Climático, a área aplicada e o volume consumido do cabeçalho podem vir do que foi digitado na ficha (o padrão), do relatório do voo, da planilha do drone importada ou sair em branco. A lista mostra o valor de cada fonte, com a escolhida em negrito. Nenhum dos dois é obrigatório. Pedido do Rodolfo.' },
+      { tipo: 'correcao', titulo: 'Preenchimento do relatório no celular',
+        texto: 'No celular não dá pra passar o mouse: agora o card aberto do relatório mostra o percentual e o que falta preencher.' },
+    ],
+  },
+  {
     versao: '12.5',
     data: '2026-10-29',
     itens: [

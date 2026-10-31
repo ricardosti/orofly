@@ -10,7 +10,7 @@ const CAB = [
   ['auxiliar', 'AUXILIAR', 'Nome'],
   ['tecnico_regional', 'TÉCNICO REGIONAL', 'Nome'],
   ['supervisor', 'SUPERVISOR OPERACIONAL', 'Nome'],
-  ['area_aplicada', 'ÁREA APLICADA (ha)', 'Em branco: a do voo'],
+  ['area_aplicada', 'ÁREA APLICADA (ha)', 'Opcional'],
   ['volume_consumido', 'VOLUME CONSUMIDO (L)', 'O da equipe (opcional)'],
   ['recomendacao', 'RECOMENDAÇÃO (L/ha)', 'Em branco: vazão do voo'],
 ]

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTheme } from '../lib/theme'
 import FichaClimaEditor from './FichaClimaEditor'
-import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO, climaSerie } from '../lib/monitoramentoClima'
+import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO, climaSerie, fontesDaFicha, FONTES_AREA, FONTES_VOLUME } from '../lib/monitoramentoClima'
 import { lerRegistroDrone, bateriasDoVoo, gruposPorTalhao, bateriasParaFicha, completarClima, areaDasBaterias } from '../lib/registroDrone'
 import { lerRegistroKestrel, climaDaKestrel, semKestrel } from '../lib/registroKestrel'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
@@ -43,6 +43,12 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
   useEffect(() => { if (config?.colunas) setColunas(config.colunas) }, [config?.colunas])
   // Linha de área (ha) na ficha exportada: desmarcada por padrão, lembrada no aparelho.
   const [comArea, setComArea] = useState(() => { try { return localStorage.getItem('orofly_monit_com_area') === '1' } catch { return false } })
+  // De onde vêm a área aplicada e o volume do cabeçalho: escolhido na hora de emitir, lembrado no
+  // aparelho. Padrão: o digitado na ficha (o Rodolfo, 29/10/2026, quer preencher à mão).
+  const lembrado = (k, pad) => { try { return localStorage.getItem(k) || pad } catch { return pad } }
+  const [fonteArea, setFonteArea] = useState(() => lembrado('orofly_monit_fonte_area', 'manual'))
+  const [fonteVolume, setFonteVolume] = useState(() => lembrado('orofly_monit_fonte_volume', 'manual'))
+  const escolher = (set, k) => e => { set(e.target.value); try { localStorage.setItem(k, e.target.value) } catch {} }
 
   async function carregarManuais() {
     const { data, error } = await supabase.from('fichas_clima').select('*').order('data', { ascending: false })
@@ -193,8 +199,8 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
     // Ordem cronológica na ficha impressa (a lista na tela é da mais nova pra mais antiga).
     const intervaloMin = parseInt(agruparMin, 10) || 0
     const fichas = [...escolhidas].reverse().map(x => x.tipo === 'voo'
-      ? fichaParaExportar({ rel: x.rel, fazendaCodigo: codigoDaFazenda(x.rel), intervaloMin })
-      : fichaParaExportar({ manual: x.manual, intervaloMin }))
+      ? fichaParaExportar({ rel: x.rel, fazendaCodigo: codigoDaFazenda(x.rel), intervaloMin, fonteArea, fonteVolume })
+      : fichaParaExportar({ manual: x.manual, intervaloMin, fonteArea, fonteVolume }))
     const nome = `monitoramento-climatico-${de || 'inicio'}-a-${ate || 'hoje'}`
     try {
       if (tipo === 'pdf') await salvarOuCompartilharPdf(gerarPdfFichas(fichas, { colunas, comArea }), `${nome}.pdf`)
@@ -232,6 +238,16 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
           <input type="checkbox" checked={comArea} onChange={e => { setComArea(e.target.checked); try { localStorage.setItem('orofly_monit_com_area', e.target.checked ? '1' : '0') } catch {} }} />
           Linha de área (ha)
         </label>
+        <div><div style={rot}>ÁREA APLICADA (CABEÇALHO)</div>
+          <select style={campo} value={fonteArea} onChange={escolher(setFonteArea, 'orofly_monit_fonte_area')}>
+            {FONTES_AREA.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div><div style={rot}>VOLUME CONSUMIDO</div>
+          <select style={campo} value={fonteVolume} onChange={escolher(setFonteVolume, 'orofly_monit_fonte_volume')}>
+            {FONTES_VOLUME.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
         <div style={{ flex: 1 }} />
         <button style={btn('#059669')} onClick={abrirNova}>+ Nova ficha</button>
         <button style={btn('#111111')} onClick={() => exportar('pdf')}>⬇️ PDF{nMarcadas ? ` (${nMarcadas})` : ''}</button>
@@ -245,7 +261,7 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
           <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5, minWidth: 720 }}>
             <thead>
               <tr style={{ background: theme.bg }}>
-                {['', 'Data', 'Cliente · Fazenda', 'Talhão', 'Piloto', 'Voos', 'Origem', ''].map((h, i) => (
+                {['', 'Data', 'Cliente · Fazenda', 'Talhão', 'Piloto', 'Voos', 'Área (ha)', 'Volume (L)', 'Origem', ''].map((h, i) => (
                   <th key={i} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10.5, fontWeight: 700, color: theme.textMuted, borderBottom: `1px solid ${theme.divider}` }}>{h}</th>
                 ))}
               </tr>
@@ -259,6 +275,24 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
                   <td style={{ padding: '8px 10px' }}>{x.talhao || '—'}</td>
                   <td style={{ padding: '8px 10px' }}>{x.piloto || '—'}</td>
                   <td style={{ padding: '8px 10px', fontWeight: 700 }}>{x.nVoos}</td>
+                  {(() => {
+                    // Cada fonte com o valor que tem; a escolhida na emissão em negrito.
+                    const fo = fontesDaFicha(x.tipo === 'voo' ? { rel: x.rel } : { manual: x.manual })
+                    const n = (v, c) => typeof v === 'number' ? v.toLocaleString('pt-BR', { maximumFractionDigits: c }) : v
+                    const coluna = (fontes, escolhida, rotulos, c) => (
+                      <td style={{ padding: '6px 10px', fontSize: 11, lineHeight: 1.45, whiteSpace: 'nowrap' }}>
+                        {rotulos.map(([k, l]) => (
+                          <div key={k} style={{ color: k === escolhida ? theme.text : theme.textFaint2, fontWeight: k === escolhida ? 700 : 400 }}>
+                            {l}: {fontes[k] == null ? '—' : n(fontes[k], c)}
+                          </div>
+                        ))}
+                      </td>
+                    )
+                    return <>
+                      {coluna(fo.area, fonteArea, [['manual', 'ficha'], ['voo', 'voo'], ['drone', 'drone']], 2)}
+                      {coluna(fo.volume, fonteVolume, [['manual', 'ficha'], ['drone', 'drone']], 1)}
+                    </>
+                  })()}
                   <td style={{ padding: '8px 10px', color: theme.textMuted }}>{x.tipo === 'voo' ? (x.drone ? '🛩️ baterias do drone' : '🚁 voo registrado') : '✍️ manual'}</td>
                   <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                     <button style={{ ...btn(theme.bg, '#059669'), padding: '5px 10px', fontSize: 12 }} onClick={() => abrir(x)}>✏️ Editar</button>
