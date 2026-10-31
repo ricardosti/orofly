@@ -201,6 +201,42 @@ suba também o `versionName` e o `versionCode`.
 Quem instalou pela Play Store atualiza pela Play Store. Para trocar por um APK
 avulso é preciso **desinstalar antes**, porque a assinatura é diferente.
 
+## 7.1 iPhone (App Store) — em montagem desde 31/10/2026
+
+Não há Mac: o app do iPhone é compilado num **Mac da nuvem do GitHub**, pelo workflow
+`.github/workflows/ios-testflight.yml` (receita em `ios/App/fastlane/Fastfile`). A pasta
+`ios/` é o projeto do Xcode, gerado pelo Capacitor como a `android/`; nada dela se
+compila no Dell.
+
+**Uma vez só (feito pelo Ricardo, com o Claude guiando):**
+
+1. Conta **Apple Developer** (US$ 99/ano) em developer.apple.com — pessoa física, no
+   nome do Ricardo; dá pra converter pra empresa (D-U-N-S) ou transferir o app depois.
+2. **App Store Connect → Apps → +**: nome "Orofly", idioma Português (Brasil),
+   Bundle ID `com.ricardosti.orofly` (o mesmo do Android; registrar antes em
+   Certificates, Identifiers & Profiles → Identifiers, se não aparecer na lista).
+3. **Users and Access → Integrations → App Store Connect API → +**: chave com papel
+   **Admin** (sem Admin a assinatura automática não cria o certificado). Baixar o `.p8`
+   — **só dá pra baixar uma vez** — e anotar o Key ID e o Issuer ID.
+4. **GitHub → repositório → Settings → Secrets and variables → Actions**, um segredo
+   por linha:
+   - `APPLE_TEAM_ID` — developer.apple.com → Membership details → Team ID
+   - `ASC_KEY_ID`, `ASC_ISSUER_ID` — da tela da chave
+   - `ASC_KEY_P8` — o conteúdo inteiro do `.p8` (abrir no Bloco de Notas e colar)
+   - `REACT_APP_SUPABASE_URL`, `REACT_APP_SUPABASE_ANON_KEY`, `REACT_APP_VAPID_PUBLIC_KEY`
+     — os mesmos do `.env.local`. **Só esses três**: a `SUPABASE_SERVICE_ROLE_KEY` e as
+     outras chaves do servidor nunca vão pro GitHub.
+
+**A cada versão:** GitHub → aba **Actions** → "iPhone → TestFlight" → **Run workflow**.
+Em ~20 min a versão aparece no TestFlight (a Apple ainda processa uns minutos). A versão
+mostrada é o `APP_VERSION`; o número interno é o da execução do workflow, que só cresce.
+Pra loja: App Store Connect → o app → nova versão → escolher o build → **Enviar para
+revisão** (a revisão pede a conta de teste, como no Google — conferir e-mail e senha).
+
+> O que ainda não funciona no iPhone: **push** (o app usa o push da web, que não chega
+> dentro do app do iPhone — precisa do APNs) e o **clima automático com a tela apagada**
+> (o iOS pausa o app em segundo plano). Testar no campo antes de prometer.
+
 ---
 
 ## 8. Supabase — dois pontos de atenção

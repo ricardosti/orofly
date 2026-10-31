@@ -1,0 +1,39 @@
+# Compila o app do iPhone e manda pro TestFlight — roda no Mac da nuvem do GitHub
+# (.github/workflows/ios-testflight.yml), nunca no Dell: build de iOS só sai em macOS.
+#
+# Assinatura gerenciada pela Apple ("cloud signing"): com a chave da API do App Store Connect
+# o Xcode cria e usa o certificado e o perfil sozinho, sem arquivo .p12 nem perfil guardado
+# aqui. Por isso a chave precisa ter o papel Admin.
+default_platform(:ios)
+
+platform :ios do
+  lane :beta do
+    key_path = File.expand_path(ENV.fetch('ASC_KEY_PATH'))
+    team = ENV.fetch('APPLE_TEAM_ID')
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch('ASC_KEY_ID'),
+      issuer_id: ENV.fetch('ASC_ISSUER_ID'),
+      key_filepath: key_path
+    )
+    auth = "-allowProvisioningUpdates -authenticationKeyPath #{key_path} " \
+           "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} -authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')}"
+
+    build_app(
+      project: 'App.xcodeproj',
+      scheme: 'App',
+      configuration: 'Release',
+      export_method: 'app-store',
+      export_team_id: team,
+      export_options: { signingStyle: 'automatic', teamID: team },
+      output_directory: 'build',
+      output_name: 'Orofly.ipa',
+      # Versão que o usuário vê = APP_VERSION (src/lib/version.js); número interno = execução
+      # do workflow, que só cresce (a Apple recusa número repetido, igual ao versionCode).
+      xcargs: "#{auth} DEVELOPMENT_TEAM=#{team} CODE_SIGN_STYLE=Automatic " \
+              "MARKETING_VERSION=#{ENV.fetch('VERSAO')} CURRENT_PROJECT_VERSION=#{ENV.fetch('BUILD')}",
+      export_xcargs: auth
+    )
+
+    upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true)
+  end
+end

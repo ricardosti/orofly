@@ -1,0 +1,73 @@
+# App do iPhone → TestFlight. Só roda quando alguém aperta "Run workflow" na aba Actions do
+# GitHub (não roda a cada push: minuto de Mac é o mais caro do GitHub).
+#
+# Precisa destes segredos em Settings → Secrets and variables → Actions (passo a passo na
+# seção "iPhone" do CLAUDE.md):
+#   APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (o conteúdo do arquivo .p8)
+#   REACT_APP_SUPABASE_URL, REACT_APP_SUPABASE_ANON_KEY, REACT_APP_VAPID_PUBLIC_KEY (os do .env.local)
+name: iPhone → TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  testflight:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Compilar o site
+        run: npx react-scripts build
+        env:
+          CI: true
+          REACT_APP_SUPABASE_URL: ${{ secrets.REACT_APP_SUPABASE_URL }}
+          REACT_APP_SUPABASE_ANON_KEY: ${{ secrets.REACT_APP_SUPABASE_ANON_KEY }}
+          REACT_APP_VAPID_PUBLIC_KEY: ${{ secrets.REACT_APP_VAPID_PUBLIC_KEY }}
+
+      - name: Copiar o site pro projeto do iPhone
+        run: npx cap sync ios
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Chave da API do App Store Connect
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey.p8"
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+
+      - name: Versão
+        id: versao
+        run: echo "versao=$(node -p "/APP_VERSION = '([^']+)'/.exec(require('fs').readFileSync('src/lib/version.js','utf8'))[1]")" >> "$GITHUB_OUTPUT"
+
+      - name: Compilar, assinar e mandar pro TestFlight
+        working-directory: ios/App
+        run: |
+          command -v fastlane >/dev/null || gem install fastlane --no-document
+          fastlane beta
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc/AuthKey.p8
+          VERSAO: ${{ steps.versao.outputs.versao }}
+          BUILD: ${{ github.run_number }}
+
+      - name: Guardar o .ipa
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Orofly-${{ steps.versao.outputs.versao }}-build${{ github.run_number }}
+          path: ios/App/build/Orofly.ipa
+          retention-days: 14
