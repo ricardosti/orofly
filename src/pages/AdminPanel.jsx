@@ -434,7 +434,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [confirmDeleteDespesa, setConfirmDeleteDespesa] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
-  const [filters, setFilters] = useState({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })
+  const [filters, setFilters] = useState({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', ha:'', status:'', dataIni:'', dataFim:'' })
   // Ordenação da lista de voos. Começa pela data decrescente — é a ordem que a lista
   // já tinha na prática, e o voo mais recente é o que se procura na maioria das vezes.
   const [relOrdem, setRelOrdem] = useState({ campo:'data', dir:'desc' })
@@ -1140,6 +1140,24 @@ export default function AdminPanel({ onSwitchMode }) {
     return { pct: total ? Math.round(feito / total * 100) : 100, faltam }
   }
   const corPreenchimento = pct => pct >= 80 ? { cor:'#059669', bg:theme.successBg } : pct >= 50 ? { cor:'#B45309', bg:'#FEF3C7' } : { cor:theme.dangerText, bg:theme.dangerBg }
+  // Hectares aplicados do voo, pra conferir com o extrato do cliente (a Usina Nardini manda só
+  // documento, data e hectares — sem fazenda nem talhão; Rodolfo, 04/11/2026). `liquida` é a
+  // "Área Aplicada" do resumo (sem a bordadura); `percorrida`, o que o piloto voou com ela.
+  // Só voo encerrado: em andamento ou rascunho a área ainda é o escopo, não o feito.
+  const haDoRel = r => {
+    if (!['finalizado', 'pausado_dia'].includes(r.status)) return null
+    const feita = parseFloat(r.area_feita)
+    const percorrida = feita > 0 ? feita : (parseFloat(r.area_ha) || 0)
+    const bordadura = parseFloat(r.bordadura) || 0
+    return { liquida: areaLiquida(r), percorrida, bordadura }
+  }
+  // Busca pelo número como ele aparece no extrato ("12,94"): vale a líquida ou a percorrida.
+  const bateHa = (r, txt) => {
+    const h = haDoRel(r)
+    if (!h) return false
+    const q = txt.trim().replace(/\s/g, '').replace('.', ',')
+    return [h.liquida, h.percorrida].some(v => fmtHa(v).includes(q))
+  }
   const filtered = relatorios.filter(r => {
     if (filters.cliente && !r.cliente?.toLowerCase().includes(filters.cliente.toLowerCase())) return false
     if (filters.fazenda && !r.fazenda?.toLowerCase().includes(filters.fazenda.toLowerCase())) return false
@@ -1149,6 +1167,7 @@ export default function AdminPanel({ onSwitchMode }) {
     // Um voo pode cobrir vários talhões, gravados numa string só ("002-01, 005-01").
     // Busca por pedaço do nome pra "002" achar todos os 002-xx.
     if (filters.talhao && !r.localizacao?.toLowerCase().includes(filters.talhao.toLowerCase())) return false
+    if (filters.ha && !bateHa(r, filters.ha)) return false
     // Rascunho (voo nunca iniciado) não é relatório: só aparece pedindo o filtro Rascunho.
     if (filters.status === 'incompletos') { if (r.status === 'rascunho' || preenchimentoDoRel(r).pct >= 80) return false }
     else if (filters.status) { if (r.status !== filters.status) return false }
@@ -1184,6 +1203,7 @@ export default function AdminPanel({ onSwitchMode }) {
       case 'piloto':   return rel.piloto_nome || null
       case 'drone':    return rel.drone || null
       case 'status':   return STATUS_LABEL[rel.status] || rel.status || null
+      case 'ha':       return haDoRel(rel)?.liquida ?? null
       // Pelo PRIMEIRO talhão do voo, já que a coluna pode listar vários. Como os nomes
       // saem ordenados desde a v4.9, o primeiro é o menor.
       case 'talhao': {
@@ -2295,7 +2315,7 @@ export default function AdminPanel({ onSwitchMode }) {
               <div style={{ marginBottom:18, display:'flex', justifyContent:'space-between', alignItems:'flex-end', flexWrap:'wrap', gap:10 }}>
                 <div>
                   <div style={{ fontFamily:"'Syne',sans-serif", fontSize: isMobile?18:22, fontWeight:700, color:theme.text }}>Relatórios de Voo</div>
-                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{filtered.length} de {relatorios.length}</div>
+                  <div style={{ fontSize:12, color:theme.textMuted, marginTop:2 }}>{filtered.length} de {relatorios.length}{(() => { const t = filtered.reduce((a, r) => a + (haDoRel(r)?.liquida || 0), 0); return t > 0 ? <> · <b style={{ color:'#059669' }}>{fmtHa(t)} ha aplicados</b></> : null })()}</div>
                 </div>
                 <div style={{ display:'flex', flexDirection:'column', gap:6, alignItems:'flex-end' }}>
                   {relatorios.some(r=>r.status==='rascunho') && (
@@ -2345,7 +2365,7 @@ export default function AdminPanel({ onSwitchMode }) {
               )}
 
               <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14, background:'#F8FAFC', padding:12, borderRadius:theme.radius||8, border:`1px solid ${theme.cardBorder2}`, alignItems:'center' }}>
-                {[['Cliente','cliente'],['Fazenda','fazenda'],['Cód. fazenda','codigo'],['Talhão','talhao'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
+                {[['Cliente','cliente'],['Fazenda','fazenda'],['Cód. fazenda','codigo'],['Talhão','talhao'],['ha aplicado (ex.: 12,94)','ha'],['Piloto','piloto'],['Drone','drone']].map(([ph,k]) => (
                   <input key={k} style={sG.fi} placeholder={`${ph}...`} value={filters[k]} onChange={e => setFilters(f => ({ ...f, [k]: e.target.value }))} />
                 ))}
                 <select style={sG.fi} value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}>
@@ -2368,7 +2388,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', ha:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -2392,7 +2412,7 @@ export default function AdminPanel({ onSwitchMode }) {
                             </div>
                           </div>
                           <div style={{ fontSize:12, color:theme.textMuted }}>{rel.fazenda}{rel.produto?` · ${rel.produto}`:''} · {rel.piloto_nome}{rel.ordem_servico?` · OS ${rel.ordem_servico}`:''}</div>
-                          <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''} · 🌡️ {fichaClimaDoRel(rel).txt}</div>
+                          <div style={{ fontSize:11, color:'#aaa', marginTop:3 }}>{new Date(rel.dt_inicio || rel.created_at).toLocaleDateString('pt-BR')}{tempo?` · ${tempo.total}`:''}{haDoRel(rel) ? <> · <b style={{ color:'#059669' }}>{fmtHa(haDoRel(rel).liquida)} ha</b></> : null} · 🌡️ {fichaClimaDoRel(rel).txt}</div>
                         </div>
                         {isSel && (
                           <div style={{ padding:'10px 15px', borderTop:`1px solid ${theme.divider}`, background:'#f7fbf8' }}>
@@ -2430,7 +2450,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <table style={{ width:'100%', borderCollapse:'collapse', minWidth:700 }}>
                       <thead>
                         <tr style={{ background:theme.bg }}>
-                          {[['Cliente','cliente'],['Fazenda','fazenda'],['Talhão','talhao'],['Piloto','piloto'],['Drone','drone'],['Status','status'],['Data','data'],['Tempo','tempo'],['Custo','custo'],['Ações',null]].map(([h,campo]) => (
+                          {[['Cliente','cliente'],['Fazenda','fazenda'],['ha aplicado','ha'],['Talhão','talhao'],['Piloto','piloto'],['Drone','drone'],['Status','status'],['Data','data'],['Tempo','tempo'],['Custo','custo'],['Ações',null]].map(([h,campo]) => (
                             <th key={h} style={{ padding:'12px 16px', textAlign:'left', fontSize:11, fontWeight:600, color: campo&&relOrdem.campo===campo?'#059669':theme.textFaint2, letterSpacing:0.4, textTransform:'uppercase', borderBottom:`1px solid ${theme.cardBorder2}`, whiteSpace:'nowrap', fontFamily:"'DM Sans',sans-serif", cursor: campo?'pointer':'default', userSelect:'none' }}
                               onClick={campo ? () => alternarOrdemRel(campo) : undefined}>
                               {h}
@@ -2466,6 +2486,16 @@ export default function AdminPanel({ onSwitchMode }) {
                                       {rel.qtd_voos>1?`${rel.qtd_voos} voos`:''}
                                     </div>
                                   )}
+                                </td>
+                                <td style={{ ...sG.td, whiteSpace:'nowrap' }}>
+                                  {(() => {
+                                    const h = haDoRel(rel)
+                                    if (!h) return <span style={{color:'#c3d4c9'}}>—</span>
+                                    return <>
+                                      <div style={{ fontWeight:700, color:'#059669', fontSize:13.5 }}>{fmtHa(h.liquida)}</div>
+                                      {h.bordadura > 0 && <div style={{ fontSize:10, color:theme.textFaint2 }}>voou {fmtHa(h.percorrida)} · bord. {fmtHa(h.bordadura)}</div>}
+                                    </>
+                                  })()}
                                 </td>
                                 {/* Talhão em coluna própria: um voo pode cobrir vários, e
                                     achá-los só abrindo o detalhe dava trabalho demais numa
@@ -3579,7 +3609,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                 </div>
                 {Object.values(filters).some(Boolean) && (
-                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                  <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', ha:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                 )}
               </div>
 
@@ -3681,7 +3711,7 @@ export default function AdminPanel({ onSwitchMode }) {
                     <input type="date" style={{ ...sG.fi, minWidth:120 }} value={filters.dataFim} onChange={e => setFilters(f => ({ ...f, dataFim: e.target.value }))} />
                   </div>
                   {Object.values(filters).some(Boolean) && (
-                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
+                    <button style={{ background:'none', border:'1px solid #e0b0a8', color:theme.dangerText, borderRadius:16, padding:'7px 12px', fontSize:12, cursor:'pointer' }} onClick={() => setFilters({ cliente:'', fazenda:'', codigo:'', piloto:'', drone:'', talhao:'', ha:'', status:'', dataIni:'', dataFim:'' })}>✕ Limpar</button>
                   )}
                 </div>
 

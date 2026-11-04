@@ -11,6 +11,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.7',
+    data: '2026-11-04',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Relatórios: hectares aplicados na lista e busca por hectare', ir: 'relatorios',
+        texto: 'A lista de Relatórios ganhou a coluna "ha aplicado" (a área aplicada sem a bordadura; quando tem bordadura, aparece embaixo quanto foi voado e quanto foi bordadura), o total de hectares dos relatórios filtrados no topo e um campo pra buscar pelo hectare: digitando o número do extrato do cliente (ex.: 12,94), aparece o voo. Pedido do Rodolfo, pra conferir o extrato da Usina Nardini, que não traz fazenda nem talhão.' },
+    ],
+  },
+  {
     versao: '12.6',
     data: '2026-10-31',
     itens: [
