@@ -15,7 +15,7 @@
 // garante que ele está guardado antes de a tela trocar de voo. As fotos vão pro IndexedDB,
 // que guarda o arquivo como veio (o localStorage só guarda texto, uns 5 MB por site).
 
-import { ehFalhaDeRede, comPrazo, SemSinal } from './filaDespesas'
+import { ehFalhaDeRede, comPrazo, SemSinal, emBytes, deBytes } from './filaDespesas'
 
 const FILA = 'orofly_fila_voos'
 
@@ -72,13 +72,17 @@ export const caminhoFoto = (pilotoId, relId, slot) =>
   String(slot) === 'mapa' ? `${pilotoId}/${relId}/mapa.jpg` : `${pilotoId}/${relId}/obs_${slot}.jpg`
 
 // Devolve false se o aparelho não guardou (aí a foto só existe na memória).
-export function guardarFoto(relId, slot, arquivo) {
-  if (!relId || !arquivo) return Promise.resolve(false)
-  return naLoja('readwrite', l => l.put({ chave: `${relId}:${slot}`, relId, slot: String(slot), arquivo,
+// Guardada em bytes (ver emBytes): no iPhone o arquivo guardado voltava vazio.
+export async function guardarFoto(relId, slot, arquivo) {
+  if (!relId || !arquivo) return false
+  const guardado = await emBytes(arquivo)
+  return naLoja('readwrite', l => l.put({ chave: `${relId}:${slot}`, relId, slot: String(slot), arquivo: guardado,
     nome: arquivo.name || '', tipo: arquivo.type || '', criado_em: new Date().toISOString() }))
     .then(() => true)
     .catch(e => { console.warn('Foto não guardada no aparelho:', e); return false })
 }
+// O arquivo de uma foto guardada, pronto pra subir ou mostrar (null se voltou vazia).
+export const arquivoGuardado = f => deBytes(f?.arquivo)
 export function apagarFoto(relId, slot) {
   if (!relId) return Promise.resolve()
   return naLoja('readwrite', l => l.delete(`${relId}:${slot}`)).catch(() => {})
@@ -102,7 +106,10 @@ export async function enviarFotosGuardadas(sb, { relId, pilotoId, obsBase, mapaB
   const subiram = []
   for (const f of fotos) {
     const path = caminhoFoto(pilotoId, relId, f.slot)
-    const { error } = await comPrazo(sb.storage.from('relatorios').upload(path, f.arquivo, { upsert: true }), 60000)
+    const arquivo = arquivoGuardado(f)
+    // Voltou vazia (defeito do Safari, guardada antes da correção): não há o que subir.
+    if (!arquivo) { await apagarFoto(relId, f.slot); continue }
+    const { error } = await comPrazo(sb.storage.from('relatorios').upload(path, arquivo, { upsert: true }), 60000)
     if (error) {
       if (ehFalhaDeRede(error)) throw new SemSinal(error.message)
       continue // arquivo recusado pelo Storage: não adianta tentar de novo

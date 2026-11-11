@@ -14,6 +14,8 @@ export const NOVIDADES = [
     versao: '12.8',
     data: '2026-11-10',
     itens: [
+      { tipo: 'correcao', titulo: 'iPhone: fotos não chegavam pelo site',
+        texto: 'No Safari do iPhone, a foto guardada no aparelho antes do envio voltava vazia, e o servidor recusava: o voo chegava, mas o mapa e as fotos não. Agora o app guarda a foto de outro jeito, que funciona em qualquer navegador. Vale também para as fotos das notas de despesa e dos incidentes.' },
       { tipo: 'novo', titulo: 'Um relatório por dia no talhão feito em vários dias', ir: 'relatorios',
         texto: 'No app, o Finalizado Parcial ganhou o botão "Continuar hoje": ele abre o voo do dia, já preenchido com o cliente, a fazenda, o talhão com o que falta, os produtos e o drone, e o parcial anterior fica como o relatório do dia em que foi feito. Antes, retomar somava tudo no mesmo relatório e o do segundo dia saía com o talhão inteiro. No painel, o relatório mostra "dia 1 de 2" e o PDF Cliente e o Word perguntam se é só aquele dia ou o talhão completo, com os dias somados. Pedido do Rodolfo: a Bracell quer a produção por dia.' },
     ],

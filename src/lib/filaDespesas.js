@@ -47,7 +47,27 @@ async function naLoja(modo, fazer, loja = LOJA) {
   }
 }
 
-export const guardarNaFila = (item) => naLoja('readwrite', loja => loja.put(item))
+// Foto guardada como BYTES, não como o arquivo. No Safari do iPhone o arquivo (File/Blob)
+// guardado no IndexedDB volta vazio quando é lido de novo: o envio saía com 0 bytes e o
+// Storage recusava (400) — em 10/11/2026 nenhuma foto de um iPhone pelo site chegava. Os bytes
+// sobrevivem em qualquer navegador. `deBytes` devolve o arquivo pro envio e aceita o formato
+// antigo (o File guardado direto), pra fila que já estava no aparelho.
+export async function emBytes(arquivo) {
+  if (!arquivo || arquivo.bytes) return arquivo || null
+  try { return { bytes: await arquivo.arrayBuffer(), tipo: arquivo.type || '', nome: arquivo.name || '' } }
+  catch { return arquivo }
+}
+export function deBytes(g) {
+  if (!g) return null
+  const f = g.bytes ? new File([g.bytes], g.nome || 'foto.jpg', { type: g.tipo || 'image/jpeg' }) : g
+  // Vazio é o defeito do Safari: subir 0 bytes só dá erro, e a foto já se perdeu.
+  return f.size > 0 ? f : null
+}
+
+export async function guardarNaFila(item) {
+  const guardado = { ...item, foto: await emBytes(item.foto) }
+  return naLoja('readwrite', loja => loja.put(guardado))
+}
 export const removerDaFila = (id) => naLoja('readwrite', loja => loja.delete(id))
 export async function listarFila() {
   const itens = (await naLoja('readonly', loja => loja.getAll())) || []
@@ -88,10 +108,11 @@ export function comPrazo(promessa, ms) {
 // falta rede (a nota fica na fila); qualquer outro erro é do banco e vai pro chamador.
 export async function enviarDespesa(item, sb) {
   let foto_url = null
-  if (item.foto) {
+  const foto = deBytes(item.foto)
+  if (foto) {
     const path = `despesas/${item.piloto_id}/${item.id}.${item.fotoExt || 'jpg'}`
     const { error } = await sb.storage.from('relatorios')
-      .upload(path, item.foto, { upsert: true, contentType: item.foto.type || undefined })
+      .upload(path, foto, { upsert: true, contentType: foto.type || undefined })
     if (error && ehFalhaDeRede(error)) throw new SemSinal(error.message)
     // Erro do Storage que não é de rede (arquivo recusado): segue sem a foto, como o envio
     // direto sempre fez — travar a nota inteira por causa do anexo seria pior.
@@ -116,7 +137,10 @@ export async function enviarDespesa(item, sb) {
 // Antes davam "Erro: Failed to fetch" e, saindo da tela, o incidente e as fotos sumiam.
 // Mesma ideia das despesas: id gerado no aparelho (23505 = um envio anterior já chegou) e a
 // foto num caminho que é o próprio id, então reenviar só sobrescreve.
-export const guardarIncidenteNaFila = (item) => naLoja('readwrite', l => l.put(item), LOJA_INCIDENTES)
+export async function guardarIncidenteNaFila(item) {
+  const guardado = { ...item, fotos: await Promise.all((item.fotos || []).map(emBytes)) }
+  return naLoja('readwrite', l => l.put(guardado), LOJA_INCIDENTES)
+}
 export const removerIncidenteDaFila = (id) => naLoja('readwrite', l => l.delete(id), LOJA_INCIDENTES)
 export async function listarIncidentesNaFila() {
   const itens = (await naLoja('readonly', l => l.getAll(), LOJA_INCIDENTES)) || []
@@ -125,7 +149,7 @@ export async function listarIncidentesNaFila() {
 export async function enviarIncidente(item, sb) {
   const fotos = [null, null]
   for (let i = 0; i < 2; i++) {
-    const f = item.fotos?.[i]
+    const f = deBytes(item.fotos?.[i])
     if (!f) continue
     const path = `${item.incidente.piloto_id}/incidentes/${item.id}_${i}.jpg`
     const { error } = await sb.storage.from('relatorios').upload(path, f, { upsert: true, contentType: f.type || 'image/jpeg' })

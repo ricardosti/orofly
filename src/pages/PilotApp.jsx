@@ -19,7 +19,7 @@ import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
 import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente, guardarIncidenteNaFila, removerIncidenteDaFila, listarIncidentesNaFila, enviarIncidente } from '../lib/filaDespesas'
-import { listarVoosNaFila, enfileirarVoo, removerVooDaFila, guardarFoto, apagarFoto, fotosDoVoo, apagarFotosDoVoo, enviarFotosGuardadas, enviarLinhaDoVoo } from '../lib/filaVoos'
+import { listarVoosNaFila, enfileirarVoo, removerVooDaFila, guardarFoto, apagarFoto, fotosDoVoo, arquivoGuardado, apagarFotosDoVoo, enviarFotosGuardadas, enviarLinhaDoVoo } from '../lib/filaVoos'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
 import { CATEGORIA_DESPESA_OPTS, iconeCategoria, TIPOS_COMBUSTIVEL, tiposDoCombustivel, juntarCombustiveis, conferirDivisao, descreverCombustivel } from '../lib/categoriasDespesa'
@@ -1293,13 +1293,15 @@ export default function PilotApp({onSwitchMode}) {
     let vivo = true
     fotosDoVoo(relId).then(async fotos=>{
       for (const f of fotos) {
+        const arquivo = arquivoGuardado(f)
+        if(!arquivo) continue
         const url = f.tipo==='application/pdf' ? 'pdf:'+f.nome
-          : await new Promise(ok=>{ const r=new FileReader(); r.onload=()=>ok(r.result); r.onerror=()=>ok(null); r.readAsDataURL(f.arquivo) })
+          : await new Promise(ok=>{ const r=new FileReader(); r.onload=()=>ok(r.result); r.onerror=()=>ok(null); r.readAsDataURL(arquivo) })
         if(!vivo || !url) continue
-        if(f.slot==='mapa'){ setFotoMapaFile(a=>a||f.arquivo); setFotoMapa(a=>a||url) }
+        if(f.slot==='mapa'){ setFotoMapaFile(a=>a||arquivo); setFotoMapa(a=>a||url) }
         else {
           const i=+f.slot
-          setObsFotoFiles(a=>{ if(a[i]) return a; const n=[...a]; n[i]=f.arquivo; return n })
+          setObsFotoFiles(a=>{ if(a[i]) return a; const n=[...a]; n[i]=arquivo; return n })
           setObsFotos(a=>{ if(a[i]) return a; const n=[...a]; n[i]=url; return n })
         }
       }
