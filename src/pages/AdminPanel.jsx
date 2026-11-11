@@ -87,6 +87,42 @@ const ITENS_PREENCHIMENTO = [
   ['foto_f', 'foto do fim'], ['mapa', 'mapa'], ['clima_voo', 'clima durante o voo'], ['encerrado', 'encerrado'],
 ]
 const PESOS_PREENCH_PADRAO = Object.fromEntries(ITENS_PREENCHIMENTO.map(([id]) => [id, 10]))
+// Talhão feito em mais de um dia (v12.8: cada dia é um relatório, ligado ao anterior pelo
+// `continuacao_de`). Pro "talhão completo" os dias viram um relatório só: áreas somadas, do
+// início do primeiro ao fim do último, clima de início do primeiro e de fim do último.
+function juntarDias(dias) {
+  const ord = [...dias].sort((a, b) => new Date(a.dt_inicio || a.created_at) - new Date(b.dt_inicio || b.created_at))
+  const pri = ord[0], ult = ord[ord.length - 1]
+  const num = v => parseFloat(v) || 0
+  const percorrido = r => num(r.area_feita) > 0 ? num(r.area_feita) : num(r.area_ha)
+  const somaDet = (campo, chave) => {
+    const tot = {}
+    ord.forEach(r => (r[campo] || []).forEach(d => { if (d?.talhao) tot[d.talhao] = +((tot[d.talhao] || 0) + num(d[chave])).toFixed(2) }))
+    const linhas = Object.entries(tot).map(([talhao, v]) => ({ talhao, [chave]: v }))
+    return linhas.length ? linhas : null
+  }
+  const area = +ord.reduce((a, r) => a + percorrido(r), 0).toFixed(2)
+  const bord = +ord.reduce((a, r) => a + num(r.bordadura), 0).toFixed(2)
+  const fim = Object.fromEntries(Object.keys(ult).filter(k => k.endsWith('_f')).map(k => [k, ult[k]]))
+  const ini = Object.fromEntries(Object.keys(pri).filter(k => k.endsWith('_i')).map(k => [k, pri[k]]))
+  const fotos = r => Array.isArray(r.obs_fotos_urls) ? r.obs_fotos_urls : []
+  return {
+    ...ult, ...ini, ...fim,
+    dt_inicio: pri.dt_inicio, dt_fim: ult.dt_fim,
+    area_ha: String(area), area_feita: area, area_total_aplicada: null, area_deduzida: area,
+    bordadura: bord || null,
+    area_feita_detalhe: somaDet('area_feita_detalhe', 'area_feita'),
+    bordadura_detalhe: somaDet('bordadura_detalhe', 'bordadura'),
+    nao_aplicada_detalhe: ord.flatMap(r => r.nao_aplicada_detalhe || []),
+    localizacao: [...new Set(ord.flatMap(r => (r.localizacao || '').split(',').map(x => x.trim()).filter(Boolean)))].join(', '),
+    piloto_nome: [...new Set(ord.map(r => r.piloto_nome).filter(Boolean))].join(' / '),
+    pausas: ord.flatMap(r => r.pausas || []),
+    obs1: ord.map(r => r.obs1).filter(Boolean).join(' · '),
+    obs_fotos_urls: [fotos(ult)[0] || fotos(pri)[0] || null, fotos(pri)[1] || null, fotos(ult)[2] || null],
+    compartilhado: false,
+    status: ult.status,
+  }
+}
 const STATUS_LABEL = { rascunho:'Rascunho', em_operacao:'Em operação', pausado:'Pausado', pausado_dia:'Finalizado Parcial', finalizado:'Finalizado', sos:'🆘 SOS', sos_resolvido:'✅ SOS Resolvido' }
 // Funções (em vez de objeto fixo) porque as cores dependem do tema atual (claro/escuro).
 // Pílulas sóbrias: fundo suave + texto na mesma família de cor (sem preenchimento sólido).
@@ -431,6 +467,8 @@ export default function AdminPanel({ onSwitchMode }) {
   const [editObsFotos, setEditObsFotos] = useState([null,null,null])
   const [editObsFotoFiles, setEditObsFotoFiles] = useState([null,null,null])
   const [confirmDelete, setConfirmDelete] = useState(null)
+  // Relatório de um talhão feito em mais de um dia: o PDF pergunta se é só o dia ou o talhão.
+  const [escolhaDias, setEscolhaDias] = useState(null) // { rel, tipo, dias }
   const [confirmDeleteDespesa, setConfirmDeleteDespesa] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
@@ -1104,6 +1142,20 @@ export default function AdminPanel({ onSwitchMode }) {
     const txt = [c.total ? `${c.total} leitura${c.total===1?'':'s'} de clima` : null, c.drone ? `${c.drone} baterias` : null].filter(Boolean).join(' · ')
     if (c.editado) return { txt: txt + ' · editada', cor:'#1d4ed8', bg:'#dbeafe' }
     return { txt, cor:'#047857', bg:'#d1fae5' }
+  }
+  // Os dias de um talhão feito em vários voos, do primeiro ao último (rascunho não conta).
+  const diasDoRel = rel => {
+    const porId = Object.fromEntries(relatorios.map(r => [r.id, r]))
+    let pri = rel
+    const vistos = new Set([rel.id])
+    while (pri.continuacao_de && porId[pri.continuacao_de] && !vistos.has(pri.continuacao_de)) { pri = porId[pri.continuacao_de]; vistos.add(pri.id) }
+    const dias = [pri]
+    for (;;) {
+      const prox = relatorios.find(r => r.continuacao_de === dias[dias.length - 1].id && r.status !== 'rascunho' && !dias.includes(r))
+      if (!prox) break
+      dias.push(prox)
+    }
+    return dias
   }
   function abrirMonitoramentoDoVoo(rel) { setMonitAbrirRel(rel.id); setTab('monitclima') }
   // Nível de preenchimento do relatório: 10 itens com peso configurável (padrão 10 cada), pra o gestor bater o olho e saber
@@ -2042,12 +2094,21 @@ export default function AdminPanel({ onSwitchMode }) {
     } catch (e) { showToast('Erro: ' + e.message, 'error') }
   }
 
-  async function gerarPDF(rel, localFotoMapa, localObsFotos, tipo='cliente') {
+  async function gerarPDF(rel, localFotoMapa, localObsFotos, tipo='cliente', escopo=null) {
+    const dias = (tipo==='cliente' || tipo==='word') ? diasDoRel(rel) : [rel]
+    if (dias.length > 1 && !escopo) { setEscolhaDias({ rel, tipo, dias }); return }
     const rotuloTipo = tipo==='word' ? 'Word' : tipo==='nardini' ? 'Formulário Nardini' : 'PDF Cliente'
     showToast('⏳ Gerando ' + rotuloTipo + '...')
     try {
-      const { data: relAtual } = await supabase.from('relatorios').select('*').eq('id', rel.id).single()
-      const relFinal = relAtual || rel
+      let relFinal
+      if (escopo === 'talhao' && dias.length > 1) {
+        const { data: todos, error } = await supabase.from('relatorios').select('*').in('id', dias.map(d => d.id))
+        if (error) throw error
+        relFinal = juntarDias(todos?.length ? todos : dias)
+      } else {
+        const { data: relAtual } = await supabase.from('relatorios').select('*').eq('id', rel.id).single()
+        relFinal = relAtual || rel
+      }
       const opts = { supabase, localFotoMapa: localFotoMapa||null, localObsFotos: localObsFotos?.some(Boolean)?localObsFotos:null }
       const nomeBase = `${relFinal.cliente?.replace(/\s+/g,'-').toLowerCase()}-${new Date(relFinal.created_at).toLocaleDateString('pt-BR').replace(/\//g,'-')}`
 
@@ -2065,7 +2126,7 @@ export default function AdminPanel({ onSwitchMode }) {
       } else {
         // Busca trechos se for voo compartilhado
         let trechos = []
-        if (relFinal.compartilhado) {
+        if (relFinal.compartilhado && escopo !== 'talhao') {
           const { data: t } = await supabase.from('relatorio_trechos').select('*').eq('relatorio_id', relFinal.id).order('created_at')
           if (t) trechos = t
         }
@@ -2494,6 +2555,9 @@ export default function AdminPanel({ onSwitchMode }) {
                                     return <>
                                       <div style={{ fontWeight:700, color:'#059669', fontSize:13.5 }}>{fmtHa(h.liquida)}</div>
                                       {h.bordadura > 0 && <div style={{ fontSize:10, color:theme.textFaint2 }}>voou {fmtHa(h.percorrida)} · bord. {fmtHa(h.bordadura)}</div>}
+                                      {(() => { const ds = diasDoRel(rel); return ds.length > 1 && (
+                                        <div title="Talhão feito em mais de um dia — cada dia é um relatório" style={{ fontSize:10, fontWeight:700, color:'#1d4ed8' }}>📅 dia {ds.indexOf(rel) + 1} de {ds.length}</div>
+                                      ) })()}
                                     </>
                                   })()}
                                 </td>
@@ -2558,7 +2622,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                 const CAT_ICON = CATEGORIA_ICON
                                 return (
                                 <tr>
-                                  <td colSpan={10} style={{ background:'#f0f8f4', borderBottom:`2px solid ${theme.cardBorder2}`, padding:0 }}>
+                                  <td colSpan={11} style={{ background:'#f0f8f4', borderBottom:`2px solid ${theme.cardBorder2}`, padding:0 }}>
                                     <div style={{ display:'flex', gap:20, padding:'16px 20px', flexWrap:'wrap' }}>
                                       <DetailCol title="Localização" items={[['Local',rel.localizacao],['GPS',rel.gps_lat?`${rel.gps_lat}, ${rel.gps_lng}`:'—'],['Área Total',rel.area_ha?`${fmtHa(rel.area_ha)} ha`:null],['Área Aplicada',rel.area_ha?`${fmtHa(areaLiquida(rel))} ha`:null]]} />
                                       <DetailCol title="Cond. Início" items={COND_KEYS.map((k,ii)=>[COND_LABELS[ii],rel[k+'_i']])} />
@@ -9108,6 +9172,26 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
             <div style={{ display:'flex', gap:10 }}>
               <button style={{ ...sG.btn, background:theme.bg, color:theme.textMuted, flex:1 }} onClick={() => setConfirmSair(false)}>Cancelar</button>
               <button style={{ ...sG.btn, background:theme.dangerText, flex:1 }} onClick={signOut}>Sair</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {escolhaDias && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.5)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }} onClick={() => setEscolhaDias(null)}>
+          <div style={{ background:theme.card, borderRadius:16, width:'100%', maxWidth:420, padding:24 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontFamily:"'Syne',sans-serif", fontSize:17, fontWeight:700, marginBottom:8 }}>📅 Talhão feito em {escolhaDias.dias.length} dias</div>
+            <div style={{ fontSize:12.5, color:theme.textMuted, marginBottom:14, lineHeight:1.5 }}>
+              {escolhaDias.dias.map(d => `${new Date(d.dt_inicio || d.created_at).toLocaleDateString('pt-BR')}: ${fmtHa(areaLiquida(d))} ha`).join(' · ')}
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <button style={{ ...sG.btn, background:'#059669' }} onClick={() => { const e = escolhaDias; setEscolhaDias(null); gerarPDF(e.rel, null, null, e.tipo, 'dia') }}>
+                Só este dia ({new Date(escolhaDias.rel.dt_inicio || escolhaDias.rel.created_at).toLocaleDateString('pt-BR')}, {fmtHa(areaLiquida(escolhaDias.rel))} ha)
+              </button>
+              <button style={{ ...sG.btn, background:'#1E293B' }} onClick={() => { const e = escolhaDias; setEscolhaDias(null); gerarPDF(e.rel, null, null, e.tipo, 'talhao') }}>
+                Talhão completo — os {escolhaDias.dias.length} dias somados ({fmtHa(escolhaDias.dias.reduce((a, d) => a + areaLiquida(d), 0))} ha)
+              </button>
+              <button style={{ ...sG.btn, background:theme.bg, color:theme.textMuted }} onClick={() => setEscolhaDias(null)}>Cancelar</button>
             </div>
           </div>
         </div>

@@ -111,6 +111,7 @@ function initForm(data) {
       qtd_voos:data.qtd_voos||1,tipo_servico:data.tipo_servico||'area_total',
       piloto_nome:data.piloto_nome||'',drone:data.drone||'',droneOutro:'',
       compartilhado:!!data.compartilhado,
+      continuacao_de:data.continuacao_de||null,
       produtos:data.produtos?.length
         ? data.produtos.map(p=>{
             // Remove unidade da dosagem para edição: "Moddus - 1.1 Kg/ha" → "Moddus - 1.1"
@@ -170,6 +171,7 @@ function initForm(data) {
     pausas:[],obs1:'',obs2:'',bordadura:'',area_total_aplicada:'',bordaduraPorTalhao:{},areaAplicadaPorTalhao:{},areaNaoAplicadaPorTalhao:{},area_feita_por_talhao:{},evid_meta:{},
     area_feita:'',area_deduzida:'',teste:false,area_nao_aplicada:'',area_talhao_total:0,saldoPorTalhao:{},talhoesFechados:null,monitoramento_clima:null,
     area_feita_anterior:0,area_feita_por_talhao_anterior:{},bordadura_anterior:0,bordaduraPorTalhao_anterior:{},
+    continuacao_de:null,
   }
 }
 
@@ -1659,6 +1661,7 @@ export default function PilotApp({onSwitchMode}) {
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:form[k+'_i'],[k+'_f']:form[k+'_f']}),{}),
       ordem_servico: osAtual || gerarOrdemServico(),
       teste: !!form.teste,
+      continuacao_de: form.continuacao_de || null,
       monitoramento_clima: limparFicha(form.monitoramento_clima),
       nao_aplicada_detalhe: naoAplicadaDetalhe,
       // Status do estado atual do voo, salvo se a chamada mandar outro. O 💾 do Passo 5 salvava
@@ -1673,6 +1676,35 @@ export default function PilotApp({onSwitchMode}) {
   // um voo recém-salvo (ex: Finalizado Parcial) só aparecia no progresso do talhão depois de
   // recarregar a página inteira, porque essa lista é buscada uma única vez ao abrir o app. Vale
   // também pro voo salvo só no aparelho: o próximo voo no mesmo talhão já pega o saldo certo.
+  // Progresso de um talhão (todos os pilotos) desde o último "zerar" da fazenda no Admin. Voo de
+  // vários talhões: o que o piloto digitou em cada um (voos da v9.8 em diante) ou, nos antigos, a
+  // área dividida pelo tamanho cadastrado — ver rateioPorTalhao no pdf.js.
+  function progressoDoTalhao(fz, t, talhoesDaFazenda, lista = relatoriosFinalizadosOrg) {
+    const areaTotal = parseFloat(t.area_ha)||0
+    if(areaTotal<=0) return null
+    const cadastro = Object.fromEntries(talhoesDaFazenda.map(x=>[x.nome, x.area_ha]))
+    let areaRealizada = 0
+    let bordaduraRealizada = 0
+    lista.forEach(r=>{
+      if(r.cliente!==fz.cliente || r.fazenda!==fz.nome) return
+      if(fz.campanha_inicio && new Date(r.created_at) < new Date(fz.campanha_inicio)) return
+      const parte = rateioPorTalhao(r, cadastro)[t.nome]
+      if(!parte) return
+      areaRealizada += parte.area
+      bordaduraRealizada += parte.bordadura
+    })
+    // Bordadura conta como "feito" pro fim de fechamento — ela é área deliberadamente
+    // não pulverizada (faixa de segurança), não trabalho pendente.
+    const feito = areaRealizada + bordaduraRealizada
+    const falta = Math.max(0, areaTotal-feito)
+    // Tolerância de 0,05 ha: abaixo disso a tela já arredonda "falta" pra 0,0 (1 casa
+    // decimal) — sem essa margem, um talhão que já bateu 99,97% (erro de arredondamento
+    // acumulado ao dividir área entre voos com vários talhões) ficava preso mostrando
+    // "faltam 0.0 ha" pra sempre em vez de sumir da lista como concluído.
+    const concluido = falta <= 0.05
+    return { areaTotal, areaRealizada, bordaduraRealizada, falta, concluido, pct: Math.min(100,(feito/areaTotal)*100) }
+  }
+
   function atualizarProgressoOrg(rd){
     if (!rd || (rd.status!=='finalizado' && rd.status!=='pausado_dia')) return
     setRelatoriosFinalizadosOrg(prev => {
@@ -1869,6 +1901,7 @@ export default function PilotApp({onSwitchMode}) {
       dt_inicio:new Date(`${n.data}T${n.hh}:${n.mm}:00`).toISOString(),
       kml_arquivos:kmlFiles.map(f=>f.name),
       ...COND_KEYS.reduce((a,k)=>({...a,[k+'_i']:nf[k+'_i'],[k+'_f']:nf[k+'_f']}),{}),
+      continuacao_de: nf.continuacao_de || null,
       status:'em_operacao'
     }
     // Uma retentativa agendada antes (ex.: o "Próximo" do Passo 3 sem sinal) reenviaria o voo
@@ -2759,6 +2792,70 @@ export default function PilotApp({onSwitchMode}) {
     showToast(st==='paused_day'?'🌙 Voo retomado do dia anterior!':'✏️ Voo carregado')
   }
 
+  // Retomar um Finalizado Parcial abre o voo do DIA: um relatório novo, ligado ao parcial pelo
+  // `continuacao_de`, só com o que for aplicado hoje (Rodolfo, 10/11/2026 — a Bracell quer a
+  // produção por dia; o retomado somava tudo, e o relatório do 2º dia saía com o talhão
+  // inteiro). O parcial fica como o relatório do dia dele. Saldo do talhão, baixa de estoque e
+  // clima já são por relatório: o voo novo nasce com o saldo e desconta só o que ele fizer.
+  function continuarParcial(){
+    const anteriorId = relIdRef.current || relId
+    if(!anteriorId) return
+    const f0 = form
+    const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
+    const fz = fazendasDB.find(x=>norm(x.cliente)===norm(clienteVal) && norm(x.nome)===norm(f0.fazenda))
+    const talhoesFaz = fz ? talhoesDB.filter(t=>t.fazenda_id===fz.id) : []
+    const nomes = (f0.talhao||'').split(',').map(x=>x.trim()).filter(Boolean)
+    // O parcial entra na conta mesmo que a lista do aparelho ainda não tenha ele.
+    const lista = relatoriosFinalizadosOrg.some(r=>r.id===anteriorId) ? relatoriosFinalizadosOrg
+      : [...relatoriosFinalizadosOrg, montarPayload({status:'pausado_dia'})]
+    const saldos = {}
+    let semCadastro = !nomes.length
+    nomes.forEach(nome=>{
+      const t = talhoesFaz.find(x=>x.nome===nome)
+      const prog = fz && t ? progressoDoTalhao(fz,t,talhoesFaz,lista) : null
+      if(!prog) { semCadastro = true; return }
+      saldos[nome] = +Math.max(0,prog.falta).toFixed(2)
+    })
+    // Sem cadastro do talhão: o que faltava neste voo (escopo menos o percorrido).
+    const abertos = semCadastro ? nomes : nomes.filter(n=>saldos[n]>0.05)
+    const saldo = semCadastro ? Math.max(0,(parseFloat(f0.area_ha)||0)-(parseFloat(f0.area_feita)||0))
+      : abertos.reduce((a,n)=>a+saldos[n],0)
+    if(!abertos.length || saldo<=0.05){ showToast('Este talhão já está completo — não sobrou área pra hoje.','error'); return }
+    if(!guardarVooAtualNaFila()) return
+    const tamanho = abertos.reduce((a,n)=>a+(parseFloat(talhoesFaz.find(x=>x.nome===n)?.area_ha)||0),0)
+    const nomesAbertos = abertos.join(', ')
+    relIdRef.current=null
+    try{localStorage.removeItem(LS_KEY)}catch{}
+    setForm({...initForm(),
+      cultura:f0.cultura, cliente:f0.cliente, clienteOutro:f0.clienteOutro, fazenda:f0.fazenda,
+      produto:f0.produto, produtos:f0.produtos, tipo_servico:f0.tipo_servico, compartilhado:f0.compartilhado,
+      drone:f0.drone, droneOutro:f0.droneOutro, tamanho_gota:f0.tamanho_gota,
+      velocidade_drone:f0.velocidade_drone, altura:f0.altura,
+      faixa_i:f0.faixa_i, faixa_f:f0.faixa_i, vazao_i:f0.vazao_i, vazao_f:f0.vazao_i,
+      gps_lat:f0.gps_lat, gps_lng:f0.gps_lng,
+      talhao:nomesAbertos, localizacao:nomesAbertos, area_ha:String(+saldo.toFixed(2)),
+      area_talhao_total: tamanho>0 ? +tamanho.toFixed(2) : 0,
+      saldoPorTalhao: Object.fromEntries(abertos.filter(n=>n in saldos).map(n=>[n,saldos[n]])),
+      continuacao_de: anteriorId })
+    marcarParcialContinuado(anteriorId)
+    setOpState('idle');setRelId(null);setOsAtual(null);setSaveStatus(null);setPendingSync(false)
+    setMotivoNaoAplicada('');setMotivoNaoAplicadaPorTalhao({})
+    setObsFotos([null,null,null]);setObsFotoFiles([null,null,null])
+    setFotoMapa(null);setFotoMapaFile(null)
+    setStorageFotoMapa(null);setStorageObsFotos([null,null,null])
+    setKmlFiles([])
+    // Começa pelas condições: o clima de hoje é outro.
+    setWizardStep(3)
+    showToast(`🌅 Voo de hoje: ${fmtHa(saldo)} ha que faltam. Registre o clima e inicie.`)
+  }
+  // Parcial já continuado num voo do dia sai da lista de abertos. Guardado no aparelho também,
+  // pra sumir na hora e sem sinal — o servidor confirma pelo `continuacao_de` do voo novo.
+  function parciaisContinuados(){ try { return JSON.parse(localStorage.getItem('orofly_parciais_continuados')||'[]') } catch { return [] } }
+  function marcarParcialContinuado(id){
+    try { localStorage.setItem('orofly_parciais_continuados', JSON.stringify([...new Set([...parciaisContinuados(), id])].slice(-200))) } catch {}
+    setFlightsAbertos(fs=>fs.filter(f=>f.id!==id))
+  }
+
   // Todos os voos desse piloto ainda em aberto (rodando, pausado ou parcial) — consultado direto
   // no servidor porque pode ter mais de um (ex: um parcial esquecido de outro dia + um rodando agora),
   // e o estado local só sabe do último que passou por esse aparelho.
@@ -2771,12 +2868,22 @@ export default function PilotApp({onSwitchMode}) {
       const {data,error} = await comPrazo(supabase.from('relatorios').select('*')
         .eq('piloto_id',profile.id).in('status',ABERTOS).order('created_at',{ascending:false}), 15000)
       if(error) throw error
-      setFlightsAbertos(data||[]); saveCache('orofly_cache_voos_abertos',data||[])
+      // Parcial que já tem voo do dia (continuacao_de) não está mais em aberto.
+      const idsParciais = (data||[]).filter(r=>r.status==='pausado_dia').map(r=>r.id)
+      let continuados = parciaisContinuados()
+      if(idsParciais.length){
+        const { data: filhos, error: e2 } = await supabase.from('relatorios').select('continuacao_de').in('continuacao_de', idsParciais)
+        if(!e2) continuados = [...continuados, ...(filhos||[]).map(f=>f.continuacao_de)]
+      }
+      const abertos = (data||[]).filter(r=>!(r.status==='pausado_dia' && continuados.includes(r.id)))
+      setFlightsAbertos(abertos); saveCache('orofly_cache_voos_abertos',abertos)
     } catch(e) {
       // Sem sinal: os abertos guardados, com o que mudou no aparelho por cima (um parcial
       // retomado e finalizado aqui já não está em aberto).
+      const continuados = parciaisContinuados()
       setFlightsAbertos(comVoosDoAparelho(loadCache('orofly_cache_voos_abertos').filter(r=>r.piloto_id===profile.id))
-        .filter(r=>ABERTOS.includes(r.id===relId ? statusAtual() : r.status)))
+        .filter(r=>ABERTOS.includes(r.id===relId ? statusAtual() : r.status))
+        .filter(r=>!(r.status==='pausado_dia' && continuados.includes(r.id))))
     }
   }
   useEffect(()=>{ carregarFlightsAbertos() },[profile?.id,opState]) // eslint-disable-line
@@ -5540,31 +5647,7 @@ Quando: ${tempoErroDebug.quando}`}
               // fazenda no Admin. Voo de vários talhões: o que o piloto digitou em cada um (voos
               // da v9.8 em diante) ou, nos antigos, a área dividida pelo tamanho cadastrado —
               // ver rateioPorTalhao no pdf.js.
-              const progressoTalhao = (fz, t, talhoesDaFazenda) => {
-                const areaTotal = parseFloat(t.area_ha)||0
-                if(areaTotal<=0) return null
-                const cadastro = Object.fromEntries(talhoesDaFazenda.map(x=>[x.nome, x.area_ha]))
-                let areaRealizada = 0
-                let bordaduraRealizada = 0
-                relatoriosFinalizadosOrg.forEach(r=>{
-                  if(r.cliente!==fz.cliente || r.fazenda!==fz.nome) return
-                  if(fz.campanha_inicio && new Date(r.created_at) < new Date(fz.campanha_inicio)) return
-                  const parte = rateioPorTalhao(r, cadastro)[t.nome]
-                  if(!parte) return
-                  areaRealizada += parte.area
-                  bordaduraRealizada += parte.bordadura
-                })
-                // Bordadura conta como "feito" pro fim de fechamento — ela é área deliberadamente
-                // não pulverizada (faixa de segurança), não trabalho pendente.
-                const feito = areaRealizada + bordaduraRealizada
-                const falta = Math.max(0, areaTotal-feito)
-                // Tolerância de 0,05 ha: abaixo disso a tela já arredonda "falta" pra 0,0 (1 casa
-                // decimal) — sem essa margem, um talhão que já bateu 99,97% (erro de arredondamento
-                // acumulado ao dividir área entre voos com vários talhões) ficava preso mostrando
-                // "faltam 0.0 ha" pra sempre em vez de sumir da lista como concluído.
-                const concluido = falta <= 0.05
-                return { areaTotal, areaRealizada, bordaduraRealizada, falta, concluido, pct: Math.min(100,(feito/areaTotal)*100) }
-              }
+              const progressoTalhao = (fz, t, talhoesDaFazenda) => progressoDoTalhao(fz, t, talhoesDaFazenda)
               // Acha o voo Finalizado Parcial mais recente ainda em aberto pra esse talhão — de
               // QUALQUER piloto, não só o logado (outro piloto pode complementar o que já foi
               // feito). Usado pra oferecer "Continuar este voo" direto na lista de talhões.
@@ -6352,11 +6435,10 @@ Quando: ${tempoErroDebug.quando}`}
                       setParcialModalOpen(true)
                     }}>✏️ Editar progresso</button>
                   <button style={{background:'#ffb020',color:theme.text,border:'none',borderRadius:18,padding:'10px 24px',fontWeight:700,fontSize:14,cursor:'pointer'}}
-                    onClick={async()=>{
-                      setOpState('running');setTimerSecs(0)
-                      await saveToSupabase({status:'em_operacao'})
-                      showToast('▶️ Operação retomada!')
-                    }}>▶️ Retomar operação</button>
+                    onClick={continuarParcial}>▶️ Continuar hoje</button>
+                </div>
+                <div style={{fontSize:11,color:'#cddbd2',textAlign:'center',marginTop:10,lineHeight:1.45}}>
+                  "Continuar hoje" abre o voo de hoje com o que falta. Este parcial fica como o relatório do dia em que foi feito.
                 </div>
               </div>
               )
