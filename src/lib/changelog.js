@@ -14,6 +14,8 @@ export const NOVIDADES = [
     versao: '12.9',
     data: '2026-11-14',
     itens: [
+      { tipo: 'novo', titulo: 'Frota', ir: 'frota',
+        texto: 'Em Gestão > Frota: os veículos, geradores e baterias que levam o drone até a fazenda. Painel com custo da frota no mês (combustível, manutenção, IPVA/seguro/licenciamento e depreciação), custo por km e alertas; cadastro completo (tipo, horímetro do gerador, consumo esperado, base, documentos e vencimentos); abastecimentos com consumo real (km/L ou L/h); planos de manutenção por km, horas ou meses com aviso de próxima e vencida; viagens por cliente, fazenda e OS com custo estimado; checklist de saída (veículo + kit da operação) em que item crítico reprovado bloqueia o veículo até a liberação; baterias com ciclos e garantia; CNH dos motoristas; Excel do mês.' },
       { tipo: 'novo', titulo: 'Gestão financeira (Beta)', ir: 'financeiro',
         texto: 'Em Administrativo & Financeiro > Gestão financeira (Beta), só para admin: lançamentos a pagar e a receber (previsto, realizado e vencido, com importação por planilha e exportação em Excel), dashboard com saldo em caixa, fluxo de caixa e próximos vencimentos, DRE por competência ou caixa (clicando na linha aparecem os lançamentos), orçamento mensal com orçado × realizado e cascata do EBITDA, e o simulador de preço por hectare (frota, baterias, gerador, caminhonetes, equipe, administrativo, impostos, margem e risco), que gera a proposta em PDF e vira conta a receber. O botão "Trazer do Orofly" cria as contas a receber pelos hectares voados × preço do cliente e as despesas pelas notas dos pilotos, sem duplicar.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima: uma ficha por dia quando o voo vira a noite', ir: 'monitclima',

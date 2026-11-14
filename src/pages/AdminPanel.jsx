@@ -58,6 +58,7 @@ import ParamsPadraoCampos from '../components/ParamsPadraoCampos'
 import RegulamentacaoMapa from '../components/RegulamentacaoMapa'
 import MonitoramentoClimaAdmin from '../components/MonitoramentoClimaAdmin'
 import FinanceiroBeta from '../components/FinanceiroBeta'
+import FrotaGestao from '../components/FrotaGestao'
 import DocumentosFazenda from '../components/DocumentosFazenda'
 import { CATEGORIAS_DOC, categoriaDoc, palpiteCategoria, caminhoDocumento, tamanhoLegivel } from '../lib/documentosFazenda'
 import ApontamentoDiario from '../components/ApontamentoDiario'
@@ -2215,6 +2216,7 @@ export default function AdminPanel({ onSwitchMode }) {
           ['gestao', '🗂️ Gestão', [
             ['fazendas', '🌾', 'Fazendas & Clientes', invFazendas.length],
             ['inventario', '📦', 'Inventário', invDrones.length + invProdutos.length],
+            ['frota', '🛻', 'Frota', ''],
             ['arquivos', '🗂️', 'Arquivos', ''],
             ['monitclima', '🌡️', 'Monitoramento Climático (Beta)', ''],
           ]],
@@ -8160,6 +8162,11 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
 
           {/* Lançamentos, DRE, orçamento e simulador (plataforma do Isaque, 14/11/2026). Só admin:
               as tabelas fin_* têm RLS de admin. */}
+          {/* Frota: veículos, geradores e baterias que levam o drone até a fazenda (14/11/2026). */}
+          {tab === 'frota' && (
+            <FrotaGestao supabase={supabase} showToast={showToast} isMobile={isMobile} pilotos={pilotos} clientes={invClientes} fazendas={invFazendas} />
+          )}
+
           {tab === 'financeiro' && profile?.role === 'admin' && (
             <FinanceiroBeta relatorios={relatorios} custos={custos} clientes={invClientes} drones={invDrones}
               empresa={configGeral.empresa} supabase={supabase} showToast={showToast} isMobile={isMobile} />
