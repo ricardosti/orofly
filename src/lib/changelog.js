@@ -14,6 +14,8 @@ export const NOVIDADES = [
     versao: '12.9',
     data: '2026-11-14',
     itens: [
+      { tipo: 'melhoria', titulo: 'Ficha de clima: uma ficha por dia quando o voo vira a noite', ir: 'monitclima',
+        texto: 'Voo que começou num dia e terminou no outro (ex.: das 17h do dia 6 às 11h do dia 7) saía num cabeçalho só, com a data do primeiro dia e as baterias dos dois dias misturadas. Agora o PDF e o Excel separam por dia: cada data vira uma ficha com o próprio cabeçalho e a numeração dos voos recomeça. Com a área ou o volume da planilha do drone, cada dia leva a soma das baterias dele. Se a "Data na ficha" for preenchida, vale ela e a ficha não se divide. Pedido do Rodolfo.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima: data e piloto editáveis', ir: 'monitclima',
         texto: 'Na ficha de um voo, em Monitoramento Climático > Editar, entraram os campos "Data na ficha" e "Piloto na ficha". Em branco, saem a data e o piloto do voo; preenchidos, é o que sai no PDF e no Excel. Pedido do Rodolfo.' },
       { tipo: 'melhoria', titulo: 'Formulário Nardini com o código de prestador', ir: 'relatorios',

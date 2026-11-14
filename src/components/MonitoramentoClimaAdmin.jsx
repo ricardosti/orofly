@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTheme } from '../lib/theme'
 import FichaClimaEditor from './FichaClimaEditor'
-import { fichaParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO, climaSerie, fontesDaFicha, FONTES_AREA, FONTES_VOLUME } from '../lib/monitoramentoClima'
+import { fichasParaExportar, gerarPdfFichas, planilhaFichasBlob, limparFicha, MONITORAMENTO_PADRAO, climaSerie, fontesDaFicha, FONTES_AREA, FONTES_VOLUME } from '../lib/monitoramentoClima'
 import { lerRegistroDrone, bateriasDoVoo, gruposPorTalhao, bateriasParaFicha, completarClima, areaDasBaterias } from '../lib/registroDrone'
 import { lerRegistroKestrel, climaDaKestrel, semKestrel } from '../lib/registroKestrel'
 import { salvarOuCompartilharPdf, salvarOuCompartilharBlob } from '../lib/nativeShare'
@@ -198,9 +198,10 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
     if (!escolhidas.length) { showToast('Nenhuma ficha no período', 'error'); return }
     // Ordem cronológica na ficha impressa (a lista na tela é da mais nova pra mais antiga).
     const intervaloMin = parseInt(agruparMin, 10) || 0
-    const fichas = [...escolhidas].reverse().map(x => x.tipo === 'voo'
-      ? fichaParaExportar({ rel: x.rel, fazendaCodigo: codigoDaFazenda(x.rel), intervaloMin, fonteArea, fonteVolume })
-      : fichaParaExportar({ manual: x.manual, intervaloMin, fonteArea, fonteVolume }))
+    // Operação que virou o dia sai em uma ficha por dia (fichasParaExportar).
+    const fichas = [...escolhidas].reverse().flatMap(x => x.tipo === 'voo'
+      ? fichasParaExportar({ rel: x.rel, fazendaCodigo: codigoDaFazenda(x.rel), intervaloMin, fonteArea, fonteVolume })
+      : fichasParaExportar({ manual: x.manual, intervaloMin, fonteArea, fonteVolume }))
     const nome = `monitoramento-climatico-${de || 'inicio'}-a-${ate || 'hoje'}`
     try {
       if (tipo === 'pdf') await salvarOuCompartilharPdf(gerarPdfFichas(fichas, { colunas, comArea }), `${nome}.pdf`)

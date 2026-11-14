@@ -178,12 +178,14 @@ export function fontesDaFicha({ rel, manual }) {
 
 // Ficha pronta pra exportar, a partir de um voo registrado (relatório) ou de uma ficha manual.
 // Sem `fonteArea`/`fonteVolume`, vale o de antes: área digitada ou a do voo, volume digitado.
-export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMin = 0, fonteArea, fonteVolume }) {
+// `dia` (de fichasParaExportar): só os voos daquela data, com a data dela no cabeçalho.
+export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMin = 0, fonteArea, fonteVolume, dia = null }) {
   const d = (rel ? rel.monitoramento_clima : manual?.dados) || {}
   // Com a planilha do drone importada, as colunas são as baterias (Voo 01 = 1ª bateria), cada
   // uma com a área dela; sem ela, as leituras de clima.
   const baterias = (d.baterias || []).filter(v => v && Object.values(v).some(temValor))
-  const voos = agruparLeituras((baterias.length ? baterias : (d.voos || [])).filter(v => v && Object.values(v).some(temValor)), intervaloMin)
+  const doDia = dia ? dia.voos : (baterias.length ? baterias : (d.voos || [])).filter(v => v && Object.values(v).some(temValor))
+  const voos = agruparLeituras(doDia, intervaloMin)
   const fazenda = rel ? rel.fazenda : manual?.fazenda
   const codigo = rel ? fazendaCodigo : manual?.fazenda_codigo
   const vazao = rel ? num(rel.vazao_i || rel.vazao_f) : NaN
@@ -209,9 +211,19 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
     const v = fonteVolume === 'branco' ? null : fontes.volume[fonteVolume]
     volume = v == null ? '' : typeof v === 'number' ? fmt(v, 1) : v
   }
+  // Ficha de um dia de uma operação que virou o dia: da planilha do drone sai a soma das
+  // baterias DAQUELE dia; o digitado e o do voo valem pra operação inteira, então ficam só no
+  // primeiro dia (repetir em cada dia contaria a área duas vezes).
+  if (dia) {
+    const litrosDia = doDia.reduce((a, b) => a + (typeof b.litros === 'number' ? b.litros : num(b.litros) || 0), 0)
+    if (fonteArea === 'drone') { const v = areaDasBaterias(doDia); areaCab = v > 0 ? fmt(v) : '' }
+    else if (!dia.primeiro) areaCab = ''
+    if (fonteVolume === 'drone') volume = litrosDia > 0 ? fmt(litrosDia, 1) : ''
+    else if (!dia.primeiro) volume = ''
+  }
   // Data e piloto digitados na ficha do voo valem por cima dos do voo (Rodolfo, 14/11/2026:
   // voo lançado por outro piloto, ou um dia de talhão lançado em outra data).
-  const dataCab = temValor(d.data_ficha) ? dataBR(d.data_ficha) : rel ? dataBR(rel.dt_inicio || rel.created_at) : dataBR(manual?.data)
+  const dataCab = dia ? dataBR(dia.data) : temValor(d.data_ficha) ? dataBR(d.data_ficha) : rel ? dataBR(rel.dt_inicio || rel.created_at) : dataBR(manual?.data)
   const pilotoCab = temValor(d.piloto_ficha) ? d.piloto_ficha : rel ? (rel.piloto_nome || '') : (manual?.piloto || '')
   return {
     cabecalho: [
@@ -223,8 +235,31 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
     ],
     voos,
     porBateria: baterias.length > 0,
-    observacoes: [d.observacoes, ...voos.map((v, i) => v.obs ? `Voo ${String(i + 1).padStart(2, '0')}: ${v.obs}` : '')].filter(Boolean).join(' · '),
+    observacoes: [dia && !dia.primeiro ? '' : d.observacoes, ...voos.map((v, i) => v.obs ? `Voo ${String(i + 1).padStart(2, '0')}: ${v.obs}` : '')].filter(Boolean).join(' · '),
   }
+}
+
+// Uma ficha por DIA: operação que virou a noite (começou às 17h do dia 6 e terminou às 11h do
+// dia 7) saía num cabeçalho só, com a data do dia 6, e as baterias do dia 7 misturadas
+// (Rodolfo, 14/11/2026). O dia de cada voo vem do horário registrado dele (baterias da planilha
+// do drone e leituras automáticas); voo digitado sem horário fica no dia do anterior. Com a data
+// digitada na ficha ("Data na ficha"), vale a escolha de quem editou: não divide.
+const diaDe = iso => { const t = Date.parse(iso); return isNaN(t) ? null : new Date(t).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) }
+export function fichasParaExportar(args) {
+  const { rel, manual } = args
+  const d = (rel ? rel.monitoramento_clima : manual?.dados) || {}
+  if (temValor(d.data_ficha)) return [fichaParaExportar(args)]
+  const baterias = (d.baterias || []).filter(v => v && Object.values(v).some(temValor))
+  const lista = (baterias.length ? baterias : (d.voos || [])).filter(v => v && Object.values(v).some(temValor))
+  const dias = []
+  for (const v of lista) {
+    const dt = diaDe(v.registrado_em)
+    const ult = dias[dias.length - 1]
+    if (!ult || (dt && ult.data && dt !== ult.data)) dias.push({ data: dt, voos: [v] })
+    else { ult.voos.push(v); if (!ult.data) ult.data = dt }
+  }
+  if (dias.length <= 1 || dias.some(x => !x.data)) return [fichaParaExportar(args)]
+  return dias.map((x, k) => fichaParaExportar({ ...args, dia: { ...x, primeiro: k === 0 } }))
 }
 
 // Divide em blocos de até `colunas` voos (o papel tem 10).
