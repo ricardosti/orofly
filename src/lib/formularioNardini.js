@@ -106,7 +106,8 @@ export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = 
 
   const temp = rel.temperatura_i || rel.temperatura_f
   const vento = rel.vento_i || rel.vento_f
-  const observacoes = [...obs.resto, ...String(rel.obs2 || '').split('\n').map(s => s.trim()).filter(Boolean)].join('\n')
+  // Código de prestador da Orofly na Usina, sempre na primeira linha (Rodolfo, 14/11/2026).
+  const observacoes = [CODIGO_PRESTADOR_NARDINI, ...obs.resto, ...String(rel.obs2 || '').split('\n').map(s => s.trim()).filter(Boolean)].join('\n')
 
   return {
     data: dataLocal(rel.dt_inicio || rel.created_at),
@@ -132,6 +133,8 @@ const PRETO = [17, 17, 17]
 const CINZA_BARRA = [64, 64, 64]
 const CINZA_CAB = [228, 228, 228]
 const TINTA = [20, 45, 110] // o "preenchido", em azul-escuro, como caneta no papel
+
+export const CODIGO_PRESTADOR_NARDINI = 'Rural - 33'
 
 export function gerarFormularioNardini(rel, opts = {}) {
   const d = dadosFormularioNardini(rel, opts)

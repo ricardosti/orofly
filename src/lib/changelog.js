@@ -11,6 +11,16 @@
 
 export const NOVIDADES = [
   {
+    versao: '12.9',
+    data: '2026-11-14',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Ficha de clima: data e piloto editáveis', ir: 'monitclima',
+        texto: 'Na ficha de um voo, em Monitoramento Climático > Editar, entraram os campos "Data na ficha" e "Piloto na ficha". Em branco, saem a data e o piloto do voo; preenchidos, é o que sai no PDF e no Excel. Pedido do Rodolfo.' },
+      { tipo: 'melhoria', titulo: 'Formulário Nardini com o código de prestador', ir: 'relatorios',
+        texto: 'O quadro de Observações do Formulário Nardini sai sempre com "Rural - 33" (o código da Orofly na Usina) na primeira linha. Pedido do Rodolfo.' },
+    ],
+  },
+  {
     versao: '12.8',
     data: '2026-11-10',
     itens: [

@@ -326,6 +326,19 @@ export default function MonitoramentoClimaAdmin({ relatorios, setRelatorios, faz
             {relDoEditor ? (
               <div style={{ background: theme.bg, borderRadius: 10, padding: '10px 12px', fontSize: 12.5, color: theme.text, marginBottom: 12 }}>
                 🚁 {dataBR(dataIso(relDoEditor.dt_inicio || relDoEditor.created_at))} · {relDoEditor.cliente} · <b>{relDoEditor.fazenda}</b>{codigoDaFazenda(relDoEditor) ? ` (${codigoDaFazenda(relDoEditor)})` : ''} · talhão {relDoEditor.localizacao || '—'} · {relDoEditor.piloto_nome}
+                {/* Data e piloto que saem na ficha: em branco, os do voo (Rodolfo, 14/11/2026). */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 10 }}>
+                  <div>
+                    <div style={rot}>DATA NA FICHA</div>
+                    <input type="date" style={{ ...campo, width: '100%' }} value={editor.dados?.data_ficha || dataIso(relDoEditor.dt_inicio || relDoEditor.created_at) || ''}
+                      onChange={e => { const v = e.target.value; setEditor(ed => ({ ...ed, dados: { ...(ed.dados || {}), data_ficha: v === dataIso(relDoEditor.dt_inicio || relDoEditor.created_at) ? '' : v } })) }} />
+                  </div>
+                  <div>
+                    <div style={rot}>PILOTO NA FICHA</div>
+                    <input style={{ ...campo, width: '100%' }} placeholder={relDoEditor.piloto_nome || 'Nome do piloto'} value={editor.dados?.piloto_ficha || ''}
+                      onChange={e => { const v = e.target.value; setEditor(ed => ({ ...ed, dados: { ...(ed.dados || {}), piloto_ficha: v } })) }} />
+                  </div>
+                </div>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginBottom: 12 }}>

@@ -40,7 +40,7 @@ export function limparFicha(f) {
   if (!f) return null
   const voos = (f.voos || []).filter(v => v && Object.values(v).some(temValor))
   const out = { ...f, voos }
-  const temCab = ['auxiliar', 'tecnico_regional', 'supervisor', 'area_aplicada', 'volume_consumido', 'recomendacao', 'observacoes'].some(k => temValor(f[k]))
+  const temCab = ['auxiliar', 'tecnico_regional', 'supervisor', 'area_aplicada', 'volume_consumido', 'recomendacao', 'observacoes', 'data_ficha', 'piloto_ficha'].some(k => temValor(f[k]))
   return voos.length || temCab || (f.baterias || []).length ? out : null
 }
 
@@ -209,12 +209,16 @@ export function fichaParaExportar({ rel, manual, fazendaCodigo = '', intervaloMi
     const v = fonteVolume === 'branco' ? null : fontes.volume[fonteVolume]
     volume = v == null ? '' : typeof v === 'number' ? fmt(v, 1) : v
   }
+  // Data e piloto digitados na ficha do voo valem por cima dos do voo (Rodolfo, 14/11/2026:
+  // voo lançado por outro piloto, ou um dia de talhão lançado em outra data).
+  const dataCab = temValor(d.data_ficha) ? dataBR(d.data_ficha) : rel ? dataBR(rel.dt_inicio || rel.created_at) : dataBR(manual?.data)
+  const pilotoCab = temValor(d.piloto_ficha) ? d.piloto_ficha : rel ? (rel.piloto_nome || '') : (manual?.piloto || '')
   return {
     cabecalho: [
       [fazenda, codigo ? `(${codigo})` : ''].filter(Boolean).join(' '),
       rel ? (rel.localizacao || '') : (manual?.talhao || ''),
-      rel ? dataBR(rel.dt_inicio || rel.created_at) : dataBR(manual?.data),
-      rel ? (rel.piloto_nome || '') : (manual?.piloto || ''),
+      dataCab,
+      pilotoCab,
       d.auxiliar || '', d.tecnico_regional || '', d.supervisor || '', areaCab, volume, recomendacao,
     ],
     voos,
