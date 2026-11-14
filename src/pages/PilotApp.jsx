@@ -19,6 +19,7 @@ import { listarMapasAvulsos, excluirMapaAvulso } from '../lib/mapasAvulsos'
 import { reverseGeocode } from '../lib/geocode'
 import { lerNotaFiscal, lerNotaPorOcr, consultarSefaz } from '../lib/notaFiscal'
 import { guardarNaFila, removerDaFila, listarFila, enviarDespesa, ehFalhaDeRede, comPrazo, pedirArmazenamentoPersistente, guardarIncidenteNaFila, removerIncidenteDaFila, listarIncidentesNaFila, enviarIncidente } from '../lib/filaDespesas'
+import VeiculoPiloto from '../components/VeiculoPiloto'
 import { listarVoosNaFila, enfileirarVoo, removerVooDaFila, guardarFoto, apagarFoto, fotosDoVoo, arquivoGuardado, apagarFotosDoVoo, enviarFotosGuardadas, enviarLinhaDoVoo } from '../lib/filaVoos'
 import { comprimirImagem } from '../lib/imagem'
 import { abrirCamera, abrirGaleria, cameraNativaDisponivel } from '../lib/camera'
@@ -1142,7 +1143,7 @@ export default function PilotApp({onSwitchMode}) {
     // usados por areaLiquida() pra saber quanto desse voo parcial já foi líquido aplicado).
     supabase.from('relatorios').select('id,cliente,fazenda,area_ha,bordadura,created_at,localizacao,status,area_feita,piloto_nome,area_feita_detalhe,bordadura_detalhe').in('status',['finalizado','pausado_dia'])
       .then(({data}) => { if(data) setRelatoriosFinalizadosOrg(data) })
-    supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo').eq('ativo',true).order('placa')
+    supabase.from('veiculos').select('id,placa,marca,modelo,km_atual,proxima_manutencao_km,proxima_manutencao_data,ativo,tipo,medidor,horimetro,status').eq('ativo',true).order('placa')
       .then(({data}) => { if(data){ setVeiculosDB(data); saveCache('orofly_cache_veiculos',data) } })
   }, [])
 
@@ -3428,6 +3429,7 @@ export default function PilotApp({onSwitchMode}) {
               ['⚠️',null,theme.dangerBg,'Incidente',filaIncidentes.length?`${filaIncidentes.length} sem sinal, a enviar`:'Reportar ocorrência',()=>{loadOsOpcoes();loadMeusIncidentes();setView('incidente')}],
               [null,'icon-relatorios.png',theme.successBg,'Relatórios','Histórico e dados',()=>{loadFlights();setView('flights')}],
               ['🧪',null,'#f3ecfb','Calculadora','Calda e produtos',()=>setView('calculadora')],
+              ['🛻',null,'#e0ecfb','Veículo','Checklist e abastecimento',()=>setView('veiculo')],
             ].map(([emoji,img,bg,label,sub,onClick])=>(
               <div key={label} onClick={onClick} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:6,cursor:'pointer'}}>
                 <span style={{width:46,height:46,borderRadius:14,background:bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:24,lineHeight:1}}>
@@ -3890,6 +3892,9 @@ export default function PilotApp({onSwitchMode}) {
       </div>
     )
   }
+
+  // Checklist de saída e abastecimento (Gestão → Frota, 14/11/2026).
+  if(view==='veiculo') return <VeiculoPiloto supabase={supabase} profile={profile} veiculos={veiculosDB} theme={theme} showToast={showToast} onVoltar={()=>setView('home')} />
 
   if(view==='notas') return (
     <div style={{...s.wrap,paddingBottom:90}}>

@@ -2189,6 +2189,7 @@ export default function AdminPanel({ onSwitchMode }) {
         {(isSupervisor ? [
           ['op', '🚁 Operações', [
             ['agenda', '📅', 'Agenda', agenda.filter(a=>a.status==='pendente').length],
+            ['frota', '🛻', 'Frota', ''],
           ]],
           ['cfg', '⚙️ Configurações', [
             ['pilotos', '👥', 'Equipes', pilotos.length],

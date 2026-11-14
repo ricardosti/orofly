@@ -14,6 +14,8 @@ export const NOVIDADES = [
     versao: '12.9',
     data: '2026-11-14',
     itens: [
+      { tipo: 'novo', titulo: 'App: checklist de saída e abastecimento do veículo',
+        texto: 'Na tela inicial do app, o botão Veículo abre o checklist de saída (o veículo e o kit da operação: drones, baterias, gerador, EPI e documentos) e o registro de abastecimento. Item crítico com problema bloqueia o veículo até o gestor liberar em Gestão > Frota. O supervisor também passou a ver a Frota.' },
       { tipo: 'novo', titulo: 'Frota', ir: 'frota',
         texto: 'Em Gestão > Frota: os veículos, geradores e baterias que levam o drone até a fazenda. Painel com custo da frota no mês (combustível, manutenção, IPVA/seguro/licenciamento e depreciação), custo por km e alertas; cadastro completo (tipo, horímetro do gerador, consumo esperado, base, documentos e vencimentos); abastecimentos com consumo real (km/L ou L/h); planos de manutenção por km, horas ou meses com aviso de próxima e vencida; viagens por cliente, fazenda e OS com custo estimado; checklist de saída (veículo + kit da operação) em que item crítico reprovado bloqueia o veículo até a liberação; baterias com ciclos e garantia; CNH dos motoristas; Excel do mês.' },
       { tipo: 'novo', titulo: 'Gestão financeira (Beta)', ir: 'financeiro',
