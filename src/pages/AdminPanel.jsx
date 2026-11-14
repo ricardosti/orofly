@@ -57,6 +57,7 @@ import { reverseGeocode } from '../lib/geocode'
 import ParamsPadraoCampos from '../components/ParamsPadraoCampos'
 import RegulamentacaoMapa from '../components/RegulamentacaoMapa'
 import MonitoramentoClimaAdmin from '../components/MonitoramentoClimaAdmin'
+import FinanceiroBeta from '../components/FinanceiroBeta'
 import DocumentosFazenda from '../components/DocumentosFazenda'
 import { CATEGORIAS_DOC, categoriaDoc, palpiteCategoria, caminhoDocumento, tamanhoLegivel } from '../lib/documentosFazenda'
 import ApontamentoDiario from '../components/ApontamentoDiario'
@@ -2221,6 +2222,7 @@ export default function AdminPanel({ onSwitchMode }) {
           // (pedido do Pastor, 19/10/2026). O id da aba continua 'relatorios'.
           ['adminfin', '💼 Administrativo & Financeiro', [
             ['custos', '💰', 'Financeiro', custos.length],
+            ['financeiro', '💹', 'Gestão financeira (Beta)', ''],
             ['incidentes', '⚠️', 'Incidentes', incidentes.filter(i=>i.status!=='resolvido').length],
             ['regulamentacao', '📑', 'Regulamentação', ''],
           ]],
@@ -8154,6 +8156,13 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
           {tab === 'monitclima' && (
             <MonitoramentoClimaAdmin relatorios={relatorios} setRelatorios={setRelatorios} abrirRelId={monitAbrirRel} fazendas={invFazendas} clientes={invClientes}
               supabase={supabase} showToast={showToast} isMobile={isMobile} config={configGeral.monitoramento} />
+          )}
+
+          {/* Lançamentos, DRE, orçamento e simulador (plataforma do Isaque, 14/11/2026). Só admin:
+              as tabelas fin_* têm RLS de admin. */}
+          {tab === 'financeiro' && profile?.role === 'admin' && (
+            <FinanceiroBeta relatorios={relatorios} custos={custos} clientes={invClientes} drones={invDrones}
+              empresa={configGeral.empresa} supabase={supabase} showToast={showToast} isMobile={isMobile} />
           )}
 
           {tab === 'regulamentacao' && (

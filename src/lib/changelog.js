@@ -14,6 +14,8 @@ export const NOVIDADES = [
     versao: '12.9',
     data: '2026-11-14',
     itens: [
+      { tipo: 'novo', titulo: 'Gestão financeira (Beta)', ir: 'financeiro',
+        texto: 'Em Administrativo & Financeiro > Gestão financeira (Beta), só para admin: lançamentos a pagar e a receber (previsto, realizado e vencido, com importação por planilha e exportação em Excel), dashboard com saldo em caixa, fluxo de caixa e próximos vencimentos, DRE por competência ou caixa (clicando na linha aparecem os lançamentos), orçamento mensal com orçado × realizado e cascata do EBITDA, e o simulador de preço por hectare (frota, baterias, gerador, caminhonetes, equipe, administrativo, impostos, margem e risco), que gera a proposta em PDF e vira conta a receber. O botão "Trazer do Orofly" cria as contas a receber pelos hectares voados × preço do cliente e as despesas pelas notas dos pilotos, sem duplicar.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima: uma ficha por dia quando o voo vira a noite', ir: 'monitclima',
         texto: 'Voo que começou num dia e terminou no outro (ex.: das 17h do dia 6 às 11h do dia 7) saía num cabeçalho só, com a data do primeiro dia e as baterias dos dois dias misturadas. Agora o PDF e o Excel separam por dia: cada data vira uma ficha com o próprio cabeçalho e a numeração dos voos recomeça. Com a área ou o volume da planilha do drone, cada dia leva a soma das baterias dele. Se a "Data na ficha" for preenchida, vale ela e a ficha não se divide. Pedido do Rodolfo.' },
       { tipo: 'melhoria', titulo: 'Ficha de clima: data e piloto editáveis', ir: 'monitclima',
