@@ -218,18 +218,88 @@ export function gerarFormularioNardini(rel, opts = {}) {
 
   // ── TALHÕES APLICADOS (8 linhas como no papel; mais talhões, linhas mais baixas)
   y += 3
-  barra('TALHÕES APLICADOS')
-  const nT = Math.max(8, d.talhoes.length)
-  tabela([
-    { titulo: 'Talhão', w: 30, alinhar: 'center' },
-    { titulo: 'Área do talhão (ha)', w: 24, alinhar: 'center' },
-    { titulo: 'Área aplicada (ha)', w: 24, alinhar: 'center' },
-    { titulo: 'Diferença (ha)', w: 24, alinhar: 'center' },
-    { titulo: 'Observação do talhão', w: W - 102 },
-  ], d.talhoes.map(t => [t.nome, ha(t.areaTalhao), ha(t.aplicada), t.diferenca > 0.005 ? ha(t.diferenca) : '', t.observacao]), {
-    minLinhas: 8, alturaLinha: nT > 8 ? Math.max(4.2, 48 / nT) : 6,
-    total: ['TOTAL', ha(d.totalTalhoes.areaTalhao), ha(d.totalTalhoes.aplicada), d.totalTalhoes.diferenca > 0.005 ? ha(d.totalTalhoes.diferenca) : '', ''],
-  })
+  const nT = d.talhoes.length
+  barra(nT > 12 ? 'TALHÕES APLICADOS — áreas em ha' : 'TALHÕES APLICADOS')
+  // Texto centralizado que encolhe (até 5,5 pt) e, se ainda não couber, corta com "…".
+  const textoC = (t, x, yy, { cor = TINTA, negrito = false, tam = 8.5, maxW = 0 } = {}) => {
+    doc.setTextColor(...cor); doc.setFont('helvetica', negrito ? 'bold' : 'normal'); doc.setFontSize(tam)
+    let s = String(t)
+    while (maxW && tam > 5.5 && doc.getTextWidth(s) > maxW) { tam -= 0.25; doc.setFontSize(tam) }
+    while (maxW && s.length > 1 && doc.getTextWidth(s) > maxW) s = s.slice(0, -1)
+    if (s !== String(t)) s = s.slice(0, -1) + '…'
+    doc.text(s, x, yy, { align: 'center' })
+  }
+  // Blocos lado a lado, cada um com Talhão | Área | Aplicada | Diferença, preenchidos de cima
+  // pra baixo (coluna 1 inteira, depois a 2…), como se lê uma lista.
+  const blocosTalhoes = (lista, nCol, alt) => {
+    const porCol = Math.ceil(lista.length / nCol), larg = W / nCol, w = larg / 4
+    const tam = alt < 4.6 ? 7.5 : 8.5
+    doc.setDrawColor(...PRETO); doc.setLineWidth(0.25)
+    doc.setFillColor(...CINZA_CAB); doc.rect(M, y, W, 6, 'FD')
+    for (let c = 0; c < nCol; c++) ['Talhão', 'Área', 'Aplicada', 'Diferença'].forEach((t, i) => {
+      const x = M + c * larg + i * w
+      textoC(t, x + w / 2, y + 4.1, { cor: PRETO, negrito: true, tam: 6.5, maxW: w - 1 })
+      if (i || c) doc.line(x, y, x, y + 6)
+    })
+    y += 6
+    for (let r = 0; r < porCol; r++) {
+      doc.rect(M, y, W, alt)
+      for (let c = 0; c < nCol; c++) {
+        const t = lista[c * porCol + r]
+        const vals = t ? [t.nome, ha(t.areaTalhao), ha(t.aplicada), t.diferenca > 0.005 ? ha(t.diferenca) : ''] : []
+        for (let i = 0; i < 4; i++) {
+          const x = M + c * larg + i * w
+          if (i || c) { doc.setLineWidth(c && !i ? 0.5 : 0.25); doc.line(x, y, x, y + alt); doc.setLineWidth(0.25) }
+          if (vals[i]) textoC(vals[i], x + w / 2, y + alt * 0.72, { tam, maxW: w - 1.5 })
+        }
+      }
+      y += alt
+    }
+  }
+  const linhaTotalTalhoes = () => {
+    const tt = d.totalTalhoes
+    doc.setDrawColor(...PRETO); doc.setLineWidth(0.25); doc.rect(M, y, W, 6)
+    textoC('TOTAL', M + 20, y + 4.2, { cor: PRETO, negrito: true, tam: 7.5 })
+    textoC(`Área: ${ha(tt.areaTalhao)} ha   ·   Aplicada: ${ha(tt.aplicada)} ha   ·   Diferença: ${tt.diferenca > 0.005 ? ha(tt.diferenca) : '0,00'} ha   ·   ${nT} talhões`, M + W / 2 + 10, y + 4.2, { tam: 9 })
+    y += 6
+  }
+  let talhoesNaPagina2 = false
+  if (nT <= 12) {
+    tabela([
+      { titulo: 'Talhão', w: 30, alinhar: 'center' },
+      { titulo: 'Área do talhão (ha)', w: 24, alinhar: 'center' },
+      { titulo: 'Área aplicada (ha)', w: 24, alinhar: 'center' },
+      { titulo: 'Diferença (ha)', w: 24, alinhar: 'center' },
+      { titulo: 'Observação do talhão', w: W - 102 },
+    ], d.talhoes.map(t => [t.nome, ha(t.areaTalhao), ha(t.aplicada), t.diferenca > 0.005 ? ha(t.diferenca) : '', t.observacao]), {
+      minLinhas: 8, alturaLinha: nT > 8 ? Math.max(4.2, 48 / nT) : 6,
+      total: ['TOTAL', ha(d.totalTalhoes.areaTalhao), ha(d.totalTalhoes.aplicada), d.totalTalhoes.diferenca > 0.005 ? ha(d.totalTalhoes.diferenca) : '', ''],
+    })
+  } else {
+    // Muitos talhões (a Caixa d'Água tem 51; Rodolfo, 14/11/2026): a tabela vira 2, 3 ou 4
+    // blocos lado a lado, no que couber com linha de pelo menos 4 mm. O que vem depois da
+    // tabela (resumo, produtos, condições, observações e piloto) tem altura conhecida, e a
+    // folha termina em 287 mm (o rodapé sai em 290) — a tabela fica com o que sobra.
+    // A observação de cada talhão vai pro quadro OBSERVAÇÕES ("Tal. 039: …").
+    const resto = 21 + (21 + 6 * Math.max(6, d.produtos.length)) + 20 + 32 + 26
+    const espacoLinhas = 287 - resto - y - 12 // 12 = cabeçalho + linha de TOTAL
+    let escolha = null
+    for (const nCol of [2, 3, 4]) {
+      const alt = Math.min(5.5, espacoLinhas / Math.ceil(nT / nCol))
+      if (alt >= 4) { escolha = { nCol, alt }; break }
+    }
+    if (escolha) {
+      blocosTalhoes(d.talhoes, escolha.nCol, escolha.alt)
+    } else {
+      // Nem em 4 blocos cabe (mais de ~52 talhões): a lista inteira vai pra página 2 e aqui
+      // fica só o total, pra assinatura não sair da folha.
+      doc.setDrawColor(...PRETO); doc.setLineWidth(0.25); doc.rect(M, y, W, 7)
+      textoC(`Lista dos ${nT} talhões, com a área de cada um, na página 2.`, M + W / 2, y + 4.7, { tam: 9 })
+      y += 7
+      talhoesNaPagina2 = true
+    }
+    linhaTotalTalhoes()
+  }
 
   // ── RESUMO DE ÁREA
   y += 3
@@ -302,9 +372,11 @@ export function gerarFormularioNardini(rel, opts = {}) {
     const largLogo = altLogo * 1.75
     try { doc.addImage(LOGO_B64, 'PNG', xMeio - largLogo / 2, y + 1.5, largLogo, altLogo) } catch (e) { /* sem logo: fica só o nome */ }
   }
-  if (d.observacoes) {
+  const obsTalhoes = d.talhoes.length > 12 ? d.talhoes.filter(t => t.observacao).map(t => `Tal. ${t.nome}: ${t.observacao}`).join(' · ') : ''
+  const obsTxt = [d.observacoes, obsTalhoes].filter(Boolean).join('\n')
+  if (obsTxt) {
     doc.setTextColor(...TINTA); doc.setFont('helvetica', 'normal'); doc.setFontSize(9)
-    const linhas = doc.splitTextToSize(d.observacoes, W - larguraEmpresa - 6).slice(0, 5)
+    const linhas = doc.splitTextToSize(obsTxt, W - larguraEmpresa - 6).slice(0, 5)
     doc.text(linhas, M + 3, y + 5)
   }
   y += altObs
@@ -320,6 +392,17 @@ export function gerarFormularioNardini(rel, opts = {}) {
   // Rodapé discreto — de onde saiu o formulário
   doc.setTextColor(140, 140, 140); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5)
   doc.text(`Preenchido pelo Orofly a partir do relatório do voo${rel.ordem_servico ? ` (OS ${String(rel.ordem_servico).toUpperCase()})` : ''}.`, M, 290)
+
+  if (talhoesNaPagina2) {
+    doc.addPage()
+    y = 12
+    barra(`TALHÕES APLICADOS — ${d.fazenda || ''} — ${d.data} — áreas em ha`)
+    const alt = Math.max(3.4, Math.min(5.5, (285 - y - 12) / Math.ceil(nT / 4)))
+    blocosTalhoes(d.talhoes, 4, alt)
+    linhaTotalTalhoes()
+    doc.setTextColor(140, 140, 140); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5)
+    doc.text('Página 2 — continuação do formulário de aplicação.', M, 290)
+  }
 
   return doc
 }
