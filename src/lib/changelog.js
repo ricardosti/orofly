@@ -7,13 +7,26 @@
 //
 // `tipo` decide a cor da tag: 'novo' (verde), 'melhoria' (azul), 'correcao' (âmbar).
 // `ir` (opcional) é a aba do painel aonde a novidade leva — vira o botão "Abrir" na tela;
-// `ancora`, o id do bloco dentro da aba, quando a função fica no meio dela.
+// `ancora`, o id do bloco dentro da aba, quando a função fica no meio dela; `subaba`, a
+// sub-aba de Fazendas & Clientes (ex.: 'apontamento'), quando `ir` é 'fazendas'.
 
 export const NOVIDADES = [
+  {
+    versao: '13.0',
+    data: '2026-11-15',
+    itens: [
+      { tipo: 'melhoria', titulo: 'Apontamento diário de mais de um dia', ir: 'fazendas', subaba: 'apontamento',
+        texto: 'Em Fazendas & Clientes > Apontamento diário entrou o campo "Até". Igual ao dia, é o apontamento de sempre; mudando, soma todos os dias do período: cada fazenda junta os talhões e as áreas dos dias, e no fim sai o rendimento de cada dia e o total do período, também no texto pra mandar à usina. Serve pra frente que começou num dia e teve parte dos relatórios com a data do outro. Pedido do Rodolfo.' },
+      { tipo: 'melhoria', titulo: 'Formulário Nardini com muitos talhões', ir: 'relatorios',
+        texto: 'Com mais de 12 talhões, a tabela de talhões do Formulário Nardini sai em blocos lado a lado (Talhão, Área, Aplicada e Diferença) e o total fica logo embaixo, então tudo cabe numa folha, com produtos, observações e assinatura. Antes, a partir de uns 30 talhões, a assinatura saía da página. Acima de uns 50, a lista completa vai pra uma 2ª página e a 1ª mostra o total. A observação de cada talhão passa pro quadro de Observações. Pedido do Rodolfo.' },
+    ],
+  },
   {
     versao: '12.9',
     data: '2026-11-14',
     itens: [
+      { tipo: 'melhoria', titulo: 'WhatsApp: relatório com vários talhões mais curto e com o total aplicado',
+        texto: 'Com mais de um talhão, o relatório do WhatsApp traz o "Total aplicado" logo no topo, as áreas compactas (três talhões por linha; só quem tem bordadura ou área não aplicada aparece com Tot, Bord e Aplic) e cada produto uma vez só, com a quantidade para a área toda. O da Nardini, com 28 talhões, caiu de mais de 200 linhas pra umas 30. Pedido do Rodolfo.' },
       { tipo: 'novo', titulo: 'App: checklist de saída e abastecimento do veículo',
         texto: 'Na tela inicial do app, o botão Veículo abre o checklist de saída (o veículo e o kit da operação: drones, baterias, gerador, EPI e documentos) e o registro de abastecimento. Item crítico com problema bloqueia o veículo até o gestor liberar em Gestão > Frota. O supervisor também passou a ver a Frota.' },
       { tipo: 'novo', titulo: 'Frota', ir: 'frota',

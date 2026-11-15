@@ -8215,7 +8215,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
                                   {it.texto && <div style={{ fontSize:12.5, color:theme.textMuted, marginTop:3, lineHeight:1.5 }}>{it.texto}</div>}
                                   {it.ir && (
                                     <button style={{ background:'none', border:'none', padding:0, marginTop:5, color:'#059669', fontSize:12, fontWeight:700, cursor:'pointer' }}
-                                      onClick={() => { setTab(it.ir); if (it.ancora) setTimeout(() => document.getElementById(it.ancora)?.scrollIntoView({ behavior:'smooth', block:'start' }), 600) }}>
+                                      onClick={() => { setTab(it.ir); if (it.subaba) setFzTab(it.subaba); if (it.ancora) setTimeout(() => document.getElementById(it.ancora)?.scrollIntoView({ behavior:'smooth', block:'start' }), 600) }}>
                                       Abrir →
                                     </button>
                                   )}
