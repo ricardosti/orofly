@@ -62,6 +62,7 @@ import FrotaGestao from '../components/FrotaGestao'
 import DocumentosFazenda from '../components/DocumentosFazenda'
 import { CATEGORIAS_DOC, categoriaDoc, palpiteCategoria, caminhoDocumento, tamanhoLegivel } from '../lib/documentosFazenda'
 import ApontamentoDiario from '../components/ApontamentoDiario'
+import ApontamentoPersonalizado from '../components/ApontamentoPersonalizado'
 
 // URL absoluta: dentro do app nativo (Capacitor) a origem é https://localhost,
 // que não tem as funções serverless — sempre chama o site publicado de verdade.
@@ -686,7 +687,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [fzTab, setFzTab] = useState('visao')
   // Sub-abas de Gestão → Fazendas & Clientes. "Relatórios" é a aba 'relatorios' (Relatórios de
   // Voo), mostrada com esta mesma barra no topo.
-  const SUBABAS_FAZENDAS = [['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes'],['equipes','🧑‍🤝‍🧑 Equipes'],['relatorios','📋 Relatórios'],['apontamento','📅 Apontamento diário']]
+  const SUBABAS_FAZENDAS = [['visao','📊 Visão Geral'],['fazendas','🌾 Fazendas'],['clientes','🏢 Clientes'],['equipes','🧑‍🤝‍🧑 Equipes'],['relatorios','📋 Relatórios'],['apontamento','📅 Apontamento diário'],['apontamento_beta','🧩 Apontamento (Beta)']]
   const [droneModal, setDroneModal] = useState(null)
   const [produtoModal, setProdutoModal] = useState(null)
   const [clienteModal, setClienteModal] = useState(null)
@@ -5873,6 +5874,12 @@ export default function AdminPanel({ onSwitchMode }) {
                   <ApontamentoDiario relatorios={relatorios} fazendas={invFazendas} talhoes={invTalhoes}
                     empresa={String(configGeral.empresa?.razao_social || configGeral.empresa?.nome || 'Orofly').toUpperCase()}
                     showToast={showToast} isMobile={isMobile} />
+                )}
+                {/* ── APONTAMENTO PERSONALIZADO (Beta) — o "monte o seu", sem mexer no de cima (15/11/2026) ── */}
+                {fzTab==='apontamento_beta' && (
+                  <ApontamentoPersonalizado relatorios={relatorios} fazendas={invFazendas} talhoes={invTalhoes}
+                    empresa={String(configGeral.empresa?.razao_social || configGeral.empresa?.nome || 'Orofly').toUpperCase()}
+                    showToast={showToast} isMobile={isMobile} isAdmin={profile?.role==='admin'} />
                 )}
 
                 {fzTab==='equipes' && (() => {

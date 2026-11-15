@@ -15,6 +15,8 @@ export const NOVIDADES = [
     versao: '13.0',
     data: '2026-11-15',
     itens: [
+      { tipo: 'novo', titulo: 'Apontamento personalizado (Beta)', ir: 'fazendas', subaba: 'apontamento_beta',
+        texto: 'Em Fazendas & Clientes > Apontamento (Beta): monte o seu apontamento arrastando os campos para o Cabeçalho, a Matriz (uma linha por fazenda, talhão, voo, dia ou piloto) ou o Rodapé. Tem os campos do banco (áreas, diferença e motivo, talhões, códigos, pilotos, drones, horários, OS, produtos com dose e com quantidade, vazão) e o "Inserir campo novo", que cria um campo com nome e valor fixo (ex.: OS-ANATEL) no lugar escolhido. No cabeçalho e no rodapé, os campos valem pro período inteiro. Cada campo pode ser renomeado e reordenado, o modelo fica salvo e sai em texto (copiar ou WhatsApp) e em Excel. No celular, toque no campo pra escolher onde ele entra, ou segure e arraste. O modelo Padrão é igual ao Apontamento diário, que continua como estava.' },
       { tipo: 'melhoria', titulo: 'Apontamento diário de mais de um dia', ir: 'fazendas', subaba: 'apontamento',
         texto: 'Em Fazendas & Clientes > Apontamento diário entrou o campo "Até". Igual ao dia, é o apontamento de sempre; mudando, soma todos os dias do período: cada fazenda junta os talhões e as áreas dos dias, e no fim sai o rendimento de cada dia e o total do período, também no texto pra mandar à usina. Serve pra frente que começou num dia e teve parte dos relatórios com a data do outro. Pedido do Rodolfo.' },
       { tipo: 'melhoria', titulo: 'Formulário Nardini com muitos talhões', ir: 'relatorios',
