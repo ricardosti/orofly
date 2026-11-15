@@ -258,6 +258,11 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   const areaAplicadaGeral = Math.max(0, +(areaLiquidaLocal(rel) - outrosGeral).toFixed(2))
   const txtOutros = lista => lista.map(m => ` | ${rotuloNaoAplicada(m)} ${fmtHa(m.qtd)}`).join('')
 
+  // Soma do que foi aplicado nos talhões deste relatório (Rodolfo: "quem pega o resumo tem que
+  // somar à mão"). Sem o detalhe por talhão, cai na área aplicada geral.
+  const totalAplicadoTalhoes = dadosPorTalhao.length && dadosPorTalhao.every(d => d.aplicada != null)
+    ? +dadosPorTalhao.reduce((a, d) => a + d.aplicada, 0).toFixed(2) : areaAplicadaGeral
+
   const blocos = []
 
   const dados = []
@@ -268,22 +273,26 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
   dados.push(`*Período:* ${fmtDataCurta(rel.dt_inicio)} (${fmtHora(rel.dt_inicio)} às ${fmtHora(rel.dt_fim)})`)
   dados.push(`*Piloto:* ${rel.piloto_nome || '—'}`)
   if (rel.drone) dados.push(`*Drone:* ${rel.drone}`)
+  if (talhoes.length > 1) dados.push(`*Total aplicado:* ${fmtHa(totalAplicadoTalhoes)} ha`)
   blocos.push(dados.join('\n'))
 
   if (cfg.area) {
     const area = []
     if (talhoes.length > 1) {
-      dadosPorTalhao.forEach(({ nome, total, bord, aplicada, outros }, i) => {
-        // "Tot" é o que ESTA frente percorreu no talhão — aplicada mais a bordadura e o não
-        // aplicado que saíram de dentro dela, ou seja, de volta ao que o piloto digitou. Mesma
-        // regra da linha de talhão único: nunca o tamanho cadastrado.
+      // Muitos talhões: o que não teve bordadura nem área não aplicada sai compacto, vários por
+      // linha ("001: 2,18 ha"); só quem tem desconto ganha a linha completa Tot | Bord | Aplic.
+      // Pedido do Rodolfo (14/11/2026) — relatório da Nardini com 28 talhões ocupava a tela toda.
+      const simples = [], completos = []
+      dadosPorTalhao.forEach(({ nome, bord, aplicada, outros }) => {
         const qOutros = (outros || []).reduce((a, m) => a + m.qtd, 0)
-        const percorrido = aplicada != null ? +(aplicada + bord + qOutros).toFixed(2) : null
-        area.push(percorrido != null
-          ? `Tal. ${nome}: Tot ${fmtHa(percorrido)} ha | Bord ${fmtHa(bord)}${txtOutros(outros || [])} | Aplic ${fmtHa(aplicada)} ha`
-          : `Tal. ${nome}: Bord ${fmtHa(bord)}${txtOutros(outros || [])}`)
-        if (i < dadosPorTalhao.length - 1) area.push('')
+        if (aplicada == null) { completos.push(`Tal. ${nome}: Bord ${fmtHa(bord)}${txtOutros(outros || [])}`); return }
+        if (!bord && !qOutros) { simples.push(`${nome}: ${fmtHa(aplicada)}`); return }
+        const percorrido = +(aplicada + bord + qOutros).toFixed(2)
+        completos.push(`Tal. ${nome}: Tot ${fmtHa(percorrido)} ha | Bord ${fmtHa(bord)}${txtOutros(outros || [])} | Aplic ${fmtHa(aplicada)} ha`)
       })
+      for (let i = 0; i < simples.length; i += 3) area.push(simples.slice(i, i + 3).join(' | '))
+      if (simples.length && completos.length) area.push('')
+      completos.forEach(l => area.push(l))
     } else {
       // "Tot" é o que esta frente PERCORREU neste voo, não o escopo que ela pegou: pegou 23,47
       // de saldo, percorreu 20, sendo 5 de bordadura → Tot 20 | Bord 5 | Aplic 15. Os três
@@ -296,17 +305,15 @@ export function montarTextoWhatsapp(rel, config, opts = {}) {
       const percorridoVoo = !isNaN(feitaVoo) && feitaVoo > 0 ? feitaVoo : (parseFloat(rel.area_ha) || 0)
       area.push(`Tot ${fmtHa(percorridoVoo)} ha | Bord ${fmtHa(rel.bordadura)}${txtOutros(naoAplicada)} | Aplic ${fmtHa(areaAplicadaGeral)} ha`)
     }
-    blocos.push(`*Áreas*\n${area.join('\n')}`)
+    blocos.push(`*Áreas${talhoes.length > 1 ? " (ha aplicado)" : ""}*\n${area.join('\n')}`)
   }
 
   if (cfg.produtos && (rel.produtos || []).length) {
     const produtos = []
     if (talhoes.length > 1) {
-      dadosPorTalhao.forEach(({ nome, aplicada }, i) => {
-        produtos.push(`Tal. ${nome}:`)
-        rel.produtos.forEach(p => produtos.push(formatarProdutoLinha(p, aplicada ?? 0)))
-        if (i < dadosPorTalhao.length - 1) produtos.push('')
-      })
+      // A dose é do relatório, igual em todos os talhões: uma linha por produto, com o total
+      // sobre a soma aplicada (antes repetia os produtos em cada talhão).
+      rel.produtos.forEach(p => produtos.push(formatarProdutoLinha(p, totalAplicadoTalhoes)))
     } else {
       rel.produtos.forEach(p => produtos.push(formatarProdutoLinha(p, areaAplicadaGeral)))
     }
