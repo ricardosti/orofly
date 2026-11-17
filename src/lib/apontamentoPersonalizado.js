@@ -49,6 +49,8 @@ export function fatosDoPeriodo({ relatorios = [], fazendas = [], talhoes = [], d
     const base = {
       rel, cliente: rel.cliente || '', fazenda: rel.fazenda || '', codigo: fz?.id_fazenda ? String(fz.id_fazenda) : '',
       municipio: fz?.municipio ? `${fz.municipio}${fz.uf ? '/' + fz.uf : ''}` : '', dia: diaDoVoo(rel),
+      // OS da usina: a que o voo guardou da fazenda; em voo antigo, a que a fazenda tem hoje.
+      os: String(rel.os_cliente || fz?.os_cliente || '').trim(),
     }
     // Voo sem talhão ainda conta como voo da fazenda (o Apontamento diário também conta).
     if (!d.talhoes.length) fatos.push({ ...base, talhao: null, aplicada: 0, total: 0, bordadura: 0, motivos: [], areaTalhao: 0 })
@@ -137,6 +139,7 @@ export const CAMPOS = [
     return Object.keys(porDia).sort().map(d => `${diaCurto(d)}: ${fmtHa(porDia[d])} ha`).join(' · ')
   } },
   // Local
+  { id: 'os_fazenda', rotulo: 'OS da fazenda', grupo: 'Local', tipo: 'texto', valor: F => unicos(F.map(f => f.os)).join(' / ') },
   { id: 'codigo_fazenda', rotulo: 'Código da Fazenda', grupo: 'Local', tipo: 'texto', valor: F => unicos(F.map(f => f.codigo || f.fazenda)).join(', ') },
   { id: 'fazenda', rotulo: 'Fazenda', grupo: 'Local', tipo: 'texto', valor: F => unicos(F.map(f => f.fazenda)).join(', ') },
   { id: 'talhoes', rotulo: 'Talhões', grupo: 'Local', tipo: 'texto', valor: F => listaTalhoes(F) },
@@ -211,7 +214,8 @@ export function modeloPadrao() {
   return {
     id: 'padrao', nome: 'Padrão (igual ao Apontamento diário)', titulo: 'APONTAMENTO DIÁRIO – {cliente}', agrupar: 'fazenda',
     cabecalho: [itemDoCampo('empresa'), itemFixo('Operação'), itemDoCampo('periodo')],
-    matriz: [itemFixo('O.S.'), itemDoCampo('codigo_fazenda'), itemDoCampo('talhoes'), itemDoCampo('area_total'),
+    // "O.S." é a OS da fazenda (em branco quando não tem), como no Apontamento diário.
+    matriz: [{ ...itemDoCampo('os_fazenda'), rotulo: 'O.S.' }, itemDoCampo('codigo_fazenda'), itemDoCampo('talhoes'), itemDoCampo('area_total'),
       itemDoCampo('area_aplicada'), { ...itemDoCampo('diferenca_motivo'), rotulo: 'Diferença' }],
     rodape: [{ ...itemDoCampo('area_aplicada'), rotulo: 'Rendimento total do dia' }],
   }

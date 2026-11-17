@@ -543,7 +543,7 @@ export default function AdminPanel({ onSwitchMode }) {
   const [invClientes, setInvClientes] = useState([])
   const [invFazendas, setInvFazendas] = useState([])
   const [invTalhoes, setInvTalhoes] = useState([])
-  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
+  const [fzForm, setFzForm] = useState({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',os_cliente:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:''})
   const [fzMapaFile, setFzMapaFile] = useState(null)
   const [fzMapaExistente, setFzMapaExistente] = useState(null) // mapa_pdf_path da fazenda em edição
   const [fzMapaUploading, setFzMapaUploading] = useState(false)
@@ -2121,7 +2121,7 @@ export default function AdminPanel({ onSwitchMode }) {
         const norm = s => (s||'').trim().toLowerCase().replace(/\s+/g,' ')
         const fz = invFazendas.find(f => norm(f.cliente)===norm(relFinal.cliente) && norm(f.nome)===norm(relFinal.fazenda))
         const talhoesCatalogo = fz ? invTalhoes.filter(t => t.fazenda_id===fz.id).map(t => ({ nome:t.nome, area_ha:t.area_ha })) : []
-        const doc = gerarFormularioNardini(relFinal, { talhoesCatalogo, idFazenda: fz?.id_fazenda || '' })
+        const doc = gerarFormularioNardini(relFinal, { talhoesCatalogo, idFazenda: fz?.id_fazenda || '', osFazenda: fz?.os_cliente || '' })
         await salvarOuCompartilharPdf(doc, nomeArquivoFormularioNardini(relFinal))
       } else if (tipo === 'word') {
         const blob = await gerarWordCliente(relFinal, opts)
@@ -4818,6 +4818,7 @@ export default function AdminPanel({ onSwitchMode }) {
                 const payload = {cliente:fzForm.cliente,nome:nomeNorm,produto:fzForm.produto||null,
                   produtos_padrao: prodsPadrao.length ? prodsPadrao : null,
                   cep:fzForm.cep||null,lat:lat?parseFloat(lat):null,lng:lng?parseFloat(lng):null,id_fazenda:fzForm.id_fazenda||null,
+                  os_cliente:(fzForm.os_cliente||'').trim()||null,
                   mapa_lat_min:fzForm.mapa_lat_min?parseFloat(fzForm.mapa_lat_min):null,
                   mapa_lat_max:fzForm.mapa_lat_max?parseFloat(fzForm.mapa_lat_max):null,
                   mapa_lng_min:fzForm.mapa_lng_min?parseFloat(fzForm.mapa_lng_min):null,
@@ -4864,7 +4865,7 @@ export default function AdminPanel({ onSwitchMode }) {
                   if(apagar.length) await supabase.storage.from('relatorios').remove(apagar)
                 }
                 showToast(fzEditId?'✅ Fazenda atualizada!':'✅ Fazenda cadastrada!')
-                setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}})
+                setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',os_cliente:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}})
                 setFzEditId(null); setFzMapaFile(null); setFzMapaExistente(null); setFzDocs([]); setFzDocsNovos([]); setFzModal(false); fetchInventario()
                 // Fazenda nova já abre com o campo de talhão, no topo da lista (mais recentes).
                 if (novaFazenda && savedId) {
@@ -4923,7 +4924,7 @@ export default function AdminPanel({ onSwitchMode }) {
                         📤 Importar planilha
                       </button>
                       <button style={{background:'#059669',color:'#fff',border:'none',borderRadius:18,padding:'8px 18px',fontSize:13,fontWeight:600,cursor:'pointer'}}
-                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzDocs([]);setFzDocsNovos([]);setFzModal(true)}}>
+                        onClick={()=>{setFzForm({cliente:'',nome:'',produto:'',produtos_padrao:[],cep:'',lat:'',lng:'',id_fazenda:'',os_cliente:'',mapa_lat_min:'',mapa_lat_max:'',mapa_lng_min:'',mapa_lng_max:'',municipio:'',uf:'',params_padrao:{}});setFzEditId(null);setFzMapaFile(null);setFzMapaExistente(null);setFzDocs([]);setFzDocsNovos([]);setFzModal(true)}}>
                         + Nova Fazenda
                       </button>
                     </div>
@@ -5538,7 +5539,7 @@ export default function AdminPanel({ onSwitchMode }) {
                                     <button style={{background:theme.bg,color:'#059669',border:'none',borderRadius:15,padding:'4px 10px',fontSize:11,cursor:'pointer'}}
                                       onClick={(e)=>{
                                         e.stopPropagation()
-                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',produtos_padrao:fz.produtos_padrao||[],cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',
+                                        setFzForm({cliente:fz.cliente,nome:fz.nome,produto:fz.produto||'',produtos_padrao:fz.produtos_padrao||[],cep:fz.cep||'',lat:fz.lat??'',lng:fz.lng??'',id_fazenda:fz.id_fazenda||'',os_cliente:fz.os_cliente||'',
                                           mapa_lat_min:fz.mapa_lat_min??'',mapa_lat_max:fz.mapa_lat_max??'',mapa_lng_min:fz.mapa_lng_min??'',mapa_lng_max:fz.mapa_lng_max??'',
                                           municipio:fz.municipio||'',uf:fz.uf||'',params_padrao:fz.params_padrao||{}})
                                         setFzEditId(fz.id); setFzMapaFile(null); setFzMapaExistente(fz.mapa_pdf_path||null); setFzDocs(fz.documentos||[]); setFzDocsNovos([]); setFzModal(true)
@@ -5635,6 +5636,16 @@ export default function AdminPanel({ onSwitchMode }) {
                               <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>ID DA FAZENDA (OPCIONAL)</div>
                               <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
                                 placeholder="Preenchimento manual" value={fzForm.id_fazenda} onChange={e=>setFzForm(f=>({...f,id_fazenda:e.target.value}))}/>
+                            </div>
+                            {/* OS da fazenda (16/11/2026): o número da ordem de serviço do cliente (na
+                                Nardini, a OS da listagem "Ordens de Serviços", ex.: 19399). Cada voo
+                                copia a que estiver aqui quando é criado (trigger no banco); sai no
+                                Formulário Nardini e no Apontamento. */}
+                            <div>
+                              <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>OS DA FAZENDA (OPCIONAL)</div>
+                              <input style={{width:'100%',border:`1px solid ${theme.cardBorder2}`,borderRadius:8,padding:'8px 10px',fontSize:13,outline:'none',boxSizing:'border-box'}}
+                                placeholder="Ex: 19399 — ou 19399 / 19400" value={fzForm.os_cliente||''} onChange={e=>setFzForm(f=>({...f,os_cliente:e.target.value}))}/>
+                              <div style={{fontSize:11,color:theme.textMuted,marginTop:4,lineHeight:1.4}}>Nº da ordem de serviço do cliente. Cada voo guarda a OS que estiver aqui quando é feito, e ela sai no Formulário Nardini e no Apontamento.</div>
                             </div>
                             <div>
                               <div style={{fontSize:10,fontWeight:700,color:theme.textMuted,letterSpacing:.5,marginBottom:4}}>PRODUTO (OPCIONAL)</div>
@@ -8863,7 +8874,7 @@ Isso não apaga voo nem relatório — só tira ele da lista. Dá pra atribuir d
             <div style={{ padding:'16px 20px', overflowY:'auto', flex:1 }}>
               <SecTitle>IDENTIFICAÇÃO</SecTitle>
               <div style={{ display:'grid', gridTemplateColumns: isMobile?'1fr 1fr':'repeat(3,1fr)', gap:10, marginBottom:14 }}>
-                {[['Cliente','cliente'],['Fazenda','fazenda'],['Talhão','localizacao'],['Área do escopo (ha)','area_ha'],['Área FEITA (ha)','area_feita'],['Bordadura (ha)','bordadura'],['Piloto','piloto_nome'],['Drone','drone']].map(([l,k]) => (
+                {[['Cliente','cliente'],['Fazenda','fazenda'],['Talhão','localizacao'],['Área do escopo (ha)','area_ha'],['Área FEITA (ha)','area_feita'],['Bordadura (ha)','bordadura'],['Piloto','piloto_nome'],['Drone','drone'],['OS da fazenda','os_cliente']].map(([l,k]) => (
                   <div key={k}><div style={sG.label}>{l.toUpperCase()}</div><input style={sG.input} value={editModal[k]??''} onChange={e => setEditModal(m => ({ ...m, [k]: e.target.value }))} /></div>
                 ))}
                 <div>

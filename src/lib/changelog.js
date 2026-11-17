@@ -15,6 +15,8 @@ export const NOVIDADES = [
     versao: '13.1',
     data: '2026-11-16',
     itens: [
+      { tipo: 'novo', titulo: 'OS da fazenda', ir: 'fazendas', subaba: 'fazendas',
+        texto: 'No cadastro da fazenda entrou o campo "OS da fazenda": o número da ordem de serviço do cliente (na Nardini, a OS da listagem de ordens de serviço, ex.: 19399 — pode ter mais de uma, como "19399 / 19400"). Cada voo guarda a OS que a fazenda tiver quando ele é feito, então a OS seguinte não muda os relatórios antigos; o admin pode corrigir no Editar relatório. Ela sai no "Nº da O.S. e Operação" do Formulário Nardini, no "O.S." do Apontamento diário e como campo do Apontamento (Beta). Sem OS cadastrada, esses campos continuam em branco.' },
       { tipo: 'correcao', titulo: 'Fotos e mapas corrompidos no relatório',
         texto: 'Desde a 12.8 (11/11), as fotos de observação e o mapa que passavam pela memória do aparelho antes de subir chegavam estragados ao servidor: no painel apareciam quebradas e, baixadas, davam "formato não suportado". O mesmo valia para a foto da nota de despesa e a do incidente enviadas pela fila. Corrigido; as fotos tiradas daqui pra frente sobem inteiras. As que subiram estragadas nesse período precisam ser enviadas de novo pelo piloto ou trocadas no Editar relatório.' },
     ],

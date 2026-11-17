@@ -104,7 +104,10 @@ export default function ApontamentoDiario({ relatorios, fazendas, talhoes, empre
               <tbody>
                 {res.linhas.map(l => (
                   <tr key={l.cliente + l.fazenda}>
-                    <td style={{ ...td, fontWeight: 700 }}>{l.codigo || '—'}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>
+                      {l.codigo || '—'}
+                      {l.os ? <div style={{ fontSize: 10.5, fontWeight: 600, color: theme.textMuted, whiteSpace: 'nowrap' }}>OS {l.os}</div> : null}
+                    </td>
                     <td style={td}>
                       {l.fazenda}{l.voos > 1 ? <span style={{ color: theme.textFaint, fontSize: 11 }}> · {l.voos} voos</span> : null}
                       {varios && l.dias?.length ? <div style={{ color: theme.textFaint, fontSize: 11 }}>{l.dias.map(diaCurto).join(', ')}</div> : null}

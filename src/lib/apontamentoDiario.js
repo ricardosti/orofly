@@ -51,8 +51,11 @@ export function apontamentoDiario({ relatorios = [], fazendas = [], talhoes = []
     const motivosDoTalhao = nome => motivos.filter(m => m.talhao === nome || (!m.talhao && unico))
     const chave = `${norm(rel.cliente)}|${norm(rel.fazenda)}`
     const g = grupos[chave] || (grupos[chave] = { cliente: rel.cliente, fazenda: rel.fazenda,
-      codigo: fz?.id_fazenda ? String(fz.id_fazenda) : '', talhoes: {}, motivos: [], voos: 0, dias: [] })
+      codigo: fz?.id_fazenda ? String(fz.id_fazenda) : '', talhoes: {}, motivos: [], voos: 0, dias: [], os: [] })
     g.voos++
+    // OS da usina: a que o voo guardou da fazenda; em voo antigo, a que a fazenda tem hoje.
+    const os = String(rel.os_cliente || fz?.os_cliente || '').trim()
+    if (os && !g.os.includes(os)) g.os.push(os)
     const dia = diaDoVoo(rel)
     if (!g.dias.includes(dia)) g.dias.push(dia)
     const pd = porDia[dia] || (porDia[dia] = { dia, total: 0, voos: 0 })
@@ -77,7 +80,7 @@ export function apontamentoDiario({ relatorios = [], fazendas = [], talhoes = []
     const areaAplicada = +ts.reduce((a, t) => a + t.aplicada, 0).toFixed(2)
     return { cliente: g.cliente, fazenda: g.fazenda, codigo: g.codigo, voos: g.voos, talhoes: ts.map(t => t.nome),
       areaTotal, areaAplicada, diferenca: Math.max(0, +(areaTotal - areaAplicada).toFixed(2)), motivos: g.motivos,
-      dias: g.dias.sort() }
+      dias: g.dias.sort(), os: g.os.join(' / ') }
   }).sort((a, b) => (parseInt(a.codigo, 10) || Infinity) - (parseInt(b.codigo, 10) || Infinity) || compararNomes(a.fazenda, b.fazenda))
   const total = +linhas.reduce((a, l) => a + l.areaAplicada, 0).toFixed(2)
   const dias = Object.values(porDia).sort((a, b) => a.dia.localeCompare(b.dia))
@@ -96,7 +99,8 @@ export function textoApontamento({ linhas, total, dias = [], data, ate = '', ope
   const out = [`APONTAMENTO DIÁRIO – ${cliente || ''}`.trim(), '', `Empresa: ${empresa}`, `Operação: ${operacao}`,
     `Data de aplicação: ${dataBR(data)}${varios ? ` a ${dataBR(ate)}` : ''}`, '']
   for (const l of linhas) {
-    out.push('O.S.:')
+    // Com a OS da fazenda cadastrada ela já sai preenchida; sem, fica em branco pra usina.
+    out.push(`O.S.:${l.os ? ` ${l.os}` : ''}`)
     out.push(`Código da Fazenda: ${l.codigo || l.fazenda}`)
     out.push(`Talhões: ${l.talhoes.join(' - ')}`)
     out.push(`Área Total: ${num(l.areaTotal)} ha`)

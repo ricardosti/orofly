@@ -42,7 +42,7 @@ function dataLocal(iso) {
 
 // `talhoesCatalogo`: [{ nome, area_ha }] dos talhões da fazenda. `idFazenda`: o código da fazenda
 // no cadastro (o "Código da fazenda" do formulário).
-export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = '' } = {}) {
+export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = '', osFazenda = '' } = {}) {
   const cadastro = {}
   talhoesCatalogo.forEach(t => { cadastro[t.nome] = parseFloat(t.area_ha) || 0 })
   const nomes = (rel.localizacao || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -113,9 +113,11 @@ export function dadosFormularioNardini(rel, { talhoesCatalogo = [], idFazenda = 
     data: dataLocal(rel.dt_inicio || rel.created_at),
     codigoFazenda: idFazenda || '',
     fazenda: rel.fazenda || '',
-    // "Nº da O.S. e Operação" é campo da Usina: sai em branco pra eles preencherem (pedido de
-    // 20/10/2026). A OS do Orofly continua no rodapé ("Preenchido pelo Orofly… (OS …)").
-    os: '',
+    // "Nº da O.S. e Operação" é a OS da usina (ex.: 19399): a que veio da fazenda pro voo
+    // (relatorios.os_cliente) ou, em voo antigo, a que a fazenda tem hoje (16/11/2026). Sem OS
+    // cadastrada sai em branco, pra eles preencherem (como era desde 20/10/2026). A OS do
+    // Orofly continua no rodapé ("Preenchido pelo Orofly… (OS …)").
+    os: String(rel.os_cliente || osFazenda || '').trim(),
     piloto: rel.piloto_nome || '',
     talhoes,
     totalTalhoes: { areaTalhao: programada, aplicada: areaAplicadaTotal, diferenca },

@@ -6870,7 +6870,7 @@ Quando: ${tempoErroDebug.quando}`}
                 const norm = t => (t||'').trim().toLowerCase().replace(/\s+/g,' ')
                 const fz = fazendasDB.find(f=>norm(f.cliente)===norm(rel.cliente) && norm(f.nome)===norm(rel.fazenda))
                 const talhoesCatalogo = fz ? talhoesDB.filter(t=>t.fazenda_id===fz.id).map(t=>({nome:t.nome, area_ha:t.area_ha})) : []
-                const doc = gerarFormularioNardini(rel, { talhoesCatalogo, idFazenda: fz?.id_fazenda||'' })
+                const doc = gerarFormularioNardini(rel, { talhoesCatalogo, idFazenda: fz?.id_fazenda||'', osFazenda: fz?.os_cliente||'' })
                 await salvarOuCompartilharPdf(doc, nomeArquivoFormularioNardini(rel)); showToast('✅ Formulário pronto!')
               }}>📄 Formulário Nardini</button>
             )}
