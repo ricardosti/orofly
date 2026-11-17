@@ -52,16 +52,30 @@ async function naLoja(modo, fazer, loja = LOJA) {
 // Storage recusava (400) — em 10/11/2026 nenhuma foto de um iPhone pelo site chegava. Os bytes
 // sobrevivem em qualquer navegador. `deBytes` devolve o arquivo pro envio e aceita o formato
 // antigo (o File guardado direto), pra fila que já estava no aparelho.
+//
+// O pacote guardado ({ bytes, tipo, nome }) se reconhece pelo ArrayBuffer em `bytes` — NUNCA
+// só por existir um `.bytes`: todo File/Blob tem o método bytes() (Chrome 132, Safari 18), e o
+// teste antigo (`g.bytes ? …`) pegava o próprio arquivo e montava um "jpg" de 34 bytes com o
+// texto "function bytes() { [native code] }". De 11 a 16/11/2026 quase toda foto que passou
+// pelo aparelho subiu assim, corrompida ("formato não suportado").
+const ehBlob = x => typeof Blob !== 'undefined' && x instanceof Blob
+const ehBuffer = b => !!b && typeof b === 'object' &&
+  (b instanceof ArrayBuffer || ArrayBuffer.isView(b) || Object.prototype.toString.call(b) === '[object ArrayBuffer]')
+const ehPacote = g => !!g && !ehBlob(g) && ehBuffer(g.bytes)
+// Menor que isso não é foto (o lixo era de 34 bytes; um JPEG de verdade tem milhares).
+const MINIMO_BYTES = 100
 export async function emBytes(arquivo) {
-  if (!arquivo || arquivo.bytes) return arquivo || null
+  if (!arquivo) return null
+  if (ehPacote(arquivo) || !ehBlob(arquivo)) return arquivo
   try { return { bytes: await arquivo.arrayBuffer(), tipo: arquivo.type || '', nome: arquivo.name || '' } }
   catch { return arquivo }
 }
 export function deBytes(g) {
   if (!g) return null
-  const f = g.bytes ? new File([g.bytes], g.nome || 'foto.jpg', { type: g.tipo || 'image/jpeg' }) : g
+  const f = ehPacote(g) ? new File([g.bytes], g.nome || 'foto.jpg', { type: g.tipo || 'image/jpeg' })
+    : ehBlob(g) ? g : null // File guardado direto (formato antigo, de antes da v12.8)
   // Vazio é o defeito do Safari: subir 0 bytes só dá erro, e a foto já se perdeu.
-  return f.size > 0 ? f : null
+  return f && f.size >= MINIMO_BYTES ? f : null
 }
 
 export async function guardarNaFila(item) {

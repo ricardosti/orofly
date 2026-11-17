@@ -12,6 +12,14 @@
 
 export const NOVIDADES = [
   {
+    versao: '13.1',
+    data: '2026-11-16',
+    itens: [
+      { tipo: 'correcao', titulo: 'Fotos e mapas corrompidos no relatório',
+        texto: 'Desde a 12.8 (11/11), as fotos de observação e o mapa que passavam pela memória do aparelho antes de subir chegavam estragados ao servidor: no painel apareciam quebradas e, baixadas, davam "formato não suportado". O mesmo valia para a foto da nota de despesa e a do incidente enviadas pela fila. Corrigido; as fotos tiradas daqui pra frente sobem inteiras. As que subiram estragadas nesse período precisam ser enviadas de novo pelo piloto ou trocadas no Editar relatório.' },
+    ],
+  },
+  {
     versao: '13.0',
     data: '2026-11-15',
     itens: [
